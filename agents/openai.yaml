@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Guide"
+  short_description: "Architecture, quality, and bilingual workflow guidance for code changes"
+  default_prompt: "Use $codeguide in zero-command mode: run scripts/run_codeguide.sh at start and finish, keep docs/task, docs/shadow, docs/decisions synchronized, translate planning/execution reasoning to English internally, and report to the user in Korean unless requested otherwise."

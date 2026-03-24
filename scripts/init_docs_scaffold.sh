@@ -1,0 +1,264 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  init_docs_scaffold.sh [project-root]
+
+Initializes the docs/ scaffold for codeguide documentation.
+Creates directories and template files only when missing (idempotent).
+
+Options:
+  -h, --help   Show this message
+EOF
+}
+
+# Handle --help before positional args
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+  esac
+done
+
+TARGET_ROOT="${1:-.}"
+
+if [[ ! -d "$TARGET_ROOT" ]]; then
+  echo "[ERROR] Target root does not exist or is not a directory: $TARGET_ROOT" >&2
+  exit 1
+fi
+
+DOCS_DIR="${TARGET_ROOT%/}/docs"
+
+# Guard: if docs path exists but is a file, abort
+if [[ -e "$DOCS_DIR" && ! -d "$DOCS_DIR" ]]; then
+  echo "[ERROR] $DOCS_DIR exists but is not a directory. Cannot initialize scaffold." >&2
+  exit 1
+fi
+
+TASK_DIR="${DOCS_DIR}/task"
+SHADOW_DIR="${DOCS_DIR}/shadow"
+DECISIONS_DIR="${DOCS_DIR}/decisions"
+PLAN_DIR="${DOCS_DIR}/plan"
+REPORT_DIR="${DOCS_DIR}/report"
+
+mkdir -p "${TASK_DIR}" "${SHADOW_DIR}" "${DECISIONS_DIR}" "${PLAN_DIR}" "${REPORT_DIR}"
+
+write_if_missing() {
+  local file_path="$1"
+  local content="$2"
+  if [[ ! -f "${file_path}" ]]; then
+    printf "%s\n" "${content}" > "${file_path}"
+  fi
+}
+
+write_if_missing "${TASK_DIR}/project-dictionary.md" '# Project Dictionary
+
+- project_name:
+- business_goal:
+- scope_in:
+- scope_out:
+- architecture_style:
+- key_domains:
+- critical_user_flows:
+- environments:
+- dependencies:
+- security_constraints:
+- compliance_constraints:
+- performance_slo:
+- reliability_slo:
+- owners:
+- decision_policy:
+'
+
+write_if_missing "${TASK_DIR}/task-index.md" '# Task Index
+
+## Planned
+
+## In Progress
+
+## Blocked
+
+## Done
+'
+
+write_if_missing "${DECISIONS_DIR}/decision-index.md" '# Decision Index
+
+## Proposed
+
+## Accepted
+
+## Superseded
+'
+
+write_if_missing "${SHADOW_DIR}/project-shadow.md" '# Project Shadow
+
+- project_summary:
+- domain_glossary:
+- module_map:
+- navigation_map_to_detailed_docs:
+- runtime_entrypoints:
+- integration_map:
+- config_map: # variable names only; no values
+- current_risks:
+- known_constraints:
+- last_updated:
+- updated_by_task:
+'
+
+write_if_missing "${TASK_DIR}/task-template.md" '# TASK-<id>
+
+- title:
+- objective:
+- acceptance_criteria:
+- non_goals:
+- affected_modules:
+- interfaces_changed:
+- data_migrations:
+- test_scope:
+- risks:
+- status: planned | in_progress | blocked | done
+- owner:
+- due_date:
+- axis_why:
+- axis_where:
+- axis_verify:
+'
+
+write_if_missing "${DECISIONS_DIR}/decision-template.md" '# decision-<id>
+
+- decision_id:
+- title:
+- date:
+- scope_type: task | hotfix | pr | release | incident | ops | other
+- status: proposed | accepted | superseded
+- chosen_by:
+- linked_task:
+- linked_pr:
+- linked_hotfix:
+- context:
+- selected_option:
+- alternatives_considered:
+- rationale:
+- implementation_plan:
+- impact_and_risks:
+- rollback_or_mitigation:
+- axis_why:
+- axis_what:
+- axis_how:
+- axis_where:
+- axis_verify:
+'
+
+write_if_missing "${PLAN_DIR}/PLAN-template.md" '# PLAN-<task-id>-v1.0
+
+- task_id:
+- plan_version: v1.0
+- objective:
+- scope:
+- assumptions:
+- risks:
+- acceptance_signals:
+- stop_conditions:
+- owner:
+- last_updated:
+
+## Steps
+1.
+2.
+3.
+'
+
+write_if_missing "${REPORT_DIR}/LLM-REVIEW-template.md" '# PLAN-<task-id>-v1.0 review (gemini)
+
+- task_id:
+- plan_version: v1.0
+- evaluator: gemini # allowed: gemini | claude | codex
+- review_round: r01
+- verdict: accept | revise | blocked
+- summary:
+- strengths:
+- risks:
+- requested_changes:
+- last_updated:
+'
+
+write_if_missing "${DOCS_DIR}/SECURITY-NOTES.md" '# Documentation Security Notes
+
+- Never store raw key/token/password/private-key values in docs.
+- Only reference environment variable names (example: OPENAI_API_KEY).
+- Redact sensitive values immediately if found.
+'
+
+write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
+
+## Required commands
+
+- scripts/run_codeguide.sh <project-root> --mode auto
+- scripts/doc_garden.sh <project-root> --task-id <TASK_ID>
+- scripts/validate_docs.sh <project-root> --mode advisory
+- scripts/validate_docs.sh <project-root> --mode strict (CI)
+
+## Data safety
+
+- Empty values never overwrite existing non-empty fields (use --allow-empty-overwrite to override).
+- Axis values are only updated when explicitly provided (no generic defaults injected).
+- task_id inference: explicit --task-id > branch pattern > latest task file > timestamp.
+- In non-git mode with multiple active tasks, --task-id is required to avoid task mis-linking.
+
+## Change scope
+
+- docs-only (default): docs lifecycle + docs validation only.
+- code-or-runtime: also runs user-provided commands via --runtime-test-cmd, --runtime-lint-cmd, --runtime-e2e-cmd.
+- --runtime-allow-list is required in code-or-runtime mode.
+- Runtime allow-list matching supports executable and executable+subcommand prefixes.
+- Runtime commands with shell metacharacters are blocked.
+
+## Validation policy
+
+- status/scope enum values are validated in both write phase and validation phase.
+- Secret scan supports known key formats, quoted assignments, and yaml/env-style assignments.
+- Add custom secret scan exclusions with --secret-scan-exclude-glob.
+
+## Plan ping-pong loop
+
+- Create plan file first: docs/plan/PLAN-<task-id>-v1.0.md.
+- Write evaluator report files in docs/report with evaluator labels: gemini | claude | codex.
+- For each revision, create a new versioned plan file (v1.1, v1.2, ...), do not overwrite old versions.
+- Repeat review/revision loop until execution-ready or user stop.
+
+## Anti-dump limits
+
+- docs/shadow/project-shadow.md <= 220 lines
+- docs/task/TASK-*.md <= 220 lines
+- docs/decisions/decision-*.md <= 180 lines
+
+## Freshness SLA
+
+- project-shadow updated at least every 7 days (checked via last_updated field, mtime fallback).
+- in_progress task files updated within 7 days.
+- decision-index and task-index updated with each file change.
+
+## Hotfix exception
+
+- At urgent release time, write minimum decision log first.
+- Complete full task/shadow sync within 24 hours.
+
+## 5-axis records
+
+- decision files: Why/What/How/Where/Verify
+- task files: Why/Where/Verify
+'
+
+echo "Initialized docs scaffold under: ${DOCS_DIR}"
+echo "Created directories:"
+echo "  - ${TASK_DIR}"
+echo "  - ${SHADOW_DIR}"
+echo "  - ${DECISIONS_DIR}"
+echo "  - ${PLAN_DIR}"
+echo "  - ${REPORT_DIR}"
+echo "Template files are created only when missing."

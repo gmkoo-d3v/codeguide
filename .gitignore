@@ -1,0 +1,17 @@
+.DS_Store
+
+# Backup files from in-place edits
+*.bak
+*.bak.*
+
+# Editor and shell temp files
+*.swp
+*.swo
+*~
+
+# Python/test cache artifacts
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
