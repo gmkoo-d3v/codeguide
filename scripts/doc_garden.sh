@@ -8,10 +8,11 @@ Usage:
   doc_garden.sh <project-root> [options]
 
 Options:
-  --task-id <id>                  Task ID (creates/updates docs/task/TASK-<id>.md)
+  --task-id <id>                  Task ID (creates/updates workspace docs/task/TASK-<id>.md)
   --task-title "<title>"          Task title
   --task-status <status>          planned|in_progress|blocked|done (default: in_progress)
-  --decision-id <id>              Decision ID (creates/updates docs/decisions/decision-<id>.md)
+  --risk-level <level>            low|medium|high|critical (applies to task and/or decision docs)
+  --decision-id <id>              Decision ID (creates/updates workspace docs/decisions/decision-<id>.md)
   --decision-title "<title>"      Decision title
   --scope-type <type>             task|hotfix|pr|release|incident|ops|other (default: task)
   --decision-status <status>      proposed|accepted|superseded (default: accepted)
@@ -29,6 +30,15 @@ Options:
   --axis-how "<text>"             Implementation choices (patterns/refactor/smells)
   --axis-where "<text>"           Structural placement (MVC/Layered/Hexagonal/Clean)
   --axis-verify "<text>"          Verification strategy (TDD/pyramid/FIRST)
+  --execution-mode <mode>         supervisor_subagents|solo (default: supervisor_subagents)
+  --supervisor-agent "<name>"     Main-thread supervising lead architect identifier
+  --planner-agents "<list>"       Planner sub-agent identifier(s)
+  --reviewer-agents "<list>"      Reviewer sub-agent identifier(s)
+  --implementation-agents "<list>" Implementation sub-agent identifier(s)
+  --validation-agents "<list>"    Validation sub-agent identifier(s)
+  --owned-scopes "<text>"         Disjoint ownership summary for delegated agents
+  --delegation-status <status>    planned|active|completed|blocked
+  --delegation-note "<text>"      Exception note when delegation is partial or skipped
   --shadow-note "<text>"          Short note for shadow map latest change
   --allow-empty-overwrite          Allow empty values to overwrite existing values
   --no-init                        Skip scaffold initialization
@@ -57,6 +67,7 @@ shift
 TASK_ID=""
 TASK_TITLE=""
 TASK_STATUS="in_progress"
+RISK_LEVEL=""
 DECISION_ID=""
 DECISION_TITLE=""
 SCOPE_TYPE="task"
@@ -75,6 +86,15 @@ AXIS_WHAT=""
 AXIS_HOW=""
 AXIS_WHERE=""
 AXIS_VERIFY=""
+EXECUTION_MODE="supervisor_subagents"
+SUPERVISOR_AGENT="main-thread-supervising-lead-architect"
+PLANNER_AGENTS=""
+REVIEWER_AGENTS=""
+IMPLEMENTATION_AGENTS=""
+VALIDATION_AGENTS=""
+OWNED_SCOPES=""
+DELEGATION_STATUS=""
+DELEGATION_NOTE=""
 SHADOW_NOTE=""
 ALLOW_EMPTY_OVERWRITE="false"
 RUN_INIT="true"
@@ -109,6 +129,17 @@ validate_task_status() {
   esac
 }
 
+validate_risk_level() {
+  local value="$1"
+  case "$value" in
+    low|medium|high|critical) ;;
+    *)
+      echo "[ERROR] Invalid --risk-level: ${value} (use low, medium, high, or critical)" >&2
+      exit 1
+      ;;
+  esac
+}
+
 validate_scope_type() {
   local value="$1"
   case "$value" in
@@ -131,6 +162,28 @@ validate_decision_status() {
   esac
 }
 
+validate_execution_mode() {
+  local value="$1"
+  case "$value" in
+    supervisor_subagents|solo) ;;
+    *)
+      echo "[ERROR] Invalid --execution-mode: ${value} (use supervisor_subagents or solo)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+validate_delegation_status() {
+  local value="$1"
+  case "$value" in
+    planned|active|completed|blocked) ;;
+    *)
+      echo "[ERROR] Invalid --delegation-status: ${value} (use planned, active, completed, or blocked)" >&2
+      exit 1
+      ;;
+  esac
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --task-id)
@@ -146,6 +199,11 @@ while [[ $# -gt 0 ]]; do
     --task-status)
       require_option_value "$1" "$#"
       TASK_STATUS="${2:-}"
+      shift 2
+      ;;
+    --risk-level)
+      require_option_value "$1" "$#"
+      RISK_LEVEL="${2:-}"
       shift 2
       ;;
     --decision-id)
@@ -238,6 +296,51 @@ while [[ $# -gt 0 ]]; do
       AXIS_VERIFY="${2:-}"
       shift 2
       ;;
+    --execution-mode)
+      require_option_value "$1" "$#"
+      EXECUTION_MODE="${2:-}"
+      shift 2
+      ;;
+    --supervisor-agent)
+      require_option_value "$1" "$#"
+      SUPERVISOR_AGENT="${2:-}"
+      shift 2
+      ;;
+    --planner-agents)
+      require_option_value "$1" "$#"
+      PLANNER_AGENTS="${2:-}"
+      shift 2
+      ;;
+    --reviewer-agents)
+      require_option_value "$1" "$#"
+      REVIEWER_AGENTS="${2:-}"
+      shift 2
+      ;;
+    --implementation-agents)
+      require_option_value "$1" "$#"
+      IMPLEMENTATION_AGENTS="${2:-}"
+      shift 2
+      ;;
+    --validation-agents)
+      require_option_value "$1" "$#"
+      VALIDATION_AGENTS="${2:-}"
+      shift 2
+      ;;
+    --owned-scopes)
+      require_option_value "$1" "$#"
+      OWNED_SCOPES="${2:-}"
+      shift 2
+      ;;
+    --delegation-status)
+      require_option_value "$1" "$#"
+      DELEGATION_STATUS="${2:-}"
+      shift 2
+      ;;
+    --delegation-note)
+      require_option_value "$1" "$#"
+      DELEGATION_NOTE="${2:-}"
+      shift 2
+      ;;
     --shadow-note)
       require_option_value "$1" "$#"
       SHADOW_NOTE="${2:-}"
@@ -277,22 +380,45 @@ if [[ -n "$DECISION_ID" ]]; then
 fi
 
 validate_task_status "$TASK_STATUS"
+if [[ -n "$RISK_LEVEL" ]]; then
+  validate_risk_level "$RISK_LEVEL"
+fi
 validate_scope_type "$SCOPE_TYPE"
 validate_decision_status "$DECISION_STATUS"
-
-THIS_DIR="$(cd "$(dirname "$0")" && pwd)"
-INIT_SCRIPT="$THIS_DIR/init_docs_scaffold.sh"
-
-if [[ "$RUN_INIT" == "true" ]]; then
-  if [[ ! -d "$PROJECT_ROOT/docs/task" || ! -d "$PROJECT_ROOT/docs/shadow" || ! -d "$PROJECT_ROOT/docs/decisions" ]]; then
-    "$INIT_SCRIPT" "$PROJECT_ROOT"
-  fi
+validate_execution_mode "$EXECUTION_MODE"
+if [[ -n "$DELEGATION_STATUS" ]]; then
+  validate_delegation_status "$DELEGATION_STATUS"
 fi
 
-DOCS_DIR="$PROJECT_ROOT/docs"
+if [[ -z "$DELEGATION_STATUS" ]]; then
+  case "$TASK_STATUS" in
+    planned) DELEGATION_STATUS="planned" ;;
+    in_progress) DELEGATION_STATUS="active" ;;
+    blocked) DELEGATION_STATUS="blocked" ;;
+    done) DELEGATION_STATUS="completed" ;;
+  esac
+fi
+
+INPUT_ROOT_ABS="$(cd "$PROJECT_ROOT" && pwd)"
+resolve_repo_root() {
+  git -C "$INPUT_ROOT_ABS" rev-parse --show-toplevel 2>/dev/null || printf "%s" "$INPUT_ROOT_ABS"
+}
+
+PROJECT_ROOT_ABS="$(resolve_repo_root)"
+WORKSPACE_ROOT="$(cd "$PROJECT_ROOT_ABS/.." && pwd)"
+THIS_DIR="$(cd "$(dirname "$0")" && pwd)"
+INIT_SCRIPT="$THIS_DIR/init_docs_scaffold.sh"
+DOCS_DIR="$WORKSPACE_ROOT/docs"
 TASK_DIR="$DOCS_DIR/task"
 SHADOW_DIR="$DOCS_DIR/shadow"
 DECISIONS_DIR="$DOCS_DIR/decisions"
+ORCHESTRATION_DIR="$DOCS_DIR/orchestration"
+
+if [[ "$RUN_INIT" == "true" ]]; then
+  if [[ ! -d "$TASK_DIR" || ! -d "$SHADOW_DIR" || ! -d "$DECISIONS_DIR" || ! -d "$ORCHESTRATION_DIR" ]]; then
+    "$INIT_SCRIPT" "$PROJECT_ROOT_ABS"
+  fi
+fi
 TASK_INDEX="$TASK_DIR/task-index.md"
 DECISION_INDEX="$DECISIONS_DIR/decision-index.md"
 SHADOW_FILE="$SHADOW_DIR/project-shadow.md"
@@ -398,6 +524,7 @@ ensure_task_file() {
 - data_migrations:
 - test_scope:
 - risks:
+- risk_level:
 - status: planned | in_progress | blocked | done
 - owner:
 - due_date:
@@ -437,12 +564,42 @@ ensure_decision_file() {
 - rationale:
 - implementation_plan:
 - impact_and_risks:
+- risk_level:
 - rollback_or_mitigation:
 - axis_why:
 - axis_what:
 - axis_how:
 - axis_where:
 - axis_verify:
+EOF
+    fi
+  fi
+}
+
+ensure_orchestration_file() {
+  local orchestration_file="$1"
+  local template="$ORCHESTRATION_DIR/ORCH-template.md"
+
+  if [[ ! -f "$orchestration_file" ]]; then
+    if [[ -f "$template" ]]; then
+      cp "$template" "$orchestration_file"
+      sed -i.bak "1s|^# ORCH-<task-id>$|# ORCH-${TASK_ID}|" "$orchestration_file"
+      rm -f "${orchestration_file}.bak"
+    else
+      cat > "$orchestration_file" <<EOF
+# ORCH-${TASK_ID}
+
+- task_id:
+- execution_mode: supervisor_subagents | solo
+- supervisor_agent:
+- planner_agents:
+- reviewer_agents:
+- implementation_agents:
+- validation_agents:
+- owned_scopes:
+- delegation_status: planned | active | completed | blocked
+- delegation_note:
+- last_updated:
 EOF
     fi
   fi
@@ -684,9 +841,14 @@ TODAY="$(date -u +"%Y-%m-%d")"
 
 if [[ -n "$TASK_ID" ]]; then
   TASK_FILE="$TASK_DIR/TASK-${TASK_ID}.md"
+  ORCHESTRATION_FILE="$ORCHESTRATION_DIR/ORCH-${TASK_ID}.md"
   ensure_task_file "$TASK_FILE"
+  ensure_orchestration_file "$ORCHESTRATION_FILE"
   upsert_field "$TASK_FILE" "title" "${TASK_TITLE:-Task ${TASK_ID}}"
   upsert_field "$TASK_FILE" "status" "$TASK_STATUS"
+  if [[ -n "$RISK_LEVEL" ]]; then
+    upsert_field "$TASK_FILE" "risk_level" "$RISK_LEVEL"
+  fi
   if [[ -n "$AXIS_WHY" ]]; then
     upsert_field "$TASK_FILE" "axis_why" "$AXIS_WHY"
   fi
@@ -698,6 +860,18 @@ if [[ -n "$TASK_ID" ]]; then
   fi
   upsert_field "$TASK_FILE" "last_updated" "$NOW_UTC"
   update_task_index "TASK-${TASK_ID}" "${TASK_TITLE:-Task ${TASK_ID}}"
+
+  upsert_field "$ORCHESTRATION_FILE" "task_id" "$TASK_ID"
+  upsert_field "$ORCHESTRATION_FILE" "execution_mode" "$EXECUTION_MODE"
+  upsert_field "$ORCHESTRATION_FILE" "supervisor_agent" "$SUPERVISOR_AGENT"
+  upsert_field "$ORCHESTRATION_FILE" "planner_agents" "$PLANNER_AGENTS"
+  upsert_field "$ORCHESTRATION_FILE" "reviewer_agents" "$REVIEWER_AGENTS"
+  upsert_field "$ORCHESTRATION_FILE" "implementation_agents" "$IMPLEMENTATION_AGENTS"
+  upsert_field "$ORCHESTRATION_FILE" "validation_agents" "$VALIDATION_AGENTS"
+  upsert_field "$ORCHESTRATION_FILE" "owned_scopes" "$OWNED_SCOPES"
+  upsert_field "$ORCHESTRATION_FILE" "delegation_status" "$DELEGATION_STATUS"
+  upsert_field "$ORCHESTRATION_FILE" "delegation_note" "$DELEGATION_NOTE"
+  upsert_field "$ORCHESTRATION_FILE" "last_updated" "$NOW_UTC"
 fi
 
 if [[ -n "$DECISION_ID" ]]; then
@@ -722,6 +896,9 @@ if [[ -n "$DECISION_ID" ]]; then
   upsert_field "$DECISION_FILE" "rationale" "$DECISION_RATIONALE"
   upsert_field "$DECISION_FILE" "implementation_plan" "$IMPLEMENTATION_PLAN"
   upsert_field "$DECISION_FILE" "impact_and_risks" "$DECISION_IMPACT"
+  if [[ -n "$RISK_LEVEL" ]]; then
+    upsert_field "$DECISION_FILE" "risk_level" "$RISK_LEVEL"
+  fi
   if [[ -n "$AXIS_WHY" ]]; then
     upsert_field "$DECISION_FILE" "axis_why" "$AXIS_WHY"
   fi
@@ -754,6 +931,7 @@ fi
 
 echo "[OK] Doc-gardening sync complete."
 echo "  - Project: $PROJECT_ROOT"
+echo "  - Docs root: $DOCS_DIR"
 if [[ -n "$TASK_ID" ]]; then
   echo "  - Task: TASK-${TASK_ID}"
 fi

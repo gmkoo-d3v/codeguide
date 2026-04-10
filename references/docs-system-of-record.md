@@ -11,7 +11,7 @@ For repeatable setup, run:
 
 Default assumption:
 - Do not require RAG or embedding for baseline operation.
-- Use docs files (`task`, `shadow`, `decisions`, `plan`, `report`) as durable memory first.
+- Use workspace docs files (`task`, `shadow`, `decisions`, `plan`, `report`, `orchestration`) as durable memory first.
 - Default operation is zero-command for user; agent runs docs lifecycle commands.
 
 ## Data safety rules
@@ -33,26 +33,32 @@ Default assumption:
 
 ## Required structure
 
+`<project-root>` is the repository root. Resolve docs to `<project-root>/../docs`.
+
 ```text
-docs/
-├── task/
-├── shadow/
-├── decisions/
-├── plan/
-└── report/
+workspace-root/
+├── <repo>/
+└── docs/
+    ├── task/
+    ├── shadow/
+    ├── decisions/
+    ├── plan/
+    ├── report/
+    └── orchestration/
 ```
 
-Create these files if missing:
-- `docs/task/project-dictionary.md`
-- `docs/task/task-index.md`
-- `docs/shadow/project-shadow.md`
-- `docs/decisions/decision-index.md`
-- `docs/plan/PLAN-template.md`
-- `docs/report/LLM-REVIEW-template.md`
+Create these workspace-root files if missing:
+- `<workspace-root>/docs/task/project-dictionary.md`
+- `<workspace-root>/docs/task/task-index.md`
+- `<workspace-root>/docs/shadow/project-shadow.md`
+- `<workspace-root>/docs/decisions/decision-index.md`
+- `<workspace-root>/docs/plan/PLAN-template.md`
+- `<workspace-root>/docs/report/LLM-REVIEW-template.md`
+- `<workspace-root>/docs/orchestration/ORCH-template.md`
 
 ## Project dictionary template
 
-`docs/task/project-dictionary.md`
+`<workspace-root>/docs/task/project-dictionary.md`
 
 ```markdown
 # Project Dictionary
@@ -90,6 +96,7 @@ Use one file per task: `docs/task/TASK-<id>.md`
 - data_migrations:
 - test_scope:
 - risks:
+- risk_level:
 - status: planned | in_progress | blocked | done
 - owner:
 - due_date:
@@ -98,10 +105,10 @@ Use one file per task: `docs/task/TASK-<id>.md`
 - axis_verify: # test strategy (TDD/pyramid/FIRST)
 ```
 
-`docs/task/task-index.md` should list task ids organized by status section (Planned/In Progress/Blocked/Done). Rows are automatically moved between sections when task status changes.
+`<workspace-root>/docs/task/task-index.md` should list task ids organized by status section (Planned/In Progress/Blocked/Done). Rows are automatically moved between sections when task status changes.
 
 ## Anti-dump policy (default recommended, strict in CI)
-- Keep `docs/shadow/project-shadow.md` at or below 220 lines.
+- Keep `<workspace-root>/docs/shadow/project-shadow.md` at or below 220 lines.
 - Keep each `docs/task/TASK-*.md` at or below 220 lines.
 - Keep each `docs/decisions/decision-*.md` at or below 180 lines.
 - Keep shadow map summary-only and link to deeper docs instead of copying large text blocks.
@@ -112,7 +119,7 @@ Use:
 
 ## Shadow system-map template
 
-Use `docs/shadow/project-shadow.md` as the canonical project system map.
+Use `<workspace-root>/docs/shadow/project-shadow.md` as the canonical project system map.
 
 ```markdown
 # Project Shadow
@@ -157,6 +164,7 @@ Use one file per decision: `docs/decisions/decision-<id>.md`
 - rationale:
 - implementation_plan:
 - impact_and_risks:
+- risk_level:
 - rollback_or_mitigation:
 - axis_why: # principle rationale
 - axis_what: # expression rules (naming/function/comments/format)
@@ -165,7 +173,7 @@ Use one file per decision: `docs/decisions/decision-<id>.md`
 - axis_verify: # verification strategy and test evidence
 ```
 
-`docs/decisions/decision-index.md` should organize decisions by status section (Proposed/Accepted/Superseded). Rows are automatically moved between sections when decision status changes. Legacy table format is auto-migrated on first update.
+`<workspace-root>/docs/decisions/decision-index.md` should organize decisions by status section (Proposed/Accepted/Superseded). Rows are automatically moved between sections when decision status changes. Legacy table format is auto-migrated on first update.
 
 ## Plan and model-review templates
 
@@ -205,12 +213,17 @@ Evaluator label must be one of:
 - task_id:
 - plan_version: v1.0
 - evaluator: gemini
+- review_style: standard | adversarial
 - review_round: r01
 - verdict: accept | revise | blocked
 - summary:
 - strengths:
 - risks:
 - requested_changes:
+- objection:
+- counterproposal:
+- rebuttal:
+- residual_risk:
 - last_updated:
 ```
 
@@ -225,6 +238,9 @@ Evaluator label must be one of:
 - Update docs for every task without exception.
 - Before implementation, create an initial plan file (usually `v1.0`).
 - For each feedback round, write evaluator-specific report files in `docs/report/` with evaluator labels `gemini|claude|codex`.
+- Set `risk_level: high|critical` on the task or a linked decision when the change is high risk.
+- In advisory mode, active tasks without `risk_level` should emit a warning so teams can backfill the signal before strict policy tightens.
+- If a task or any linked non-superseded decision has `risk_level: high|critical`, strict validation requires at least one adversarial evaluator report with `review_style: adversarial` plus `objection`, `counterproposal`, `rebuttal`, and `residual_risk`.
 - When improving the plan, create a new versioned plan file (for example `v1.1`) instead of overwriting previous files.
 - Repeat plan -> review -> revision until execution-ready or user stop.
 - When user chooses any option, update or create a `decision-*` file immediately.
@@ -232,12 +248,12 @@ Evaluator label must be one of:
 - When plan changes, append revised `implementation_plan` in the same `decision-*`.
 - When task scope changes, update `TASK-*` and relevant dictionary keys.
 - For tiny edits, reuse the current `TASK-*` file instead of creating unnecessary new task files.
-- At task close, refresh `docs/shadow/project-shadow.md` and keep it aligned with latest architecture and flows.
+- At task close, refresh `<workspace-root>/docs/shadow/project-shadow.md` and keep it aligned with latest architecture and flows.
 - Keep 5-axis fields current:
   - tasks: maintain `axis_why`, `axis_where`, `axis_verify`.
   - decisions: maintain full `axis_why`, `axis_what`, `axis_how`, `axis_where`, `axis_verify`.
 - Keep freshness SLA:
-  - `docs/shadow/project-shadow.md` should be updated on every meaningful change and at least once every 7 days.
+  - `<workspace-root>/docs/shadow/project-shadow.md` should be updated on every meaningful change and at least once every 7 days.
   - `in_progress` task docs should be refreshed within 7 days.
   - `decision-index.md` should be updated in the same change as decision files.
 

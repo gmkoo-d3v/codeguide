@@ -6,20 +6,20 @@ Use these templates when preparing pull requests and commits.
 
 ```markdown
 ## ✨ PR Summary
-<!-- 이 PR의 목적을 간략히 설명하세요 -->
+<!-- Summarize the purpose of this PR. -->
 
 
 ---
 
 ## 🔍 Background
-<!-- 변경이 필요한 배경을 설명하세요 -->
-<!-- 기존 동작 / 문제 상황 / 재현 방법 등 -->
+<!-- Explain why this change is needed. -->
+<!-- Include prior behavior, problem statement, or reproduction context. -->
 
 
 ---
 
 ## 🛠️ Changes
-<!-- 실제 변경 사항을 항목으로 정리하세요 -->
+<!-- List the concrete changes made in this PR. -->
 - 
 - 
 - 
@@ -28,14 +28,14 @@ Use these templates when preparing pull requests and commits.
 ---
 
 ## 🧠 Design Notes
-<!-- 왜 이런 방식으로 구현했는지 작성하세요 -->
-<!-- 상태 전이, 로그 정책, 재시도 전략 등 -->
+<!-- Explain why this implementation approach was chosen. -->
+<!-- Call out state transitions, logging policy, retry strategy, or similar details. -->
 
 
 ---
 
 ## 🧪 How to Test
-<!-- 재현 및 검증 방법을 작성하세요 -->
+<!-- Describe reproduction steps and validation commands. -->
 1. 
 2. 
 3. 
@@ -44,7 +44,7 @@ Use these templates when preparing pull requests and commits.
 ---
 
 ## 📈 Expected Impact
-<!-- 이번 변경의 기대 효과를 작성하세요 -->
+<!-- Describe the expected product or engineering impact of this change. -->
 - 
 - 
 - 
@@ -53,9 +53,9 @@ Use these templates when preparing pull requests and commits.
 ---
 
 ## ⚠️ Breaking Changes
-<!-- 기존 동작에 영향을 주는 변경이 있다면 작성 -->
+<!-- Describe any changes that affect existing behavior. -->
 - [ ] None
-- [ ] Yes (설명 필요)
+- [ ] Yes (details required)
 
 
 ---
@@ -71,7 +71,7 @@ Use these templates when preparing pull requests and commits.
 ---
 
 ## 🙋 Reviewer Notes
-<!-- 리뷰어가 중점적으로 봐야 할 부분 -->
+<!-- Call out areas that deserve focused reviewer attention. -->
 ```
 
 ## Commit message template

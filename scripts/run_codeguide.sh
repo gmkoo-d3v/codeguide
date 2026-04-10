@@ -11,6 +11,7 @@ Options:
   --mode <auto|advisory|strict>  Validation mode (default: auto)
   --task-id <id>                 Optional task id override
   --task-status <status>         Task status (planned|in_progress|blocked|done; default: in_progress)
+  --risk-level <level>           Optional risk level (low|medium|high|critical)
   --decision-id <id>             Optional decision id override
   --scope-type <type>            Optional scope override (task|hotfix|pr|release|incident|ops|other)
   --task-title "<title>"         Optional task title
@@ -21,6 +22,15 @@ Options:
   --axis-how "<text>"            Optional How axis
   --axis-where "<text>"          Optional Where axis
   --axis-verify "<text>"         Optional Verify axis
+  --execution-mode <mode>        supervisor_subagents|solo (default: supervisor_subagents)
+  --supervisor-agent "<name>"    Main-thread supervising lead architect identifier
+  --planner-agents "<list>"      Planner sub-agent identifier(s)
+  --reviewer-agents "<list>"     Reviewer sub-agent identifier(s)
+  --implementation-agents "<list>" Implementation sub-agent identifier(s)
+  --validation-agents "<list>"   Validation sub-agent identifier(s)
+  --owned-scopes "<text>"        Disjoint ownership summary for delegated agents
+  --delegation-status <status>   planned|active|completed|blocked
+  --delegation-note "<text>"     Exception note when delegation is partial or skipped
   --change-scope <scope>         docs-only|code-or-runtime (default: auto-detect)
   --runtime-test-cmd "<cmd>"     Runtime test command (code-or-runtime only)
   --runtime-lint-cmd "<cmd>"     Runtime lint command (code-or-runtime only)
@@ -39,6 +49,7 @@ fi
 MODE="auto"
 TASK_ID=""
 TASK_STATUS="in_progress"
+RISK_LEVEL=""
 DECISION_ID=""
 SCOPE_TYPE=""
 TASK_TITLE=""
@@ -49,6 +60,15 @@ AXIS_WHAT=""
 AXIS_HOW=""
 AXIS_WHERE=""
 AXIS_VERIFY=""
+EXECUTION_MODE="supervisor_subagents"
+SUPERVISOR_AGENT="main-thread-supervising-lead-architect"
+PLANNER_AGENTS=""
+REVIEWER_AGENTS=""
+IMPLEMENTATION_AGENTS=""
+VALIDATION_AGENTS=""
+OWNED_SCOPES=""
+DELEGATION_STATUS=""
+DELEGATION_NOTE=""
 CHANGE_SCOPE=""
 RUNTIME_TEST_CMD=""
 RUNTIME_LINT_CMD=""
@@ -80,6 +100,11 @@ while [[ $# -gt 0 ]]; do
     --task-status)
       require_option_value "$1" "$#"
       TASK_STATUS="${2:-}"
+      shift 2
+      ;;
+    --risk-level)
+      require_option_value "$1" "$#"
+      RISK_LEVEL="${2:-}"
       shift 2
       ;;
     --decision-id)
@@ -130,6 +155,51 @@ while [[ $# -gt 0 ]]; do
     --axis-verify)
       require_option_value "$1" "$#"
       AXIS_VERIFY="${2:-}"
+      shift 2
+      ;;
+    --execution-mode)
+      require_option_value "$1" "$#"
+      EXECUTION_MODE="${2:-}"
+      shift 2
+      ;;
+    --supervisor-agent)
+      require_option_value "$1" "$#"
+      SUPERVISOR_AGENT="${2:-}"
+      shift 2
+      ;;
+    --planner-agents)
+      require_option_value "$1" "$#"
+      PLANNER_AGENTS="${2:-}"
+      shift 2
+      ;;
+    --reviewer-agents)
+      require_option_value "$1" "$#"
+      REVIEWER_AGENTS="${2:-}"
+      shift 2
+      ;;
+    --implementation-agents)
+      require_option_value "$1" "$#"
+      IMPLEMENTATION_AGENTS="${2:-}"
+      shift 2
+      ;;
+    --validation-agents)
+      require_option_value "$1" "$#"
+      VALIDATION_AGENTS="${2:-}"
+      shift 2
+      ;;
+    --owned-scopes)
+      require_option_value "$1" "$#"
+      OWNED_SCOPES="${2:-}"
+      shift 2
+      ;;
+    --delegation-status)
+      require_option_value "$1" "$#"
+      DELEGATION_STATUS="${2:-}"
+      shift 2
+      ;;
+    --delegation-note)
+      require_option_value "$1" "$#"
+      DELEGATION_NOTE="${2:-}"
       shift 2
       ;;
     --change-scope)
@@ -184,33 +254,61 @@ if [[ "$TASK_STATUS" != "planned" && "$TASK_STATUS" != "in_progress" && "$TASK_S
   exit 1
 fi
 
+if [[ -n "$RISK_LEVEL" && "$RISK_LEVEL" != "low" && "$RISK_LEVEL" != "medium" && "$RISK_LEVEL" != "high" && "$RISK_LEVEL" != "critical" ]]; then
+  echo "[ERROR] Invalid risk-level: $RISK_LEVEL (use low, medium, high, or critical)" >&2
+  exit 1
+fi
+
+if [[ "$EXECUTION_MODE" != "supervisor_subagents" && "$EXECUTION_MODE" != "solo" ]]; then
+  echo "[ERROR] Invalid execution-mode: $EXECUTION_MODE (use supervisor_subagents or solo)" >&2
+  exit 1
+fi
+
+if [[ -n "$DELEGATION_STATUS" && "$DELEGATION_STATUS" != "planned" && "$DELEGATION_STATUS" != "active" && "$DELEGATION_STATUS" != "completed" && "$DELEGATION_STATUS" != "blocked" ]]; then
+  echo "[ERROR] Invalid delegation-status: $DELEGATION_STATUS (use planned, active, completed, or blocked)" >&2
+  exit 1
+fi
+
 if [[ ! -d "$PROJECT_ROOT" ]]; then
   echo "[ERROR] Project root not found: $PROJECT_ROOT" >&2
   exit 1
 fi
+
+INPUT_ROOT_ABS="$(cd "$PROJECT_ROOT" && pwd)"
+resolve_repo_root() {
+  git -C "$INPUT_ROOT_ABS" rev-parse --show-toplevel 2>/dev/null || printf "%s" "$INPUT_ROOT_ABS"
+}
+
+PROJECT_ROOT_ABS="$(resolve_repo_root)"
+WORKSPACE_ROOT="$(cd "$PROJECT_ROOT_ABS/.." && pwd)"
+
+slugify() {
+  printf "%s" "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g; s/--\+/-/g; s/^-//; s/-$//'
+}
+
+DOCS_DIR="$WORKSPACE_ROOT/docs"
+TASK_DIR="$DOCS_DIR/task"
+PLAN_DIR="$DOCS_DIR/plan"
+REPORT_DIR="$DOCS_DIR/report"
 
 THIS_DIR="$(cd "$(dirname "$0")" && pwd)"
 INIT_SCRIPT="$THIS_DIR/init_docs_scaffold.sh"
 GARDEN_SCRIPT="$THIS_DIR/doc_garden.sh"
 VALIDATE_SCRIPT="$THIS_DIR/validate_docs.sh"
 
-slugify() {
-  printf "%s" "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g; s/--\+/-/g; s/^-//; s/-$//'
-}
-
 is_git_repo() {
-  git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1
+  git -C "$PROJECT_ROOT_ABS" rev-parse --is-inside-work-tree >/dev/null 2>&1
 }
 
 current_branch() {
   if is_git_repo; then
-    git -C "$PROJECT_ROOT" symbolic-ref --short HEAD 2>/dev/null || \
-      git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true
+    git -C "$PROJECT_ROOT_ABS" symbolic-ref --short HEAD 2>/dev/null || \
+      git -C "$PROJECT_ROOT_ABS" rev-parse --abbrev-ref HEAD 2>/dev/null || true
   fi
 }
 
 latest_task_from_docs() {
-  local task_dir="$PROJECT_ROOT/docs/task"
+  local task_dir="$TASK_DIR"
   local latest_file=""
 
   if [[ ! -d "$task_dir" ]]; then
@@ -227,7 +325,7 @@ latest_task_from_docs() {
 }
 
 count_non_git_active_tasks() {
-  local task_dir="$PROJECT_ROOT/docs/task"
+  local task_dir="$TASK_DIR"
   local task_file
   local task_status
   local active_count=0
@@ -287,7 +385,7 @@ infer_task_id() {
     return
   fi
 
-  # 4. Latest task file in docs/task/
+  # 4. Latest task file in workspace docs/task/
   inferred="$(latest_task_from_docs)"
   if [[ -n "$inferred" ]]; then
     printf "%s" "$inferred"
@@ -331,10 +429,24 @@ resolve_validation_mode() {
   esac
 }
 
+resolve_delegation_status() {
+  if [[ -n "$DELEGATION_STATUS" ]]; then
+    printf "%s" "$DELEGATION_STATUS"
+    return
+  fi
+
+  case "$TASK_STATUS" in
+    planned) printf "planned" ;;
+    in_progress) printf "active" ;;
+    blocked) printf "blocked" ;;
+    done) printf "completed" ;;
+  esac
+}
+
 ensure_plan_and_report_docs() {
   local task_id="$1"
-  local plan_dir="$PROJECT_ROOT/docs/plan"
-  local report_dir="$PROJECT_ROOT/docs/report"
+  local plan_dir="$PLAN_DIR"
+  local report_dir="$REPORT_DIR"
   local plan_file="$plan_dir/PLAN-${task_id}-v1.0.md"
   local now_utc
 
@@ -369,11 +481,15 @@ EOF
     report_count="$(find "$report_dir" -maxdepth 1 -type f -name "PLAN-${task_id}-v*-review-*.md" | wc -l | tr -d ' ')"
     echo "[INFO] Found evaluator report(s) for task ${task_id}: ${report_count}"
   else
-    echo "[INFO] No evaluator report found for task ${task_id} yet (expected after feedback rounds)."
+    if [[ "$EXECUTION_MODE" == "solo" ]]; then
+      echo "[INFO] Evaluator report is not required for task ${task_id} because solo execution mode is active."
+    else
+      echo "[WARN] Evaluator report is missing for task ${task_id}. Add PLAN-${task_id}-v*-review-(gemini|claude|codex)-rNN.md before strict handoff."
+    fi
   fi
 }
 
-"$INIT_SCRIPT" "$PROJECT_ROOT"
+"$INIT_SCRIPT" "$PROJECT_ROOT_ABS"
 
 BRANCH="$(current_branch)"
 
@@ -395,6 +511,7 @@ RESOLVED_SCOPE="$(infer_scope_type "$BRANCH")"
 RESOLVED_TASK_ID="$(infer_task_id "$BRANCH")"
 RESOLVED_DECISION_ID="$(infer_decision_id "$BRANCH" "$RESOLVED_TASK_ID")"
 RESOLVED_MODE="$(resolve_validation_mode "$RESOLVED_SCOPE")"
+RESOLVED_DELEGATION_STATUS="$(resolve_delegation_status)"
 
 if [[ -z "$TASK_TITLE" ]]; then
   TASK_TITLE="Task ${RESOLVED_TASK_ID}"
@@ -409,7 +526,7 @@ if [[ -z "$SELECTED_OPTION" ]]; then
 fi
 
 GARDEN_ARGS=(
-  "$PROJECT_ROOT"
+  "$PROJECT_ROOT_ABS"
   --task-id "$RESOLVED_TASK_ID"
   --task-title "$TASK_TITLE"
   --task-status "$TASK_STATUS"
@@ -418,7 +535,14 @@ GARDEN_ARGS=(
   --scope-type "$RESOLVED_SCOPE"
   --chosen-by user
   --selected-option "$SELECTED_OPTION"
+  --execution-mode "$EXECUTION_MODE"
+  --supervisor-agent "$SUPERVISOR_AGENT"
+  --delegation-status "$RESOLVED_DELEGATION_STATUS"
 )
+
+if [[ -n "$RISK_LEVEL" ]]; then
+  GARDEN_ARGS+=(--risk-level "$RISK_LEVEL")
+fi
 
 if [[ -n "$SHADOW_NOTE" ]]; then
   GARDEN_ARGS+=(--shadow-note "$SHADOW_NOTE")
@@ -445,6 +569,30 @@ if [[ -n "$AXIS_VERIFY" ]]; then
   GARDEN_ARGS+=(--axis-verify "$AXIS_VERIFY")
 fi
 
+if [[ -n "$PLANNER_AGENTS" ]]; then
+  GARDEN_ARGS+=(--planner-agents "$PLANNER_AGENTS")
+fi
+
+if [[ -n "$REVIEWER_AGENTS" ]]; then
+  GARDEN_ARGS+=(--reviewer-agents "$REVIEWER_AGENTS")
+fi
+
+if [[ -n "$IMPLEMENTATION_AGENTS" ]]; then
+  GARDEN_ARGS+=(--implementation-agents "$IMPLEMENTATION_AGENTS")
+fi
+
+if [[ -n "$VALIDATION_AGENTS" ]]; then
+  GARDEN_ARGS+=(--validation-agents "$VALIDATION_AGENTS")
+fi
+
+if [[ -n "$OWNED_SCOPES" ]]; then
+  GARDEN_ARGS+=(--owned-scopes "$OWNED_SCOPES")
+fi
+
+if [[ -n "$DELEGATION_NOTE" ]]; then
+  GARDEN_ARGS+=(--delegation-note "$DELEGATION_NOTE")
+fi
+
 # Resolve change scope: explicit > auto-detect
 RESOLVED_CHANGE_SCOPE="$CHANGE_SCOPE"
 if [[ -z "$RESOLVED_CHANGE_SCOPE" ]]; then
@@ -459,11 +607,11 @@ fi
 # Phase 1: docs lifecycle (always runs)
 "$GARDEN_SCRIPT" "${GARDEN_ARGS[@]}"
 
-# Phase 1.5: plan/report bootstrap for plan ping-pong workflow
+# Phase 1.5: plan/report bootstrap for plan orchestration workflow
 ensure_plan_and_report_docs "$RESOLVED_TASK_ID"
 
 # Phase 2: docs validation (always runs)
-"$VALIDATE_SCRIPT" "$PROJECT_ROOT" --mode "$RESOLVED_MODE"
+"$VALIDATE_SCRIPT" "$PROJECT_ROOT_ABS" --mode "$RESOLVED_MODE"
 
 contains_forbidden_shell_syntax() {
   local candidate="$1"
@@ -577,6 +725,10 @@ echo "  - change_scope: $RESOLVED_CHANGE_SCOPE"
 echo "  - scope_type: $RESOLVED_SCOPE"
 echo "  - task_id: $RESOLVED_TASK_ID"
 echo "  - decision_id: $RESOLVED_DECISION_ID"
+if [[ -n "$RISK_LEVEL" ]]; then
+  echo "  - risk_level: $RISK_LEVEL"
+fi
+echo "  - docs_root: $DOCS_DIR"
 
 if (( RUNTIME_FAILURES > 0 )); then
   echo "[WARN] ${RUNTIME_FAILURES} runtime validation(s) failed." >&2

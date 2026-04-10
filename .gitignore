@@ -3,15 +3,20 @@
 # Backup files from in-place edits
 *.bak
 *.bak.*
+*.orig
 
 # Editor and shell temp files
 *.swp
 *.swo
 *~
+.idea/
+.vscode/
 
 # Python/test cache artifacts
 __pycache__/
+*.py[cod]
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
 .coverage
+.coverage.*

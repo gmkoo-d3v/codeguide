@@ -7,14 +7,28 @@ DOC_GARDEN="$SCRIPTS_DIR/doc_garden.sh"
 VALIDATE="$SCRIPTS_DIR/validate_docs.sh"
 RUN_CODEGUIDE="$SCRIPTS_DIR/run_codeguide.sh"
 INIT_SCAFFOLD="$SCRIPTS_DIR/init_docs_scaffold.sh"
+CHECK_ENGLISH_DOCS="$SCRIPTS_DIR/check_english_docs.sh"
+
+docs_root_for_project() {
+  local project_root="$1"
+  local project_root_abs
+  local workspace_root
+
+  project_root_abs="$(cd "$project_root" && pwd)"
+  workspace_root="$(cd "$project_root_abs/.." && pwd)"
+  printf "%s/docs" "$workspace_root"
+}
 
 setup() {
-  TEST_PROJECT="$(mktemp -d)"
+  TEST_WORKSPACE="$(mktemp -d)"
+  TEST_PROJECT="$TEST_WORKSPACE/repo"
+  mkdir -p "$TEST_PROJECT"
   "$INIT_SCAFFOLD" "$TEST_PROJECT"
+  DOCS_ROOT="$(docs_root_for_project "$TEST_PROJECT")"
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT"
+  rm -rf "$TEST_WORKSPACE"
 }
 
 # ========== P0: Empty value overwrite prevention ==========
@@ -29,7 +43,7 @@ teardown() {
     --no-init
 
   # Verify context was written
-  run grep "^- context:" "$TEST_PROJECT/docs/decisions/decision-test-001.md"
+  run grep "^- context:" "$DOCS_ROOT/decisions/decision-test-001.md"
   [ "$status" -eq 0 ]
   [[ "$output" == *"Important context here"* ]]
 
@@ -42,12 +56,12 @@ teardown() {
     --no-init
 
   # Context should still have the original value
-  run grep "^- context:" "$TEST_PROJECT/docs/decisions/decision-test-001.md"
+  run grep "^- context:" "$DOCS_ROOT/decisions/decision-test-001.md"
   [ "$status" -eq 0 ]
   [[ "$output" == *"Important context here"* ]]
 
   # Rationale should still have the original value
-  run grep "^- rationale:" "$TEST_PROJECT/docs/decisions/decision-test-001.md"
+  run grep "^- rationale:" "$DOCS_ROOT/decisions/decision-test-001.md"
   [ "$status" -eq 0 ]
   [[ "$output" == *"Real rationale"* ]]
 }
@@ -59,7 +73,7 @@ teardown() {
     --context "Will be cleared" \
     --no-init
 
-  run grep "^- context:" "$TEST_PROJECT/docs/decisions/decision-test-002.md"
+  run grep "^- context:" "$DOCS_ROOT/decisions/decision-test-002.md"
   [[ "$output" == *"Will be cleared"* ]]
 
   "$DOC_GARDEN" "$TEST_PROJECT" \
@@ -70,7 +84,7 @@ teardown() {
     --no-init
 
   # Context should now be empty
-  run grep "^- context:" "$TEST_PROJECT/docs/decisions/decision-test-002.md"
+  run grep "^- context:" "$DOCS_ROOT/decisions/decision-test-002.md"
   [ "$status" -eq 0 ]
   # Value after "context:" should be empty or just whitespace
   local value
@@ -87,7 +101,7 @@ teardown() {
     --axis-verify "Unit tests added" \
     --no-init
 
-  run grep "^- axis_why:" "$TEST_PROJECT/docs/task/TASK-100.md"
+  run grep "^- axis_why:" "$DOCS_ROOT/task/TASK-100.md"
   [[ "$output" == *"SOLID principle applied"* ]]
 
   # Run again without axis values — should preserve existing
@@ -96,13 +110,13 @@ teardown() {
     --task-title "Axis Test" \
     --no-init
 
-  run grep "^- axis_why:" "$TEST_PROJECT/docs/task/TASK-100.md"
+  run grep "^- axis_why:" "$DOCS_ROOT/task/TASK-100.md"
   [[ "$output" == *"SOLID principle applied"* ]]
 
-  run grep "^- axis_where:" "$TEST_PROJECT/docs/task/TASK-100.md"
+  run grep "^- axis_where:" "$DOCS_ROOT/task/TASK-100.md"
   [[ "$output" == *"Service layer"* ]]
 
-  run grep "^- axis_verify:" "$TEST_PROJECT/docs/task/TASK-100.md"
+  run grep "^- axis_verify:" "$DOCS_ROOT/task/TASK-100.md"
   [[ "$output" == *"Unit tests added"* ]]
 }
 
@@ -113,9 +127,25 @@ teardown() {
     --context 'Use path C:\new\folder' \
     --no-init
 
-  run cat "$TEST_PROJECT/docs/decisions/decision-path-001.md"
+  run cat "$DOCS_ROOT/decisions/decision-path-001.md"
   [ "$status" -eq 0 ]
   [[ "$output" == *"- context: Use path C:\\new\\folder"* ]]
+}
+
+@test "doc_garden writes shared risk_level to task and decision docs" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "risk-01" \
+    --task-title "Risk level test" \
+    --decision-id "risk-dec-01" \
+    --decision-title "Risk decision" \
+    --selected-option "Option A" \
+    --risk-level "high" \
+    --no-init
+
+  run grep "^- risk_level: high" "$DOCS_ROOT/task/TASK-risk-01.md"
+  [ "$status" -eq 0 ]
+  run grep "^- risk_level: high" "$DOCS_ROOT/decisions/decision-risk-dec-01.md"
+  [ "$status" -eq 0 ]
 }
 
 @test "doc_garden concurrent task updates keep both index rows" {
@@ -136,7 +166,7 @@ teardown() {
   wait "$pid1"
   wait "$pid2"
 
-  local index="$TEST_PROJECT/docs/task/task-index.md"
+  local index="$DOCS_ROOT/task/task-index.md"
   run grep "^- TASK-race-a |" "$index"
   [ "$status" -eq 0 ]
   run grep "^- TASK-race-b |" "$index"
@@ -165,6 +195,17 @@ teardown() {
   [[ "$output" == *"task_id: BRANCH-42"* ]]
 }
 
+@test "init_docs_scaffold uses workspace docs root directly" {
+  run test -d "$DOCS_ROOT/task"
+  [ "$status" -eq 0 ]
+  run test -d "$DOCS_ROOT/shadow"
+  [ "$status" -eq 0 ]
+  run test ! -d "$DOCS_ROOT/repo"
+  [ "$status" -eq 0 ]
+  run test ! -d "$DOCS_ROOT/repos"
+  [ "$status" -eq 0 ]
+}
+
 # ========== P1/P2: Validator strict mode non-empty check ==========
 
 @test "validate_docs strict mode fails on empty required fields" {
@@ -175,7 +216,7 @@ teardown() {
 
   # The task file will have title: (empty because upsert_field skips it on new file with template value)
   # Let's manually clear the axis fields to test strict validation
-  local task_file="$TEST_PROJECT/docs/task/TASK-200.md"
+  local task_file="$DOCS_ROOT/task/TASK-200.md"
   # Ensure axis fields exist but are empty
   if ! grep -q "^- axis_why:" "$task_file"; then
     echo "- axis_why:" >> "$task_file"
@@ -188,13 +229,89 @@ teardown() {
   [[ "$output" == *"empty"* ]] || [[ "$output" == *"FAIL"* ]]
 }
 
+@test "run_codeguide bootstraps orchestration doc for active task" {
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "orch-01" --mode advisory
+  [ "$status" -eq 0 ]
+
+  local orch_file="$DOCS_ROOT/orchestration/ORCH-orch-01.md"
+  run test -f "$orch_file"
+  [ "$status" -eq 0 ]
+  run grep "^- execution_mode: supervisor_subagents" "$orch_file"
+  [ "$status" -eq 0 ]
+  run grep "^- supervisor_agent: main-thread-supervising-lead-architect" "$orch_file"
+  [ "$status" -eq 0 ]
+}
+
+@test "validate_docs strict fails when supervisor_subagents orchestration fields are blank" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "orch-strict-01" \
+    --task-title "Orchestration strict test" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --no-init
+
+  cat > "$DOCS_ROOT/plan/PLAN-orch-strict-01-v1.0.md" <<'EOF'
+# PLAN-orch-strict-01-v1.0
+
+- task_id: orch-strict-01
+- plan_version: v1.0
+- objective: validate orchestration strictness
+- scope: docs validation
+- assumptions: none
+- risks: low
+- acceptance_signals: strict validation fails on blank delegated ownership
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"planner_agents"* ]] || [[ "$output" == *"implementation_agents"* ]] || [[ "$output" == *"validation_agents"* ]]
+}
+
+@test "validate_docs strict fails when supervisor_subagents task has no evaluator report" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "report-strict-01" \
+    --task-title "Report strict test" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "reviewer-1" \
+    --implementation-agents "coder-1" \
+    --validation-agents "validator-1" \
+    --owned-scopes "planner:docs/plan; coder:src/app" \
+    --no-init
+
+  cat > "$DOCS_ROOT/plan/PLAN-report-strict-01-v1.0.md" <<'EOF'
+# PLAN-report-strict-01-v1.0
+
+- task_id: report-strict-01
+- plan_version: v1.0
+- objective: validate evaluator report enforcement
+- scope: docs validation
+- assumptions: none
+- risks: low
+- acceptance_signals: strict validation fails on missing evaluator report
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"missing evaluator report for active task TASK-report-strict-01"* ]]
+}
+
 @test "validate_docs advisory mode passes with empty fields (warns only)" {
   "$DOC_GARDEN" "$TEST_PROJECT" \
     --task-id "201" \
     --task-title "Advisory test" \
     --no-init
 
-  local task_file="$TEST_PROJECT/docs/task/TASK-201.md"
+  local task_file="$DOCS_ROOT/task/TASK-201.md"
   if ! grep -q "^- axis_why:" "$task_file"; then
     echo "- axis_why:" >> "$task_file"
   fi
@@ -214,7 +331,7 @@ teardown() {
     --no-init
 
   sleep 1
-  echo "- acceptance_criteria: changed after shadow sync" >> "$TEST_PROJECT/docs/task/TASK-shadow-lag-01.md"
+  echo "- acceptance_criteria: changed after shadow sync" >> "$DOCS_ROOT/task/TASK-shadow-lag-01.md"
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
@@ -237,7 +354,7 @@ teardown() {
 
 @test "validate_docs strict fails on invalid evaluator label in report file" {
   # Create a valid plan file first
-  cat > "$TEST_PROJECT/docs/plan/PLAN-qa-01-v1.0.md" <<'EOF'
+  cat > "$DOCS_ROOT/plan/PLAN-qa-01-v1.0.md" <<'EOF'
 # PLAN-qa-01-v1.0
 
 - task_id: qa-01
@@ -253,7 +370,7 @@ teardown() {
 EOF
 
   # Invalid evaluator in both filename and field
-  cat > "$TEST_PROJECT/docs/report/PLAN-qa-01-v1.0-review-gpt-r01.md" <<'EOF'
+  cat > "$DOCS_ROOT/report/PLAN-qa-01-v1.0-review-gpt-r01.md" <<'EOF'
 # PLAN-qa-01-v1.0 review (gpt)
 
 - task_id: qa-01
@@ -271,6 +388,346 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
   [[ "$output" == *"invalid evaluator report file name format"* ]] || [[ "$output" == *"invalid evaluator in PLAN-qa-01-v1.0-review-gpt-r01.md"* ]]
+}
+
+@test "validate_docs strict fails on invalid task risk_level enum" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "risk-enum-task-01" \
+    --task-title "Task risk enum test" \
+    --task-status "planned" \
+    --risk-level "low" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --no-init
+
+  local task_file="$DOCS_ROOT/task/TASK-risk-enum-task-01.md"
+  sed -i.bak 's/^- risk_level:.*$/- risk_level: unknown/' "$task_file"
+  rm -f "${task_file}.bak"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"invalid task.risk_level value"* ]]
+}
+
+@test "validate_docs advisory warns on invalid decision risk_level enum" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --decision-id "risk-enum-decision-01" \
+    --decision-title "Decision risk enum test" \
+    --selected-option "Option A" \
+    --risk-level "medium" \
+    --axis-why "why" \
+    --axis-what "what" \
+    --axis-how "how" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --no-init
+
+  local decision_file="$DOCS_ROOT/decisions/decision-risk-enum-decision-01.md"
+  sed -i.bak 's/^- risk_level:.*$/- risk_level: severe/' "$decision_file"
+  rm -f "${decision_file}.bak"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"invalid decision.risk_level value"* ]]
+}
+
+@test "validate_docs advisory warns when active task omits risk_level" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "risk-missing-01" \
+    --task-title "Missing risk level task" \
+    --task-status "in_progress" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "reviewer-1" \
+    --implementation-agents "coder-1" \
+    --validation-agents "validator-1" \
+    --owned-scopes "planner:docs/plan; coder:src/app" \
+    --no-init
+
+  cat > "$DOCS_ROOT/plan/PLAN-risk-missing-01-v1.0.md" <<'EOF'
+# PLAN-risk-missing-01-v1.0
+
+- task_id: risk-missing-01
+- plan_version: v1.0
+- objective: verify advisory warning when risk_level is omitted
+- scope: docs validation
+- assumptions: none
+- risks: low
+- acceptance_signals: advisory warning is emitted
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  cat > "$DOCS_ROOT/report/PLAN-risk-missing-01-v1.0-review-codex-r01.md" <<'EOF'
+# PLAN-risk-missing-01-v1.0 review (codex)
+
+- task_id: risk-missing-01
+- plan_version: v1.0
+- evaluator: codex
+- review_style: standard
+- review_round: r01
+- verdict: accept
+- summary: standard review exists
+- strengths:
+- risks:
+- requested_changes:
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"risk_level is recommended for active task TASK-risk-missing-01"* ]]
+}
+
+@test "validate_docs strict passes legacy evaluator report without review_style" {
+  cat > "$DOCS_ROOT/plan/PLAN-legacy-01-v1.0.md" <<'EOF'
+# PLAN-legacy-01-v1.0
+
+- task_id: legacy-01
+- plan_version: v1.0
+- objective: verify legacy report compatibility
+- scope: docs validation
+- assumptions: none
+- risks: low
+- acceptance_signals: strict validation passes without review_style
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  cat > "$DOCS_ROOT/report/PLAN-legacy-01-v1.0-review-codex-r01.md" <<'EOF'
+# PLAN-legacy-01-v1.0 review (codex)
+
+- task_id: legacy-01
+- plan_version: v1.0
+- evaluator: codex
+- review_round: r01
+- verdict: accept
+- summary: legacy format remains valid
+- strengths:
+- risks:
+- requested_changes:
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -eq 0 ]
+}
+
+@test "validate_docs strict fails when high-risk task has only standard review" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "highrisk-01" \
+    --task-title "High risk task" \
+    --task-status "in_progress" \
+    --risk-level "high" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "reviewer-1" \
+    --implementation-agents "coder-1" \
+    --validation-agents "validator-1" \
+    --owned-scopes "planner:docs/plan; coder:src/app" \
+    --no-init
+
+  cat > "$DOCS_ROOT/plan/PLAN-highrisk-01-v1.0.md" <<'EOF'
+# PLAN-highrisk-01-v1.0
+
+- task_id: highrisk-01
+- plan_version: v1.0
+- objective: verify automatic adversarial requirement for high-risk tasks
+- scope: docs validation
+- assumptions: none
+- risks: high
+- acceptance_signals: strict validation fails without adversarial report
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  cat > "$DOCS_ROOT/report/PLAN-highrisk-01-v1.0-review-codex-r01.md" <<'EOF'
+# PLAN-highrisk-01-v1.0 review (codex)
+
+- task_id: highrisk-01
+- plan_version: v1.0
+- evaluator: codex
+- review_style: standard
+- review_round: r01
+- verdict: revise
+- summary: standard review exists
+- strengths:
+- risks:
+- requested_changes: tighten the implementation plan
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"missing adversarial evaluator report for high-risk task TASK-highrisk-01"* ]]
+}
+
+@test "validate_docs strict fails when linked high-risk decision has only standard review" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "linkedrisk-01" \
+    --task-title "Linked risk task" \
+    --task-status "in_progress" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "reviewer-1" \
+    --implementation-agents "coder-1" \
+    --validation-agents "validator-1" \
+    --owned-scopes "planner:docs/plan; coder:src/app" \
+    --no-init
+
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --decision-id "linkedrisk-dec-01" \
+    --decision-title "Linked high risk decision" \
+    --linked-task "TASK-linkedrisk-01" \
+    --selected-option "Option A" \
+    --risk-level "critical" \
+    --axis-why "why" \
+    --axis-what "what" \
+    --axis-how "how" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --no-init
+
+  cat > "$DOCS_ROOT/plan/PLAN-linkedrisk-01-v1.0.md" <<'EOF'
+# PLAN-linkedrisk-01-v1.0
+
+- task_id: linkedrisk-01
+- plan_version: v1.0
+- objective: verify linked decision drives adversarial enforcement
+- scope: docs validation
+- assumptions: none
+- risks: high
+- acceptance_signals: strict validation fails without adversarial report
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  cat > "$DOCS_ROOT/report/PLAN-linkedrisk-01-v1.0-review-gemini-r01.md" <<'EOF'
+# PLAN-linkedrisk-01-v1.0 review (gemini)
+
+- task_id: linkedrisk-01
+- plan_version: v1.0
+- evaluator: gemini
+- review_style: standard
+- review_round: r01
+- verdict: revise
+- summary: standard review exists
+- strengths:
+- risks:
+- requested_changes: revisit the failure modes
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"decision-linkedrisk-dec-01.md risk_level=critical"* ]]
+}
+
+@test "validate_docs strict fails when adversarial evaluator report omits rebuttal fields" {
+  cat > "$DOCS_ROOT/plan/PLAN-adv-01-v1.0.md" <<'EOF'
+# PLAN-adv-01-v1.0
+
+- task_id: adv-01
+- plan_version: v1.0
+- objective: verify adversarial review requirements
+- scope: docs validation
+- assumptions: none
+- risks: medium
+- acceptance_signals: strict validation fails on missing adversarial fields
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  cat > "$DOCS_ROOT/report/PLAN-adv-01-v1.0-review-claude-r01.md" <<'EOF'
+# PLAN-adv-01-v1.0 review (claude)
+
+- task_id: adv-01
+- plan_version: v1.0
+- evaluator: claude
+- review_style: adversarial
+- review_round: r01
+- verdict: revise
+- summary: challenge the initial plan once
+- strengths:
+- risks:
+- requested_changes: tighten the design before implementation
+- objection: the initial plan may understate failure modes
+- counterproposal:
+- rebuttal:
+- residual_risk:
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"counterproposal"* ]] || [[ "$output" == *"rebuttal"* ]] || [[ "$output" == *"residual_risk"* ]]
+}
+
+@test "validate_docs strict passes when high-risk task has adversarial review" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "highrisk-pass-01" \
+    --task-title "High risk pass task" \
+    --task-status "in_progress" \
+    --risk-level "critical" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "reviewer-1" \
+    --implementation-agents "coder-1" \
+    --validation-agents "validator-1" \
+    --owned-scopes "planner:docs/plan; coder:src/app" \
+    --no-init
+
+  cat > "$DOCS_ROOT/plan/PLAN-highrisk-pass-01-v1.0.md" <<'EOF'
+# PLAN-highrisk-pass-01-v1.0
+
+- task_id: highrisk-pass-01
+- plan_version: v1.0
+- objective: verify high-risk task passes with adversarial review
+- scope: docs validation
+- assumptions: none
+- risks: high
+- acceptance_signals: strict validation passes
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  cat > "$DOCS_ROOT/report/PLAN-highrisk-pass-01-v1.0-review-claude-r01.md" <<'EOF'
+# PLAN-highrisk-pass-01-v1.0 review (claude)
+
+- task_id: highrisk-pass-01
+- plan_version: v1.0
+- evaluator: claude
+- review_style: adversarial
+- review_round: r01
+- verdict: revise
+- summary: adversarial review completed
+- strengths:
+- risks:
+- requested_changes: tighten rollback and monitoring
+- objection: the initial plan may under-test rollback paths
+- counterproposal: add a rollback rehearsal and explicit failure thresholds
+- rebuttal: the original plan remains viable once rollback checks are added
+- residual_risk: operational complexity remains elevated during rollout
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -eq 0 ]
 }
 
 @test "validate_docs fails clearly when option value is missing" {
@@ -300,7 +757,7 @@ EOF
     --axis-verify "verify" \
     --no-init
 
-  local task_file="$TEST_PROJECT/docs/task/TASK-enum-task-01.md"
+  local task_file="$DOCS_ROOT/task/TASK-enum-task-01.md"
   sed -i.bak 's/^- status:.*$/- status: invalid_status/' "$task_file"
   rm -f "${task_file}.bak"
 
@@ -316,7 +773,7 @@ EOF
     --selected-option "x" \
     --no-init
 
-  local decision_file="$TEST_PROJECT/docs/decisions/decision-enum-decision-01.md"
+  local decision_file="$DOCS_ROOT/decisions/decision-enum-decision-01.md"
   sed -i.bak 's/^- scope_type:.*$/- scope_type: nonsense/' "$decision_file"
   sed -i.bak 's/^- status:.*$/- status: unknown/' "$decision_file"
   rm -f "${decision_file}.bak"
@@ -328,7 +785,7 @@ EOF
 }
 
 @test "validate_docs secret scan skips default template files" {
-  cat > "$TEST_PROJECT/docs/report/LLM-REVIEW-template.md" <<'EOF'
+  cat > "$DOCS_ROOT/report/LLM-REVIEW-template.md" <<'EOF'
 # template
 - token: "sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"
 EOF
@@ -352,7 +809,7 @@ EOF
     --task-status "planned" \
     --no-init
 
-  local index="$TEST_PROJECT/docs/task/task-index.md"
+  local index="$DOCS_ROOT/task/task-index.md"
   # Verify the row is under ## Planned section
   run grep "^- TASK-300 |" "$index"
   [ "$status" -eq 0 ]
@@ -393,7 +850,7 @@ EOF
     --task-status "done" \
     --no-init
 
-  local index="$TEST_PROJECT/docs/task/task-index.md"
+  local index="$DOCS_ROOT/task/task-index.md"
   local count
   count=$(grep -c "^- TASK-400 |" "$index")
   [ "$count" -eq 1 ]
@@ -407,6 +864,17 @@ EOF
   run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "500" --mode advisory
   [ "$status" -eq 0 ]
   [[ "$output" == *"change_scope: docs-only"* ]]
+}
+
+@test "run_codeguide forwards risk_level into generated docs" {
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "risk-run-01" --mode advisory --risk-level "critical"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"risk_level: critical"* ]]
+
+  run grep "^- risk_level: critical" "$DOCS_ROOT/task/TASK-risk-run-01.md"
+  [ "$status" -eq 0 ]
+  run grep "^- risk_level: critical" "$DOCS_ROOT/decisions/decision-auto-task-risk-run-01.md"
+  [ "$status" -eq 0 ]
 }
 
 @test "run_codeguide fails clearly when option value is missing" {
@@ -435,16 +903,74 @@ EOF
     --shadow-note "search and navigation updated"
   [ "$status" -eq 0 ]
 
-  run grep "^- latest_change_note:" "$TEST_PROJECT/docs/shadow/project-shadow.md"
+  run grep "^- latest_change_note:" "$DOCS_ROOT/shadow/project-shadow.md"
   [ "$status" -eq 0 ]
   [[ "$output" == *"search and navigation updated"* ]]
+}
+
+@test "check_english_docs passes for curated codeguide markdown" {
+  run "$CHECK_ENGLISH_DOCS" "$(cd "$SCRIPTS_DIR/.." && pwd)"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"English-only"* ]]
+}
+
+@test "check_english_docs fails on Korean text outside research exclusions" {
+  local workspace
+  workspace="$(mktemp -d)"
+
+  cat > "$workspace/README.md" <<'EOF'
+# Example
+
+This file is fine.
+EOF
+
+  cat > "$workspace/notes.md" <<'EOF'
+# Notes
+
+이 문장은 실패해야 합니다.
+EOF
+
+  run "$CHECK_ENGLISH_DOCS" "$workspace"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"notes.md"* ]]
+
+  rm -rf "$workspace"
+}
+
+@test "check_english_docs ignores mold research docs and temp traces" {
+  local workspace
+  workspace="$(mktemp -d)"
+  mkdir -p "$workspace/temp"
+
+  cat > "$workspace/mold-research.md" <<'EOF'
+# Research
+
+이 문장은 연구 문서라서 무시됩니다.
+EOF
+
+  cat > "$workspace/temp/trace.md" <<'EOF'
+# Trace
+
+이 문장은 temp 경로라서 무시됩니다.
+EOF
+
+  cat > "$workspace/README.md" <<'EOF'
+# Example
+
+This file is fine.
+EOF
+
+  run "$CHECK_ENGLISH_DOCS" "$workspace"
+  [ "$status" -eq 0 ]
+
+  rm -rf "$workspace"
 }
 
 @test "run_codeguide bootstraps initial plan doc for active task" {
   run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "plan-01" --mode advisory
   [ "$status" -eq 0 ]
 
-  local plan_file="$TEST_PROJECT/docs/plan/PLAN-plan-01-v1.0.md"
+  local plan_file="$DOCS_ROOT/plan/PLAN-plan-01-v1.0.md"
   run test -f "$plan_file"
   [ "$status" -eq 0 ]
   run grep "^- plan_version: v1.0" "$plan_file"
@@ -511,7 +1037,7 @@ EOF
     --selected-option "Option A" \
     --no-init
 
-  local index="$TEST_PROJECT/docs/decisions/decision-index.md"
+  local index="$DOCS_ROOT/decisions/decision-index.md"
   run grep "^- decision-d-sec-01.md |" "$index"
   [ "$status" -eq 0 ]
   [[ "$output" == *"proposed"* ]]
@@ -553,7 +1079,7 @@ EOF
     --selected-option "Final" \
     --no-init
 
-  local index="$TEST_PROJECT/docs/decisions/decision-index.md"
+  local index="$DOCS_ROOT/decisions/decision-index.md"
   local count
   count=$(grep -c "^- decision-d-dup-01.md |" "$index")
   [ "$count" -eq 1 ]
@@ -563,7 +1089,7 @@ EOF
 
 @test "decision-index migrates legacy table format" {
   # Create a legacy table-format decision-index
-  cat > "$TEST_PROJECT/docs/decisions/decision-index.md" <<'EOF'
+  cat > "$DOCS_ROOT/decisions/decision-index.md" <<'EOF'
 # Decision Index
 
 | file | decision_id | scope_type | date | status | chosen_by | linked_task | linked_pr | linked_hotfix | summary |
@@ -579,7 +1105,7 @@ EOF
     --selected-option "New option" \
     --no-init
 
-  local index="$TEST_PROJECT/docs/decisions/decision-index.md"
+  local index="$DOCS_ROOT/decisions/decision-index.md"
 
   # Legacy table rows should be gone
   run grep "^|" "$index"
@@ -600,7 +1126,7 @@ EOF
   [ "$status" -eq 0 ]
 
   # Migration should create a backup file
-  run bash -c "ls \"$TEST_PROJECT/docs/decisions\"/decision-index.md.bak.* >/dev/null"
+  run bash -c "ls \"$DOCS_ROOT/decisions\"/decision-index.md.bak.* >/dev/null"
   [ "$status" -eq 0 ]
 }
 
@@ -787,19 +1313,24 @@ EOF
 # ========== init_docs_scaffold edge cases ==========
 
 @test "init_docs_scaffold is idempotent" {
+  local workspace
   local proj
-  proj="$(mktemp -d)"
+  local docs_root
+  workspace="$(mktemp -d)"
+  proj="$workspace/repo"
+  mkdir -p "$proj"
+  docs_root="$(docs_root_for_project "$proj")"
 
   "$INIT_SCAFFOLD" "$proj"
   # Modify a file to verify it's not overwritten
-  echo "custom content" >> "$proj/docs/task/project-dictionary.md"
+  echo "custom content" >> "$docs_root/task/project-dictionary.md"
 
   "$INIT_SCAFFOLD" "$proj"
   # File should still have our custom content (not reset)
-  run grep "custom content" "$proj/docs/task/project-dictionary.md"
+  run grep "custom content" "$docs_root/task/project-dictionary.md"
   [ "$status" -eq 0 ]
 
-  rm -rf "$proj"
+  rm -rf "$workspace"
 }
 
 @test "init_docs_scaffold fails on non-existent target" {
@@ -809,15 +1340,18 @@ EOF
 }
 
 @test "init_docs_scaffold fails when docs path is a file" {
+  local workspace
   local proj
-  proj="$(mktemp -d)"
-  touch "$proj/docs"  # create a file, not a directory
+  workspace="$(mktemp -d)"
+  proj="$workspace/repo"
+  mkdir -p "$proj"
+  touch "$workspace/docs"  # create a file, not a directory
 
   run "$INIT_SCAFFOLD" "$proj"
   [ "$status" -ne 0 ]
   [[ "$output" == *"not a directory"* ]]
 
-  rm -rf "$proj"
+  rm -rf "$workspace"
 }
 
 @test "init_docs_scaffold shows help with --help" {
@@ -827,27 +1361,42 @@ EOF
 }
 
 @test "init_docs_scaffold creates DOC-GOVERNANCE with new sections" {
+  local workspace
   local proj
-  proj="$(mktemp -d)"
+  local docs_root
+  workspace="$(mktemp -d)"
+  proj="$workspace/repo"
+  mkdir -p "$proj"
   "$INIT_SCAFFOLD" "$proj"
+  docs_root="$(docs_root_for_project "$proj")"
 
-  run grep "Data safety" "$proj/docs/DOC-GOVERNANCE.md"
+  run grep "Data safety" "$docs_root/DOC-GOVERNANCE.md"
   [ "$status" -eq 0 ]
-  run grep "Change scope" "$proj/docs/DOC-GOVERNANCE.md"
+  run grep "Change scope" "$docs_root/DOC-GOVERNANCE.md"
   [ "$status" -eq 0 ]
-  run grep "runtime-allow-list" "$proj/docs/DOC-GOVERNANCE.md"
+  run grep "runtime-allow-list" "$docs_root/DOC-GOVERNANCE.md"
   [ "$status" -eq 0 ]
-  run grep "Plan ping-pong loop" "$proj/docs/DOC-GOVERNANCE.md"
-  [ "$status" -eq 0 ]
-
-  run test -d "$proj/docs/plan"
-  [ "$status" -eq 0 ]
-  run test -d "$proj/docs/report"
-  [ "$status" -eq 0 ]
-  run test -f "$proj/docs/plan/PLAN-template.md"
-  [ "$status" -eq 0 ]
-  run test -f "$proj/docs/report/LLM-REVIEW-template.md"
+  run grep "Plan orchestration loop" "$docs_root/DOC-GOVERNANCE.md"
   [ "$status" -eq 0 ]
 
-  rm -rf "$proj"
+  run test -d "$docs_root/plan"
+  [ "$status" -eq 0 ]
+  run test -d "$docs_root/report"
+  [ "$status" -eq 0 ]
+  run test -f "$docs_root/plan/PLAN-template.md"
+  [ "$status" -eq 0 ]
+  run test -f "$docs_root/report/LLM-REVIEW-template.md"
+  [ "$status" -eq 0 ]
+  run grep "review_style" "$docs_root/report/LLM-REVIEW-template.md"
+  [ "$status" -eq 0 ]
+  run grep "adversarial review pass" "$docs_root/DOC-GOVERNANCE.md"
+  [ "$status" -eq 0 ]
+  run grep 'active task omits `risk_level`' "$docs_root/DOC-GOVERNANCE.md"
+  [ "$status" -eq 0 ]
+  run grep "^- risk_level:$" "$docs_root/task/task-template.md"
+  [ "$status" -eq 0 ]
+  run grep "^- risk_level:$" "$docs_root/decisions/decision-template.md"
+  [ "$status" -eq 0 ]
+
+  rm -rf "$workspace"
 }

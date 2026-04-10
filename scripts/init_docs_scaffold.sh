@@ -7,7 +7,7 @@ usage() {
 Usage:
   init_docs_scaffold.sh [project-root]
 
-Initializes the docs/ scaffold for codeguide documentation.
+Initializes the workspace docs/ scaffold for codeguide documentation.
 Creates directories and template files only when missing (idempotent).
 
 Options:
@@ -32,7 +32,16 @@ if [[ ! -d "$TARGET_ROOT" ]]; then
   exit 1
 fi
 
-DOCS_DIR="${TARGET_ROOT%/}/docs"
+INPUT_ROOT_ABS="$(cd "$TARGET_ROOT" && pwd)"
+
+resolve_repo_root() {
+  git -C "$INPUT_ROOT_ABS" rev-parse --show-toplevel 2>/dev/null || printf "%s" "$INPUT_ROOT_ABS"
+}
+
+PROJECT_ROOT_ABS="$(resolve_repo_root)"
+WORKSPACE_ROOT="$(cd "$PROJECT_ROOT_ABS/.." && pwd)"
+WORKSPACE_DOCS_ROOT="${WORKSPACE_ROOT}/docs"
+DOCS_DIR="${WORKSPACE_DOCS_ROOT}"
 
 # Guard: if docs path exists but is a file, abort
 if [[ -e "$DOCS_DIR" && ! -d "$DOCS_DIR" ]]; then
@@ -45,8 +54,9 @@ SHADOW_DIR="${DOCS_DIR}/shadow"
 DECISIONS_DIR="${DOCS_DIR}/decisions"
 PLAN_DIR="${DOCS_DIR}/plan"
 REPORT_DIR="${DOCS_DIR}/report"
+ORCHESTRATION_DIR="${DOCS_DIR}/orchestration"
 
-mkdir -p "${TASK_DIR}" "${SHADOW_DIR}" "${DECISIONS_DIR}" "${PLAN_DIR}" "${REPORT_DIR}"
+mkdir -p "${TASK_DIR}" "${SHADOW_DIR}" "${DECISIONS_DIR}" "${PLAN_DIR}" "${REPORT_DIR}" "${ORCHESTRATION_DIR}"
 
 write_if_missing() {
   local file_path="$1"
@@ -121,6 +131,7 @@ write_if_missing "${TASK_DIR}/task-template.md" '# TASK-<id>
 - data_migrations:
 - test_scope:
 - risks:
+- risk_level:
 - status: planned | in_progress | blocked | done
 - owner:
 - due_date:
@@ -146,6 +157,7 @@ write_if_missing "${DECISIONS_DIR}/decision-template.md" '# decision-<id>
 - rationale:
 - implementation_plan:
 - impact_and_risks:
+- risk_level:
 - rollback_or_mitigation:
 - axis_why:
 - axis_what:
@@ -178,12 +190,32 @@ write_if_missing "${REPORT_DIR}/LLM-REVIEW-template.md" '# PLAN-<task-id>-v1.0 r
 - task_id:
 - plan_version: v1.0
 - evaluator: gemini # allowed: gemini | claude | codex
+- review_style: standard | adversarial
 - review_round: r01
 - verdict: accept | revise | blocked
 - summary:
 - strengths:
 - risks:
 - requested_changes:
+- objection:
+- counterproposal:
+- rebuttal:
+- residual_risk:
+- last_updated:
+'
+
+write_if_missing "${ORCHESTRATION_DIR}/ORCH-template.md" '# ORCH-<task-id>
+
+- task_id:
+- execution_mode: supervisor_subagents | solo
+- supervisor_agent:
+- planner_agents:
+- reviewer_agents:
+- implementation_agents:
+- validation_agents:
+- owned_scopes:
+- delegation_status: planned | active | completed | blocked
+- delegation_note:
 - last_updated:
 '
 
@@ -218,16 +250,33 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 - Runtime allow-list matching supports executable and executable+subcommand prefixes.
 - Runtime commands with shell metacharacters are blocked.
 
+## Docs root
+
+- Docs live under workspace-root `docs/...`.
+- The workspace root is exactly one level above the git-tracked project root.
+- Do not add an extra `docs/<repo-name>` or `docs/repos/<repo-name>` layer unless the user explicitly requests it.
+
+## Orchestration contract
+
+- Main thread is the supervising lead architect, not the primary implementer.
+- Active tasks require `orchestration/ORCH-<task-id>.md`.
+- `execution_mode: supervisor_subagents` is the default path.
+- If `execution_mode: solo` is used, `delegation_note` must explain why sub-agent delegation was not practical.
+- In strict mode, supervising-lead-architect/sub-agent ownership fields must be populated for `supervisor_subagents`.
+
 ## Validation policy
 
 - status/scope enum values are validated in both write phase and validation phase.
 - Secret scan supports known key formats, quoted assignments, and yaml/env-style assignments.
 - Add custom secret scan exclusions with --secret-scan-exclude-glob.
 
-## Plan ping-pong loop
+## Plan orchestration loop
 
-- Create plan file first: docs/plan/PLAN-<task-id>-v1.0.md.
-- Write evaluator report files in docs/report with evaluator labels: gemini | claude | codex.
+- Create plan file first: workspace docs `plan/PLAN-<task-id>-v1.0.md`.
+- Write evaluator report files in workspace docs `report/` with evaluator labels: gemini | claude | codex.
+- Mark high-risk work with `risk_level: high|critical` on the task or linked decision.
+- Advisory validation warns when an active task omits `risk_level`.
+- If a task or linked non-superseded decision is high-risk, strict validation requires one adversarial review pass with objection/counterproposal/rebuttal/residual_risk.
 - For each revision, create a new versioned plan file (v1.1, v1.2, ...), do not overwrite old versions.
 - Repeat review/revision loop until execution-ready or user stop.
 
@@ -236,6 +285,7 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 - docs/shadow/project-shadow.md <= 220 lines
 - docs/task/TASK-*.md <= 220 lines
 - docs/decisions/decision-*.md <= 180 lines
+- docs/orchestration/ORCH-*.md <= 180 lines
 
 ## Freshness SLA
 
@@ -254,11 +304,14 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 - task files: Why/Where/Verify
 '
 
-echo "Initialized docs scaffold under: ${DOCS_DIR}"
+echo "Initialized workspace docs scaffold under: ${DOCS_DIR}"
+echo "Repository root: ${PROJECT_ROOT_ABS}"
+echo "Workspace root: ${WORKSPACE_ROOT}"
 echo "Created directories:"
 echo "  - ${TASK_DIR}"
 echo "  - ${SHADOW_DIR}"
 echo "  - ${DECISIONS_DIR}"
 echo "  - ${PLAN_DIR}"
 echo "  - ${REPORT_DIR}"
+echo "  - ${ORCHESTRATION_DIR}"
 echo "Template files are created only when missing."

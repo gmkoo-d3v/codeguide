@@ -3,7 +3,7 @@
 Use this reference to keep repository docs continuously synchronized with code and decisions.
 
 ## Objective
-- Keep `docs/task`, `docs/shadow`, `docs/decisions`, `docs/plan`, and `docs/report` current on every task.
+- Keep workspace docs under `docs/` current on every task.
 - Prevent stale context that causes wrong agent behavior.
 
 ## Mandatory execution points
@@ -14,7 +14,7 @@ Use this reference to keep repository docs continuously synchronized with code a
 - Default user experience is zero-command: the agent runs these steps automatically.
 
 Recommended command flow:
-- `scripts/run_codeguide.sh <project-root> --mode auto` (preferred semi-auto)
+- `scripts/run_codeguide.sh <project-root> --mode auto` (preferred semi-auto; docs resolve to `<project-root>/../docs`)
 - `scripts/doc_garden.sh <project-root> --task-id <TASK_ID> --task-status in_progress`
 - `scripts/doc_garden.sh <project-root> --task-id <TASK_ID> --decision-id <DECISION_ID> --scope-type <type> --selected-option "<choice>"`
 - `scripts/validate_docs.sh <project-root> --mode advisory`
@@ -40,9 +40,12 @@ Recommended command flow:
 ## Zero-command execution contract
 - Trigger condition: user invokes this skill for a work task.
 - Agent action:
-  - run start sync automatically with `--task-status in_progress`
-  - run finish sync automatically with `--task-status done` (or `blocked`)
+  - supervising lead architect runs start sync automatically with `--task-status in_progress`
+  - supervising lead architect delegates plan drafting/review to sub-agents when the task is material
+  - supervising lead architect delegates implementation to coding sub-agents with disjoint ownership when practical
+  - supervising lead architect runs finish sync automatically with `--task-status done` (or `blocked`)
   - bootstrap `docs/plan/PLAN-<task-id>-v1.0.md` automatically when missing
+  - maintain `orchestration/ORCH-<task-id>.md` for every active task
 - Ask user only when path/scope cannot be inferred with reasonable confidence.
 
 5-axis capture guidance:
@@ -67,14 +70,17 @@ Recommended command flow:
 - `docs/plan`:
   - create initial `PLAN-<task-id>-v1.0.md` before implementation
   - when plan changes, create next version file (`v1.1`, `v1.2`, ...)
-  - preserve previous versions for audit and ping-pong traceability
+  - preserve previous versions for audit and orchestration traceability
 - `docs/report`:
   - write one evaluator report per feedback per round
   - evaluator label must be exactly one of `gemini`, `claude`, `codex`
   - keep report file names version-aware (`PLAN-...-vX.Y-review-<evaluator>-rNN.md`)
+  - `execution_mode: supervisor_subagents` tasks must have at least one evaluator report before strict validation/merge handoff
 - `docs/shadow/project-shadow.md`:
   - refresh architecture summary, module map, integrations, and constraints
   - keep concise and high-signal
+- `docs/orchestration`:
+  - record supervising lead architect identity, delegated agent roles, owned scopes, and exception notes
 
 ## Quality checks
 - Check that every user decision is traceable to a decision file.
@@ -91,7 +97,7 @@ Mode guidance:
 - [ ] Task file updated
 - [ ] Decision file created/updated
 - [ ] Plan file created/updated with semantic version (`v1.0`, `v1.1`, ...)
-- [ ] Evaluator report file(s) added (`gemini|claude|codex`)
+- [ ] Evaluator report file(s) added (`gemini|claude|codex`) when `execution_mode: supervisor_subagents`
 - [ ] Shadow dictionary refreshed
 - [ ] Decision index updated
 - [ ] No secrets in docs

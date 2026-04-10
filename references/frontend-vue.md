@@ -1,3 +1,7 @@
+# Vue Frontend Examples
+
+> Secondary reference notice: This document is a deprecated secondary reference inside `codeguide`. Do not use it as the primary source for framework setup or API details. Prefer official documentation and repository-specific conventions first.
+
 ## Vue
 
 ### Project Structure

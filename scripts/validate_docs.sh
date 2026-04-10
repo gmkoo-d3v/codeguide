@@ -9,11 +9,11 @@ Usage:
 
 Options:
   --mode <advisory|strict>   Validation mode (default: advisory)
-  --max-shadow-lines <n>      Maximum lines for docs/shadow/project-shadow.md (default: 220)
-  --max-task-lines <n>        Maximum lines per docs/task/TASK-*.md (default: 220)
-  --max-decision-lines <n>    Maximum lines per docs/decisions/decision-*.md (default: 180)
-  --max-plan-lines <n>        Maximum lines per docs/plan/PLAN-*.md (default: 220)
-  --max-report-lines <n>      Maximum lines per docs/report/PLAN-*-review-*.md (default: 180)
+  --max-shadow-lines <n>      Maximum lines for workspace docs/shadow/project-shadow.md (default: 220)
+  --max-task-lines <n>        Maximum lines per workspace docs/task/TASK-*.md (default: 220)
+  --max-decision-lines <n>    Maximum lines per workspace docs/decisions/decision-*.md (default: 180)
+  --max-plan-lines <n>        Maximum lines per workspace docs/plan/PLAN-*.md (default: 220)
+  --max-report-lines <n>      Maximum lines per workspace docs/report/PLAN-*-review-*.md (default: 180)
   --max-shadow-age-days <n>   Max allowed age for project shadow (default: 7)
   --max-task-age-days <n>     Max age for in_progress tasks (default: 7)
   --secret-scan-exclude-glob <glob>
@@ -46,6 +46,7 @@ MAX_TASK_LINES=220
 MAX_DECISION_LINES=180
 MAX_PLAN_LINES=220
 MAX_REPORT_LINES=180
+MAX_ORCHESTRATION_LINES=180
 MAX_SHADOW_AGE_DAYS=7
 MAX_TASK_AGE_DAYS=7
 SECRET_SCAN_EXCLUDE_GLOBS=(
@@ -53,6 +54,7 @@ SECRET_SCAN_EXCLUDE_GLOBS=(
   "**/decision-template.md"
   "**/PLAN-template.md"
   "**/LLM-REVIEW-template.md"
+  "**/ORCH-template.md"
 )
 
 require_option_value() {
@@ -160,12 +162,20 @@ require_positive_integer "--max-report-lines" "$MAX_REPORT_LINES"
 require_non_negative_integer "--max-shadow-age-days" "$MAX_SHADOW_AGE_DAYS"
 require_non_negative_integer "--max-task-age-days" "$MAX_TASK_AGE_DAYS"
 
-DOCS_DIR="$PROJECT_ROOT/docs"
+INPUT_ROOT_ABS="$(cd "$PROJECT_ROOT" && pwd)"
+resolve_repo_root() {
+  git -C "$INPUT_ROOT_ABS" rev-parse --show-toplevel 2>/dev/null || printf "%s" "$INPUT_ROOT_ABS"
+}
+
+PROJECT_ROOT_ABS="$(resolve_repo_root)"
+WORKSPACE_ROOT="$(cd "$PROJECT_ROOT_ABS/.." && pwd)"
+DOCS_DIR="$WORKSPACE_ROOT/docs"
 TASK_DIR="$DOCS_DIR/task"
 SHADOW_DIR="$DOCS_DIR/shadow"
 DECISIONS_DIR="$DOCS_DIR/decisions"
 PLAN_DIR="$DOCS_DIR/plan"
 REPORT_DIR="$DOCS_DIR/report"
+ORCHESTRATION_DIR="$DOCS_DIR/orchestration"
 
 ISSUE_COUNT=0
 
@@ -319,7 +329,7 @@ check_shadow_tracks_doc_updates() {
   )
 
   if [[ -n "$newest_doc" ]]; then
-    fail "project shadow is older than tracked task/decision doc: ${newest_doc}. Run doc_garden.sh and refresh docs/shadow/project-shadow.md"
+    fail "project shadow is older than tracked task/decision doc: ${newest_doc}. Run doc_garden.sh and refresh workspace docs/shadow/project-shadow.md"
   else
     pass "shadow map is not older than tracked task/decision docs"
   fi
@@ -384,6 +394,174 @@ check_enum_membership() {
   return 1
 }
 
+risk_level_requires_adversarial() {
+  local value="$1"
+  [[ "$value" == "high" || "$value" == "critical" ]]
+}
+
+normalize_risk_level_value() {
+  local value="$1"
+  if [[ "$value" == "low | medium | high | critical" ]]; then
+    printf ""
+    return
+  fi
+  printf "%s" "$value"
+}
+
+adversarial_requirement_source_for_task() {
+  local task_id="$1"
+  local task_file="$TASK_DIR/TASK-${task_id}.md"
+  local task_risk_level
+  local decision_file
+  local linked_task
+  local decision_status
+  local decision_risk_level
+  local decision_base
+
+  if [[ -f "$task_file" ]]; then
+    task_risk_level="$(normalize_risk_level_value "$(extract_field_value "$task_file" "risk_level")")"
+    if risk_level_requires_adversarial "$task_risk_level"; then
+      printf "task risk_level=%s" "$task_risk_level"
+      return
+    fi
+  fi
+
+  if [[ ! -d "$DECISIONS_DIR" ]]; then
+    return
+  fi
+
+  while IFS= read -r decision_file; do
+    linked_task="$(extract_field_value "$decision_file" "linked_task")"
+    [[ "$linked_task" == "TASK-${task_id}" ]] || continue
+
+    decision_status="$(extract_field_value "$decision_file" "status")"
+    [[ "$decision_status" == "superseded" ]] && continue
+
+    decision_risk_level="$(normalize_risk_level_value "$(extract_field_value "$decision_file" "risk_level")")"
+    if risk_level_requires_adversarial "$decision_risk_level"; then
+      decision_base="$(basename "$decision_file")"
+      printf "%s risk_level=%s" "$decision_base" "$decision_risk_level"
+      return
+    fi
+  done < <(find "$DECISIONS_DIR" -maxdepth 1 -type f -name 'decision-*.md' ! -name 'decision-template.md' ! -name 'decision-index.md' | sort)
+}
+
+check_orchestration_file_for_task() {
+  local task_id="$1"
+  local task_ref="$2"
+  local orchestration_file="$ORCHESTRATION_DIR/ORCH-${task_id}.md"
+  local execution_mode
+  local delegation_status
+  local doc_task_id
+
+  if [[ ! -f "$orchestration_file" ]]; then
+    fail "missing orchestration file for active task ${task_ref}: expected ${orchestration_file}"
+    return
+  fi
+
+  pass "orchestration file exists for active task ${task_ref}"
+  check_line_limit "$orchestration_file" "$MAX_ORCHESTRATION_LINES" "orchestration document"
+
+  if [[ "$MODE" == "strict" ]]; then
+    check_field_non_empty "$orchestration_file" "task_id" "orchestration"
+    check_field_non_empty "$orchestration_file" "execution_mode" "orchestration"
+    check_field_non_empty "$orchestration_file" "supervisor_agent" "orchestration"
+    check_field_non_empty "$orchestration_file" "delegation_status" "orchestration"
+    check_field_non_empty "$orchestration_file" "last_updated" "orchestration"
+  else
+    check_field_exists "$orchestration_file" "task_id" "orchestration"
+    check_field_exists "$orchestration_file" "execution_mode" "orchestration"
+    check_field_exists "$orchestration_file" "supervisor_agent" "orchestration"
+    check_field_exists "$orchestration_file" "delegation_status" "orchestration"
+    check_field_exists "$orchestration_file" "last_updated" "orchestration"
+  fi
+
+  doc_task_id="$(extract_field_value "$orchestration_file" "task_id")"
+  if [[ -n "$doc_task_id" && "$doc_task_id" != "$task_id" ]]; then
+    fail "task_id mismatch in orchestration for ${task_ref}: ${doc_task_id} != ${task_id}"
+  fi
+
+  execution_mode="$(extract_field_value "$orchestration_file" "execution_mode")"
+  delegation_status="$(extract_field_value "$orchestration_file" "delegation_status")"
+  check_enum_membership "$execution_mode" "orchestration.execution_mode" "$orchestration_file" supervisor_subagents solo || true
+  check_enum_membership "$delegation_status" "orchestration.delegation_status" "$orchestration_file" planned active completed blocked || true
+
+  if [[ "$execution_mode" == "solo" ]]; then
+    if [[ "$MODE" == "strict" ]]; then
+      check_field_non_empty "$orchestration_file" "delegation_note" "orchestration"
+    else
+      check_field_exists "$orchestration_file" "delegation_note" "orchestration"
+    fi
+    return
+  fi
+
+  if [[ "$MODE" == "strict" ]]; then
+    check_field_non_empty "$orchestration_file" "planner_agents" "orchestration"
+    check_field_non_empty "$orchestration_file" "reviewer_agents" "orchestration"
+    check_field_non_empty "$orchestration_file" "implementation_agents" "orchestration"
+    check_field_non_empty "$orchestration_file" "validation_agents" "orchestration"
+    check_field_non_empty "$orchestration_file" "owned_scopes" "orchestration"
+  else
+    check_field_exists "$orchestration_file" "planner_agents" "orchestration"
+    check_field_exists "$orchestration_file" "reviewer_agents" "orchestration"
+    check_field_exists "$orchestration_file" "implementation_agents" "orchestration"
+    check_field_exists "$orchestration_file" "validation_agents" "orchestration"
+    check_field_exists "$orchestration_file" "owned_scopes" "orchestration"
+  fi
+}
+
+orchestration_execution_mode_for_task() {
+  local task_id="$1"
+  local orchestration_file="$ORCHESTRATION_DIR/ORCH-${task_id}.md"
+
+  if [[ ! -f "$orchestration_file" ]]; then
+    return
+  fi
+
+  extract_field_value "$orchestration_file" "execution_mode"
+}
+
+check_evaluator_reports_for_task() {
+  local task_id="$1"
+  local task_ref="$2"
+  local execution_mode="$3"
+  local adversarial_source="${4:-}"
+  local report_count=0
+  local adversarial_count=0
+  local report_file
+  local report_review_style
+
+  if compgen -G "$REPORT_DIR/PLAN-${task_id}-v*-review-*.md" >/dev/null; then
+    while IFS= read -r report_file; do
+      report_count=$((report_count + 1))
+      report_review_style="$(extract_field_value "$report_file" "review_style")"
+      if [[ "$report_review_style" == "adversarial" ]]; then
+        adversarial_count=$((adversarial_count + 1))
+      fi
+    done < <(find "$REPORT_DIR" -maxdepth 1 -type f -name "PLAN-${task_id}-v*-review-*.md" | sort)
+  fi
+
+  if [[ -n "$adversarial_source" ]]; then
+    if (( adversarial_count > 0 )); then
+      pass "adversarial evaluator report exists for high-risk task ${task_ref} (${adversarial_count})"
+    else
+      fail "missing adversarial evaluator report for high-risk task ${task_ref} (${adversarial_source}): expected ${REPORT_DIR}/PLAN-${task_id}-v*-review-(gemini|claude|codex)-rNN.md with review_style: adversarial"
+    fi
+    return
+  fi
+
+  if [[ "$execution_mode" == "solo" ]]; then
+    pass "evaluator reports optional for solo execution on ${task_ref}"
+    return
+  fi
+
+  if (( report_count > 0 )); then
+    pass "evaluator report exists for active task ${task_ref} (${report_count})"
+  else
+    fail "missing evaluator report for active task ${task_ref}: expected ${REPORT_DIR}/PLAN-${task_id}-v*-review-(gemini|claude|codex)-rNN.md"
+  fi
+}
+
 is_active_task_status() {
   local status="$1"
   case "$status" in
@@ -399,6 +577,7 @@ check_dir_exists "$SHADOW_DIR" "shadow directory"
 check_dir_exists "$DECISIONS_DIR" "decisions directory"
 check_dir_exists "$PLAN_DIR" "plan directory"
 check_dir_exists "$REPORT_DIR" "report directory"
+check_dir_exists "$ORCHESTRATION_DIR" "orchestration directory"
 
 check_file_exists "$TASK_DIR/project-dictionary.md" "project dictionary"
 check_file_exists "$TASK_DIR/task-index.md" "task index"
@@ -406,6 +585,7 @@ check_file_exists "$SHADOW_DIR/project-shadow.md" "project shadow"
 check_file_exists "$DECISIONS_DIR/decision-index.md" "decision index"
 check_file_exists "$PLAN_DIR/PLAN-template.md" "plan template"
 check_file_exists "$REPORT_DIR/LLM-REVIEW-template.md" "report template"
+check_file_exists "$ORCHESTRATION_DIR/ORCH-template.md" "orchestration template"
 
 # --- Shadow map checks ---
 if [[ -f "$SHADOW_DIR/project-shadow.md" ]]; then
@@ -421,6 +601,9 @@ if [[ -d "$TASK_DIR" ]]; then
     task_ref="${task_base%.md}"
     task_id="${task_ref#TASK-}"
     task_status="$(extract_field_value "$task_file" "status")"
+    task_risk_level="$(normalize_risk_level_value "$(extract_field_value "$task_file" "risk_level")")"
+    orchestration_mode=""
+    adversarial_source=""
     check_line_limit "$task_file" "$MAX_TASK_LINES" "task document"
 
     # In strict mode: check non-empty values; in advisory: check existence only
@@ -438,6 +621,7 @@ if [[ -d "$TASK_DIR" ]]; then
     fi
 
     check_enum_membership "$task_status" "task.status" "$task_file" planned in_progress blocked done || true
+    check_enum_membership "$task_risk_level" "task.risk_level" "$task_file" low medium high critical || true
 
     # Freshness check for in_progress tasks
     if grep -qE "^- status:.*in_progress" "$task_file" 2>/dev/null; then
@@ -446,11 +630,18 @@ if [[ -d "$TASK_DIR" ]]; then
 
     # Active tasks must have at least one versioned plan file
     if is_active_task_status "$task_status"; then
+      if [[ "$MODE" != "strict" && -z "$task_risk_level" ]]; then
+        fail "risk_level is recommended for active task ${task_ref}: set low|medium|high|critical to improve review routing"
+      fi
       if compgen -G "$PLAN_DIR/PLAN-${task_id}-v*.md" >/dev/null; then
         pass "plan exists for active task ${task_ref}"
       else
         fail "missing plan file for active task ${task_ref}: expected ${PLAN_DIR}/PLAN-${task_id}-v*.md"
       fi
+      check_orchestration_file_for_task "$task_id" "$task_ref"
+      orchestration_mode="$(orchestration_execution_mode_for_task "$task_id")"
+      adversarial_source="$(adversarial_requirement_source_for_task "$task_id")"
+      check_evaluator_reports_for_task "$task_id" "$task_ref" "$orchestration_mode" "$adversarial_source"
     fi
 
     # Task-index consistency: verify task appears in task-index.md
@@ -468,6 +659,7 @@ if [[ -d "$DECISIONS_DIR" ]]; then
     decision_base="$(basename "$decision_file")"
     decision_scope_type="$(extract_field_value "$decision_file" "scope_type")"
     decision_status="$(extract_field_value "$decision_file" "status")"
+    decision_risk_level="$(normalize_risk_level_value "$(extract_field_value "$decision_file" "risk_level")")"
     check_line_limit "$decision_file" "$MAX_DECISION_LINES" "decision document"
 
     if [[ "$MODE" == "strict" ]]; then
@@ -494,6 +686,7 @@ if [[ -d "$DECISIONS_DIR" ]]; then
 
     check_enum_membership "$decision_scope_type" "decision.scope_type" "$decision_file" task hotfix pr release incident ops other || true
     check_enum_membership "$decision_status" "decision.status" "$decision_file" proposed accepted superseded || true
+    check_enum_membership "$decision_risk_level" "decision.risk_level" "$decision_file" low medium high critical || true
 
     # Decision-index consistency (supports both section-based and legacy table format)
     if [[ -f "$DECISIONS_DIR/decision-index.md" ]]; then
@@ -549,6 +742,7 @@ fi
 if [[ -d "$REPORT_DIR" ]]; then
   while IFS= read -r report_file; do
     report_base="$(basename "$report_file")"
+    report_review_style=""
     check_line_limit "$report_file" "$MAX_REPORT_LINES" "evaluator report"
 
     if [[ ! "$report_base" =~ ^PLAN-[A-Za-z0-9._-]+-v[0-9]+\.[0-9]+-review-(gemini|claude|codex)-r[0-9]{2}\.md$ ]]; then
@@ -576,6 +770,11 @@ if [[ -d "$REPORT_DIR" ]]; then
       fail "invalid evaluator in ${report_base}: ${report_evaluator} (expected gemini|claude|codex)"
     fi
 
+    report_review_style="$(extract_field_value "$report_file" "review_style")"
+    if [[ -n "$report_review_style" && ! "$report_review_style" =~ ^(standard|adversarial)$ ]]; then
+      fail "invalid review_style in ${report_base}: ${report_review_style} (expected standard|adversarial)"
+    fi
+
     report_round="$(extract_field_value "$report_file" "review_round")"
     if [[ -n "$report_round" && ! "$report_round" =~ ^r[0-9]{2}$ ]]; then
       fail "invalid review_round in ${report_base}: ${report_round} (expected rNN)"
@@ -601,6 +800,20 @@ if [[ -d "$REPORT_DIR" ]]; then
     report_plan_version="$(extract_field_value "$report_file" "plan_version")"
     if [[ -n "$report_plan_version" && "$report_plan_version" != "$file_report_plan_version" ]]; then
       fail "plan_version mismatch between file name and field in ${report_base}: ${file_report_plan_version} != ${report_plan_version}"
+    fi
+
+    if [[ "$report_review_style" == "adversarial" ]]; then
+      if [[ "$MODE" == "strict" ]]; then
+        check_field_non_empty "$report_file" "objection" "adversarial evaluator report"
+        check_field_non_empty "$report_file" "counterproposal" "adversarial evaluator report"
+        check_field_non_empty "$report_file" "rebuttal" "adversarial evaluator report"
+        check_field_non_empty "$report_file" "residual_risk" "adversarial evaluator report"
+      else
+        check_field_exists "$report_file" "objection" "adversarial evaluator report"
+        check_field_exists "$report_file" "counterproposal" "adversarial evaluator report"
+        check_field_exists "$report_file" "rebuttal" "adversarial evaluator report"
+        check_field_exists "$report_file" "residual_risk" "adversarial evaluator report"
+      fi
     fi
   done < <(find "$REPORT_DIR" -maxdepth 1 -type f -name 'PLAN-*-review-*.md' ! -name 'LLM-REVIEW-template.md' | sort)
 fi

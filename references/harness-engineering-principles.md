@@ -27,7 +27,7 @@ Use this reference when defining team process for agentic software development.
   - document decisions and progress in-repo
 
 ### 2) Repository as memory
-- Keep durable knowledge in `docs/task`, `docs/shadow`, `docs/decisions`.
+- Keep durable knowledge in workspace `docs/task`, `docs/shadow`, `docs/decisions`.
 - Keep `AGENTS.md` as a concise map to standards and key references.
 - Avoid hidden decisions in chat-only history.
 - Treat `docs/shadow/project-shadow.md` as the fast system map for agent onboarding.

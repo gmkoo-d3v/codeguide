@@ -1,5 +1,7 @@
 # Tailwind CSS with React
 
+> Secondary reference notice: This document is a deprecated secondary reference inside `codeguide`. Do not use it as the primary source for framework setup or API details. Prefer dedicated framework skills, official documentation, and repository-specific conventions first.
+
 ## Installation
 
 **With Vite:**
