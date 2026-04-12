@@ -6,6 +6,7 @@ Use this file to pick the smallest authoritative reference set for the active ta
 - Docs system-of-record and templates: `docs-system-of-record.md`
 - Doc-gardening process: `doc-gardening-agent.md`
 - Tools and automation details: `tools-automation.md`
+- External plan review prompt: `external-plan-review-prompt.md`
 - PR and commit templates: `git-pr-commit-templates.md`
 - Engineering operating principles: `harness-engineering-principles.md`
 

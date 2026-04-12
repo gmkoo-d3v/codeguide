@@ -453,6 +453,8 @@ check_orchestration_file_for_task() {
   local execution_mode
   local delegation_status
   local doc_task_id
+  local primary_author_tool
+  local review_mode
 
   if [[ ! -f "$orchestration_file" ]]; then
     fail "missing orchestration file for active task ${task_ref}: expected ${orchestration_file}"
@@ -465,12 +467,16 @@ check_orchestration_file_for_task() {
   if [[ "$MODE" == "strict" ]]; then
     check_field_non_empty "$orchestration_file" "task_id" "orchestration"
     check_field_non_empty "$orchestration_file" "execution_mode" "orchestration"
+    check_field_non_empty "$orchestration_file" "primary_author_tool" "orchestration"
+    check_field_non_empty "$orchestration_file" "review_mode" "orchestration"
     check_field_non_empty "$orchestration_file" "supervisor_agent" "orchestration"
     check_field_non_empty "$orchestration_file" "delegation_status" "orchestration"
     check_field_non_empty "$orchestration_file" "last_updated" "orchestration"
   else
     check_field_exists "$orchestration_file" "task_id" "orchestration"
     check_field_exists "$orchestration_file" "execution_mode" "orchestration"
+    check_field_exists "$orchestration_file" "primary_author_tool" "orchestration"
+    check_field_exists "$orchestration_file" "review_mode" "orchestration"
     check_field_exists "$orchestration_file" "supervisor_agent" "orchestration"
     check_field_exists "$orchestration_file" "delegation_status" "orchestration"
     check_field_exists "$orchestration_file" "last_updated" "orchestration"
@@ -482,8 +488,12 @@ check_orchestration_file_for_task() {
   fi
 
   execution_mode="$(extract_field_value "$orchestration_file" "execution_mode")"
+  primary_author_tool="$(extract_field_value "$orchestration_file" "primary_author_tool")"
+  review_mode="$(extract_field_value "$orchestration_file" "review_mode")"
   delegation_status="$(extract_field_value "$orchestration_file" "delegation_status")"
   check_enum_membership "$execution_mode" "orchestration.execution_mode" "$orchestration_file" supervisor_subagents solo || true
+  check_enum_membership "$primary_author_tool" "orchestration.primary_author_tool" "$orchestration_file" gemini claude codex || true
+  check_enum_membership "$review_mode" "orchestration.review_mode" "$orchestration_file" external_cli codex_subagents || true
   check_enum_membership "$delegation_status" "orchestration.delegation_status" "$orchestration_file" planned active completed blocked || true
 
   if [[ "$execution_mode" == "solo" ]]; then

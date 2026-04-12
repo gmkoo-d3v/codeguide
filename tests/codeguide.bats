@@ -6,6 +6,7 @@ SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/../scripts" && pwd)"
 DOC_GARDEN="$SCRIPTS_DIR/doc_garden.sh"
 VALIDATE="$SCRIPTS_DIR/validate_docs.sh"
 RUN_CODEGUIDE="$SCRIPTS_DIR/run_codeguide.sh"
+RUN_EXTERNAL_REVIEWS="$SCRIPTS_DIR/run_external_plan_reviews.sh"
 INIT_SCAFFOLD="$SCRIPTS_DIR/init_docs_scaffold.sh"
 CHECK_ENGLISH_DOCS="$SCRIPTS_DIR/check_english_docs.sh"
 
@@ -21,6 +22,7 @@ docs_root_for_project() {
 
 setup() {
   TEST_WORKSPACE="$(mktemp -d)"
+  export TEST_WORKSPACE
   TEST_PROJECT="$TEST_WORKSPACE/repo"
   mkdir -p "$TEST_PROJECT"
   "$INIT_SCAFFOLD" "$TEST_PROJECT"
@@ -29,6 +31,13 @@ setup() {
 
 teardown() {
   rm -rf "$TEST_WORKSPACE"
+}
+
+write_mock_cli() {
+  local path="$1"
+  local content="$2"
+  printf '%s\n' "$content" > "$path"
+  chmod +x "$path"
 }
 
 # ========== P0: Empty value overwrite prevention ==========
@@ -689,6 +698,8 @@ EOF
     --implementation-agents "coder-1" \
     --validation-agents "validator-1" \
     --owned-scopes "planner:docs/plan; coder:src/app" \
+    --primary-author-tool "codex" \
+    --review-mode "external_cli" \
     --no-init
 
   cat > "$DOCS_ROOT/plan/PLAN-highrisk-pass-01-v1.0.md" <<'EOF'
@@ -1399,4 +1410,403 @@ EOF
   [ "$status" -eq 0 ]
 
   rm -rf "$workspace"
+}
+
+@test "run_external_plan_reviews retries malformed output and writes reports without mutating the plan" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-review-01-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-review-01-v1.0
+
+- task_id: ext-review-01
+- plan_version: v1.0
+- objective: validate external review automation
+- scope: docs-only review pipeline
+- assumptions: mock CLIs are available
+- risks: formatting drift
+- acceptance_signals: two review docs are written
+- stop_conditions: report generation completes
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Prepare the prompt.
+2. Collect evaluator feedback.
+3. Stop for manual follow-up.
+EOF
+
+  local before_plan
+  before_plan="$(cat "$plan_file")"
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+count_file="${TEST_WORKSPACE}/gemini-count"
+count=0
+if [[ -f "$count_file" ]]; then
+  count="$(cat "$count_file")"
+fi
+count=$((count + 1))
+printf "%s" "$count" > "$count_file"
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/gemini-args.log"
+cat >/dev/null
+if [[ "$count" -eq 1 ]]; then
+  cat <<EOF
+- summary: malformed first response
+EOF
+else
+  cat <<EOF
+- verdict: revise
+- summary: The sequencing is mostly sound, but the review contract should be stricter about malformed output handling.
+- strengths: It clearly stops before auto-versioning the plan.
+- risks: Retry handling and malformed output normalization could still drift if formatting instructions are ignored.
+- requested_changes: Keep the report parser strict and summarize reviewer failures in the final wrapper output.
+EOF
+fi'
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
+cat >/dev/null
+  cat <<EOF
+- verdict: blocked
+- summary: The flow is semi-automated in the right place, but report validation should remain strict because downstream handoff depends on it.
+- strengths: It preserves old plan versions and keeps the user in control.
+- risks: If reviewers return partial fields, the operator could mistake a weak report for a valid one.
+- requested_changes: Make the failure summary explicit and ensure malformed responses never create report files.
+EOF'
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+echo "codex should not be called for primary=codex" >&2
+exit 99'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-review-01" \
+    --plan-version "v1.0" \
+    --primary-tool "codex" \
+    --review-round "r01"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[OK] evaluator=gemini"* ]]
+  [[ "$output" == *"[OK] evaluator=claude"* ]]
+  [[ "$output" == *"No new plan version was created automatically."* ]]
+
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-01-v1.0-review-gemini-r01.md"
+  [ "$status" -eq 0 ]
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-01-v1.0-review-claude-r01.md"
+  [ "$status" -eq 0 ]
+  run grep "^- review_style: standard" "$DOCS_ROOT/report/PLAN-ext-review-01-v1.0-review-gemini-r01.md"
+  [ "$status" -eq 0 ]
+  run grep "^- primary_author_tool: codex" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
+  [ "$status" -eq 0 ]
+  run grep "^- review_mode: external_cli" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
+  [ "$status" -eq 0 ]
+  run grep "^- reviewer_agents: external-cli:gemini,claude" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
+  [ "$status" -eq 0 ]
+
+  local after_plan
+  after_plan="$(cat "$plan_file")"
+  [ "$before_plan" = "$after_plan" ]
+
+  run grep -E -- '(^|[[:space:]])-m([[:space:]]|$)' "$TEST_WORKSPACE/gemini-args.log"
+  [ "$status" -ne 0 ]
+  run grep -E -- '(^|[[:space:]])--model([[:space:]]|$)' "$TEST_WORKSPACE/claude-args.log"
+  [ "$status" -ne 0 ]
+}
+
+@test "run_external_plan_reviews supports adversarial reviewer and optional model override with best-effort success" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-review-02-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-review-02-v1.0
+
+- task_id: ext-review-02
+- plan_version: v1.0
+- objective: validate adversarial review collection
+- scope: external ping-pong reviews
+- assumptions: one evaluator may fail
+- risks: hidden orchestration gaps
+- acceptance_signals: at least one valid report exists
+- stop_conditions: user reviews the generated reports
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Ask the non-primary tools to review.
+2. Record the results.
+3. Stop.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+echo "gemini should not be called for primary=gemini" >&2
+exit 99'
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
+cat >/dev/null
+echo "mock claude failure" >&2
+exit 7'
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/codex-args.log"
+cat >/dev/null
+cat <<EOF
+- verdict: revise
+- summary: The plan is usable, but the orchestration metadata should make the manual stop condition more explicit.
+- strengths: It keeps review collection separate from plan version mutation.
+- risks: The operator may miss unresolved risks if adversarial findings are not surfaced clearly.
+- requested_changes: Summarize adversarial findings prominently and require explicit operator follow-up.
+- objection: The current stop rule is underspecified for mixed-success review rounds.
+- counterproposal: Require the wrapper to print a concise adversarial summary next to the file path.
+- rebuttal: The current draft still has value because it already prevents silent auto-versioning.
+- residual_risk: Manual operators may still ignore the adversarial report if summary output is too weak.
+EOF'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-review-02" \
+    --plan-version "v1.0" \
+    --primary-tool "gemini" \
+    --review-round "r02" \
+    --adversarial-evaluator "codex" \
+    --codex-model "gpt-5.4"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[FAIL] evaluator=claude"* ]]
+  [[ "$output" == *"[OK] evaluator=codex style=adversarial"* ]]
+
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-r02.md"
+  [ "$status" -eq 0 ]
+  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-r02.md"
+  [ "$status" -eq 0 ]
+  run grep "^- objection:" "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-r02.md"
+  [ "$status" -eq 0 ]
+  run grep -- "gpt-5.4" "$TEST_WORKSPACE/codex-args.log"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews auto-selects adversarial reviewer for high-risk task and supports primary claude success path" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "ext-review-04" \
+    --task-title "High risk ext review" \
+    --risk-level "high" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "reviewer-1" \
+    --implementation-agents "coder-1" \
+    --validation-agents "validator-1" \
+    --owned-scopes "planner:docs/plan; reviewer:docs/report; coder:src/app; validator:tests" \
+    --no-init
+
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-review-04-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-review-04-v1.0
+
+- task_id: ext-review-04
+- plan_version: v1.0
+- objective: validate automatic adversarial review routing
+- scope: high-risk external ping-pong
+- assumptions: high risk should trigger one adversarial pass
+- risks: architectural drift
+- acceptance_signals: one adversarial and one standard report exist
+- stop_conditions: operator reviews the reports
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Ask both non-primary tools to review.
+2. Require one adversarial pass automatically.
+3. Stop.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+echo "claude should not be called for primary=claude" >&2
+exit 99'
+
+  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/gemini-args.log"
+cat >/dev/null
+cat <<EOF
+- verdict: revise
+- summary: The high-risk path correctly demands an adversarial pass before handoff.
+- strengths: The wrapper keeps the human in control and blocks silent version bumps.
+- risks: Review routing fields in orchestration still need to stay accurate across reruns.
+- requested_changes: Keep the auto-selected adversarial reviewer visible in the summary output.
+- objection: The plan under-specifies how to surface unresolved adversarial findings.
+- counterproposal: Require the wrapper to summarize adversarial objections explicitly beside the report path.
+- rebuttal: The current approach still preserves the strongest finding in a durable review doc.
+- residual_risk: Operators may still underreact to the adversarial report if they skim only the top line.
+EOF'
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/codex-args.log"
+cat >/dev/null
+cat <<EOF
+- verdict: revise
+- summary: The standard reviewer agrees the loop should stop after collecting reports.
+- strengths: It separates report collection from plan mutation.
+- risks: Reviewer summaries can still be too terse for rushed handoffs.
+- requested_changes: Keep report summaries short but explicit.
+EOF'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-review-04" \
+    --plan-version "v1.0" \
+    --primary-tool "claude" \
+    --review-round "r04"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"auto-selecting adversarial evaluator=gemini"* ]]
+  [[ "$output" == *"[OK] evaluator=gemini style=adversarial"* ]]
+  [[ "$output" == *"[OK] evaluator=codex style=standard"* ]]
+
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-gemini-r04.md"
+  [ "$status" -eq 0 ]
+  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-gemini-r04.md"
+  [ "$status" -eq 0 ]
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-codex-r04.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews exits non-zero when all evaluators fail" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-review-03-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-review-03-v1.0
+
+- task_id: ext-review-03
+- plan_version: v1.0
+- objective: validate total reviewer failure handling
+- scope: external ping-pong reviews
+- assumptions: both reviewers can fail
+- risks: no report docs will be produced
+- acceptance_signals: wrapper exits non-zero
+- stop_conditions: failures are surfaced
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Call the reviewers.
+2. Observe failure handling.
+3. Stop.
+EOF
+
+  cat > "$DOCS_ROOT/report/PLAN-ext-review-03-v1.0-review-gemini-r03.md" <<'EOF'
+# PLAN-ext-review-03-v1.0 review (gemini)
+
+- task_id: ext-review-03
+- plan_version: v1.0
+- evaluator: gemini
+- review_style: standard
+- review_round: r03
+- verdict: revise
+- summary: stale report that should be quarantined on rerun
+- strengths: old success
+- risks: stale masking
+- requested_changes: replace this file
+- objection:
+- counterproposal:
+- rebuttal:
+- residual_risk:
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+cat >/dev/null
+echo "gemini failure" >&2
+exit 3'
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+echo "claude should not be called for primary=claude" >&2
+exit 99'
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+cat >/dev/null
+echo "codex failure" >&2
+exit 4'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-review-03" \
+    --plan-version "v1.0" \
+    --primary-tool "claude" \
+    --review-round "r03"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"[FAIL] evaluator=gemini"* ]]
+  [[ "$output" == *"[FAIL] evaluator=codex"* ]]
+  run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-03-v1.0-review-gemini-r03.md"
+  [ "$status" -eq 0 ]
+  run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-03-v1.0-review-codex-r03.md"
+  [ "$status" -eq 0 ]
+  run find "$DOCS_ROOT/report" -maxdepth 1 -type f -name 'PLAN-ext-review-03-v1.0-review-gemini-r03.md.stale-*'
+  [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews exits non-zero when required adversarial reviewer fails even if another reviewer succeeds" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "ext-review-05" \
+    --task-title "Adversarial failure test" \
+    --risk-level "high" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "reviewer-1" \
+    --implementation-agents "coder-1" \
+    --validation-agents "validator-1" \
+    --owned-scopes "planner:docs/plan; reviewer:docs/report; coder:src/app; validator:tests" \
+    --no-init
+
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-review-05-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-review-05-v1.0
+
+- task_id: ext-review-05
+- plan_version: v1.0
+- objective: verify adversarial failure blocks overall success
+- scope: high-risk external ping-pong
+- assumptions: one standard reviewer may still succeed
+- risks: adversarial pass may fail
+- acceptance_signals: wrapper exits non-zero
+- stop_conditions: failure is surfaced
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Run the reviewers.
+2. Let the required adversarial pass fail.
+3. Expect non-zero exit.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+echo "claude should not be called for primary=claude" >&2
+exit 99'
+
+  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+cat >/dev/null
+echo "forced adversarial failure" >&2
+exit 8'
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+cat >/dev/null
+cat <<EOF
+- verdict: revise
+- summary: The standard reviewer succeeded.
+- strengths: It still produced a valid report.
+- risks: Required adversarial coverage is missing.
+- requested_changes: Do not accept this run as successful.
+EOF'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-review-05" \
+    --plan-version "v1.0" \
+    --primary-tool "claude" \
+    --review-round "r05"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Required adversarial review did not complete successfully"* ]]
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-05-v1.0-review-codex-r05.md"
+  [ "$status" -eq 0 ]
 }

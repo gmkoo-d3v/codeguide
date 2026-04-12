@@ -11,8 +11,8 @@ Checks curated markdown documents for Korean text.
 
 Exclusions:
   - README.md public-facing repository entry document
-  - mold/** research documents
-  - mold/temp/** generated traces and scratch artifacts
+  - mold/** or mold-named research documents
+  - temp/** and mold/temp/** generated traces and scratch artifacts
 EOF
 }
 
@@ -36,11 +36,39 @@ fi
 
 pushd "$SKILL_ROOT" >/dev/null
 
-matches="$(rg -n "[가-힣]" . \
-  --glob "*.md" \
-  --glob "!README.md" \
-  --glob "!mold/**" \
-  --glob "!mold/temp/**" || true)"
+matches="$(
+  python3 - <<'PY'
+import pathlib
+import re
+
+root = pathlib.Path(".")
+korean = re.compile(r"[가-힣]")
+fence = re.compile(r"```.*?```", re.DOTALL)
+tick = chr(96)
+inline_code = re.compile(re.escape(tick) + r"[^" + re.escape(tick) + r"]*" + re.escape(tick))
+
+def should_skip(path: pathlib.Path) -> bool:
+    parts = path.parts
+    name = path.name
+    if name == "README.md":
+        return True
+    if "mold" in parts or "mold" in name:
+        return True
+    if "temp" in parts:
+        return True
+    return False
+
+for path in sorted(root.rglob("*.md")):
+    if should_skip(path):
+        continue
+    text = path.read_text(encoding="utf-8")
+    text = fence.sub("", text)
+    text = inline_code.sub("", text)
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        if korean.search(line):
+            print(f"{path.as_posix()}:{lineno}:{line}")
+PY
+)"
 
 popd >/dev/null
 

@@ -12,6 +12,9 @@
 .idea/
 .vscode/
 
+# Keep workspace docs outside repo tracking if a local docs/ folder appears
+docs/
+
 # Python/test cache artifacts
 __pycache__/
 *.py[cod]

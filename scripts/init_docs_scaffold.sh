@@ -208,6 +208,8 @@ write_if_missing "${ORCHESTRATION_DIR}/ORCH-template.md" '# ORCH-<task-id>
 
 - task_id:
 - execution_mode: supervisor_subagents | solo
+- primary_author_tool: gemini | claude | codex
+- review_mode: external_cli | codex_subagents
 - supervisor_agent:
 - planner_agents:
 - reviewer_agents:
@@ -261,6 +263,9 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 - Main thread is the supervising lead architect, not the primary implementer.
 - Active tasks require `orchestration/ORCH-<task-id>.md`.
 - `execution_mode: supervisor_subagents` is the default path.
+- Orchestration rules still apply in `docs-only` work.
+- Record `primary_author_tool` and `review_mode` for plan review routing.
+- Treat `서브에이전트`, `서브 에이전트`, `subagent`, `subagents`, `sub-agent`, and `sub-agents` as the same sub-agent trigger.
 - If `execution_mode: solo` is used, `delegation_note` must explain why sub-agent delegation was not practical.
 - In strict mode, supervising-lead-architect/sub-agent ownership fields must be populated for `supervisor_subagents`.
 
@@ -274,10 +279,12 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 
 - Create plan file first: workspace docs `plan/PLAN-<task-id>-v1.0.md`.
 - Write evaluator report files in workspace docs `report/` with evaluator labels: gemini | claude | codex.
+- Default ping-pong mode uses external evaluators; if the user explicitly asks for sub-agent ping-pong review, interpret it as Codex sub-agent mode instead.
 - Mark high-risk work with `risk_level: high|critical` on the task or linked decision.
 - Advisory validation warns when an active task omits `risk_level`.
 - If a task or linked non-superseded decision is high-risk, strict validation requires one adversarial review pass with objection/counterproposal/rebuttal/residual_risk.
 - For each revision, create a new versioned plan file (v1.1, v1.2, ...), do not overwrite old versions.
+- Semi-automated external review must stop after collecting report docs and showing the user the result; it does not auto-create the next plan version.
 - Repeat review/revision loop until execution-ready or user stop.
 
 ## Anti-dump limits

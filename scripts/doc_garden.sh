@@ -31,6 +31,8 @@ Options:
   --axis-where "<text>"           Structural placement (MVC/Layered/Hexagonal/Clean)
   --axis-verify "<text>"          Verification strategy (TDD/pyramid/FIRST)
   --execution-mode <mode>         supervisor_subagents|solo (default: supervisor_subagents)
+  --primary-author-tool <tool>    gemini|claude|codex
+  --review-mode <mode>            external_cli|codex_subagents
   --supervisor-agent "<name>"     Main-thread supervising lead architect identifier
   --planner-agents "<list>"       Planner sub-agent identifier(s)
   --reviewer-agents "<list>"      Reviewer sub-agent identifier(s)
@@ -87,6 +89,8 @@ AXIS_HOW=""
 AXIS_WHERE=""
 AXIS_VERIFY=""
 EXECUTION_MODE="supervisor_subagents"
+PRIMARY_AUTHOR_TOOL=""
+REVIEW_MODE=""
 SUPERVISOR_AGENT="main-thread-supervising-lead-architect"
 PLANNER_AGENTS=""
 REVIEWER_AGENTS=""
@@ -168,6 +172,28 @@ validate_execution_mode() {
     supervisor_subagents|solo) ;;
     *)
       echo "[ERROR] Invalid --execution-mode: ${value} (use supervisor_subagents or solo)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+validate_primary_author_tool() {
+  local value="$1"
+  case "$value" in
+    gemini|claude|codex) ;;
+    *)
+      echo "[ERROR] Invalid --primary-author-tool: ${value} (use gemini, claude, or codex)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+validate_review_mode() {
+  local value="$1"
+  case "$value" in
+    external_cli|codex_subagents) ;;
+    *)
+      echo "[ERROR] Invalid --review-mode: ${value} (use external_cli or codex_subagents)" >&2
       exit 1
       ;;
   esac
@@ -301,6 +327,16 @@ while [[ $# -gt 0 ]]; do
       EXECUTION_MODE="${2:-}"
       shift 2
       ;;
+    --primary-author-tool)
+      require_option_value "$1" "$#"
+      PRIMARY_AUTHOR_TOOL="${2:-}"
+      shift 2
+      ;;
+    --review-mode)
+      require_option_value "$1" "$#"
+      REVIEW_MODE="${2:-}"
+      shift 2
+      ;;
     --supervisor-agent)
       require_option_value "$1" "$#"
       SUPERVISOR_AGENT="${2:-}"
@@ -386,6 +422,12 @@ fi
 validate_scope_type "$SCOPE_TYPE"
 validate_decision_status "$DECISION_STATUS"
 validate_execution_mode "$EXECUTION_MODE"
+if [[ -n "$PRIMARY_AUTHOR_TOOL" ]]; then
+  validate_primary_author_tool "$PRIMARY_AUTHOR_TOOL"
+fi
+if [[ -n "$REVIEW_MODE" ]]; then
+  validate_review_mode "$REVIEW_MODE"
+fi
 if [[ -n "$DELEGATION_STATUS" ]]; then
   validate_delegation_status "$DELEGATION_STATUS"
 fi
@@ -591,6 +633,8 @@ ensure_orchestration_file() {
 
 - task_id:
 - execution_mode: supervisor_subagents | solo
+- primary_author_tool: gemini | claude | codex
+- review_mode: external_cli | codex_subagents
 - supervisor_agent:
 - planner_agents:
 - reviewer_agents:
@@ -863,6 +907,8 @@ if [[ -n "$TASK_ID" ]]; then
 
   upsert_field "$ORCHESTRATION_FILE" "task_id" "$TASK_ID"
   upsert_field "$ORCHESTRATION_FILE" "execution_mode" "$EXECUTION_MODE"
+  upsert_field "$ORCHESTRATION_FILE" "primary_author_tool" "$PRIMARY_AUTHOR_TOOL"
+  upsert_field "$ORCHESTRATION_FILE" "review_mode" "$REVIEW_MODE"
   upsert_field "$ORCHESTRATION_FILE" "supervisor_agent" "$SUPERVISOR_AGENT"
   upsert_field "$ORCHESTRATION_FILE" "planner_agents" "$PLANNER_AGENTS"
   upsert_field "$ORCHESTRATION_FILE" "reviewer_agents" "$REVIEWER_AGENTS"
