@@ -17,6 +17,8 @@ Options:
   --task-title "<title>"         Optional task title
   --selected-option "<text>"     Optional selected option
   --shadow-note "<text>"         Optional shadow change note for sync/finalization
+  --shadow-refresh-mode <mode>   same_session|git_diff (default: same_session)
+  --shadow-git-range "<range>"   Explicit git revision range for user-requested git_diff shadow refresh
   --axis-why "<text>"            Optional Why axis
   --axis-what "<text>"           Optional What axis
   --axis-how "<text>"            Optional How axis
@@ -55,6 +57,8 @@ SCOPE_TYPE=""
 TASK_TITLE=""
 SELECTED_OPTION=""
 SHADOW_NOTE=""
+SHADOW_REFRESH_MODE="same_session"
+SHADOW_GIT_RANGE=""
 AXIS_WHY=""
 AXIS_WHAT=""
 AXIS_HOW=""
@@ -130,6 +134,16 @@ while [[ $# -gt 0 ]]; do
     --shadow-note)
       require_option_value "$1" "$#"
       SHADOW_NOTE="${2:-}"
+      shift 2
+      ;;
+    --shadow-refresh-mode)
+      require_option_value "$1" "$#"
+      SHADOW_REFRESH_MODE="${2:-}"
+      shift 2
+      ;;
+    --shadow-git-range)
+      require_option_value "$1" "$#"
+      SHADOW_GIT_RANGE="${2:-}"
       shift 2
       ;;
     --axis-why)
@@ -266,6 +280,21 @@ fi
 
 if [[ -n "$DELEGATION_STATUS" && "$DELEGATION_STATUS" != "planned" && "$DELEGATION_STATUS" != "active" && "$DELEGATION_STATUS" != "completed" && "$DELEGATION_STATUS" != "blocked" ]]; then
   echo "[ERROR] Invalid delegation-status: $DELEGATION_STATUS (use planned, active, completed, or blocked)" >&2
+  exit 1
+fi
+
+if [[ "$SHADOW_REFRESH_MODE" != "same_session" && "$SHADOW_REFRESH_MODE" != "git_diff" ]]; then
+  echo "[ERROR] Invalid shadow-refresh-mode: $SHADOW_REFRESH_MODE (use same_session or git_diff)" >&2
+  exit 1
+fi
+
+if [[ "$SHADOW_REFRESH_MODE" == "git_diff" && -z "$SHADOW_GIT_RANGE" ]]; then
+  echo "[ERROR] --shadow-git-range is required when --shadow-refresh-mode git_diff is used" >&2
+  exit 1
+fi
+
+if [[ "$SHADOW_REFRESH_MODE" != "git_diff" && -n "$SHADOW_GIT_RANGE" ]]; then
+  echo "[ERROR] --shadow-git-range can only be used with --shadow-refresh-mode git_diff" >&2
   exit 1
 fi
 
@@ -546,6 +575,12 @@ fi
 
 if [[ -n "$SHADOW_NOTE" ]]; then
   GARDEN_ARGS+=(--shadow-note "$SHADOW_NOTE")
+fi
+
+GARDEN_ARGS+=(--shadow-refresh-mode "$SHADOW_REFRESH_MODE")
+
+if [[ -n "$SHADOW_GIT_RANGE" ]]; then
+  GARDEN_ARGS+=(--shadow-git-range "$SHADOW_GIT_RANGE")
 fi
 
 # Only pass axis values when explicitly provided (no generic defaults)

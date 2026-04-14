@@ -41,6 +41,20 @@ workspace-root/
 └── docs/
     ├── task/
     ├── shadow/
+    │   ├── project-shadow.md
+    │   ├── _global.md
+    │   ├── apps/
+    │   │   └── _index.md
+    │   ├── services/
+    │   │   └── _index.md
+    │   ├── packages/
+    │   │   └── _index.md
+    │   ├── infra/
+    │   │   └── _index.md
+    │   ├── data/
+    │   │   └── _index.md
+    │   ├── _deprecated/
+    │   └── _obsolete/
     ├── decisions/
     ├── plan/
     ├── report/
@@ -51,6 +65,12 @@ Create these workspace-root files if missing:
 - `<workspace-root>/docs/task/project-dictionary.md`
 - `<workspace-root>/docs/task/task-index.md`
 - `<workspace-root>/docs/shadow/project-shadow.md`
+- `<workspace-root>/docs/shadow/_global.md`
+- `<workspace-root>/docs/shadow/apps/_index.md`
+- `<workspace-root>/docs/shadow/services/_index.md`
+- `<workspace-root>/docs/shadow/packages/_index.md`
+- `<workspace-root>/docs/shadow/infra/_index.md`
+- `<workspace-root>/docs/shadow/data/_index.md`
 - `<workspace-root>/docs/decisions/decision-index.md`
 - `<workspace-root>/docs/plan/PLAN-template.md`
 - `<workspace-root>/docs/report/LLM-REVIEW-template.md`
@@ -108,38 +128,144 @@ Use one file per task: `docs/task/TASK-<id>.md`
 `<workspace-root>/docs/task/task-index.md` should list task ids organized by status section (Planned/In Progress/Blocked/Done). Rows are automatically moved between sections when task status changes.
 
 ## Anti-dump policy (default recommended, strict in CI)
-- Keep `<workspace-root>/docs/shadow/project-shadow.md` at or below 220 lines.
+- Keep shadow docs close to 200 lines and preferably at or below 300 lines.
+- If a shadow doc exceeds 300 lines or stops narrowing the read path quickly, split it by concern instead of mirroring the underlying source file.
 - Keep each `docs/task/TASK-*.md` at or below 220 lines.
 - Keep each `docs/decisions/decision-*.md` at or below 180 lines.
-- Keep shadow map summary-only and link to deeper docs instead of copying large text blocks.
+- Keep shadow docs routing-oriented and link to deeper docs instead of copying large text blocks.
 
 Use:
 - `scripts/validate_docs.sh <project-root> --mode advisory` for local warning mode
 - `scripts/validate_docs.sh <project-root> --mode strict` for CI blocking mode
 
-## Shadow system-map template
+## Shadow graph contract
 
-Use `<workspace-root>/docs/shadow/project-shadow.md` as the canonical project system map.
+Use `<workspace-root>/docs/shadow/` as the canonical AI-facing routing layer for the project.
+
+Shadow rules:
+- Keep shadow docs in English.
+- Keep shadow docs in Markdown only.
+- Do not add JSON sidecars or empty concern placeholder files.
+- Use topology-first typed buckets:
+  - `apps`
+  - `services`
+  - `packages`
+  - `infra`
+  - `data`
+- Use this default read path:
+  - `project-shadow.md -> <bucket>/_index.md -> <bucket>/<unit>/overview.md -> concern leaf`
+- Treat `_global.md` as an optional side path for cross-unit facts, not as a required read hop.
+- Use unit `overview.md` as the day-one landing doc for detected units.
+- Materialize concern leaf docs only when source evidence or an explicit task justifies them.
+- Preserve old shadow paths with thin redirect shims and archive replaced bodies under `_deprecated` or `_obsolete`.
+
+### Top Router Template
+
+Use `<workspace-root>/docs/shadow/project-shadow.md` as the top router only.
 
 ```markdown
 # Project Shadow
 
-- project_summary:
-- domain_glossary:
-- module_map:
-- navigation_map_to_detailed_docs:
-- runtime_entrypoints:
-- integration_map:
-- config_map: # variable names only; no values
-- current_risks:
-- known_constraints:
+- doc_role: router
+- read_path:
+- fast_entry:
+- bucket_links:
+- global_doc:
 - last_updated:
 - updated_by_task:
+- latest_change_note:
+```
+
+### Global Cross-Unit Template
+
+Use `<workspace-root>/docs/shadow/_global.md` for cross-unit invariants only.
+
+```markdown
+# Shadow Global
+
+- doc_role: global
+- shared_runtime_rules:
+- shared_config_rules:
+- naming_rules:
+- cross_unit_integration_contracts:
+- last_updated:
+```
+
+### Bucket Registry Template
+
+Use `<workspace-root>/docs/shadow/<bucket>/_index.md` for unit membership only.
+
+```markdown
+# Shadow Bucket Index
+
+- doc_role: bucket_index
+- bucket:
+- last_updated:
+
+## Units
+- unit_id:
+  - overview_doc:
+  - secondary_tags:
+```
+
+### Unit Overview Template
+
+Use `<workspace-root>/docs/shadow/<bucket>/<unit>/overview.md` as the landing doc plus concern router.
+
+```markdown
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket:
+- secondary_tags:
+- unit_summary:
+- owns:
+- entrypoints:
+- planned_concerns:
+- next_docs:
+- source_of_truth_paths:
+- last_updated:
+```
+
+### Concern Leaf Template
+
+Use a concern leaf doc for concrete facts only.
+
+```markdown
+# Shadow Concern
+
+- doc_role: concern_leaf
+- concern_id:
+- canonical_for:
+- source_of_truth_paths:
+- change_hotspots:
+- contracts_and_rules:
+- next_split_trigger:
+- last_updated:
+```
+
+### Redirect Shim Template
+
+Use a thin redirect shim at the legacy path when a shadow doc moves.
+
+```markdown
+# Shadow Redirect
+
+- doc_role: redirect_shim
+- legacy_path:
+- canonical_path:
+- redirects_fact_scope:
+- deprecated_since:
+- status: redirected
+- edit_policy: read_only
+- replacement_reason:
+- last_updated:
 ```
 
 Purpose:
 - Allow agents to understand the project quickly without scanning many source files.
-- Keep project-level meaning and structure centralized and current.
+- Keep the shadow graph routing-oriented instead of source-mirroring.
+- Keep cross-unit facts, unit routing, and leaf facts in separate homes.
 - Keep deep and verbose content in linked docs; keep shadow concise and map-like.
 
 ## Decision template
@@ -248,12 +374,13 @@ Evaluator label must be one of:
 - When plan changes, append revised `implementation_plan` in the same `decision-*`.
 - When task scope changes, update `TASK-*` and relevant dictionary keys.
 - For tiny edits, reuse the current `TASK-*` file instead of creating unnecessary new task files.
-- At task close, refresh `<workspace-root>/docs/shadow/project-shadow.md` and keep it aligned with latest architecture and flows.
+- At task close, refresh the affected shadow router, `_global.md` when applicable, bucket indexes, unit overviews, and leaf docs.
 - Keep 5-axis fields current:
   - tasks: maintain `axis_why`, `axis_where`, `axis_verify`.
   - decisions: maintain full `axis_why`, `axis_what`, `axis_how`, `axis_where`, `axis_verify`.
 - Keep freshness SLA:
-  - `<workspace-root>/docs/shadow/project-shadow.md` should be updated on every meaningful change and at least once every 7 days.
+  - same-session changes should refresh the affected shadow graph entries in the same implementation change.
+  - external git-driven changes should refresh shadow only on explicit user request.
   - `in_progress` task docs should be refreshed within 7 days.
   - `decision-index.md` should be updated in the same change as decision files.
 
@@ -261,7 +388,7 @@ Evaluator label must be one of:
 - At urgent release time, allow minimum required docs:
   - one `decision-*` with selected option, risk, and scope `hotfix`
   - one linked task status update
-- Complete full task and shadow updates within 24 hours after release.
+- Complete full task and affected shadow updates within 24 hours after release.
 
 ## Secret and sensitive data rules
 - Never put raw secrets in docs.

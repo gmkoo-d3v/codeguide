@@ -60,6 +60,28 @@ Reference-first governance skill for architecture, code quality, documentation l
 - Treat `docs/{task,shadow,decisions,plan,report,orchestration}` as the system of record for that workspace task flow.
 - Keep repository code and workspace docs synchronized, but do not duplicate the docs tree inside the repo unless the user explicitly requests it.
 
+## Shadow System Contract
+- Treat `docs/shadow/` as a Markdown-only compressed context layer for agents.
+- Use topology-first typed buckets:
+  - `apps`
+  - `services`
+  - `packages`
+  - `infra`
+  - `data`
+- Shadow document roles are fixed:
+  - `docs/shadow/project-shadow.md`: top router only
+  - `docs/shadow/_global.md`: optional side path for cross-unit invariants only
+  - `docs/shadow/<bucket>/_index.md`: unit membership only
+  - `docs/shadow/<bucket>/<unit>/overview.md`: landing doc plus concern router
+  - concern leaf docs: concrete facts only
+- Default read path:
+  - `project-shadow.md -> <bucket>/_index.md -> <bucket>/<unit>/overview.md -> concern leaf`
+- Keep shadow docs in English and Markdown only; do not add JSON sidecars or empty concern placeholder files.
+- Use unit `overview.md` as the day-one landing doc when a unit is detected.
+- Same-session changes should refresh affected shadow docs during final sync; external git-driven changes should refresh shadow only on explicit user request.
+- Preserve legacy compatibility with thin redirect shims at old paths and archive replaced bodies under `_deprecated` or `_obsolete`.
+- Target roughly 200 lines per shadow doc; use 300 lines as a soft cap and split by concern when a doc stops routing well.
+
 ## Orchestration Contract
 - Main thread acts as the supervising lead architect and workflow supervisor: gather requirements, choose delegation boundaries, own architectural direction, monitor progress, integrate outcomes, and make final safety/quality decisions.
 - Sub-agents own execution tracks: planning, plan review, implementation, and targeted verification should be delegated to separate agents when the work is material and separable.
@@ -84,7 +106,7 @@ Reference-first governance skill for architecture, code quality, documentation l
 4. On every material structure/API/config change, re-run `run_codeguide.sh <project-root> --task-status in_progress --shadow-note "..."`
 5. Validate workspace docs (`validate_docs.sh <project-root> --mode advisory`) after each sync or before handoff
 6. If `code-or-runtime`, run impacted runtime validations
-7. Finish lifecycle once per task close: `run_codeguide.sh <project-root> --task-status done --shadow-note "final state"` (or `blocked`) and refresh `docs/shadow/project-shadow.md`
+7. Finish lifecycle once per task close: `run_codeguide.sh <project-root> --task-status done --shadow-note "final state"` (or `blocked`) and refresh the affected `docs/shadow/` graph.
 
 ## Plan Orchestration Loop
 1. The supervising lead architect creates or delegates the initial plan doc at workspace docs `docs/plan/PLAN-<task-id>-v1.0.md`.
@@ -108,7 +130,7 @@ Reference-first governance skill for architecture, code quality, documentation l
    - external CLI ping-pong should use each tool's default model unless the operator explicitly overrides it; do not depend on hardcoded model-version strings
 5. When implementation begins, coding sub-agents own disjoint code scopes while the supervising lead architect tracks the selected plan version in related `decision-*` and `TASK-*` docs.
    - for `codeguide`-invoked code writing work that explicitly requests sub-agents, prefer a standard four-track split when practical: planner, reviewer/evaluator, implementation, validation
-6. At task close, ensure the final architecture/runtime state is reflected in `docs/shadow/project-shadow.md`.
+6. At task close, ensure the final architecture/runtime state is reflected in the affected `docs/shadow/` router, `_global.md` when applicable, bucket indexes, unit overviews, and leaf docs.
 
 ## Review/Debug Contract
 - `design`: boundaries, contracts, risk/test strategy

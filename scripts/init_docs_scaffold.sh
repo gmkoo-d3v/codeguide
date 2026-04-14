@@ -55,8 +55,18 @@ DECISIONS_DIR="${DOCS_DIR}/decisions"
 PLAN_DIR="${DOCS_DIR}/plan"
 REPORT_DIR="${DOCS_DIR}/report"
 ORCHESTRATION_DIR="${DOCS_DIR}/orchestration"
+SHADOW_BUCKETS=(apps services packages infra data)
+SHADOW_ARCHIVE_DIRS=(_deprecated _obsolete)
 
 mkdir -p "${TASK_DIR}" "${SHADOW_DIR}" "${DECISIONS_DIR}" "${PLAN_DIR}" "${REPORT_DIR}" "${ORCHESTRATION_DIR}"
+
+for bucket in "${SHADOW_BUCKETS[@]}"; do
+  mkdir -p "${SHADOW_DIR}/${bucket}"
+done
+
+for archive_dir in "${SHADOW_ARCHIVE_DIRS[@]}"; do
+  mkdir -p "${SHADOW_DIR}/${archive_dir}"
+done
 
 write_if_missing() {
   local file_path="$1"
@@ -107,18 +117,37 @@ write_if_missing "${DECISIONS_DIR}/decision-index.md" '# Decision Index
 
 write_if_missing "${SHADOW_DIR}/project-shadow.md" '# Project Shadow
 
-- project_summary:
-- domain_glossary:
-- module_map:
-- navigation_map_to_detailed_docs:
-- runtime_entrypoints:
-- integration_map:
-- config_map: # variable names only; no values
-- current_risks:
-- known_constraints:
+- doc_role: router
+- read_path: project-shadow.md -> <bucket>/_index.md -> <bucket>/<unit>/overview.md -> concern leaf
+- fast_entry:
+- bucket_links: apps/_index.md, services/_index.md, packages/_index.md, infra/_index.md, data/_index.md
+- global_doc: _global.md
 - last_updated:
 - updated_by_task:
+- latest_change_note:
 '
+
+write_if_missing "${SHADOW_DIR}/_global.md" '# Shadow Global
+
+- doc_role: global
+- shared_runtime_rules:
+- shared_config_rules:
+- naming_rules:
+- cross_unit_integration_contracts:
+- last_updated:
+'
+
+for bucket in "${SHADOW_BUCKETS[@]}"; do
+  write_if_missing "${SHADOW_DIR}/${bucket}/_index.md" "# Shadow Bucket Index
+
+- doc_role: bucket_index
+- bucket: ${bucket}
+- last_updated:
+
+## Units
+- no units detected yet
+"
+done
 
 write_if_missing "${TASK_DIR}/task-template.md" '# TASK-<id>
 
@@ -258,6 +287,31 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 - The workspace root is exactly one level above the git-tracked project root.
 - Do not add an extra `docs/<repo-name>` or `docs/repos/<repo-name>` layer unless the user explicitly requests it.
 
+## Shadow graph contract
+
+- Keep shadow docs in English.
+- Keep shadow docs in Markdown only.
+- Do not add JSON sidecars.
+- Do not auto-create unit overview docs or concern leaf docs during bootstrap.
+- Treat `docs/shadow/project-shadow.md` as the top router only.
+- Treat `docs/shadow/_global.md` as the optional side path for cross-unit facts.
+- Treat `docs/shadow/<bucket>/_index.md` as unit membership only.
+- Use typed buckets only:
+  - `apps`
+  - `services`
+  - `packages`
+  - `infra`
+  - `data`
+- Create `_deprecated/` and `_obsolete/` under `docs/shadow/` for archived bodies and obsolete material.
+- Preserve this default read path:
+  - `project-shadow.md -> <bucket>/_index.md -> <bucket>/<unit>/overview.md -> concern leaf`
+
+## Shadow freshness
+
+- Refresh affected shadow graph docs for same-session implementation changes before closing the task.
+- External git-driven shadow refresh happens only when the user explicitly requests shadow update.
+- Keep shadow docs routing-oriented instead of mirroring large code blocks.
+
 ## Orchestration contract
 
 - Main thread is the supervising lead architect, not the primary implementer.
@@ -289,21 +343,23 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 
 ## Anti-dump limits
 
-- docs/shadow/project-shadow.md <= 220 lines
+- Keep shadow docs close to 200 lines and preferably at or below 300 lines.
+- If a shadow doc exceeds 300 lines or stops narrowing the read path quickly, split it by concern instead of mirroring the underlying source file.
 - docs/task/TASK-*.md <= 220 lines
 - docs/decisions/decision-*.md <= 180 lines
 - docs/orchestration/ORCH-*.md <= 180 lines
 
 ## Freshness SLA
 
-- project-shadow updated at least every 7 days (checked via last_updated field, mtime fallback).
+- Same-session implementation changes refresh affected shadow graph docs in the same working session.
+- External git-driven changes refresh shadow docs only on explicit user request.
 - in_progress task files updated within 7 days.
 - decision-index and task-index updated with each file change.
 
 ## Hotfix exception
 
 - At urgent release time, write minimum decision log first.
-- Complete full task/shadow sync within 24 hours.
+- Complete full task and affected shadow sync within 24 hours.
 
 ## 5-axis records
 

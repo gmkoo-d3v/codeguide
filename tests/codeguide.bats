@@ -215,6 +215,37 @@ write_mock_cli() {
   [ "$status" -eq 0 ]
 }
 
+@test "init_docs_scaffold creates shadow graph scaffold files" {
+  run test -f "$DOCS_ROOT/shadow/project-shadow.md"
+  [ "$status" -eq 0 ]
+  run test -f "$DOCS_ROOT/shadow/_global.md"
+  [ "$status" -eq 0 ]
+
+  run grep "^- doc_role: router" "$DOCS_ROOT/shadow/project-shadow.md"
+  [ "$status" -eq 0 ]
+  run grep "^- read_path: project-shadow.md -> <bucket>/_index.md -> <bucket>/<unit>/overview.md -> concern leaf" "$DOCS_ROOT/shadow/project-shadow.md"
+  [ "$status" -eq 0 ]
+  run grep "^- bucket_links: apps/_index.md, services/_index.md, packages/_index.md, infra/_index.md, data/_index.md" "$DOCS_ROOT/shadow/project-shadow.md"
+  [ "$status" -eq 0 ]
+  run grep "^- global_doc: _global.md" "$DOCS_ROOT/shadow/project-shadow.md"
+  [ "$status" -eq 0 ]
+
+  local bucket
+  for bucket in apps services packages infra data; do
+    run test -f "$DOCS_ROOT/shadow/$bucket/_index.md"
+    [ "$status" -eq 0 ]
+    run grep "^- doc_role: bucket_index" "$DOCS_ROOT/shadow/$bucket/_index.md"
+    [ "$status" -eq 0 ]
+    run grep "^- bucket: $bucket" "$DOCS_ROOT/shadow/$bucket/_index.md"
+    [ "$status" -eq 0 ]
+    run grep "^- no units detected yet" "$DOCS_ROOT/shadow/$bucket/_index.md"
+    [ "$status" -eq 0 ]
+    run awk '/^## Units$/{flag=1; next} flag && /^- /{print}' "$DOCS_ROOT/shadow/$bucket/_index.md"
+    [ "$status" -eq 0 ]
+    [ "$output" = "- no units detected yet" ]
+  done
+}
+
 # ========== P1/P2: Validator strict mode non-empty check ==========
 
 @test "validate_docs strict mode fails on empty required fields" {
@@ -344,7 +375,15 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"project shadow is older than tracked task/decision doc"* ]]
+  [[ "$output" == *"shadow graph doc is older than tracked task/decision doc"* ]]
+}
+
+@test "validate_docs strict fails when required shadow bucket index is missing" {
+  rm -f "$DOCS_ROOT/shadow/apps/_index.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"shadow bucket index (apps) is missing"* ]]
 }
 
 @test "validate_docs strict fails when active task has no linked plan file" {
@@ -917,6 +956,84 @@ EOF
   run grep "^- latest_change_note:" "$DOCS_ROOT/shadow/project-shadow.md"
   [ "$status" -eq 0 ]
   [[ "$output" == *"search and navigation updated"* ]]
+}
+
+@test "doc_garden refreshes shadow graph and keeps change note router-only" {
+  run "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "shadow-graph-01" \
+    --task-title "Shadow graph refresh" \
+    --shadow-note "graph refresh" \
+    --no-init
+  [ "$status" -eq 0 ]
+
+  run grep "^- last_updated:" "$DOCS_ROOT/shadow/project-shadow.md"
+  [ "$status" -eq 0 ]
+  run grep "^- last_updated:" "$DOCS_ROOT/shadow/_global.md"
+  [ "$status" -eq 0 ]
+
+  run grep "^- latest_change_note:" "$DOCS_ROOT/shadow/project-shadow.md"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"graph refresh"* ]]
+
+  run grep "^- latest_change_note:" "$DOCS_ROOT/shadow/_global.md"
+  [ "$status" -ne 0 ]
+
+  local bucket
+  for bucket in apps services packages infra data; do
+    run grep "^- last_updated:" "$DOCS_ROOT/shadow/$bucket/_index.md"
+    [ "$status" -eq 0 ]
+    run grep "^- latest_change_note:" "$DOCS_ROOT/shadow/$bucket/_index.md"
+    [ "$status" -ne 0 ]
+  done
+}
+
+@test "doc_garden rejects git_diff shadow refresh without explicit range" {
+  run "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "shadow-git-01" \
+    --task-title "Shadow git diff validation" \
+    --shadow-refresh-mode "git_diff" \
+    --no-init
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--shadow-git-range is required"* ]]
+}
+
+@test "validate_docs strict allows missing shadow archive directories" {
+  rm -rf "$DOCS_ROOT/shadow/_deprecated" "$DOCS_ROOT/shadow/_obsolete"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -eq 0 ]
+}
+
+@test "validate_docs strict fails when root-level legacy shadow doc is not a redirect shim" {
+  cat > "$DOCS_ROOT/shadow/legacy-shadow.md" <<'EOF'
+# Legacy Shadow
+
+- doc_role: note
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"legacy shadow shim"* ]] || [[ "$output" == *"redirect_shim"* ]]
+}
+
+@test "validate_docs strict passes with a valid root-level redirect shim" {
+  cat > "$DOCS_ROOT/shadow/legacy-shadow.md" <<'EOF'
+# Shadow Redirect
+
+- doc_role: redirect_shim
+- legacy_path: docs/shadow/legacy-shadow.md
+- canonical_path: docs/shadow/apps/app-a/overview.md
+- redirects_fact_scope: unit:app-a:overview
+- deprecated_since: 2026-04-15
+- status: redirected
+- edit_policy: read_only
+- replacement_reason: moved into topology-first shadow graph
+- last_updated: 2026-04-15T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -eq 0 ]
 }
 
 @test "check_english_docs passes for curated codeguide markdown" {

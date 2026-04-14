@@ -9,12 +9,12 @@ Usage:
 
 Options:
   --mode <advisory|strict>   Validation mode (default: advisory)
-  --max-shadow-lines <n>      Maximum lines for workspace docs/shadow/project-shadow.md (default: 220)
+  --max-shadow-lines <n>      Maximum lines per workspace docs/shadow/*.md file (default: 300)
   --max-task-lines <n>        Maximum lines per workspace docs/task/TASK-*.md (default: 220)
   --max-decision-lines <n>    Maximum lines per workspace docs/decisions/decision-*.md (default: 180)
   --max-plan-lines <n>        Maximum lines per workspace docs/plan/PLAN-*.md (default: 220)
   --max-report-lines <n>      Maximum lines per workspace docs/report/PLAN-*-review-*.md (default: 180)
-  --max-shadow-age-days <n>   Max allowed age for project shadow (default: 7)
+  --max-shadow-age-days <n>   Max allowed age for required shadow graph docs (default: 0, disabled)
   --max-task-age-days <n>     Max age for in_progress tasks (default: 7)
   --secret-scan-exclude-glob <glob>
                               Exclude glob for secret scan (repeatable).
@@ -41,13 +41,13 @@ PROJECT_ROOT="${1%/}"
 shift
 
 MODE="advisory"
-MAX_SHADOW_LINES=220
+MAX_SHADOW_LINES=300
 MAX_TASK_LINES=220
 MAX_DECISION_LINES=180
 MAX_PLAN_LINES=220
 MAX_REPORT_LINES=180
 MAX_ORCHESTRATION_LINES=180
-MAX_SHADOW_AGE_DAYS=7
+MAX_SHADOW_AGE_DAYS=0
 MAX_TASK_AGE_DAYS=7
 SECRET_SCAN_EXCLUDE_GLOBS=(
   "**/task-template.md"
@@ -172,6 +172,8 @@ WORKSPACE_ROOT="$(cd "$PROJECT_ROOT_ABS/.." && pwd)"
 DOCS_DIR="$WORKSPACE_ROOT/docs"
 TASK_DIR="$DOCS_DIR/task"
 SHADOW_DIR="$DOCS_DIR/shadow"
+SHADOW_GLOBAL_FILE="$SHADOW_DIR/_global.md"
+SHADOW_BUCKETS=(apps services packages infra data)
 DECISIONS_DIR="$DOCS_DIR/decisions"
 PLAN_DIR="$DOCS_DIR/plan"
 REPORT_DIR="$DOCS_DIR/report"
@@ -254,6 +256,41 @@ check_field_exists() {
   return 0
 }
 
+check_field_value_equals() {
+  local file_path="$1"
+  local key="$2"
+  local expected="$3"
+  local label="$4"
+  local value
+
+  value="$(extract_field_value "$file_path" "$key")"
+  if [[ -z "$value" ]]; then
+    fail "${key} is missing in ${label}: $file_path"
+    return 1
+  fi
+
+  if [[ "$value" != "$expected" ]]; then
+    fail "invalid ${key} in ${label}: expected ${expected}, found ${value} (${file_path})"
+    return 1
+  fi
+  return 0
+}
+
+check_redirect_shim_file() {
+  local file_path="$1"
+  local label="$2"
+
+  check_field_value_equals "$file_path" "doc_role" "redirect_shim" "$label"
+  check_field_exists "$file_path" "legacy_path" "$label"
+  check_field_exists "$file_path" "canonical_path" "$label"
+  check_field_exists "$file_path" "redirects_fact_scope" "$label"
+  check_field_exists "$file_path" "deprecated_since" "$label"
+  check_field_value_equals "$file_path" "status" "redirected" "$label"
+  check_field_value_equals "$file_path" "edit_policy" "read_only" "$label"
+  check_field_exists "$file_path" "replacement_reason" "$label"
+  check_field_exists "$file_path" "last_updated" "$label"
+}
+
 # Freshness check using last_updated field first, then mtime fallback
 check_freshness_days() {
   local file_path="$1"
@@ -261,6 +298,11 @@ check_freshness_days() {
   local label="$3"
   local age_days
   local last_updated
+
+  if (( max_days == 0 )); then
+    pass "${label} age-based freshness check disabled: $file_path"
+    return 0
+  fi
 
   last_updated="$(extract_field_value "$file_path" "last_updated")"
   if [[ -n "$last_updated" ]]; then
@@ -297,20 +339,15 @@ check_freshness_days() {
   fi
 }
 
-check_shadow_tracks_doc_updates() {
-  local shadow_file="$1"
+check_shadow_graph_tracks_doc_updates() {
   local newest_doc=""
   local newest_doc_epoch
+  local shadow_file
   local shadow_epoch
   local candidate
   local candidate_epoch
 
-  if [[ ! -f "$shadow_file" ]]; then
-    return 0
-  fi
-
-  shadow_epoch="$(file_mtime_epoch "$shadow_file")"
-  newest_doc_epoch="$shadow_epoch"
+  newest_doc_epoch="0"
 
   while IFS= read -r candidate; do
     candidate_epoch="$(file_mtime_epoch "$candidate")"
@@ -328,11 +365,21 @@ check_shadow_tracks_doc_updates() {
       | sort
   )
 
-  if [[ -n "$newest_doc" ]]; then
-    fail "project shadow is older than tracked task/decision doc: ${newest_doc}. Run doc_garden.sh and refresh workspace docs/shadow/project-shadow.md"
-  else
-    pass "shadow map is not older than tracked task/decision docs"
+  if [[ -z "$newest_doc" ]]; then
+    pass "shadow graph is not older than tracked task/decision docs"
+    return 0
   fi
+
+  for shadow_file in "$@"; do
+    [[ -f "$shadow_file" ]] || continue
+
+    shadow_epoch="$(file_mtime_epoch "$shadow_file")"
+    if (( shadow_epoch < newest_doc_epoch )); then
+      fail "shadow graph doc is older than tracked task/decision doc: ${shadow_file} < ${newest_doc}. Run doc_garden.sh and refresh the shadow graph"
+    else
+      pass "shadow graph doc is not older than tracked task/decision docs: ${shadow_file}"
+    fi
+  done
 }
 
 check_file_exists() {
@@ -591,18 +638,64 @@ check_dir_exists "$ORCHESTRATION_DIR" "orchestration directory"
 
 check_file_exists "$TASK_DIR/project-dictionary.md" "project dictionary"
 check_file_exists "$TASK_DIR/task-index.md" "task index"
-check_file_exists "$SHADOW_DIR/project-shadow.md" "project shadow"
+check_file_exists "$SHADOW_DIR/project-shadow.md" "shadow router"
+check_file_exists "$SHADOW_GLOBAL_FILE" "shadow global"
+for shadow_bucket in "${SHADOW_BUCKETS[@]}"; do
+  check_file_exists "$SHADOW_DIR/${shadow_bucket}/_index.md" "shadow bucket index (${shadow_bucket})"
+done
 check_file_exists "$DECISIONS_DIR/decision-index.md" "decision index"
 check_file_exists "$PLAN_DIR/PLAN-template.md" "plan template"
 check_file_exists "$REPORT_DIR/LLM-REVIEW-template.md" "report template"
 check_file_exists "$ORCHESTRATION_DIR/ORCH-template.md" "orchestration template"
 
-# --- Shadow map checks ---
-if [[ -f "$SHADOW_DIR/project-shadow.md" ]]; then
-  check_line_limit "$SHADOW_DIR/project-shadow.md" "$MAX_SHADOW_LINES" "shadow map"
-  check_freshness_days "$SHADOW_DIR/project-shadow.md" "$MAX_SHADOW_AGE_DAYS" "shadow map"
-  check_shadow_tracks_doc_updates "$SHADOW_DIR/project-shadow.md"
+# --- Shadow graph checks ---
+if [[ -d "$SHADOW_DIR" ]]; then
+  while IFS= read -r shadow_doc; do
+    check_line_limit "$shadow_doc" "$MAX_SHADOW_LINES" "shadow document"
+  done < <(
+    find "$SHADOW_DIR" -type f -name '*.md' \
+      ! -path "$SHADOW_DIR/_deprecated/*" \
+      ! -path "$SHADOW_DIR/_obsolete/*" \
+      | sort
+  )
 fi
+
+if [[ -d "$SHADOW_DIR" ]]; then
+  while IFS= read -r legacy_shadow_doc; do
+    check_redirect_shim_file "$legacy_shadow_doc" "legacy shadow shim"
+  done < <(
+    find "$SHADOW_DIR" -maxdepth 1 -type f -name '*.md' \
+      ! -name 'project-shadow.md' \
+      ! -name '_global.md' \
+      | sort
+  )
+fi
+
+if [[ -f "$SHADOW_DIR/project-shadow.md" ]]; then
+  check_field_value_equals "$SHADOW_DIR/project-shadow.md" "doc_role" "router" "shadow router"
+  check_field_exists "$SHADOW_DIR/project-shadow.md" "read_path" "shadow router"
+  check_field_exists "$SHADOW_DIR/project-shadow.md" "bucket_links" "shadow router"
+  check_field_exists "$SHADOW_DIR/project-shadow.md" "global_doc" "shadow router"
+  check_field_exists "$SHADOW_DIR/project-shadow.md" "updated_by_task" "shadow router"
+  check_field_exists "$SHADOW_DIR/project-shadow.md" "latest_change_note" "shadow router"
+  check_freshness_days "$SHADOW_DIR/project-shadow.md" "$MAX_SHADOW_AGE_DAYS" "shadow router"
+fi
+
+if [[ -f "$SHADOW_GLOBAL_FILE" ]]; then
+  check_field_value_equals "$SHADOW_GLOBAL_FILE" "doc_role" "global" "shadow global"
+  check_freshness_days "$SHADOW_GLOBAL_FILE" "$MAX_SHADOW_AGE_DAYS" "shadow global"
+fi
+
+for shadow_bucket in "${SHADOW_BUCKETS[@]}"; do
+  shadow_bucket_file="$SHADOW_DIR/${shadow_bucket}/_index.md"
+  if [[ -f "$shadow_bucket_file" ]]; then
+    check_field_value_equals "$shadow_bucket_file" "doc_role" "bucket_index" "shadow bucket index (${shadow_bucket})"
+    check_field_value_equals "$shadow_bucket_file" "bucket" "$shadow_bucket" "shadow bucket index (${shadow_bucket})"
+    check_freshness_days "$shadow_bucket_file" "$MAX_SHADOW_AGE_DAYS" "shadow bucket index (${shadow_bucket})"
+  fi
+done
+
+check_shadow_graph_tracks_doc_updates "$SHADOW_DIR/project-shadow.md"
 
 # --- Task file checks ---
 if [[ -d "$TASK_DIR" ]]; then

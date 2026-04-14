@@ -30,7 +30,8 @@ Use this reference when defining team process for agentic software development.
 - Keep durable knowledge in workspace `docs/task`, `docs/shadow`, `docs/decisions`.
 - Keep `AGENTS.md` as a concise map to standards and key references.
 - Avoid hidden decisions in chat-only history.
-- Treat `docs/shadow/project-shadow.md` as the fast system map for agent onboarding.
+- Treat `docs/shadow/project-shadow.md` as the top router into the shadow graph for agent onboarding.
+- Use `_global.md`, bucket `_index.md`, unit `overview.md`, and concern leaves to keep cross-unit rules, membership, routing, and concrete facts in their proper homes.
 - Run doc-gardening updates on every task to avoid stale memory.
 - Record every user choice in `docs/decisions`, including hotfix and PR decisions.
 
@@ -68,7 +69,7 @@ Define the required level per task in `docs/task/TASK-<id>.md`.
 
 ## Adoption checklist
 - [ ] Docs scaffold exists and is maintained.
-- [ ] Shadow dictionary is current and readable.
+- [ ] Shadow graph routing docs are current and readable.
 - [ ] Decision records capture user-selected options and plans.
 - [ ] Quality gates are automated and routinely executed.
 - [ ] Escalation rules are explicit for risky actions.

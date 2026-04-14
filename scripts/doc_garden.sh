@@ -41,7 +41,9 @@ Options:
   --owned-scopes "<text>"         Disjoint ownership summary for delegated agents
   --delegation-status <status>    planned|active|completed|blocked
   --delegation-note "<text>"      Exception note when delegation is partial or skipped
-  --shadow-note "<text>"          Short note for shadow map latest change
+  --shadow-note "<text>"          Short note for shadow graph latest change
+  --shadow-refresh-mode <mode>    same_session|git_diff (default: same_session)
+  --shadow-git-range "<range>"    Explicit git revision range for user-requested git_diff shadow refresh
   --allow-empty-overwrite          Allow empty values to overwrite existing values
   --no-init                        Skip scaffold initialization
   -h, --help                      Show this message
@@ -100,6 +102,8 @@ OWNED_SCOPES=""
 DELEGATION_STATUS=""
 DELEGATION_NOTE=""
 SHADOW_NOTE=""
+SHADOW_REFRESH_MODE="same_session"
+SHADOW_GIT_RANGE=""
 ALLOW_EMPTY_OVERWRITE="false"
 RUN_INIT="true"
 
@@ -205,6 +209,17 @@ validate_delegation_status() {
     planned|active|completed|blocked) ;;
     *)
       echo "[ERROR] Invalid --delegation-status: ${value} (use planned, active, completed, or blocked)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+validate_shadow_refresh_mode() {
+  local value="$1"
+  case "$value" in
+    same_session|git_diff) ;;
+    *)
+      echo "[ERROR] Invalid --shadow-refresh-mode: ${value} (use same_session or git_diff)" >&2
       exit 1
       ;;
   esac
@@ -382,6 +397,16 @@ while [[ $# -gt 0 ]]; do
       SHADOW_NOTE="${2:-}"
       shift 2
       ;;
+    --shadow-refresh-mode)
+      require_option_value "$1" "$#"
+      SHADOW_REFRESH_MODE="${2:-}"
+      shift 2
+      ;;
+    --shadow-git-range)
+      require_option_value "$1" "$#"
+      SHADOW_GIT_RANGE="${2:-}"
+      shift 2
+      ;;
     --allow-empty-overwrite)
       ALLOW_EMPTY_OVERWRITE="true"
       shift
@@ -431,6 +456,17 @@ fi
 if [[ -n "$DELEGATION_STATUS" ]]; then
   validate_delegation_status "$DELEGATION_STATUS"
 fi
+validate_shadow_refresh_mode "$SHADOW_REFRESH_MODE"
+
+if [[ "$SHADOW_REFRESH_MODE" == "git_diff" && -z "$SHADOW_GIT_RANGE" ]]; then
+  echo "[ERROR] --shadow-git-range is required when --shadow-refresh-mode git_diff is used" >&2
+  exit 1
+fi
+
+if [[ "$SHADOW_REFRESH_MODE" != "git_diff" && -n "$SHADOW_GIT_RANGE" ]]; then
+  echo "[ERROR] --shadow-git-range can only be used with --shadow-refresh-mode git_diff" >&2
+  exit 1
+fi
 
 if [[ -z "$DELEGATION_STATUS" ]]; then
   case "$TASK_STATUS" in
@@ -455,15 +491,15 @@ TASK_DIR="$DOCS_DIR/task"
 SHADOW_DIR="$DOCS_DIR/shadow"
 DECISIONS_DIR="$DOCS_DIR/decisions"
 ORCHESTRATION_DIR="$DOCS_DIR/orchestration"
+SHADOW_BUCKETS=(apps services packages infra data)
 
 if [[ "$RUN_INIT" == "true" ]]; then
-  if [[ ! -d "$TASK_DIR" || ! -d "$SHADOW_DIR" || ! -d "$DECISIONS_DIR" || ! -d "$ORCHESTRATION_DIR" ]]; then
-    "$INIT_SCRIPT" "$PROJECT_ROOT_ABS"
-  fi
+  "$INIT_SCRIPT" "$PROJECT_ROOT_ABS"
 fi
 TASK_INDEX="$TASK_DIR/task-index.md"
 DECISION_INDEX="$DECISIONS_DIR/decision-index.md"
 SHADOW_FILE="$SHADOW_DIR/project-shadow.md"
+SHADOW_GLOBAL_FILE="$SHADOW_DIR/_global.md"
 TMP_FILES=()
 LOCK_DIRS=()
 
@@ -541,6 +577,45 @@ upsert_field() {
     rm -f "${file_path}.bak"
   else
     printf -- "- %s: %s\n" "$key" "$normalized" >> "$file_path"
+  fi
+}
+
+is_git_repo() {
+  git -C "$PROJECT_ROOT_ABS" rev-parse --is-inside-work-tree >/dev/null 2>&1
+}
+
+resolve_shadow_change_note() {
+  local normalized_note=""
+  local diff_output=""
+  local changed_count="0"
+  local diff_note=""
+
+  if [[ -n "$SHADOW_NOTE" ]]; then
+    normalized_note="$(normalize "$SHADOW_NOTE")"
+  fi
+
+  if [[ "$SHADOW_REFRESH_MODE" != "git_diff" ]]; then
+    printf "%s" "$normalized_note"
+    return
+  fi
+
+  if ! is_git_repo; then
+    echo "[ERROR] --shadow-refresh-mode git_diff requires a git repository" >&2
+    exit 1
+  fi
+
+  if ! diff_output="$(git -C "$PROJECT_ROOT_ABS" diff --name-only "$SHADOW_GIT_RANGE")"; then
+    echo "[ERROR] Failed to collect git diff for shadow refresh range: $SHADOW_GIT_RANGE" >&2
+    exit 1
+  fi
+
+  changed_count="$(printf "%s\n" "$diff_output" | sed '/^$/d' | wc -l | tr -d ' ')"
+  diff_note="git_diff refresh from ${SHADOW_GIT_RANGE} (${changed_count} path(s))"
+
+  if [[ -n "$normalized_note" ]]; then
+    printf "%s | %s" "$normalized_note" "$diff_note"
+  else
+    printf "%s" "$diff_note"
   fi
 }
 
@@ -880,8 +955,50 @@ update_decision_index() {
   apply_decision_index_row "$file_name" "$row" "$DECISION_STATUS"
 }
 
+refresh_shadow_router() {
+  local file_path="$1"
+  local change_note="$2"
+
+  if [[ ! -f "$file_path" ]]; then
+    return 0
+  fi
+
+  upsert_field "$file_path" "last_updated" "$NOW_UTC"
+  if [[ -n "$TASK_ID" ]]; then
+    upsert_field "$file_path" "updated_by_task" "TASK-${TASK_ID}"
+  fi
+  if [[ -n "$change_note" ]]; then
+    upsert_field "$file_path" "latest_change_note" "$change_note"
+  fi
+}
+
+refresh_shadow_metadata_doc() {
+  local file_path="$1"
+
+  if [[ ! -f "$file_path" ]]; then
+    return 0
+  fi
+
+  upsert_field "$file_path" "last_updated" "$NOW_UTC"
+}
+
+refresh_shadow_graph() {
+  local change_note="$1"
+  local bucket
+  local bucket_file
+
+  refresh_shadow_router "$SHADOW_FILE" "$change_note"
+  refresh_shadow_metadata_doc "$SHADOW_GLOBAL_FILE"
+
+  for bucket in "${SHADOW_BUCKETS[@]}"; do
+    bucket_file="$SHADOW_DIR/$bucket/_index.md"
+    refresh_shadow_metadata_doc "$bucket_file"
+  done
+}
+
 NOW_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 TODAY="$(date -u +"%Y-%m-%d")"
+RESOLVED_SHADOW_CHANGE_NOTE="$(resolve_shadow_change_note)"
 
 if [[ -n "$TASK_ID" ]]; then
   TASK_FILE="$TASK_DIR/TASK-${TASK_ID}.md"
@@ -965,15 +1082,7 @@ if [[ -n "$DECISION_ID" ]]; then
   update_decision_index "decision-${DECISION_ID}.md" "$LINKED_TASK"
 fi
 
-if [[ -f "$SHADOW_FILE" ]]; then
-  upsert_field "$SHADOW_FILE" "last_updated" "$NOW_UTC"
-  if [[ -n "$TASK_ID" ]]; then
-    upsert_field "$SHADOW_FILE" "updated_by_task" "TASK-${TASK_ID}"
-  fi
-  if [[ -n "$SHADOW_NOTE" ]]; then
-    upsert_field "$SHADOW_FILE" "latest_change_note" "$SHADOW_NOTE"
-  fi
-fi
+refresh_shadow_graph "$RESOLVED_SHADOW_CHANGE_NOTE"
 
 echo "[OK] Doc-gardening sync complete."
 echo "  - Project: $PROJECT_ROOT"
@@ -983,4 +1092,8 @@ if [[ -n "$TASK_ID" ]]; then
 fi
 if [[ -n "$DECISION_ID" ]]; then
   echo "  - Decision: decision-${DECISION_ID}.md"
+fi
+echo "  - shadow_refresh_mode: $SHADOW_REFRESH_MODE"
+if [[ "$SHADOW_REFRESH_MODE" == "git_diff" ]]; then
+  echo "  - shadow_git_range: $SHADOW_GIT_RANGE"
 fi

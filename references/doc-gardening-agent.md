@@ -76,16 +76,22 @@ Recommended command flow:
   - evaluator label must be exactly one of `gemini`, `claude`, `codex`
   - keep report file names version-aware (`PLAN-...-vX.Y-review-<evaluator>-rNN.md`)
   - `execution_mode: supervisor_subagents` tasks must have at least one evaluator report before strict validation/merge handoff
-- `docs/shadow/project-shadow.md`:
-  - refresh architecture summary, module map, integrations, and constraints
-  - keep concise and high-signal
+- `docs/shadow/`:
+  - refresh the top router, `_global.md` when applicable, bucket indexes, unit overviews, and affected concern leaves
+  - keep `project-shadow.md` navigation-only
+  - keep `_global.md` optional and cross-unit only
+  - keep bucket `_index.md` files membership-only
+  - keep unit `overview.md` files as landing docs plus concern routing
+  - keep concern leaf docs factual and concrete
 - `docs/orchestration`:
   - record supervising lead architect identity, delegated agent roles, owned scopes, and exception notes
 
 ## Quality checks
 - Check that every user decision is traceable to a decision file.
 - Check that every task/hotfix/PR/release/incident has related decision records when a user choice was made.
-- Check that shadow dictionary matches current structure and naming.
+- Check that shadow routing docs match current structure and naming.
+- Check that the default read path remains `project-shadow.md -> <bucket>/_index.md -> <bucket>/<unit>/overview.md -> concern leaf`.
+- Check that any moved shadow doc leaves a thin redirect shim at the old path and archives the replaced body under `_deprecated` or `_obsolete`.
 - Check that task status reflects actual implementation state.
 - Check that no secret values appear in any docs file.
 
@@ -98,6 +104,7 @@ Mode guidance:
 - [ ] Decision file created/updated
 - [ ] Plan file created/updated with semantic version (`v1.0`, `v1.1`, ...)
 - [ ] Evaluator report file(s) added (`gemini|claude|codex`) when `execution_mode: supervisor_subagents`
-- [ ] Shadow dictionary refreshed
+- [ ] Shadow router, `_global.md` when applicable, bucket indexes, unit overviews, and affected leaf docs refreshed
+- [ ] Thin redirect shims added for moved shadow paths and replaced bodies archived under `_deprecated` or `_obsolete`
 - [ ] Decision index updated
 - [ ] No secrets in docs
