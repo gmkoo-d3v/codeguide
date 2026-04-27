@@ -2,9 +2,9 @@
 
 Use this template for semi-automated external ping-pong review of `PLAN-*` docs.
 
-Wrapper scripts must write the full request to a Markdown handoff file and capture raw stdout in a Markdown response file before parsing it into `docs/report/`.
+Wrapper scripts must write the full request to a redacted Markdown handoff file and capture sanitized stdout in a Markdown response file before parsing it into `docs/report/`.
 Request handoff files should use metadata plus `Why`, `What`, `How`, `Where`, `Verify`, then payload.
-Response handoff files should keep the parser-compatible bullet fields below.
+Valid response handoff files should use the parser-compatible bullet fields below; malformed sanitized stdout may be preserved for retry diagnostics.
 
 ## Review stance
 - Default to defect-seeking review rather than approval-seeking review.

@@ -209,6 +209,8 @@ write_mock_cli() {
   [ "$status" -eq 0 ]
   run test -d "$DOCS_ROOT/shadow"
   [ "$status" -eq 0 ]
+  run test -d "$DOCS_ROOT/orchestration/external-cli"
+  [ "$status" -eq 0 ]
   run test ! -d "$DOCS_ROOT/repo"
   [ "$status" -eq 0 ]
   run test ! -d "$DOCS_ROOT/repos"
@@ -1538,7 +1540,7 @@ EOF
 - plan_version: v1.0
 - objective: validate external review automation
 - scope: docs-only review pipeline
-- assumptions: mock CLIs are available
+- assumptions: mock CLIs are available with api_key="sk-12345678901234567890"
 - risks: formatting drift
 - acceptance_signals: two review docs are written
 - stop_conditions: report generation completes
@@ -1576,7 +1578,7 @@ else
 - verdict: revise
 - summary: The sequencing is mostly sound, but the review contract should be stricter about malformed output handling.
 - strengths: It clearly stops before auto-versioning the plan.
-- risks: Retry handling and malformed output normalization could still drift if formatting instructions are ignored.
+- risks: Retry handling and malformed output normalization could still drift if token="ghp_12345678901234567890" is echoed.
 - requested_changes: Keep the report parser strict and summarize reviewer failures in the final wrapper output.
 EOF
 fi'
@@ -1664,6 +1666,14 @@ exit 99'
   [ "$status" -eq 0 ]
   run grep "review contract should be stricter" "$handoff_dir/gemini.retry-response.md"
   [ "$status" -eq 0 ]
+  run grep -F "[REDACTED_SECRET]" "$handoff_dir/gemini.request.md"
+  [ "$status" -eq 0 ]
+  run grep -F "[REDACTED_SECRET]" "$handoff_dir/gemini.retry-response.md"
+  [ "$status" -eq 0 ]
+  run grep "sk-12345678901234567890" "$handoff_dir/gemini.request.md"
+  [ "$status" -ne 0 ]
+  run grep "ghp_12345678901234567890" "$handoff_dir/gemini.retry-response.md"
+  [ "$status" -ne 0 ]
   run grep "$handoff_dir/gemini.retry-request.md" "$TEST_WORKSPACE/gemini-args.log"
   [ "$status" -eq 0 ]
 }

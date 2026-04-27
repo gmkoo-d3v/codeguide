@@ -103,7 +103,7 @@ Reference-first governance skill for architecture, code quality, documentation l
 - When invoking external LLM CLIs such as `gemini`, `claude`, or `codex`, write the full request into a Markdown handoff file first instead of passing the full prompt as a shell argument.
 - Structure request handoff files as metadata plus `Why`, `What`, `How`, `Where`, `Verify`, then payload.
 - Pass only a short instruction and the absolute handoff file path to the CLI; also feed the same Markdown request file on stdin when the wrapper supports it.
-- Capture raw CLI stdout into a Markdown response file before parsing or normalizing it into `docs/report/`; keep response files parser-friendly when downstream automation depends on fixed bullet fields.
+- Capture CLI stdout into a redacted Markdown response file before parsing or normalizing it into `docs/report/`; request parser-compatible bullet fields when downstream automation depends on fixed response fields, but preserve malformed sanitized stdout for retry diagnostics.
 - Keep durable handoff artifacts under workspace docs, preferably `docs/orchestration/external-cli/`, so long prompts and raw responses survive shell argument limits and are easy to inspect.
 - Do not put raw secrets in handoff or response files; redact sensitive values before writing durable Markdown artifacts.
 

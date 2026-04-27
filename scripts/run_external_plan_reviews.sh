@@ -219,6 +219,19 @@ normalize_one_line() {
   printf "%s" "$1" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^[[:space:]]*//; s/[[:space:]]*$//'
 }
 
+redact_secrets_to_file() {
+  local source_file="$1"
+  local target_file="$2"
+
+  perl -0pe '
+    s/sk-[A-Za-z0-9]{20,}/[REDACTED_SECRET]/g;
+    s/ghp_[A-Za-z0-9]{20,}/[REDACTED_SECRET]/g;
+    s/AKIA[0-9A-Z]{16}/[REDACTED_AWS_ACCESS_KEY]/g;
+    s/-----BEGIN (?:RSA|EC|OPENSSH|PRIVATE) KEY-----.*?-----END (?:RSA|EC|OPENSSH|PRIVATE) KEY-----/[REDACTED_PRIVATE_KEY]/gs;
+    s/((?:api[_-]?key|token|password|secret|private[_-]?key)\s*[:=]\s*)(?:"[^"\n]{6,}"|'\''[^'\''\n]{6,}'\''|[^\s\n]{6,})/${1}[REDACTED_SECRET]/gi;
+  ' "$source_file" > "$target_file"
+}
+
 escape_sed() {
   printf "%s" "$1" | sed 's/[\\&|]/\\&/g'
 }
@@ -467,8 +480,12 @@ write_handoff_request() {
   local evaluator="$3"
   local review_style="$4"
   local strict_retry="${5:-false}"
+  local raw_request_file
 
-  cat > "$request_file" <<EOF
+  raw_request_file="$(mktemp)"
+  register_tmp_file "$raw_request_file"
+
+  cat > "$raw_request_file" <<EOF
 # External plan review request (${evaluator})
 
 - task_id: ${TASK_ID}
@@ -492,7 +509,7 @@ write_handoff_request() {
 
 ## How
 
-- Use the output contract above exactly.
+- Use the detailed output contract below exactly.
 - Keep every field value on one line so the wrapper can normalize the response into docs/report/.
 - Prefer concrete defects, missing safeguards, and verification gaps over approval-oriented feedback.
 
@@ -520,6 +537,8 @@ $(build_prompt "$evaluator" "$review_style" "$strict_retry")
 $(cat "$PLAN_FILE")
 \`\`\`
 EOF
+
+  redact_secrets_to_file "$raw_request_file" "$request_file"
 }
 
 tool_model_for() {
@@ -543,8 +562,9 @@ tool_bin_for() {
 run_tool_prompt() {
   local tool="$1"
   local request_file="$2"
-  local response_file="$3"
+  local output_capture_file="$3"
   local stderr_file="$4"
+  local durable_response_file="${5:-$output_capture_file}"
   local model_override
   local binary
   local prompt
@@ -552,7 +572,7 @@ run_tool_prompt() {
 
   binary="$(tool_bin_for "$tool")"
   model_override="$(tool_model_for "$tool")"
-  prompt="Read the Markdown request file at ${request_file}, review the embedded plan, and return only the requested markdown bullet fields. The wrapper will save stdout to ${response_file}."
+  prompt="Read the Markdown request file at ${request_file}, review the embedded plan, and return only the requested markdown bullet fields. The wrapper will capture stdout and store the sanitized Markdown response at ${durable_response_file}."
 
   if ! command -v "$binary" >/dev/null 2>&1; then
     echo "[ERROR] ${tool} binary not found in PATH: ${binary}" > "$stderr_file"
@@ -583,7 +603,7 @@ run_tool_prompt() {
       ;;
   esac
 
-  if "${cmd[@]}" <"$request_file" >"$response_file" 2>"$stderr_file"; then
+  if "${cmd[@]}" <"$request_file" >"$output_capture_file" 2>"$stderr_file"; then
     return 0
   fi
   return $?
@@ -595,7 +615,7 @@ preserve_stderr_if_needed() {
   local status="$3"
 
   if [[ "$status" -ne 0 || -s "$temp_stderr_file" ]]; then
-    cp "$temp_stderr_file" "$durable_stderr_file"
+    redact_secrets_to_file "$temp_stderr_file" "$durable_stderr_file"
   else
     rm -f "$durable_stderr_file" 2>/dev/null || true
   fi
@@ -686,8 +706,11 @@ for reviewer in "${REVIEWERS[@]}"; do
 
   request_file="$HANDOFF_DIR/${reviewer}.request.md"
   response_file="$HANDOFF_DIR/${reviewer}.response.md"
+  response_raw_file="$(mktemp)"
   stderr_durable_file="$HANDOFF_DIR/${reviewer}.stderr.md"
+  active_stderr_durable_file="$stderr_durable_file"
   stderr_file="$(mktemp)"
+  register_tmp_file "$response_raw_file"
   register_tmp_file "$stderr_file"
 
   rm -f "$request_file" "$response_file" "$stderr_durable_file" \
@@ -697,11 +720,12 @@ for reviewer in "${REVIEWERS[@]}"; do
 
   write_handoff_request "$request_file" "$response_file" "$reviewer" "$review_style" "false"
   run_status=0
-  if run_tool_prompt "$reviewer" "$request_file" "$response_file" "$stderr_file"; then
+  if run_tool_prompt "$reviewer" "$request_file" "$response_raw_file" "$stderr_file" "$response_file"; then
     run_status=0
   else
     run_status=$?
   fi
+  redact_secrets_to_file "$response_raw_file" "$response_file"
   preserve_stderr_if_needed "$stderr_file" "$stderr_durable_file" "$run_status"
 
   if [[ "$run_status" -eq 0 ]] && parse_review_response "$response_file" "$review_style"; then
@@ -709,26 +733,31 @@ for reviewer in "${REVIEWERS[@]}"; do
   elif [[ "$run_status" -eq 0 ]]; then
     retry_request_file="$HANDOFF_DIR/${reviewer}.retry-request.md"
     retry_response_file="$HANDOFF_DIR/${reviewer}.retry-response.md"
+    retry_response_raw_file="$(mktemp)"
     retry_stderr_durable_file="$HANDOFF_DIR/${reviewer}.retry-stderr.md"
     retry_stderr="$(mktemp)"
+    register_tmp_file "$retry_response_raw_file"
     register_tmp_file "$retry_stderr"
     write_handoff_request "$retry_request_file" "$retry_response_file" "$reviewer" "$review_style" "true"
     retry_status=0
-    if run_tool_prompt "$reviewer" "$retry_request_file" "$retry_response_file" "$retry_stderr"; then
+    if run_tool_prompt "$reviewer" "$retry_request_file" "$retry_response_raw_file" "$retry_stderr" "$retry_response_file"; then
       retry_status=0
     else
       retry_status=$?
     fi
+    redact_secrets_to_file "$retry_response_raw_file" "$retry_response_file"
     preserve_stderr_if_needed "$retry_stderr" "$retry_stderr_durable_file" "$retry_status"
 
     if [[ "$retry_status" -eq 0 ]] && parse_review_response "$retry_response_file" "$review_style"; then
       response_file="$retry_response_file"
       stderr_file="$retry_stderr"
+      active_stderr_durable_file="$retry_stderr_durable_file"
       run_status=0
     else
       run_status=65
       if [[ "$retry_status" -ne 0 ]]; then
         stderr_file="$retry_stderr"
+        active_stderr_durable_file="$retry_stderr_durable_file"
       fi
     fi
   fi
@@ -742,7 +771,7 @@ for reviewer in "${REVIEWERS[@]}"; do
     STATUS_LINES+=("[OK] evaluator=${reviewer} style=${review_style} verdict=${PARSED_VERDICT} file=${report_file} summary=$(normalize_one_line "$PARSED_SUMMARY")")
   else
     FAIL_COUNT=$((FAIL_COUNT + 1))
-    failure_reason="$(normalize_one_line "$(cat "$stderr_file" 2>/dev/null || true)")"
+    failure_reason="$(normalize_one_line "$(cat "$active_stderr_durable_file" 2>/dev/null || cat "$stderr_file" 2>/dev/null || true)")"
     if [[ -z "$failure_reason" ]]; then
       failure_reason="response missing required fields"
     fi

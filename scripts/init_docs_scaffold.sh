@@ -55,10 +55,11 @@ DECISIONS_DIR="${DOCS_DIR}/decisions"
 PLAN_DIR="${DOCS_DIR}/plan"
 REPORT_DIR="${DOCS_DIR}/report"
 ORCHESTRATION_DIR="${DOCS_DIR}/orchestration"
+EXTERNAL_CLI_DIR="${ORCHESTRATION_DIR}/external-cli"
 SHADOW_BUCKETS=(apps services packages infra data)
 SHADOW_ARCHIVE_DIRS=(_deprecated _obsolete)
 
-mkdir -p "${TASK_DIR}" "${SHADOW_DIR}" "${DECISIONS_DIR}" "${PLAN_DIR}" "${REPORT_DIR}" "${ORCHESTRATION_DIR}"
+mkdir -p "${TASK_DIR}" "${SHADOW_DIR}" "${DECISIONS_DIR}" "${PLAN_DIR}" "${REPORT_DIR}" "${ORCHESTRATION_DIR}" "${EXTERNAL_CLI_DIR}"
 
 for bucket in "${SHADOW_BUCKETS[@]}"; do
   mkdir -p "${SHADOW_DIR}/${bucket}"
@@ -334,7 +335,7 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 - Create plan file first: workspace docs `plan/PLAN-<task-id>-v1.0.md`.
 - Write evaluator report files in workspace docs `report/` with evaluator labels: gemini | claude | codex.
 - External CLI handoff files live under `orchestration/external-cli/<task-id>/<plan-version>/<round>/`.
-- External CLI requests use metadata plus `Why`, `What`, `How`, `Where`, `Verify`, then payload; raw stdout responses stay parser-compatible Markdown bullet files.
+- External CLI requests use metadata plus `Why`, `What`, `How`, `Where`, `Verify`, then payload; CLI stdout is captured as sanitized Markdown and valid responses use parser-compatible bullet fields.
 - Pass only a short instruction plus the request file path to the CLI.
 - Default ping-pong mode uses external evaluators; if the user explicitly asks for sub-agent ping-pong review, interpret it as Codex sub-agent mode instead.
 - Mark high-risk work with `risk_level: high|critical` on the task or linked decision.
@@ -380,4 +381,5 @@ echo "  - ${DECISIONS_DIR}"
 echo "  - ${PLAN_DIR}"
 echo "  - ${REPORT_DIR}"
 echo "  - ${ORCHESTRATION_DIR}"
+echo "  - ${EXTERNAL_CLI_DIR}"
 echo "Template files are created only when missing."
