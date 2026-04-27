@@ -23,3 +23,7 @@ __pycache__/
 .mypy_cache/
 .coverage
 .coverage.*
+
+# Local tool state
+.serena/
+tmp/

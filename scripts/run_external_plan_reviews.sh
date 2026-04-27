@@ -480,11 +480,41 @@ write_handoff_request() {
 - source_plan_file: ${PLAN_FILE}
 - expected_response_file: ${response_file}
 
-## Instructions
+## Why
+
+- Collect an evidence-based external review without passing a long prompt through shell arguments.
+- Preserve the raw request and response as Markdown orchestration artifacts.
+
+## What
+
+- Review PLAN-${TASK_ID}-${PLAN_VERSION} as ${evaluator} in ${review_style} mode for round ${REVIEW_ROUND}.
+- Return only the parser-compatible Markdown bullet fields requested in the instructions.
+
+## How
+
+- Use the output contract above exactly.
+- Keep every field value on one line so the wrapper can normalize the response into docs/report/.
+- Prefer concrete defects, missing safeguards, and verification gaps over approval-oriented feedback.
+
+### Detailed Instructions
 
 $(build_prompt "$evaluator" "$review_style" "$strict_retry")
 
-## Plan under review
+## Where
+
+- Source plan file: ${PLAN_FILE}
+- Raw response file expected by wrapper: ${response_file}
+- Final normalized report directory: ${REPORT_DIR}
+
+## Verify
+
+- Valid verdict values are accept, revise, or blocked.
+- Standard reviews must include verdict, summary, strengths, risks, and requested_changes.
+- Adversarial reviews must also include objection, counterproposal, rebuttal, and residual_risk.
+
+## Payload
+
+### Plan under review
 
 \`\`\`markdown
 $(cat "$PLAN_FILE")

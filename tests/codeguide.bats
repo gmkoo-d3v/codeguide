@@ -1644,7 +1644,19 @@ exit 99'
   [ "$status" -eq 0 ]
   run test ! -f "$handoff_dir/claude.stderr.md"
   [ "$status" -eq 0 ]
-  run grep "## Plan under review" "$handoff_dir/gemini.request.md"
+  run grep "## Why" "$handoff_dir/gemini.request.md"
+  [ "$status" -eq 0 ]
+  run grep "## What" "$handoff_dir/gemini.request.md"
+  [ "$status" -eq 0 ]
+  run grep "## How" "$handoff_dir/gemini.request.md"
+  [ "$status" -eq 0 ]
+  run grep "## Where" "$handoff_dir/gemini.request.md"
+  [ "$status" -eq 0 ]
+  run grep "## Verify" "$handoff_dir/gemini.request.md"
+  [ "$status" -eq 0 ]
+  run grep "## Payload" "$handoff_dir/gemini.request.md"
+  [ "$status" -eq 0 ]
+  run grep "### Plan under review" "$handoff_dir/gemini.request.md"
   [ "$status" -eq 0 ]
   run grep "# PLAN-ext-review-01-v1.0" "$handoff_dir/gemini.request.md"
   [ "$status" -eq 0 ]

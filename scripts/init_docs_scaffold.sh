@@ -334,7 +334,8 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 - Create plan file first: workspace docs `plan/PLAN-<task-id>-v1.0.md`.
 - Write evaluator report files in workspace docs `report/` with evaluator labels: gemini | claude | codex.
 - External CLI handoff files live under `orchestration/external-cli/<task-id>/<plan-version>/<round>/`.
-- External CLI requests and raw stdout responses are Markdown files; pass only a short instruction plus the request file path to the CLI.
+- External CLI requests use metadata plus `Why`, `What`, `How`, `Where`, `Verify`, then payload; raw stdout responses stay parser-compatible Markdown bullet files.
+- Pass only a short instruction plus the request file path to the CLI.
 - Default ping-pong mode uses external evaluators; if the user explicitly asks for sub-agent ping-pong review, interpret it as Codex sub-agent mode instead.
 - Mark high-risk work with `risk_level: high|critical` on the task or linked decision.
 - Advisory validation warns when an active task omits `risk_level`.
