@@ -195,12 +195,14 @@ DECISIONS_DIR="$DOCS_DIR/decisions"
 PLAN_DIR="$DOCS_DIR/plan"
 REPORT_DIR="$DOCS_DIR/report"
 ORCHESTRATION_DIR="$DOCS_DIR/orchestration"
+HANDOFF_DIR="$ORCHESTRATION_DIR/external-cli/$TASK_ID/$PLAN_VERSION/$REVIEW_ROUND"
 
 THIS_DIR="$(cd "$(dirname "$0")" && pwd)"
 INIT_SCRIPT="$THIS_DIR/init_docs_scaffold.sh"
 PROMPT_TEMPLATE_FILE="$THIS_DIR/../references/external-plan-review-prompt.md"
 
 "$INIT_SCRIPT" "$PROJECT_ROOT_ABS"
+mkdir -p "$HANDOFF_DIR"
 
 PLAN_FILE="$PLAN_DIR/PLAN-${TASK_ID}-${PLAN_VERSION}.md"
 if [[ ! -f "$PLAN_FILE" ]]; then
@@ -459,6 +461,37 @@ EOF
   fi
 }
 
+write_handoff_request() {
+  local request_file="$1"
+  local response_file="$2"
+  local evaluator="$3"
+  local review_style="$4"
+  local strict_retry="${5:-false}"
+
+  cat > "$request_file" <<EOF
+# External plan review request (${evaluator})
+
+- task_id: ${TASK_ID}
+- plan_version: ${PLAN_VERSION}
+- evaluator: ${evaluator}
+- review_style: ${review_style}
+- review_round: ${REVIEW_ROUND}
+- primary_author_tool: ${PRIMARY_TOOL}
+- source_plan_file: ${PLAN_FILE}
+- expected_response_file: ${response_file}
+
+## Instructions
+
+$(build_prompt "$evaluator" "$review_style" "$strict_retry")
+
+## Plan under review
+
+\`\`\`markdown
+$(cat "$PLAN_FILE")
+\`\`\`
+EOF
+}
+
 tool_model_for() {
   local tool="$1"
   case "$tool" in
@@ -479,15 +512,17 @@ tool_bin_for() {
 
 run_tool_prompt() {
   local tool="$1"
-  local prompt="$2"
-  local stdout_file="$3"
+  local request_file="$2"
+  local response_file="$3"
   local stderr_file="$4"
   local model_override
   local binary
+  local prompt
   local -a cmd
 
   binary="$(tool_bin_for "$tool")"
   model_override="$(tool_model_for "$tool")"
+  prompt="Read the Markdown request file at ${request_file}, review the embedded plan, and return only the requested markdown bullet fields. The wrapper will save stdout to ${response_file}."
 
   if ! command -v "$binary" >/dev/null 2>&1; then
     echo "[ERROR] ${tool} binary not found in PATH: ${binary}" > "$stderr_file"
@@ -518,10 +553,22 @@ run_tool_prompt() {
       ;;
   esac
 
-  if "${cmd[@]}" <"$PLAN_FILE" >"$stdout_file" 2>"$stderr_file"; then
+  if "${cmd[@]}" <"$request_file" >"$response_file" 2>"$stderr_file"; then
     return 0
   fi
   return $?
+}
+
+preserve_stderr_if_needed() {
+  local temp_stderr_file="$1"
+  local durable_stderr_file="$2"
+  local status="$3"
+
+  if [[ "$status" -ne 0 || -s "$temp_stderr_file" ]]; then
+    cp "$temp_stderr_file" "$durable_stderr_file"
+  else
+    rm -f "$durable_stderr_file" 2>/dev/null || true
+  fi
 }
 
 PARSED_VERDICT=""
@@ -607,36 +654,45 @@ for reviewer in "${REVIEWERS[@]}"; do
     mv "$report_file" "$stale_file"
   fi
 
-  stdout_file="$(mktemp)"
+  request_file="$HANDOFF_DIR/${reviewer}.request.md"
+  response_file="$HANDOFF_DIR/${reviewer}.response.md"
+  stderr_durable_file="$HANDOFF_DIR/${reviewer}.stderr.md"
   stderr_file="$(mktemp)"
-  register_tmp_file "$stdout_file"
   register_tmp_file "$stderr_file"
 
-  prompt="$(build_prompt "$reviewer" "$review_style" "false")"
+  rm -f "$request_file" "$response_file" "$stderr_durable_file" \
+    "$HANDOFF_DIR/${reviewer}.retry-request.md" \
+    "$HANDOFF_DIR/${reviewer}.retry-response.md" \
+    "$HANDOFF_DIR/${reviewer}.retry-stderr.md"
+
+  write_handoff_request "$request_file" "$response_file" "$reviewer" "$review_style" "false"
   run_status=0
-  if run_tool_prompt "$reviewer" "$prompt" "$stdout_file" "$stderr_file"; then
+  if run_tool_prompt "$reviewer" "$request_file" "$response_file" "$stderr_file"; then
     run_status=0
   else
     run_status=$?
   fi
+  preserve_stderr_if_needed "$stderr_file" "$stderr_durable_file" "$run_status"
 
-  if [[ "$run_status" -eq 0 ]] && parse_review_response "$stdout_file" "$review_style"; then
+  if [[ "$run_status" -eq 0 ]] && parse_review_response "$response_file" "$review_style"; then
     :
   elif [[ "$run_status" -eq 0 ]]; then
-    retry_stdout="$(mktemp)"
+    retry_request_file="$HANDOFF_DIR/${reviewer}.retry-request.md"
+    retry_response_file="$HANDOFF_DIR/${reviewer}.retry-response.md"
+    retry_stderr_durable_file="$HANDOFF_DIR/${reviewer}.retry-stderr.md"
     retry_stderr="$(mktemp)"
-    register_tmp_file "$retry_stdout"
     register_tmp_file "$retry_stderr"
-    retry_prompt="$(build_prompt "$reviewer" "$review_style" "true")"
+    write_handoff_request "$retry_request_file" "$retry_response_file" "$reviewer" "$review_style" "true"
     retry_status=0
-    if run_tool_prompt "$reviewer" "$retry_prompt" "$retry_stdout" "$retry_stderr"; then
+    if run_tool_prompt "$reviewer" "$retry_request_file" "$retry_response_file" "$retry_stderr"; then
       retry_status=0
     else
       retry_status=$?
     fi
+    preserve_stderr_if_needed "$retry_stderr" "$retry_stderr_durable_file" "$retry_status"
 
-    if [[ "$retry_status" -eq 0 ]] && parse_review_response "$retry_stdout" "$review_style"; then
-      stdout_file="$retry_stdout"
+    if [[ "$retry_status" -eq 0 ]] && parse_review_response "$retry_response_file" "$review_style"; then
+      response_file="$retry_response_file"
       stderr_file="$retry_stderr"
       run_status=0
     else

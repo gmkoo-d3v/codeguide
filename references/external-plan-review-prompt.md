@@ -2,6 +2,8 @@
 
 Use this template for semi-automated external ping-pong review of `PLAN-*` docs.
 
+Wrapper scripts must write the full request to a Markdown handoff file and capture raw stdout in a Markdown response file before parsing it into `docs/report/`.
+
 ## Review stance
 - Default to defect-seeking review rather than approval-seeking review.
 - Assume the plan may contain logical gaps, sequencing flaws, weak assumptions, contract mismatches, convention drift, missing verification, and understated risk until checked.

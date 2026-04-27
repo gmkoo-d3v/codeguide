@@ -99,6 +99,13 @@ Reference-first governance skill for architecture, code quality, documentation l
 - Treat the following user phrases as the same sub-agent trigger: `서브에이전트`, `서브 에이전트`, `subagent`, `subagents`, `sub-agent`, `sub-agents`.
 - If delegation is skipped, record `execution_mode: solo` plus a non-empty `delegation_note` explaining the exception.
 
+## External CLI File Handoff Contract
+- When invoking external LLM CLIs such as `gemini`, `claude`, or `codex`, write the full request into a Markdown handoff file first instead of passing the full prompt as a shell argument.
+- Pass only a short instruction and the absolute handoff file path to the CLI; also feed the same Markdown request file on stdin when the wrapper supports it.
+- Capture raw CLI stdout into a Markdown response file before parsing or normalizing it into `docs/report/`.
+- Keep durable handoff artifacts under workspace docs, preferably `docs/orchestration/external-cli/`, so long prompts and raw responses survive shell argument limits and are easy to inspect.
+- Do not put raw secrets in handoff or response files; redact sensitive values before writing durable Markdown artifacts.
+
 ## Minimal Workflow
 1. Start lifecycle: `run_codeguide.sh <project-root> --task-status in_progress`
 2. The supervising lead architect resolves delegation boundaries and assigns sub-agents for plan/review/code tracks
@@ -120,14 +127,14 @@ Reference-first governance skill for architecture, code quality, documentation l
    - when the task or any linked decision sets `risk_level: high|critical`, require one adversarial review pass before strict handoff; this pass assumes the initial plan is wrong and records `objection`, `counterproposal`, `rebuttal`, and `residual_risk`
    - default ping-pong behavior uses external evaluators: primary author tool writes the plan, the other two tools review it
    - if a task or linked decision is high-risk and the operator does not explicitly pick an adversarial evaluator, external CLI ping-pong should auto-select one of the non-primary reviewers for the adversarial pass
-   - if the user explicitly requests ping-pong review with sub-agents (including the alias forms listed in the orchestration contract), interpret that as Codex sub-agent review mode and do not call external `gemini`/`claude` evaluators by default
+   - if the user explicitly requests ping-pong review with sub-agents (including the alias forms listed in the orchestration contract), interpret that as Codex sub-agent review mode and do not call external `gemini`/`claude`/`codex` evaluators by default
 3. The supervising lead architect consolidates feedback into the next versioned plan file without overwriting old versions:
    - version examples: `v1.1`, `v1.2`, `v2.0`
 4. Repeat the sub-agent review/revision loop until one of these stop conditions is met:
    - plan is acceptable for execution
    - user explicitly asks to stop
    - semi-automated external review mode must stop after collecting report docs and showing the user the results; it must not auto-create the next plan version
-   - external CLI ping-pong should use each tool's default model unless the operator explicitly overrides it; do not depend on hardcoded model-version strings
+   - external CLI ping-pong should use Markdown request/response files for tool handoff, use each tool's default model unless the operator explicitly overrides it, and avoid hardcoded model-version strings
 5. When implementation begins, coding sub-agents own disjoint code scopes while the supervising lead architect tracks the selected plan version in related `decision-*` and `TASK-*` docs.
    - for `codeguide`-invoked code writing work that explicitly requests sub-agents, prefer a standard four-track split when practical: planner, reviewer/evaluator, implementation, validation
 6. At task close, ensure the final architecture/runtime state is reflected in the affected `docs/shadow/` router, `_global.md` when applicable, bucket indexes, unit overviews, and leaf docs.

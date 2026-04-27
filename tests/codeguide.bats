@@ -1628,6 +1628,32 @@ exit 99'
   [ "$status" -ne 0 ]
   run grep -E -- '(^|[[:space:]])--model([[:space:]]|$)' "$TEST_WORKSPACE/claude-args.log"
   [ "$status" -ne 0 ]
+
+  local handoff_dir="$DOCS_ROOT/orchestration/external-cli/ext-review-01/v1.0/r01"
+  run test -f "$handoff_dir/gemini.request.md"
+  [ "$status" -eq 0 ]
+  run test -f "$handoff_dir/gemini.response.md"
+  [ "$status" -eq 0 ]
+  run test -f "$handoff_dir/gemini.retry-request.md"
+  [ "$status" -eq 0 ]
+  run test -f "$handoff_dir/gemini.retry-response.md"
+  [ "$status" -eq 0 ]
+  run test -f "$handoff_dir/claude.request.md"
+  [ "$status" -eq 0 ]
+  run test -f "$handoff_dir/claude.response.md"
+  [ "$status" -eq 0 ]
+  run test ! -f "$handoff_dir/claude.stderr.md"
+  [ "$status" -eq 0 ]
+  run grep "## Plan under review" "$handoff_dir/gemini.request.md"
+  [ "$status" -eq 0 ]
+  run grep "# PLAN-ext-review-01-v1.0" "$handoff_dir/gemini.request.md"
+  [ "$status" -eq 0 ]
+  run grep "malformed first response" "$handoff_dir/gemini.response.md"
+  [ "$status" -eq 0 ]
+  run grep "review contract should be stricter" "$handoff_dir/gemini.retry-response.md"
+  [ "$status" -eq 0 ]
+  run grep "$handoff_dir/gemini.retry-request.md" "$TEST_WORKSPACE/gemini-args.log"
+  [ "$status" -eq 0 ]
 }
 
 @test "run_external_plan_reviews supports adversarial reviewer and optional model override with best-effort success" {
@@ -1699,6 +1725,18 @@ EOF'
   run grep "^- objection:" "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-r02.md"
   [ "$status" -eq 0 ]
   run grep -- "gpt-5.4" "$TEST_WORKSPACE/codex-args.log"
+  [ "$status" -eq 0 ]
+
+  local handoff_dir="$DOCS_ROOT/orchestration/external-cli/ext-review-02/v1.0/r02"
+  run test -f "$handoff_dir/codex.request.md"
+  [ "$status" -eq 0 ]
+  run test -f "$handoff_dir/codex.response.md"
+  [ "$status" -eq 0 ]
+  run test -f "$handoff_dir/claude.stderr.md"
+  [ "$status" -eq 0 ]
+  run grep "# PLAN-ext-review-02-v1.0" "$handoff_dir/codex.request.md"
+  [ "$status" -eq 0 ]
+  run grep "$handoff_dir/codex.request.md" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
 }
 
@@ -1783,6 +1821,16 @@ EOF'
   run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-gemini-r04.md"
   [ "$status" -eq 0 ]
   run test -f "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-codex-r04.md"
+  [ "$status" -eq 0 ]
+
+  local handoff_dir="$DOCS_ROOT/orchestration/external-cli/ext-review-04/v1.0/r04"
+  run test -f "$handoff_dir/gemini.request.md"
+  [ "$status" -eq 0 ]
+  run test -f "$handoff_dir/gemini.response.md"
+  [ "$status" -eq 0 ]
+  run test -f "$handoff_dir/codex.request.md"
+  [ "$status" -eq 0 ]
+  run test -f "$handoff_dir/codex.response.md"
   [ "$status" -eq 0 ]
 }
 
