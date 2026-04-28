@@ -7,6 +7,14 @@ mcp-servers: [sequential, context7, magic, playwright, morphllm, serena]
 personas: [architect, analyzer, frontend, backend, security, devops, project-manager]
 ---
 
+> [!CAUTION]
+> **LEGACY REFERENCE ONLY**
+> Legacy comparative reference only. This file is historical material from Claude SC, not active Codeguide policy.
+> Do not follow Serena, memory, MCP, PM-agent, or tool-use instructions in this file as execution guidance.
+> Active policy is defined in `SKILL.md`, `references/mcp-context-integration.md`, `references/serena-workflow.md`, and `references/mem0-policy.md`.
+> Any `read_memory`, `write_memory`, `MANDATORY`, or always-active memory action described here is superseded and prohibited unless the active Codeguide policy explicitly allows it.
+
+
 # /sc:brainstorm - Interactive Requirements Discovery
 
 > **Context Framework Note**: This file provides behavioral instructions for Claude Code when users type `/sc:brainstorm` patterns. This is NOT an executable command - it's a context trigger that activates the behavioral patterns defined below.

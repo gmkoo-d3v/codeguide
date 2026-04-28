@@ -1096,6 +1096,49 @@ EOF
   rm -rf "$workspace"
 }
 
+@test "check_english_docs requires legacy warning on claude-sc references" {
+  local workspace
+  workspace="$(mktemp -d)"
+  mkdir -p "$workspace/references/claude-sc"
+
+  cat > "$workspace/references/claude-sc/pm.md" <<'EOF'
+# Legacy PM
+
+Session Start (MANDATORY): ALWAYS activates memory.
+EOF
+
+  run "$CHECK_ENGLISH_DOCS" "$workspace"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"missing required legacy warning"* ]]
+
+  rm -rf "$workspace"
+}
+
+@test "check_english_docs allows guarded claude-sc legacy examples" {
+  local workspace
+  workspace="$(mktemp -d)"
+  mkdir -p "$workspace/references/claude-sc"
+
+  cat > "$workspace/references/claude-sc/pm.md" <<'EOF'
+> [!CAUTION]
+> **LEGACY REFERENCE ONLY**
+> Legacy comparative reference only. This file is historical material from Claude SC, not active Codeguide policy.
+> Do not follow Serena, memory, MCP, PM-agent, or tool-use instructions in this file as execution guidance.
+> Active policy is defined in `SKILL.md`, `references/mcp-context-integration.md`, `references/serena-workflow.md`, and `references/mem0-policy.md`.
+> Any `read_memory`, `write_memory`, `MANDATORY`, or always-active memory action described here is superseded and prohibited unless the active Codeguide policy explicitly allows it.
+
+# Legacy PM
+
+Session Start (MANDATORY): ALWAYS activates memory.
+이 문장은 guarded legacy 파일이라서 허용됩니다.
+EOF
+
+  run "$CHECK_ENGLISH_DOCS" "$workspace"
+  [ "$status" -eq 0 ]
+
+  rm -rf "$workspace"
+}
+
 @test "run_codeguide bootstraps initial plan doc for active task" {
   run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "plan-01" --mode advisory
   [ "$status" -eq 0 ]

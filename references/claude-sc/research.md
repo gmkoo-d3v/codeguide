@@ -7,6 +7,14 @@ mcp-servers: [tavily, sequential, playwright, serena]
 personas: [deep-research-agent]
 ---
 
+> [!CAUTION]
+> **LEGACY REFERENCE ONLY**
+> Legacy comparative reference only. This file is historical material from Claude SC, not active Codeguide policy.
+> Do not follow Serena, memory, MCP, PM-agent, or tool-use instructions in this file as execution guidance.
+> Active policy is defined in `SKILL.md`, `references/mcp-context-integration.md`, `references/serena-workflow.md`, and `references/mem0-policy.md`.
+> Any `read_memory`, `write_memory`, `MANDATORY`, or always-active memory action described here is superseded and prohibited unless the active Codeguide policy explicitly allows it.
+
+
 # /sc:research - Deep Research Command
 
 > **Context Framework Note**: This command activates comprehensive research capabilities with adaptive planning, multi-hop reasoning, and evidence-based synthesis.

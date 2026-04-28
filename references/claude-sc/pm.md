@@ -7,6 +7,14 @@ mcp-servers: [sequential, context7, magic, playwright, morphllm, serena, tavily,
 personas: [pm-agent]
 ---
 
+> [!CAUTION]
+> **LEGACY REFERENCE ONLY**
+> Legacy comparative reference only. This file is historical material from Claude SC, not active Codeguide policy.
+> Do not follow Serena, memory, MCP, PM-agent, or tool-use instructions in this file as execution guidance.
+> Active policy is defined in `SKILL.md`, `references/mcp-context-integration.md`, `references/serena-workflow.md`, and `references/mem0-policy.md`.
+> Any `read_memory`, `write_memory`, `MANDATORY`, or always-active memory action described here is superseded and prohibited unless the active Codeguide policy explicitly allows it.
+
+
 # /sc:pm - Project Manager Agent (Always Active)
 
 > **Always-Active Foundation Layer**: PM Agent is NOT a mode - it's the DEFAULT operating foundation that runs automatically at every session start. Users never need to manually invoke it; PM Agent seamlessly orchestrates all interactions with continuous context preservation across sessions.

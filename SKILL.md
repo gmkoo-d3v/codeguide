@@ -82,6 +82,20 @@ Reference-first governance skill for architecture, code quality, documentation l
 - Preserve legacy compatibility with thin redirect shims at old paths and archive replaced bodies under `_deprecated` or `_obsolete`.
 - Target roughly 200 lines per shadow doc; use 300 lines as a soft cap and split by concern when a doc stops routing well.
 
+## MCP Context Contract
+- MCP tools are context accelerators, not authoritative sources.
+- Treat workspace docs as the authoritative project record; treat repository files, tests, command output, and runtime observations as current evidence that can prove docs stale.
+- Legacy references under `references/claude-sc/` are historical comparison material only; their MCP, Serena, memory, PM-agent, or tool-use instructions have no execution authority and cannot override this contract.
+- If code, tests, command output, or runtime evidence conflicts with docs, report the conflict before changing either side and classify the docs as a stale candidate.
+- Use Serena only when explicitly requested or when the task flow has a concrete symbolic-code trigger, such as anchors, symbols, references, call-chain discovery, cross-file refactors, shared DTO/API/config changes, impact analysis, unfamiliar architecture review, or changes touching three or more files.
+- Treat Serena as flow-triggered semi-automatic support, not an unconditional default; the user does not need to mention Serena when a trigger fits, and Serena should stay unused when no trigger fits.
+- If Serena is unavailable, stale, misconfigured, disabled, or not useful, continue with `rg`, direct file reads, `docs/shadow`, and command output; report the fallback when it materially affects confidence or documentation.
+- Honor MCP kill switches such as `no serena`, `skip mcp`, `manual only`, `MCP off`, `MCP 끄고`, and `Serena 쓰지 말고`.
+- Keep mem0 disabled by default as a semi-automatic workflow; use it only as restricted read-only advisory memory/index for prior judgments, preferences, conventions, and decision context when the user explicitly asks to search memory, docs/code cannot answer the prior-context question, or a phase gate requires memory consistency checks.
+- Announce mem0 lookups before use, verify every memory hint against current sources before citation, and do not write to mem0 in the default workflow.
+- Never store secrets, credentials, API keys, raw tokens, sensitive personal data, raw conversation logs, unverified external claims, volatile branch/PR/issue state, or temporary debugging details in memory.
+- Broader mem0 activation and any mem0 write path require documented retention, deletion/update workflow, audit logging, explicit opt-in phrase, stale-memory conflict handling, write approval flow, explicit per-item consent, and resolved storage compatibility gates.
+
 ## Orchestration Contract
 - Main thread acts as the supervising lead architect and workflow supervisor: gather requirements, choose delegation boundaries, own architectural direction, monitor progress, integrate outcomes, and make final safety/quality decisions.
 - Sub-agents own execution tracks: planning, plan review, implementation, and targeted verification should be delegated to separate agents when the work is material and separable.
@@ -169,4 +183,5 @@ Reference-first governance skill for architecture, code quality, documentation l
 - Start with: `references/index.md`
 - Load only required reference file(s) for the active task
 - Prefer core governance and quality-gate references first; use secondary framework references only for legacy examples or migration context.
+- Use `references/mcp-context-integration.md`, `references/serena-workflow.md`, and `references/mem0-policy.md` when MCP context behavior affects a task.
 - `mold*` research artifacts are intentionally excluded from the curated reference set.

@@ -6,6 +6,9 @@ Use this file to pick the smallest authoritative reference set for the active ta
 - Docs system-of-record and templates: `docs-system-of-record.md`
 - Doc-gardening process: `doc-gardening-agent.md`
 - Tools and automation details: `tools-automation.md`
+- MCP context integration policy: `mcp-context-integration.md`
+- Serena symbolic workflow: `serena-workflow.md`
+- mem0 restricted memory policy: `mem0-policy.md`
 - External plan review prompt: `external-plan-review-prompt.md`
 - PR and commit templates: `git-pr-commit-templates.md`
 - Engineering operating principles: `harness-engineering-principles.md`
@@ -23,14 +26,15 @@ Use this file to pick the smallest authoritative reference set for the active ta
 - Backend architecture patterns: `backend-patterns.md`
 - Frontend architecture decision rules: `frontend-patterns.md`
 - Integration and security patterns: `integration-patterns.md`
-- Claude SC comparative playbooks: `claude-sc/index.md`
 
 ## Deprecated / Secondary Framework References
 - React (JavaScript) legacy examples: `frontend-react-javascript.md`
 - React (TypeScript) legacy examples: `frontend-react-typescript.md`
 - Tailwind legacy examples: `frontend-tailwind.md`
 - Vue legacy examples: `frontend-vue.md`
+- Claude SC comparative playbooks: `claude-sc/index.md`
 - Use dedicated framework skills and official documentation first for setup, API details, and version-specific behavior.
+- Legacy Claude SC playbooks are comparative references only; their Serena or memory instructions must not override `SKILL.md`, `mcp-context-integration.md`, `serena-workflow.md`, or `mem0-policy.md`.
 
 ## Selection Rules
 1. Start with one core governance or quality-gate file.
