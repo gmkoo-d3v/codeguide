@@ -92,6 +92,7 @@ Reference-first governance skill for architecture, code quality, documentation l
 - If Serena is unavailable, stale, misconfigured, disabled, or not useful, continue with `rg`, direct file reads, `docs/shadow`, and command output; report the fallback when it materially affects confidence or documentation.
 - Honor MCP kill switches such as `no serena`, `skip mcp`, `manual only`, `MCP off`, `MCP 끄고`, and `Serena 쓰지 말고`.
 - Keep mem0 disabled by default as a semi-automatic workflow; use it only as restricted read-only advisory memory/index for prior judgments, preferences, conventions, and decision context when the user explicitly asks to search memory, docs/code cannot answer the prior-context question, or a phase gate requires memory consistency checks.
+- For shared mem0, pgvector, or Neo4j runtimes, require explicit project scope before trusting auxiliary results; derive the expected project id from the active project's docs, runtime config, or verified environment, not from a hard-coded default.
 - Announce mem0 lookups before use, verify every memory hint against current sources before citation, and do not write to mem0 in the default workflow.
 - Never store secrets, credentials, API keys, raw tokens, sensitive personal data, raw conversation logs, unverified external claims, volatile branch/PR/issue state, or temporary debugging details in memory.
 - Broader mem0 activation and any mem0 write path require documented retention, deletion/update workflow, audit logging, explicit opt-in phrase, stale-memory conflict handling, write approval flow, explicit per-item consent, and resolved storage compatibility gates.
@@ -116,9 +117,11 @@ Reference-first governance skill for architecture, code quality, documentation l
 ## External CLI File Handoff Contract
 - When invoking external LLM CLIs such as `gemini`, `claude`, or `codex`, write the full request into a Markdown handoff file first instead of passing the full prompt as a shell argument.
 - Structure request handoff files as metadata plus `Why`, `What`, `How`, `Where`, `Verify`, then payload.
-- Pass only a short instruction and the absolute handoff file path to the CLI; also feed the same Markdown request file on stdin when the wrapper supports it.
+- Pass only a short instruction and the absolute handoff file path to the CLI; do not stream the full request body on stdin by default because the Markdown file is the durable handoff contract.
+- Keep CLI invocation contracts tool-specific: Claude should preserve normal login credentials while disabling per-run conversation persistence and using read-only file access, Gemini should run in plan/read-only mode with the workspace included, and Codex should run in read-only sandbox mode from the workspace root.
+- For Codex CLI, prefer its final-message output file option when available so runtime logs do not pollute the parser-compatible Markdown response.
 - Capture CLI stdout into a redacted Markdown response file before parsing or normalizing it into `docs/report/`; request parser-compatible bullet fields when downstream automation depends on fixed response fields, but preserve malformed sanitized stdout for retry diagnostics.
-- Keep durable handoff artifacts under workspace docs, preferably `docs/orchestration/external-cli/`, so long prompts and raw responses survive shell argument limits and are easy to inspect.
+- Keep durable handoff artifacts under workspace docs, preferably `docs/orchestration/external-cli/<MonDD_YYYY>/<task-id>/<plan-version>/<round>/` such as `Apr29_2026/...`, so long prompts and raw responses survive shell argument limits and are easy to inspect.
 - Do not put raw secrets in handoff or response files; redact sensitive values before writing durable Markdown artifacts.
 
 ## Minimal Workflow

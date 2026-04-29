@@ -62,6 +62,13 @@ Use this reference when symbolic code navigation can reduce risk, context size, 
 - Do not persist raw Serena observations into mem0 or Neo4j.
 - Keep generated notes free of secrets and sensitive personal data.
 
+## Memory isolation
+- Treat normal Serena project memories as project-local files under the active project's `.serena/memories`.
+- Confirm the active project before reading or writing Serena project memory.
+- Do not add DB-level project-id isolation to normal Serena project memories unless the runtime model changes.
+- Treat global Serena memories or global Serena configuration as shared auxiliary context; verify them against docs, code, or runtime evidence before use.
+- Keep workspace `docs/` as the system of record even when Serena project memory contains a matching summary.
+
 ## Verification expectations
 - For refactors, prove references compile or tests cover the changed surface.
 - For API or DTO changes, verify consumers, schemas, and serialization boundaries.

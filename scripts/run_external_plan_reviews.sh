@@ -195,7 +195,8 @@ DECISIONS_DIR="$DOCS_DIR/decisions"
 PLAN_DIR="$DOCS_DIR/plan"
 REPORT_DIR="$DOCS_DIR/report"
 ORCHESTRATION_DIR="$DOCS_DIR/orchestration"
-HANDOFF_DIR="$ORCHESTRATION_DIR/external-cli/$TASK_ID/$PLAN_VERSION/$REVIEW_ROUND"
+HANDOFF_DATE="$(LC_TIME=C date +"%b%d_%Y")"
+HANDOFF_DIR="$ORCHESTRATION_DIR/external-cli/$HANDOFF_DATE/$TASK_ID/$PLAN_VERSION/$REVIEW_ROUND"
 
 THIS_DIR="$(cd "$(dirname "$0")" && pwd)"
 INIT_SCRIPT="$THIS_DIR/init_docs_scaffold.sh"
@@ -568,11 +569,12 @@ run_tool_prompt() {
   local model_override
   local binary
   local prompt
+  local cli_log_file=""
+  local codex_status=0
   local -a cmd
 
   binary="$(tool_bin_for "$tool")"
   model_override="$(tool_model_for "$tool")"
-  prompt="Read the Markdown request file at ${request_file}, review the embedded plan, and return only the requested markdown bullet fields. The wrapper will capture stdout and store the sanitized Markdown response at ${durable_response_file}."
 
   if ! command -v "$binary" >/dev/null 2>&1; then
     echo "[ERROR] ${tool} binary not found in PATH: ${binary}" > "$stderr_file"
@@ -581,21 +583,24 @@ run_tool_prompt() {
 
   case "$tool" in
     gemini)
-      cmd=("$binary" --approval-mode plan --output-format text)
+      prompt="Read the Markdown request file from disk at ${request_file}. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields to stdout; do not write files. The wrapper will sanitize stdout into ${durable_response_file}."
+      cmd=("$binary" --approval-mode plan --output-format text --include-directories "$WORKSPACE_ROOT")
       if [[ -n "$model_override" ]]; then
         cmd+=(-m "$model_override")
       fi
       cmd+=(-p "$prompt")
       ;;
     claude)
-      cmd=("$binary" -p --permission-mode plan --output-format text)
+      prompt="Use read-only file access to read the Markdown request file at ${request_file}. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields to stdout; do not write files. The wrapper will sanitize stdout into ${durable_response_file}."
+      cmd=("$binary" -p --permission-mode dontAsk --tools Read --add-dir "$WORKSPACE_ROOT" --output-format text --no-session-persistence)
       if [[ -n "$model_override" ]]; then
         cmd+=(--model "$model_override")
       fi
       cmd+=("$prompt")
       ;;
     codex)
-      cmd=("$binary" exec --skip-git-repo-check --sandbox read-only -C "$PROJECT_ROOT_ABS")
+      prompt="Read the Markdown request file from disk at ${request_file}. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields as the final message; do not write files. The wrapper will sanitize the final message into ${durable_response_file}."
+      cmd=("$binary" exec --skip-git-repo-check --sandbox read-only --ephemeral -C "$WORKSPACE_ROOT" --add-dir "$PROJECT_ROOT_ABS" --output-last-message "$output_capture_file")
       if [[ -n "$model_override" ]]; then
         cmd+=(-m "$model_override")
       fi
@@ -603,7 +608,25 @@ run_tool_prompt() {
       ;;
   esac
 
-  if "${cmd[@]}" <"$request_file" >"$output_capture_file" 2>"$stderr_file"; then
+  if [[ "$tool" == "codex" ]]; then
+    cli_log_file="$(mktemp)"
+    register_tmp_file "$cli_log_file"
+    "${cmd[@]}" >"$cli_log_file" 2>"$stderr_file"
+    codex_status=$?
+    if [[ -s "$cli_log_file" ]]; then
+      cat "$cli_log_file" >> "$stderr_file"
+    fi
+    if [[ "$codex_status" -ne 0 ]]; then
+      return "$codex_status"
+    fi
+    if [[ ! -s "$output_capture_file" ]]; then
+      echo "[ERROR] codex final message file was empty: ${output_capture_file}" >> "$stderr_file"
+      return 66
+    fi
+    return 0
+  fi
+
+  if "${cmd[@]}" >"$output_capture_file" 2>"$stderr_file"; then
     return 0
   fi
   return $?

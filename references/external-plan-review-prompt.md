@@ -3,6 +3,8 @@
 Use this template for semi-automated external ping-pong review of `PLAN-*` docs.
 
 Wrapper scripts must write the full request to a redacted Markdown handoff file and capture sanitized stdout in a Markdown response file before parsing it into `docs/report/`.
+Wrapper scripts should pass only a short instruction plus the absolute request-file path to external CLIs; the Markdown request file is the handoff contract, not stdin.
+When a CLI emits runtime logs on stdout, wrappers should capture the final model message through a dedicated response-file option if the CLI supports one.
 Request handoff files should use metadata plus `Why`, `What`, `How`, `Where`, `Verify`, then payload.
 Valid response handoff files should use the parser-compatible bullet fields below; malformed sanitized stdout may be preserved for retry diagnostics.
 

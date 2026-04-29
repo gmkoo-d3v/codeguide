@@ -20,6 +20,20 @@ docs_root_for_project() {
   printf "%s/docs" "$workspace_root"
 }
 
+external_handoff_dir() {
+  local task_id="$1"
+  local plan_version="$2"
+  local review_round="$3"
+
+  find "$DOCS_ROOT/orchestration/external-cli" \
+    -mindepth 4 \
+    -maxdepth 4 \
+    -type d \
+    -path "*/${task_id}/${plan_version}/${review_round}" \
+    | sort \
+    | tail -n 1
+}
+
 setup() {
   TEST_WORKSPACE="$(mktemp -d)"
   export TEST_WORKSPACE
@@ -1611,7 +1625,6 @@ fi
 count=$((count + 1))
 printf "%s" "$count" > "$count_file"
 printf "%s\n" "$@" > "${TEST_WORKSPACE}/gemini-args.log"
-cat >/dev/null
 if [[ "$count" -eq 1 ]]; then
   cat <<EOF
 - summary: malformed first response
@@ -1628,7 +1641,6 @@ fi'
 
   write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
 printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
-cat >/dev/null
   cat <<EOF
 - verdict: blocked
 - summary: The flow is semi-automated in the right place, but report validation should remain strict because downstream handoff depends on it.
@@ -1673,8 +1685,19 @@ exit 99'
   [ "$status" -ne 0 ]
   run grep -E -- '(^|[[:space:]])--model([[:space:]]|$)' "$TEST_WORKSPACE/claude-args.log"
   [ "$status" -ne 0 ]
+  run grep -- "--include-directories" "$TEST_WORKSPACE/gemini-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "--tools" "$TEST_WORKSPACE/claude-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "Read" "$TEST_WORKSPACE/claude-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "--bare" "$TEST_WORKSPACE/claude-args.log"
+  [ "$status" -ne 0 ]
 
-  local handoff_dir="$DOCS_ROOT/orchestration/external-cli/ext-review-01/v1.0/r01"
+  local handoff_dir
+  handoff_dir="$(external_handoff_dir "ext-review-01" "v1.0" "r01")"
+  [ -n "$handoff_dir" ]
+  [[ "$handoff_dir" =~ /[A-Z][a-z]{2}[0-9]{2}_[0-9]{4}/ext-review-01/v1\.0/r01$ ]]
   run test -f "$handoff_dir/gemini.request.md"
   [ "$status" -eq 0 ]
   run test -f "$handoff_dir/gemini.response.md"
@@ -1752,14 +1775,24 @@ exit 99'
 
   write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
 printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
-cat >/dev/null
 echo "mock claude failure" >&2
 exit 7'
 
   write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
 printf "%s\n" "$@" > "${TEST_WORKSPACE}/codex-args.log"
-cat >/dev/null
-cat <<EOF
+output_file=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-last-message" ]]; then
+    output_file="${2:-}"
+    shift 2
+  else
+    shift
+  fi
+done
+if [[ -z "$output_file" ]]; then
+  output_file="/dev/stdout"
+fi
+cat > "$output_file" <<EOF
 - verdict: revise
 - summary: The plan is usable, but the orchestration metadata should make the manual stop condition more explicit.
 - strengths: It keeps review collection separate from plan version mutation.
@@ -1791,8 +1824,19 @@ EOF'
   [ "$status" -eq 0 ]
   run grep -- "gpt-5.4" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
+  run grep -- "--sandbox" "$TEST_WORKSPACE/codex-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "read-only" "$TEST_WORKSPACE/codex-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "--ephemeral" "$TEST_WORKSPACE/codex-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "--output-last-message" "$TEST_WORKSPACE/codex-args.log"
+  [ "$status" -eq 0 ]
 
-  local handoff_dir="$DOCS_ROOT/orchestration/external-cli/ext-review-02/v1.0/r02"
+  local handoff_dir
+  handoff_dir="$(external_handoff_dir "ext-review-02" "v1.0" "r02")"
+  [ -n "$handoff_dir" ]
+  [[ "$handoff_dir" =~ /[A-Z][a-z]{2}[0-9]{2}_[0-9]{4}/ext-review-02/v1\.0/r02$ ]]
   run test -f "$handoff_dir/codex.request.md"
   [ "$status" -eq 0 ]
   run test -f "$handoff_dir/codex.response.md"
@@ -1846,7 +1890,6 @@ exit 99'
 
   write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
 printf "%s\n" "$@" > "${TEST_WORKSPACE}/gemini-args.log"
-cat >/dev/null
 cat <<EOF
 - verdict: revise
 - summary: The high-risk path correctly demands an adversarial pass before handoff.
@@ -1861,8 +1904,19 @@ EOF'
 
   write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
 printf "%s\n" "$@" > "${TEST_WORKSPACE}/codex-args.log"
-cat >/dev/null
-cat <<EOF
+output_file=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-last-message" ]]; then
+    output_file="${2:-}"
+    shift 2
+  else
+    shift
+  fi
+done
+if [[ -z "$output_file" ]]; then
+  output_file="/dev/stdout"
+fi
+cat > "$output_file" <<EOF
 - verdict: revise
 - summary: The standard reviewer agrees the loop should stop after collecting reports.
 - strengths: It separates report collection from plan mutation.
@@ -1888,7 +1942,10 @@ EOF'
   run test -f "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-codex-r04.md"
   [ "$status" -eq 0 ]
 
-  local handoff_dir="$DOCS_ROOT/orchestration/external-cli/ext-review-04/v1.0/r04"
+  local handoff_dir
+  handoff_dir="$(external_handoff_dir "ext-review-04" "v1.0" "r04")"
+  [ -n "$handoff_dir" ]
+  [[ "$handoff_dir" =~ /[A-Z][a-z]{2}[0-9]{2}_[0-9]{4}/ext-review-04/v1\.0/r04$ ]]
   run test -f "$handoff_dir/gemini.request.md"
   [ "$status" -eq 0 ]
   run test -f "$handoff_dir/gemini.response.md"
@@ -1945,7 +2002,6 @@ EOF
   mkdir -p "$mock_bin"
 
   write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
-cat >/dev/null
 echo "gemini failure" >&2
 exit 3'
 
@@ -1954,7 +2010,6 @@ echo "claude should not be called for primary=claude" >&2
 exit 99'
 
   write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
-cat >/dev/null
 echo "codex failure" >&2
 exit 4'
 
@@ -2015,13 +2070,23 @@ echo "claude should not be called for primary=claude" >&2
 exit 99'
 
   write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
-cat >/dev/null
 echo "forced adversarial failure" >&2
 exit 8'
 
   write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
-cat >/dev/null
-cat <<EOF
+output_file=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-last-message" ]]; then
+    output_file="${2:-}"
+    shift 2
+  else
+    shift
+  fi
+done
+if [[ -z "$output_file" ]]; then
+  output_file="/dev/stdout"
+fi
+cat > "$output_file" <<EOF
 - verdict: revise
 - summary: The standard reviewer succeeded.
 - strengths: It still produced a valid report.
@@ -2038,5 +2103,63 @@ EOF'
   [ "$status" -ne 0 ]
   [[ "$output" == *"Required adversarial review did not complete successfully"* ]]
   run test -f "$DOCS_ROOT/report/PLAN-ext-review-05-v1.0-review-codex-r05.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews treats empty codex final message as failure" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-review-06-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-review-06-v1.0
+
+- task_id: ext-review-06
+- plan_version: v1.0
+- objective: verify codex empty final-message handling
+- scope: external ping-pong reviews
+- assumptions: codex can exit zero without writing final message
+- risks: runtime logs could be mistaken for model response
+- acceptance_signals: wrapper exits non-zero
+- stop_conditions: empty final message is surfaced
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Run reviewers.
+2. Let codex exit zero without writing --output-last-message.
+3. Expect failure.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+echo "gemini should not be called for primary=gemini" >&2
+exit 99'
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+echo "mock claude failure" >&2
+exit 7'
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/codex-args.log"
+echo "codex runtime log only"
+exit 0'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-review-06" \
+    --plan-version "v1.0" \
+    --primary-tool "gemini" \
+    --review-round "r06"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"[FAIL] evaluator=codex"* ]]
+  run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-06-v1.0-review-codex-r06.md"
+  [ "$status" -eq 0 ]
+
+  local handoff_dir
+  handoff_dir="$(external_handoff_dir "ext-review-06" "v1.0" "r06")"
+  [ -n "$handoff_dir" ]
+  run grep "codex final message file was empty" "$handoff_dir/codex.stderr.md"
+  [ "$status" -eq 0 ]
+  run grep "codex runtime log only" "$handoff_dir/codex.stderr.md"
   [ "$status" -eq 0 ]
 }

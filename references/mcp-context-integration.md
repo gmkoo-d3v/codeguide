@@ -23,6 +23,11 @@ Use this shape when MCP evidence materially affects a task:
 ```yaml
 authoritative_record: docs
 evidence_basis: docs | code | command_output | runtime | mixed | unresolved
+project_scope:
+  id: "<project id or none>"
+  source: env | config | tool_filter | docs | mcp_project | unavailable
+  confidence: verified | derived_unverified | unsupported
+  verified_against: "<path, command, tool result, or none>"
 mem0_status: used | skipped | blocked
 mem0_write_status: disabled | not_requested | approved | blocked
 serena_status: used | skipped | blocked
@@ -64,6 +69,16 @@ mutations:
 - pgvector: auxiliary semantic retrieval backend for mem0-like memory, never authority.
 - Neo4j: auxiliary graph retrieval backend for relationships between evidence sources, never authority.
 - Other MCP tools: use only when their output can be checked against authoritative docs or current runtime evidence, or when the user explicitly requests the connected system.
+
+## Project scope isolation
+- For shared MCP backing stores, always identify the active project scope before relying on auxiliary results.
+- Use config-first project identity when available, such as `GRAPH_SYNC_PROJECT_ID`.
+- Derive the expected project id from the active project's docs, runtime config, checked environment, or verified MCP project selection.
+- Do not hard-code one repository's project id as the default for other projects.
+- Mem0, pgvector, and Neo4j results for project-specific work must be filtered by project id when the runtime exposes project-scoped metadata.
+- Treat missing, `global`, ambiguous, or default-derived project ids as unsupported for project-specific facts; use them only as retrieval hints after labeling the scope problem.
+- Serena normal project memories are isolated by the active project's `.serena/memories`; do not redesign them around DB-level project ids.
+- Global Serena memories and global Serena configuration are not project-local and require the same caution as other shared auxiliary context.
 
 ## Combined workflow
 1. Read current docs/system-of-record material when relevant.

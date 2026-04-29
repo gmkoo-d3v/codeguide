@@ -18,6 +18,11 @@ Use this reference only when durable memory could affect prior judgments, histor
 ## Scope rules
 - Use explicit scope identifiers where supported.
 - Choose scope by data ownership before applying the default order: personal preferences should use `user_id` when available, while shared project conventions and decisions should use project or workspace scope.
+- For shared Mem0, pgvector, or Neo4j runtimes, require an explicit project scope before trusting auxiliary results.
+- Prefer a config-driven project identifier, such as `GRAPH_SYNC_PROJECT_ID`, when the runtime supports one.
+- Treat `global` or missing project scope as unsupported for project-specific facts, not an acceptable repository identity.
+- Derive the expected graph-sync project scope from the active project's docs, runtime config, checked environment, or verified MCP project selection; graph and vector reads must filter by that project id when the underlying runtime exposes it.
+- Do not reuse another repository's project id just because it appeared in a previous memory, report, or smoke test.
 - Preferred scope order:
   1. project or workspace scope
   2. `app_id` or `app`
@@ -27,6 +32,9 @@ Use this reference only when durable memory could affect prior judgments, histor
   6. tool default scope only if no explicit scope is available
 - Always report the exact scope used.
 - If explicit scope is unsupported, report the fallback scope and treat results as lower confidence.
+- For project-specific facts, do not promote fallback scopes such as `app_id`, `user_id`, `agent_id`, `run_id`, or tool default into project scope.
+- If project scope is unavailable for a project-specific lookup, label results `[unsupported-memory]` and use them only as search hints until verified against docs, code, command output, tests, or runtime evidence from the active project.
+- Do not assume `app_id` in local Mem0 mode behaves like cloud Mem0 project or app isolation.
 
 ## Read functions
 When available, use read-only functions first:
@@ -79,6 +87,10 @@ Write rules:
 - Treat semantic and graph results as auxiliary retrieval signals.
 - Never use graph edges as authoritative facts.
 - Require `source_ref`, `last_verified_at`, and freshness metadata before trusting an edge even as a strong hint.
+- Require project-scope filtering for shared graph or vector stores before using project-specific results as retrieval hints.
+- When diagnosing graph stale issues, inspect graph-sync state first, including `project_id`, `memory_id`, `freshness`, `pending_op`, and source hashes when available.
+- When comparing pgvector source rows to graph-sync state, filter source rows by the payload project id field when available, such as `payload.graph_sync_project_id`.
+- In Neo4j-backed memory graphs, expect project-scoped memory, concept, and relationship records; do not mix concepts across projects unless the query explicitly asks for cross-project comparison.
 - If source docs or code changed, produce a stale-candidate dry-run report first.
 - Stale marking or cleanup requires explicit approval after dry-run.
 - For graph cleanup, never delete shared entities unless the tool proves they are orphaned.
