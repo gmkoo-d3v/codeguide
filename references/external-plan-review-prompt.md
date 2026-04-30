@@ -12,6 +12,7 @@ Valid response handoff files should use the parser-compatible bullet fields belo
 - Default to defect-seeking review rather than approval-seeking review.
 - Assume the plan may contain logical gaps, sequencing flaws, weak assumptions, contract mismatches, convention drift, missing verification, and understated risk until checked.
 - Keep criticism evidence-based and actionable.
+- Avoid process expansion for its own sake; request more planning or review only when it materially reduces execution risk.
 
 ## Standard review
 - Judge whether the plan is execution-ready.
@@ -36,3 +37,4 @@ Valid response handoff files should use the parser-compatible bullet fields belo
 - Return only the requested markdown bullet fields.
 - Keep every field value on a single line so wrapper scripts can normalize the response into `docs/report/`.
 - Prefer `revise` or `blocked` unless the plan is clearly ready to execute.
+- Prefer `accept` when remaining issues are minor, already covered by validation, or unlikely to change implementation choices.

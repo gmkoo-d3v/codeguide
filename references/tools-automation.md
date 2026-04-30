@@ -3,10 +3,12 @@
 Use this reference when planning or evaluating local quality checks, CI gates, and test automation.
 
 ## Execution strategy
+- Prefer the fewest useful tool loops that still prove correctness, safety, and required grounding.
 - Run fast static checks first (lint/type checks) to fail early.
 - Run unit tests before integration/E2E tests.
 - Run the smallest command set that still proves correctness and safety.
 - Prefer deterministic, repeatable commands with pinned tool versions.
+- Stop once the core request is answered with sufficient evidence and additional checks are unlikely to change the result materially.
 
 ## Recommended command matrix
 
@@ -34,8 +36,8 @@ Use this reference when planning or evaluating local quality checks, CI gates, a
 - Verify no secrets in code, config, or logs.
 
 ## Docs automation checklist
-- Preferred single entrypoint: `scripts/run_codeguide.sh <project-root> --mode auto`.
-- Preferred UX: zero-command for user, agent executes docs commands automatically.
+- Preferred single entrypoint for material docs lifecycle work: `scripts/run_codeguide.sh <project-root> --mode auto`.
+- Preferred UX: zero-command for user when docs lifecycle is justified; skip docs automation for small direct answers and trivial edits.
 - Run docs scaffold setup for new repositories: `scripts/init_docs_scaffold.sh <project-root>`.
 - Run doc sync for each task/decision update: `scripts/doc_garden.sh <project-root> ...`.
 - Run local docs validation in warning mode: `scripts/validate_docs.sh <project-root> --mode advisory`.

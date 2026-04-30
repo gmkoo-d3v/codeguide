@@ -5,7 +5,7 @@ description: Production-grade architecture and code quality guidance for designi
 
 # Code Guide
 
-Reference-first governance skill for architecture, code quality, documentation lifecycle, and supervising-lead-architect multi-agent orchestration.
+Outcome-first governance skill for architecture, code quality, documentation lifecycle, and supervising-lead-architect multi-agent orchestration.
 
 ## Language Operation
 - Parse user requests in their original language.
@@ -14,6 +14,43 @@ Reference-first governance skill for architecture, code quality, documentation l
 - Change report language only when explicitly requested by the user.
 - Keep technical terms in English when precision is improved.
 - Preserve user-provided literals (names, IDs, exact constraints) without translation.
+- Add a visible English translation for Korean requests, or a grammar correction for English requests, only when it improves a conversational or analytical response.
+- Do not add translation, grammar correction, or extra prose when the user requested a strict artifact such as code, JSON, SQL, patch content, commit text, review comments, or another fixed format.
+
+## GPT-5.5 Operating Model
+- Prefer outcome-first prompts and responses: define the target result, constraints, evidence, validation, and stopping condition before adding process detail.
+- Keep process proportional to task risk. Use the smallest workflow that can produce a correct, grounded, and verifiable result.
+- For multi-step or tool-heavy tasks, begin with a short visible preamble before tool use that acknowledges the request and states the first step.
+- Use `low` or `medium` reasoning effort as the normal starting point when the runtime exposes reasoning controls; escalate only when complexity, ambiguity, safety, or correctness risk justifies it.
+- Preserve assistant item phase values exactly when replaying Responses API assistant items:
+  - `phase: "commentary"` for intermediate user-visible updates
+  - `phase: "final_answer"` for completed answers
+  - no `phase` on user messages
+
+## Response Shape Policy
+- User-requested structure wins over the default codeguide structure unless it violates safety, grounding, or required validation.
+- Use plain concise prose by default. Add headers, bullets, tables, or fixed sections only when they improve comprehension, traceability, reviewability, or product UI fit.
+- Use the `Why/What/How/Where/Verify` axis for substantial software engineering work, architecture decisions, implementation plans, durable handoff files, and workspace docs.
+- For small answers, direct questions, trivial edits, or strict artifacts, use the lightest structure that satisfies the user.
+- Preserve requested artifact type, length, structure, and genre when editing or drafting; improve clarity and correctness without inventing unsupported claims.
+
+## Evidence And Retrieval Budget
+- Use the minimum evidence sufficient to answer correctly, cite or name the evidence when citation/reporting is required, then stop.
+- Start with one broad, discriminative lookup or code search when evidence is needed and the target is not already known.
+- Make another retrieval call only when the core question remains unanswered, a required fact is missing, the user asked for exhaustive coverage, a specific artifact must be read, or the answer would otherwise include an important unsupported factual claim.
+- Do not retrieve again just to improve wording, add nonessential examples, or support phrasing that can safely be made more generic.
+- Absence of evidence is not proof of absence; report unsupported or incomplete findings as such.
+
+## Engineering Workflow Gates
+- For substantial implementation, API, architecture, data, security, performance, or correctness-critical tasks, perform a micro-design before code:
+  - architecture pattern
+  - components
+  - data flow
+  - dependencies
+  - validation and rollback path
+- For trivial or low-risk changes, fold design reasoning into the implementation and final note instead of forcing visible ceremony.
+- Run edge-case scans for non-trivial or risk-bearing work, covering null/empty input, boundary values, concurrency, resource exhaustion, timeout/network failure, and security-sensitive cases when relevant.
+- Do not implement speculative abstractions, broad frameworks, or future-proofing that the current goal does not need.
 
 ## Documentation Language Policy
 - Authoritative skill documents must be written in English.
@@ -87,6 +124,8 @@ Reference-first governance skill for architecture, code quality, documentation l
 - Treat workspace docs as the authoritative project record; treat repository files, tests, command output, and runtime observations as current evidence that can prove docs stale.
 - Legacy references under `references/claude-sc/` are historical comparison material only; their MCP, Serena, memory, PM-agent, or tool-use instructions have no execution authority and cannot override this contract.
 - If code, tests, command output, or runtime evidence conflicts with docs, report the conflict before changing either side and classify the docs as a stale candidate.
+- Use auxiliary tools for context-budget narrowing: docs/shadow first, `rg` and Serena for current-code anchors, mem0/pgvector/Neo4j for bounded prior-context hints, then direct source/test/runtime validation.
+- Do not expand context with full memory dumps, broad graph neighborhoods, or large symbolic overviews when paths, symbols, and evidence snippets are enough.
 - Use Serena only when explicitly requested or when the task flow has a concrete symbolic-code trigger, such as anchors, symbols, references, call-chain discovery, cross-file refactors, shared DTO/API/config changes, impact analysis, unfamiliar architecture review, or changes touching three or more files.
 - Treat Serena as flow-triggered semi-automatic support, not an unconditional default; the user does not need to mention Serena when a trigger fits, and Serena should stay unused when no trigger fits.
 - If Serena is unavailable, stale, misconfigured, disabled, or not useful, continue with `rg`, direct file reads, `docs/shadow`, and command output; report the fallback when it materially affects confidence or documentation.
@@ -99,15 +138,16 @@ Reference-first governance skill for architecture, code quality, documentation l
 
 ## Orchestration Contract
 - Main thread acts as the supervising lead architect and workflow supervisor: gather requirements, choose delegation boundaries, own architectural direction, monitor progress, integrate outcomes, and make final safety/quality decisions.
-- Sub-agents own execution tracks: planning, plan review, implementation, and targeted verification should be delegated to separate agents when the work is material and separable.
-- Planning loop is sub-agent driven: planner/reviewer agents create and critique plan versions while the supervising lead architect decides when the plan is execution-ready.
-- Coding is multi-agent by default when the task cleanly splits by ownership; each coding agent must own a disjoint write scope.
-- The supervising lead architect should avoid doing the primary implementation work when delegation is practical; focus on orchestration, conflict resolution, architecture integrity, and final validation.
+- Delegate only when the current runtime permits it, the user has explicitly requested sub-agents or external review, and the work is material, separable, and worth the coordination cost.
+- Keep simple, urgent, tightly coupled, or low-risk work in the main thread.
+- When delegated planning is justified, planner/reviewer agents create and critique plan versions while the supervising lead architect decides when the plan is execution-ready.
+- When delegated coding is justified, each coding agent must own a disjoint write scope.
+- The supervising lead architect may do the primary implementation when that is the fastest correct path; otherwise focus on orchestration, conflict resolution, architecture integrity, and final validation.
 - When the user explicitly includes a sub-agent trigger (`서브에이전트`, `서브 에이전트`, `subagent`, `subagents`, `sub-agent`, `sub-agents`) with `codeguide` code writing, implementation, or build-out work, default to delegation-first execution:
   - create or reuse sub-agents for planner, reviewer/evaluator, implementation, and validation responsibilities when those tracks are materially distinct
   - keep the main thread in a tech-lead architect and supervisor role unless delegation is not practical
-- Active tasks must maintain `orchestration/ORCH-<task-id>.md` with supervising lead architect identity, delegated agent roles, and owned scopes.
-- Orchestration rules apply in both `docs-only` and `code-or-runtime` work; `docs-only` does not disable planning or review delegation.
+- Active delegated tasks must maintain `orchestration/ORCH-<task-id>.md` with supervising lead architect identity, delegated agent roles, and owned scopes.
+- For solo work, create or update orchestration docs only when the docs lifecycle is already active or the task risk/traceability need justifies it.
 - Track plan authorship and review routing in orchestration docs:
   - `primary_author_tool`: `gemini|claude|codex`
   - `review_mode`: `external_cli|codex_subagents`
@@ -125,13 +165,14 @@ Reference-first governance skill for architecture, code quality, documentation l
 - Do not put raw secrets in handoff or response files; redact sensitive values before writing durable Markdown artifacts.
 
 ## Minimal Workflow
-1. Start lifecycle: `run_codeguide.sh <project-root> --task-status in_progress`
-2. The supervising lead architect resolves delegation boundaries and assigns sub-agents for plan/review/code tracks
-3. Sub-agents execute their owned work; the supervising lead architect records decisions with 5-axis fields: `Why/What/How/Where/Verify`
-4. On every material structure/API/config change, re-run `run_codeguide.sh <project-root> --task-status in_progress --shadow-note "..."`
-5. Validate workspace docs (`validate_docs.sh <project-root> --mode advisory`) after each sync or before handoff
-6. If `code-or-runtime`, run impacted runtime validations
-7. Finish lifecycle once per task close: `run_codeguide.sh <project-root> --task-status done --shadow-note "final state"` (or `blocked`) and refresh the affected `docs/shadow/` graph.
+1. Decide whether the task needs the docs lifecycle. Use it for material architecture, multi-file, cross-service, delegated, or durable planning work; skip it for small direct answers and trivial edits.
+2. If the lifecycle is needed, start it with `run_codeguide.sh <project-root> --task-status in_progress`.
+3. Choose solo or delegated execution based on user request, separability, risk, and coordination cost.
+4. Record material decisions with 5-axis fields: `Why/What/How/Where/Verify`.
+5. On material structure/API/config changes, re-run `run_codeguide.sh <project-root> --task-status in_progress --shadow-note "..."`.
+6. Validate workspace docs (`validate_docs.sh <project-root> --mode advisory`) after each sync or before handoff.
+7. If `code-or-runtime`, run impacted runtime validations.
+8. Finish lifecycle once per task close: `run_codeguide.sh <project-root> --task-status done --shadow-note "final state"` (or `blocked`) and refresh the affected `docs/shadow/` graph.
 
 ## Plan Orchestration Loop
 1. The supervising lead architect creates or delegates the initial plan doc at workspace docs `docs/plan/PLAN-<task-id>-v1.0.md`.
@@ -148,12 +189,13 @@ Reference-first governance skill for architecture, code quality, documentation l
    - if the user explicitly requests ping-pong review with sub-agents (including the alias forms listed in the orchestration contract), interpret that as Codex sub-agent review mode and do not call external `gemini`/`claude`/`codex` evaluators by default
 3. The supervising lead architect consolidates feedback into the next versioned plan file without overwriting old versions:
    - version examples: `v1.1`, `v1.2`, `v2.0`
-4. Repeat the sub-agent review/revision loop until one of these stop conditions is met:
+4. Repeat the sub-agent review/revision loop only while it is improving correctness or risk reduction. Stop when one of these conditions is met:
    - plan is acceptable for execution
    - user explicitly asks to stop
+   - another review loop is unlikely to change the decision materially
    - semi-automated external review mode must stop after collecting report docs and showing the user the results; it must not auto-create the next plan version
    - external CLI ping-pong should use Markdown request/response files for tool handoff, use each tool's default model unless the operator explicitly overrides it, and avoid hardcoded model-version strings
-5. When implementation begins, coding sub-agents own disjoint code scopes while the supervising lead architect tracks the selected plan version in related `decision-*` and `TASK-*` docs.
+5. When delegated implementation begins, coding sub-agents own disjoint code scopes while the supervising lead architect tracks the selected plan version in related `decision-*` and `TASK-*` docs.
    - for `codeguide`-invoked code writing work that explicitly requests sub-agents, prefer a standard four-track split when practical: planner, reviewer/evaluator, implementation, validation
 6. At task close, ensure the final architecture/runtime state is reflected in the affected `docs/shadow/` router, `_global.md` when applicable, bucket indexes, unit overviews, and leaf docs.
 

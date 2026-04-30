@@ -3,15 +3,16 @@
 Use this reference to keep repository docs continuously synchronized with code and decisions.
 
 ## Objective
-- Keep workspace docs under `docs/` current on every task.
+- Keep workspace docs under `docs/` current for material tasks.
 - Prevent stale context that causes wrong agent behavior.
 
-## Mandatory execution points
-- Run once before implementation (bootstrap and context sync).
-- Run once after implementation and validation (final sync).
+## Execution points
+- Run once before implementation when the task is material architecture, multi-file, cross-service, delegated, or durable planning work.
+- Run once after implementation and validation when the docs lifecycle was started.
 - Run on plan pivot or major scope change.
 - For urgent hotfix, record minimum decision/task data immediately, then run full sync within 24 hours.
-- Default user experience is zero-command: the agent runs these steps automatically.
+- Default user experience is zero-command when docs lifecycle is justified: the agent runs these steps automatically.
+- Skip this workflow for small direct answers and trivial edits unless the user explicitly requests docs sync.
 
 Recommended command flow:
 - `scripts/run_codeguide.sh <project-root> --mode auto` (preferred semi-auto; docs resolve to `<project-root>/../docs`)
@@ -38,14 +39,14 @@ Recommended command flow:
   - otherwise `advisory`
 
 ## Zero-command execution contract
-- Trigger condition: user invokes this skill for a work task.
+- Trigger condition: user invokes this skill for material architecture, multi-file, cross-service, delegated, or durable planning work.
 - Agent action:
   - supervising lead architect runs start sync automatically with `--task-status in_progress`
-  - supervising lead architect delegates plan drafting/review to sub-agents when the task is material
-  - supervising lead architect delegates implementation to coding sub-agents with disjoint ownership when practical
+  - supervising lead architect delegates plan drafting/review to sub-agents only when the user explicitly requested delegation or external review and the task is separable enough to justify it
+  - supervising lead architect delegates implementation to coding sub-agents with disjoint ownership only when explicitly requested and practical
   - supervising lead architect runs finish sync automatically with `--task-status done` (or `blocked`)
-  - bootstrap `docs/plan/PLAN-<task-id>-v1.0.md` automatically when missing
-  - maintain `orchestration/ORCH-<task-id>.md` for every active task
+  - bootstrap `docs/plan/PLAN-<task-id>-v1.0.md` automatically when planning artifacts are needed
+  - maintain `orchestration/ORCH-<task-id>.md` for delegated or externally reviewed active tasks
 - Ask user only when path/scope cannot be inferred with reasonable confidence.
 
 5-axis capture guidance:

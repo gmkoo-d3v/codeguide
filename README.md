@@ -1,6 +1,6 @@
 # codeguide
 
-`codeguide`는 아키텍처 거버넌스, 의사결정 추적성, 문서 라이프사이클 자동화를 위해 만든 문서 중심 LLM 협업 스킬입니다.
+`codeguide`는 아키텍처 거버넌스, 의사결정 추적성, 문서 라이프사이클 자동화를 위해 만든 outcome-first LLM 협업 스킬입니다.
 
 부트캠프 파이널 프로젝트에서 수동으로 마크다운 문서를 관리하던 방식에서 출발해, 프로젝트 맥락과 결정 사항, 계획, 검증 규칙을 반복 가능하게 동기화하는 쉘 기반 워크플로우로 발전시켰습니다.
 
@@ -14,15 +14,15 @@ LLM을 활용한 개발은 보통 다음 지점에서 쉽게 흔들립니다.
 - 관련 없는 파일이 현재 작업 맥락을 오염시킨다
 - 문서 품질이 개인 습관에 의존한다
 
-`codeguide`는 이런 문제를 docs-as-system-of-record 방식과 가벼운 자동화 스크립트로 줄이는 데 초점을 둡니다.
+`codeguide`는 이런 문제를 docs-as-system-of-record 방식과 가벼운 자동화 스크립트로 줄이되, GPT-5.5에 맞게 필요한 만큼만 문서화하고 검증하는 데 초점을 둡니다.
 
 ## 핵심 구조
 
 - `docs/task`, `docs/shadow`, `docs/decisions`로 활성 작업, 현재 시스템 상태, 아키텍처 결정을 분리합니다
-- 모든 주요 변경을 `Why`, `What`, `How`, `Where`, `Verify` 5축으로 기록합니다
-- Plan Ping-Pong Loop로 외부 평가를 거치며 계획을 점진적으로 수렴시킵니다
+- 주요 변경, 설계 결정, handoff가 필요한 작업을 `Why`, `What`, `How`, `Where`, `Verify` 5축으로 기록합니다
+- 필요한 경우에만 Plan Ping-Pong Loop로 외부 평가를 거치며 계획을 점진적으로 수렴시킵니다
 - Change Scope Policy로 `docs-only`와 `code-or-runtime` 작업을 구분합니다
-- 오케스트레이션 문서로 supervising agent, delegated sub-agents, owned scopes를 기록합니다
+- 위임이 실제로 발생한 경우 오케스트레이션 문서로 supervising agent, delegated sub-agents, owned scopes를 기록합니다
 - 워크스페이스 문서는 repo 안이 아니라 `../docs`에 두어 저장소 잡음을 줄이고 공용 소스 오브 트루스를 유지합니다
 
 ## 이 스킬이 하는 일
@@ -31,7 +31,7 @@ LLM을 활용한 개발은 보통 다음 지점에서 쉽게 흔들립니다.
 
 사용자가 기대해야 하는 핵심은 다음과 같습니다.
 
-- 구현 전에 작업 목적, 제약, 리스크를 문서화합니다
+- 중요한 구현 전에 작업 목적, 제약, 리스크를 문서화합니다
 - 중요한 선택은 `decision-*`로 남기고 5축 `Why/What/How/Where/Verify`로 설명합니다
 - 계획이 필요한 작업은 `PLAN-*`과 review 문서로 검토 가능한 상태를 만듭니다
 - 활성 작업, 현재 시스템 상태, 아키텍처 결정을 서로 다른 문서로 분리합니다
@@ -54,16 +54,16 @@ LLM을 활용한 개발은 보통 다음 지점에서 쉽게 흔들립니다.
 사용 흐름은 대체로 이렇습니다.
 
 1. Codex가 현재 작업을 `design`, `refactor`, `review`, `debug` 중 어떤 흐름으로 다룰지 정합니다.
-2. 필요하면 workspace `../docs` 아래에 task, decision, plan, orchestration 문서를 만들거나 갱신합니다.
+2. 작업 규모와 위험도를 보고 workspace `../docs` 아래 task, decision, plan, orchestration 문서가 필요한지 판단합니다.
 3. 변경 위험이 크면 plan review loop를 돌리고, high risk면 adversarial review를 요구합니다.
-4. 구현 후에는 shadow와 문서 상태를 다시 맞추고, 필요 시 lint/test/e2e를 실행합니다.
-5. 마지막에 문서 검증과 handoff 가능한 상태인지 확인합니다.
+4. 구현 후에는 필요한 범위에서 shadow와 문서 상태를 맞추고, 관련 lint/test/e2e를 실행합니다.
+5. 마지막에 충분한 근거와 검증이 확보됐는지 확인하고, 추가 루프가 실질적으로 결론을 바꾸지 않으면 멈춥니다.
 
 핵심은 사용자가 스크립트를 조작하는 것이 아니라, 에이전트가 이 스킬의 정책을 따라 행동하게 만드는 데 있습니다.
 
 ## 서브에이전트 오케스트레이션
 
-이 스킬은 solo 작업만 상정하지 않습니다. 기본 모델은 supervising lead architect가 방향을 잡고, 필요하면 역할별 서브에이전트가 분리된 책임을 맡는 방식입니다.
+이 스킬은 solo 작업만 상정하지 않습니다. 기본 모델은 supervising lead architect가 방향을 잡고, 사용자가 명시적으로 요청했고 작업이 충분히 크고 분리 가능할 때 역할별 서브에이전트가 분리된 책임을 맡는 방식입니다.
 
 - planner: 계획 초안 작성
 - reviewer: 계획 또는 변경안의 허점, 모순, 누락, 규칙 위반을 비판적으로 검토
@@ -71,11 +71,11 @@ LLM을 활용한 개발은 보통 다음 지점에서 쉽게 흔들립니다.
 - validation agent: 테스트, 검증, handoff 확인
 - evaluator는 report 문서에서 `accept | revise | blocked` 판단을 남기는 평가 주체이지만, reviewer와 마찬가지로 승인형보다 결함 탐지형 태도를 기본으로 둡니다
 
-이 역할 분리는 `docs/orchestration/ORCH-<task-id>.md`에 기록되며, `execution_mode`, `supervisor_agent`, `planner_agents`, `reviewer_agents`, `implementation_agents`, `validation_agents`, `owned_scopes` 같은 필드를 통해 추적됩니다.
+실제로 위임이 발생한 경우 이 역할 분리는 `docs/orchestration/ORCH-<task-id>.md`에 기록되며, `execution_mode`, `supervisor_agent`, `planner_agents`, `reviewer_agents`, `implementation_agents`, `validation_agents`, `owned_scopes` 같은 필드를 통해 추적됩니다.
 
 특히 `/codeguide`로 코드 작성이나 구현을 요청하면서 `서브에이전트` 계열 표현을 명시한 경우에는, 특별한 이유가 없으면 메인 에이전트가 직접 코드를 주로 쓰기보다 planner/reviewer/evaluator/implementation/validation 역할을 서브에이전트에 배분하고 메인 에이전트는 tech lead architect 겸 감독 역할을 수행하는 것이 기본값입니다.
 
-오케스트레이션 규칙은 `docs-only` 작업에서도 유지됩니다. 즉 코드를 실행하지 않는 계획/리뷰 단계라도, 누가 primary 작성자였고 어떤 review mode를 썼는지는 오케스트레이션 문서에 남겨야 합니다.
+오케스트레이션 규칙은 위임 또는 외부 review가 발생한 `docs-only` 작업에서도 유지됩니다. 코드를 실행하지 않는 계획/리뷰 단계라도, 실제로 여러 주체가 관여했다면 primary 작성자와 review mode를 문서에 남깁니다.
 
 ## 내부 자동화 구성
 

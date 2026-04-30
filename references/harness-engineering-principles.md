@@ -32,8 +32,8 @@ Use this reference when defining team process for agentic software development.
 - Avoid hidden decisions in chat-only history.
 - Treat `docs/shadow/project-shadow.md` as the top router into the shadow graph for agent onboarding.
 - Use `_global.md`, bucket `_index.md`, unit `overview.md`, and concern leaves to keep cross-unit rules, membership, routing, and concrete facts in their proper homes.
-- Run doc-gardening updates on every task to avoid stale memory.
-- Record every user choice in `docs/decisions`, including hotfix and PR decisions.
+- Run doc-gardening updates for material tasks to avoid stale memory.
+- Record material user choices in `docs/decisions`, including hotfix and PR decisions.
 
 ### 3) Agent legibility standards
 - Prefer explicit naming and stable folder conventions.

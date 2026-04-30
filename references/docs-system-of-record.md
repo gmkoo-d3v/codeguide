@@ -12,7 +12,8 @@ For repeatable setup, run:
 Default assumption:
 - Do not require RAG or embedding for baseline operation.
 - Use workspace docs files (`task`, `shadow`, `decisions`, `plan`, `report`, `orchestration`) as durable memory first.
-- Default operation is zero-command for user; agent runs docs lifecycle commands.
+- Default operation is zero-command for the user when docs lifecycle is justified; the agent runs docs lifecycle commands for material architecture, multi-file, cross-service, delegated, or durable planning work.
+- Skip docs lifecycle commands for small direct answers and trivial edits unless the user explicitly requests documentation sync.
 
 ## Data safety rules
 - Empty values never overwrite existing non-empty fields during doc-gardening. Use `--allow-empty-overwrite` to explicitly clear a field.
