@@ -289,6 +289,35 @@ file_newest_change_epoch() {
   fi
 }
 
+check_timestamp_field_valid_non_future() {
+  local file_path="$1"
+  local key="$2"
+  local label="$3"
+  local value
+  local parsed_epoch
+  local now_epoch
+
+  value="$(extract_field_value "$file_path" "$key")"
+  if [[ -z "$value" ]]; then
+    fail "${key} is present but empty in ${label}: $file_path"
+    return 1
+  fi
+
+  parsed_epoch="$(parse_iso_date_epoch "$value")"
+  if (( parsed_epoch <= 0 )); then
+    fail "${key} must be a valid ISO date in ${label}: ${value} (${file_path})"
+    return 1
+  fi
+
+  now_epoch="$(date +%s)"
+  if (( parsed_epoch > now_epoch )); then
+    fail "${key} must not be in the future in ${label}: ${value} (${file_path})"
+    return 1
+  fi
+
+  return 0
+}
+
 escape_ere_literal() {
   printf "%s" "$1" | sed -E 's/[][(){}.^$*+?|\\]/\\&/g'
 }
@@ -425,7 +454,7 @@ check_shadow_graph_tracks_doc_updates() {
   newest_doc_epoch="0"
 
   while IFS= read -r candidate; do
-    candidate_epoch="$(file_newest_change_epoch "$candidate")"
+    candidate_epoch="$(file_effective_epoch "$candidate")"
     if (( candidate_epoch > newest_doc_epoch )); then
       newest_doc_epoch="$candidate_epoch"
       newest_doc="$candidate"
@@ -593,6 +622,218 @@ check_policy_risk_field_values() {
   fi
 }
 
+collect_validator_evidence_map() {
+  local file_path="$1"
+  awk '
+    /^[[:space:]]{2,}[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+@v[0-9]+:/ {
+      id=$1
+      sub(/:$/, "", id)
+      current=id
+      next
+    }
+    current != "" && /^[[:space:]]+evidence_type:[[:space:]]*/ {
+      evidence=$0
+      sub(/^[[:space:]]+evidence_type:[[:space:]]*/, "", evidence)
+      sub(/[[:space:]#].*$/, "", evidence)
+      print current " " evidence
+      current=""
+    }
+  ' "$file_path"
+}
+
+collect_regex_evidence_map() {
+  local file_path="$1"
+  awk '
+    /^[[:space:]]{2,}[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+@v[0-9]+:/ {
+      id=$1
+      sub(/:$/, "", id)
+      current=id
+      next
+    }
+    current != "" && /^[[:space:]]+target:[[:space:]]*/ {
+      evidence=$0
+      sub(/^[[:space:]]+target:[[:space:]]*/, "", evidence)
+      sub(/[[:space:]#].*$/, "", evidence)
+      print current " " evidence
+      current=""
+    }
+  ' "$file_path"
+}
+
+check_rule_registry_promotion_gates() {
+  local rule_file="$1"
+  local failures
+
+  failures="$(awk '
+    function mark_list(value) {
+      if (value == "parser_backed_validator") parser=1
+      if (value == "test_assertion") test=1
+      if (value == "runtime_trace") runtime=1
+      if (value == "valid_waiver") waiver=1
+    }
+    /^promotion_gates:[[:space:]]*$/ {
+      in_pg=1
+      section=""
+      seen_pg=1
+      next
+    }
+    in_pg && /^```/ {
+      in_pg=0
+      section=""
+      next
+    }
+    in_pg && /^[^[:space:]][^:]*:[[:space:]]*$/ && $0 !~ /^promotion_gates:/ {
+      in_pg=0
+      section=""
+      next
+    }
+    !in_pg { next }
+    /^[[:space:]]{2}regex_only:[[:space:]]*$/ {
+      section="regex"
+      seen_regex=1
+      next
+    }
+    /^[[:space:]]{2}high_or_critical:[[:space:]]*$/ {
+      section="high"
+      seen_high=1
+      next
+    }
+    /^[[:space:]]{2}unknown_defaults:[[:space:]]*$/ {
+      section="unknown"
+      seen_unknown=1
+      next
+    }
+    section == "regex" && /^[[:space:]]{4}max_effective_risk:[[:space:]]*medium([[:space:]#]|$)/ { regex_max=1 }
+    section == "regex" && /^[[:space:]]{4}evidence_field:[[:space:]]*fallback_result([[:space:]#]|$)/ { regex_evidence=1 }
+    section == "regex" && /^[[:space:]]{4}forbidden_field:[[:space:]]*validator_result([[:space:]#]|$)/ { regex_forbidden=1 }
+    section == "high" && /^[[:space:]]{6}-[[:space:]]*/ {
+      value=$0
+      sub(/^[[:space:]]{6}-[[:space:]]*/, "", value)
+      sub(/[[:space:]#].*$/, "", value)
+      mark_list(value)
+    }
+    section == "unknown" && /^[[:space:]]{4}unlisted_rule:[[:space:]]*unknown([[:space:]#]|$)/ { unknown_rule=1 }
+    section == "unknown" && /^[[:space:]]{4}unlisted_boundary:[[:space:]]*unknown([[:space:]#]|$)/ { unknown_boundary=1 }
+    section == "unknown" && /^[[:space:]]{4}unmapped_stack:[[:space:]]*unknown([[:space:]#]|$)/ { unknown_stack=1 }
+    section == "unknown" && /^[[:space:]]{4}unmapped_evidence_type:[[:space:]]*unknown([[:space:]#]|$)/ { unknown_evidence=1 }
+    END {
+      if (!seen_pg) print "shadow rule registry missing promotion_gates"
+      if (!seen_regex) print "shadow rule registry missing regex_only gate"
+      if (!regex_max) print "shadow rule registry regex_only.max_effective_risk must be medium"
+      if (!regex_evidence) print "shadow rule registry regex_only.evidence_field must be fallback_result"
+      if (!regex_forbidden) print "shadow rule registry regex_only.forbidden_field must be validator_result"
+      if (!seen_high) print "shadow rule registry missing high_or_critical gate"
+      if (!parser) print "shadow rule registry high_or_critical missing parser_backed_validator"
+      if (!test) print "shadow rule registry high_or_critical missing test_assertion"
+      if (!runtime) print "shadow rule registry high_or_critical missing runtime_trace"
+      if (!waiver) print "shadow rule registry high_or_critical missing valid_waiver"
+      if (!seen_unknown) print "shadow rule registry missing unknown_defaults"
+      if (!unknown_rule) print "shadow rule registry must default unlisted_rule to unknown"
+      if (!unknown_boundary) print "shadow rule registry must default unlisted_boundary to unknown"
+      if (!unknown_stack) print "shadow rule registry must default unmapped_stack to unknown"
+      if (!unknown_evidence) print "shadow rule registry must default unmapped_evidence_type to unknown"
+    }
+  ' "$rule_file")"
+
+  if [[ -n "$failures" ]]; then
+    while IFS= read -r failure_line; do
+      [[ -n "$failure_line" ]] || continue
+      fail "${failure_line} (${rule_file})"
+    done <<< "$failures"
+  else
+    pass "shadow rule registry promotion gates are scoped and complete"
+  fi
+}
+
+check_rule_registry_mapping_contracts() {
+  local rule_file="$1"
+  local catalog_file="$2"
+  local regex_file="$3"
+  local catalog_map
+  local regex_map
+  local failures
+
+  catalog_map="$(mktemp)"
+  regex_map="$(mktemp)"
+  collect_validator_evidence_map "$catalog_file" > "$catalog_map"
+  collect_regex_evidence_map "$regex_file" > "$regex_map"
+
+  failures="$(awk -v catalog_file="$catalog_map" -v regex_file="$regex_map" '
+    FILENAME == catalog_file {
+      catalog[$1]=$2
+      next
+    }
+    FILENAME == regex_file {
+      regex[$1]=$2
+      next
+    }
+    function flush_fallback() {
+      if (pending_fallback && !fallback_cap_seen) {
+        print "fallback mapping missing fallback_max_risk for " pending_fallback_id " under " current_evidence " at line " pending_fallback_line
+      }
+      pending_fallback=0
+      fallback_cap_seen=0
+      pending_fallback_id=""
+      pending_fallback_line=0
+    }
+    /^[[:space:]]{8}[a-z_][a-z0-9_]*:[[:space:]]*$/ {
+      flush_fallback()
+      current_evidence=$0
+      sub(/^[[:space:]]+/, "", current_evidence)
+      sub(/:.*$/, "", current_evidence)
+      next
+    }
+    current_evidence != "" && /^[[:space:]]{10}primary:[[:space:]]*/ {
+      id=$0
+      sub(/^[[:space:]]+primary:[[:space:]]*/, "", id)
+      sub(/[[:space:]#].*$/, "", id)
+      if ((id in catalog) && catalog[id] != current_evidence) {
+        print "primary validator evidence_type mismatch for " id ": expected " current_evidence ", found " catalog[id] " at line " NR
+      }
+      next
+    }
+    current_evidence != "" && /^[[:space:]]{10}fallback:[[:space:]]*/ {
+      flush_fallback()
+      id=$0
+      sub(/^[[:space:]]+fallback:[[:space:]]*/, "", id)
+      sub(/[[:space:]#].*$/, "", id)
+      pending_fallback=1
+      pending_fallback_id=id
+      pending_fallback_line=NR
+      if ((id in regex) && regex[id] != current_evidence) {
+        print "fallback regex evidence_type mismatch for " id ": expected " current_evidence ", found " regex[id] " at line " NR
+      }
+      next
+    }
+    current_evidence != "" && /^[[:space:]]{10}fallback_max_risk:[[:space:]]*/ {
+      value=$0
+      sub(/^[[:space:]]+fallback_max_risk:[[:space:]]*/, "", value)
+      sub(/[[:space:]#].*$/, "", value)
+      if (value !~ /^(low|medium)$/) {
+        print "fallback_max_risk must be low|medium in shadow rule registry: " value " at line " NR
+      }
+      if (pending_fallback) {
+        fallback_cap_seen=1
+      }
+      next
+    }
+    END {
+      flush_fallback()
+    }
+  ' "$catalog_map" "$regex_map" "$rule_file")"
+
+  rm -f "$catalog_map" "$regex_map"
+
+  if [[ -n "$failures" ]]; then
+    while IFS= read -r failure_line; do
+      [[ -n "$failure_line" ]] || continue
+      fail "${failure_line} (${rule_file})"
+    done <<< "$failures"
+  else
+    pass "shadow rule registry mapping contracts are structurally valid"
+  fi
+}
+
 check_rule_registry_refs_exist() {
   local rule_file="$1"
   local ref_kind="$2"
@@ -702,22 +943,8 @@ check_shadow_policy_files() {
 
   check_rule_registry_has_mappings "$rule_file"
   check_rule_registry_ref_versions "$rule_file"
-  check_file_contains_pattern "$rule_file" "promotion_gates:" "shadow rule registry declares promotion_gates" "shadow rule registry missing promotion_gates (${rule_file})"
-  check_file_contains_pattern "$rule_file" "regex_only:" "shadow rule registry declares regex_only gate" "shadow rule registry missing regex_only gate (${rule_file})"
-  check_file_contains_pattern "$rule_file" "max_effective_risk:[[:space:]]*medium" "shadow rule registry caps regex_only gate at medium" "shadow rule registry regex_only.max_effective_risk must be medium (${rule_file})"
-  check_file_contains_pattern "$rule_file" "evidence_field:[[:space:]]*fallback_result" "shadow rule registry requires fallback_result evidence field" "shadow rule registry regex_only.evidence_field must be fallback_result (${rule_file})"
-  check_file_contains_pattern "$rule_file" "forbidden_field:[[:space:]]*validator_result" "shadow rule registry forbids validator_result on regex_only gate" "shadow rule registry regex_only.forbidden_field must be validator_result (${rule_file})"
-  check_file_contains_pattern "$rule_file" "high_or_critical:" "shadow rule registry declares high_or_critical gate" "shadow rule registry missing high_or_critical gate (${rule_file})"
-  check_file_contains_pattern "$rule_file" "- parser_backed_validator" "shadow rule registry high/critical gate allows parser-backed validator" "shadow rule registry high_or_critical missing parser_backed_validator (${rule_file})"
-  check_file_contains_pattern "$rule_file" "- test_assertion" "shadow rule registry high/critical gate allows test assertion" "shadow rule registry high_or_critical missing test_assertion (${rule_file})"
-  check_file_contains_pattern "$rule_file" "- runtime_trace" "shadow rule registry high/critical gate allows runtime trace" "shadow rule registry high_or_critical missing runtime_trace (${rule_file})"
-  check_file_contains_pattern "$rule_file" "- valid_waiver" "shadow rule registry high/critical gate allows valid waiver" "shadow rule registry high_or_critical missing valid_waiver (${rule_file})"
-  check_file_contains_pattern "$rule_file" "unknown_defaults:" "shadow rule registry declares unknown_defaults" "shadow rule registry missing unknown_defaults (${rule_file})"
-  check_file_contains_pattern "$rule_file" "unlisted_boundary:[[:space:]]*unknown" "shadow rule registry defaults unlisted boundary to unknown" "shadow rule registry must default unlisted_boundary to unknown (${rule_file})"
-  check_file_contains_pattern "$rule_file" "unmapped_stack:[[:space:]]*unknown" "shadow rule registry defaults unmapped stack to unknown" "shadow rule registry must default unmapped_stack to unknown (${rule_file})"
-  check_file_contains_pattern "$rule_file" "unmapped_evidence_type:[[:space:]]*unknown" "shadow rule registry defaults unmapped evidence type to unknown" "shadow rule registry must default unmapped_evidence_type to unknown (${rule_file})"
-
-  check_policy_risk_field_values "$rule_file" "fallback_max_risk" "shadow rule registry"
+  check_rule_registry_promotion_gates "$rule_file"
+  check_rule_registry_mapping_contracts "$rule_file" "$catalog_file" "$regex_file"
 
   catalog_ids="$(collect_versioned_registry_ids "$catalog_file")"
   regex_ids="$(collect_versioned_registry_ids "$regex_file")"
@@ -900,9 +1127,21 @@ check_evaluator_reports_for_task() {
   local latest_plan_version="${5:-}"
   local report_count=0
   local adversarial_count=0
+  local stale_report_count=0
   local report_file
   local report_review_style
   local expected_report_glob
+  local report_base
+  local report_task_id
+  local report_plan_version
+  local report_evaluator
+  local report_round
+  local file_report_task_id
+  local file_evaluator
+  local file_round
+  local plan_file
+  local report_epoch
+  local plan_epoch
 
   if [[ -z "$latest_plan_version" ]]; then
     latest_plan_version="$(latest_plan_version_for_task "$task_id")"
@@ -913,8 +1152,32 @@ check_evaluator_reports_for_task() {
   fi
 
   expected_report_glob="$REPORT_DIR/PLAN-${task_id}-${latest_plan_version}-review-*.md"
+  plan_file="$PLAN_DIR/PLAN-${task_id}-${latest_plan_version}.md"
   if compgen -G "$expected_report_glob" >/dev/null; then
     while IFS= read -r report_file; do
+      report_base="$(basename "$report_file")"
+      file_report_task_id="$(printf "%s" "$report_base" | sed -E 's/^PLAN-(.*)-v[0-9]+\.[0-9]+-review-[a-z]+-r[0-9]{2}\.md$/\1/')"
+      file_evaluator="$(printf "%s" "$report_base" | sed -E 's/^.*-review-([a-z]+)-r[0-9]{2}\.md$/\1/')"
+      file_round="$(printf "%s" "$report_base" | sed -E 's/^.*-review-[a-z]+-(r[0-9]{2})\.md$/\1/')"
+      report_task_id="$(extract_field_value "$report_file" "task_id")"
+      report_plan_version="$(extract_field_value "$report_file" "plan_version")"
+      report_evaluator="$(extract_field_value "$report_file" "evaluator")"
+      report_round="$(extract_field_value "$report_file" "review_round")"
+
+      if [[ "$file_report_task_id" != "$task_id" || "$report_task_id" != "$task_id" || "$report_plan_version" != "$latest_plan_version" || "$report_evaluator" != "$file_evaluator" || "$report_round" != "$file_round" ]]; then
+        fail "evaluator report identity mismatch for active task gate: ${report_base}"
+        continue
+      fi
+
+      if [[ -f "$plan_file" ]]; then
+        report_epoch="$(file_effective_epoch "$report_file")"
+        plan_epoch="$(file_effective_epoch "$plan_file")"
+        if (( report_epoch < plan_epoch )); then
+          stale_report_count=$((stale_report_count + 1))
+          continue
+        fi
+      fi
+
       report_count=$((report_count + 1))
       report_review_style="$(extract_field_value "$report_file" "review_style")"
       if [[ "$report_review_style" == "adversarial" ]]; then
@@ -939,6 +1202,8 @@ check_evaluator_reports_for_task() {
 
   if (( report_count > 0 )); then
     pass "evaluator report exists for active task ${task_ref} latest plan ${latest_plan_version} (${report_count})"
+  elif (( stale_report_count > 0 )); then
+    fail "missing fresh evaluator report for active task ${task_ref} latest plan ${latest_plan_version}: ${stale_report_count} stale report(s) ignored"
   else
     fail "missing evaluator report for active task ${task_ref} latest plan ${latest_plan_version}: expected ${REPORT_DIR}/PLAN-${task_id}-${latest_plan_version}-review-(gemini|claude|codex)-rNN.md"
   fi
@@ -1011,12 +1276,22 @@ if [[ -f "$SHADOW_DIR/project-shadow.md" ]]; then
   check_field_exists "$SHADOW_DIR/project-shadow.md" "global_doc" "shadow router"
   check_field_exists "$SHADOW_DIR/project-shadow.md" "updated_by_task" "shadow router"
   check_field_exists "$SHADOW_DIR/project-shadow.md" "latest_change_note" "shadow router"
+  if [[ "$MODE" == "strict" ]]; then
+    check_timestamp_field_valid_non_future "$SHADOW_DIR/project-shadow.md" "last_updated" "shadow router"
+  else
+    check_field_exists "$SHADOW_DIR/project-shadow.md" "last_updated" "shadow router"
+  fi
   check_freshness_days "$SHADOW_DIR/project-shadow.md" "$MAX_SHADOW_AGE_DAYS" "shadow router"
 fi
 
 if [[ -f "$SHADOW_GLOBAL_FILE" ]]; then
   SHADOW_TRACKED_FILES+=("$SHADOW_GLOBAL_FILE")
   check_field_value_equals "$SHADOW_GLOBAL_FILE" "doc_role" "global" "shadow global"
+  if [[ "$MODE" == "strict" ]]; then
+    check_timestamp_field_valid_non_future "$SHADOW_GLOBAL_FILE" "last_updated" "shadow global"
+  else
+    check_field_exists "$SHADOW_GLOBAL_FILE" "last_updated" "shadow global"
+  fi
   check_freshness_days "$SHADOW_GLOBAL_FILE" "$MAX_SHADOW_AGE_DAYS" "shadow global"
 fi
 
@@ -1026,11 +1301,18 @@ for shadow_bucket in "${SHADOW_BUCKETS[@]}"; do
     SHADOW_TRACKED_FILES+=("$shadow_bucket_file")
     check_field_value_equals "$shadow_bucket_file" "doc_role" "bucket_index" "shadow bucket index (${shadow_bucket})"
     check_field_value_equals "$shadow_bucket_file" "bucket" "$shadow_bucket" "shadow bucket index (${shadow_bucket})"
+    if [[ "$MODE" == "strict" ]]; then
+      check_timestamp_field_valid_non_future "$shadow_bucket_file" "last_updated" "shadow bucket index (${shadow_bucket})"
+    else
+      check_field_exists "$shadow_bucket_file" "last_updated" "shadow bucket index (${shadow_bucket})"
+    fi
     check_freshness_days "$shadow_bucket_file" "$MAX_SHADOW_AGE_DAYS" "shadow bucket index (${shadow_bucket})"
   fi
 done
 
-check_shadow_graph_tracks_doc_updates "${SHADOW_TRACKED_FILES[@]}"
+if [[ -d "$SHADOW_DIR" && ${#SHADOW_TRACKED_FILES[*]} -gt 0 ]]; then
+  check_shadow_graph_tracks_doc_updates "${SHADOW_TRACKED_FILES[@]}"
+fi
 
 # --- Task file checks ---
 if [[ -d "$TASK_DIR" ]]; then
@@ -1245,10 +1527,21 @@ if [[ -d "$REPORT_DIR" ]]; then
       fail "evaluator report references missing plan file: ${expected_plan_file}"
     fi
 
+    file_report_task_id="$(printf "%s" "$report_base" | sed -E 's/^PLAN-(.*)-v[0-9]+\.[0-9]+-review-[a-z]+-r[0-9]{2}\.md$/\1/')"
+    report_task_id="$(extract_field_value "$report_file" "task_id")"
+    if [[ -n "$report_task_id" && "$report_task_id" != "$file_report_task_id" ]]; then
+      fail "task_id mismatch between file name and field in ${report_base}: ${file_report_task_id} != ${report_task_id}"
+    fi
+
     file_report_plan_version="$(printf "%s" "$report_base" | sed -E 's/^.*-(v[0-9]+\.[0-9]+)-review-.*$/\1/')"
     report_plan_version="$(extract_field_value "$report_file" "plan_version")"
     if [[ -n "$report_plan_version" && "$report_plan_version" != "$file_report_plan_version" ]]; then
       fail "plan_version mismatch between file name and field in ${report_base}: ${file_report_plan_version} != ${report_plan_version}"
+    fi
+
+    file_report_round="$(printf "%s" "$report_base" | sed -E 's/^.*-review-[a-z]+-(r[0-9]{2})\.md$/\1/')"
+    if [[ -n "$report_round" && "$report_round" != "$file_report_round" ]]; then
+      fail "review_round mismatch between file name and field in ${report_base}: ${file_report_round} != ${report_round}"
     fi
 
     if [[ "$report_review_style" == "adversarial" ]]; then
@@ -1271,6 +1564,15 @@ fi
 TMP_SECRET_REPORT="$(mktemp)"
 trap 'rm -f "$TMP_SECRET_REPORT"' EXIT
 
+redact_secret_report() {
+  perl -pe '
+    s/sk-[A-Za-z0-9_-]{20,}/[REDACTED_SECRET]/g;
+    s/ghp_[A-Za-z0-9]{20,}/[REDACTED_SECRET]/g;
+    s/AKIA[0-9A-Z]{16}/[REDACTED_AWS_ACCESS_KEY]/g;
+    s/((?:api[_-]?key|token|password|secret|private[_-]?key)\s*[:=]\s*)(?:"[^"\n]{6,}"|'\''[^'\''\n]{6,}'\''|[^\s\n]{6,})/${1}[REDACTED_SECRET]/gi;
+  ' "$1"
+}
+
 scan_secret_pattern() {
   local regex="$1"
   local fail_msg="$2"
@@ -1292,7 +1594,7 @@ scan_secret_pattern() {
 
   if "${rg_cmd[@]}" > "$TMP_SECRET_REPORT" 2>/dev/null; then
     fail "$fail_msg"
-    cat "$TMP_SECRET_REPORT" >&2
+    redact_secret_report "$TMP_SECRET_REPORT" >&2
   else
     pass "$pass_msg"
   fi

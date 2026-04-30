@@ -233,6 +233,45 @@ redact_secrets_to_file() {
   ' "$source_file" > "$target_file"
 }
 
+ensure_handoff_path() {
+  local file_path="$1"
+  local label="$2"
+  local parent_dir
+  local parent_abs
+  local handoff_abs
+
+  parent_dir="$(dirname "$file_path")"
+  parent_abs="$(cd "$parent_dir" && pwd)"
+  handoff_abs="$(cd "$HANDOFF_DIR" && pwd)"
+
+  case "${parent_abs}/" in
+    "${handoff_abs}/"*) ;;
+    *)
+      echo "[ERROR] ${label} must stay under handoff directory: ${file_path}" >&2
+      exit 1
+      ;;
+  esac
+}
+
+response_has_unsupported_save_location_claim() {
+  local response_file="$1"
+  local command_response_file="$2"
+  local sanitized_response_file="$3"
+  local line
+  local lower
+
+  while IFS= read -r line; do
+    lower="$(printf "%s" "$line" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$lower" =~ (saved|wrote|written|stored|created|저장) ]] && [[ "$line" =~ (/|\.md) ]]; then
+      if [[ "$line" != *"$command_response_file"* && "$line" != *"$sanitized_response_file"* ]]; then
+        return 0
+      fi
+    fi
+  done < "$response_file"
+
+  return 1
+}
+
 escape_sed() {
   printf "%s" "$1" | sed 's/[\\&|]/\\&/g'
 }
@@ -504,7 +543,7 @@ write_handoff_request() {
 ## Why
 
 - Collect an evidence-based external review without passing a long prompt through shell arguments.
-- Preserve the raw request and response as Markdown orchestration artifacts.
+- Preserve the redacted request and sanitized response as Markdown orchestration artifacts.
 
 ## What
 
@@ -742,6 +781,11 @@ for reviewer in "${REVIEWERS[@]}"; do
   register_tmp_file "$response_raw_file"
   register_tmp_file "$stderr_file"
 
+  ensure_handoff_path "$request_file" "request_file"
+  ensure_handoff_path "$response_file" "response_file"
+  ensure_handoff_path "$response_raw_file" "command_response_path"
+  ensure_handoff_path "$stderr_durable_file" "stderr_file"
+
   rm -f "$request_file" "$response_file" "$stderr_durable_file" \
     "$response_raw_file" \
     "$HANDOFF_DIR/${reviewer}.retry-request.md" \
@@ -761,7 +805,14 @@ for reviewer in "${REVIEWERS[@]}"; do
   rm -f "$response_raw_file" 2>/dev/null || true
   preserve_stderr_if_needed "$stderr_file" "$stderr_durable_file" "$run_status"
 
-  if [[ "$run_status" -eq 0 ]] && parse_review_response "$response_file" "$review_style"; then
+  invalid_response_claim="false"
+  if [[ "$run_status" -eq 0 ]] && response_has_unsupported_save_location_claim "$response_file" "$response_raw_file" "$response_file"; then
+    echo "[ERROR] ${reviewer} response contains unsupported save-location claim" >> "$stderr_file"
+    preserve_stderr_if_needed "$stderr_file" "$stderr_durable_file" 65
+    invalid_response_claim="true"
+  fi
+
+  if [[ "$run_status" -eq 0 && "$invalid_response_claim" == "false" ]] && parse_review_response "$response_file" "$review_style"; then
     :
   elif [[ "$run_status" -eq 0 ]]; then
     retry_request_file="$HANDOFF_DIR/${reviewer}.retry-request.md"
@@ -771,6 +822,10 @@ for reviewer in "${REVIEWERS[@]}"; do
     retry_stderr="$(mktemp)"
     register_tmp_file "$retry_response_raw_file"
     register_tmp_file "$retry_stderr"
+    ensure_handoff_path "$retry_request_file" "retry_request_file"
+    ensure_handoff_path "$retry_response_file" "retry_response_file"
+    ensure_handoff_path "$retry_response_raw_file" "retry_command_response_path"
+    ensure_handoff_path "$retry_stderr_durable_file" "retry_stderr_file"
     rm -f "$retry_response_raw_file"
     write_handoff_request "$retry_request_file" "$retry_response_file" "$retry_response_raw_file" "$reviewer" "$review_style" "true"
     : > "$retry_response_raw_file"
@@ -784,7 +839,14 @@ for reviewer in "${REVIEWERS[@]}"; do
     rm -f "$retry_response_raw_file" 2>/dev/null || true
     preserve_stderr_if_needed "$retry_stderr" "$retry_stderr_durable_file" "$retry_status"
 
-    if [[ "$retry_status" -eq 0 ]] && parse_review_response "$retry_response_file" "$review_style"; then
+    retry_invalid_response_claim="false"
+    if [[ "$retry_status" -eq 0 ]] && response_has_unsupported_save_location_claim "$retry_response_file" "$retry_response_raw_file" "$retry_response_file"; then
+      echo "[ERROR] ${reviewer} retry response contains unsupported save-location claim" >> "$retry_stderr"
+      preserve_stderr_if_needed "$retry_stderr" "$retry_stderr_durable_file" 65
+      retry_invalid_response_claim="true"
+    fi
+
+    if [[ "$retry_status" -eq 0 && "$retry_invalid_response_claim" == "false" ]] && parse_review_response "$retry_response_file" "$review_style"; then
       response_file="$retry_response_file"
       stderr_file="$retry_stderr"
       active_stderr_durable_file="$retry_stderr_durable_file"

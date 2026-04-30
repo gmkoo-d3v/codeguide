@@ -61,6 +61,7 @@ EXTERNAL_CLI_DIR="${ORCHESTRATION_DIR}/external-cli"
 POLICY_DIR="${DOCS_DIR}/policy"
 SHADOW_BUCKETS=(apps services packages infra data)
 SHADOW_ARCHIVE_DIRS=(_deprecated _obsolete)
+NOW_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 mkdir -p "${TASK_DIR}" "${SHADOW_DIR}" "${DECISIONS_DIR}" "${PLAN_DIR}" "${REPORT_DIR}" "${ORCHESTRATION_DIR}" "${EXTERNAL_CLI_DIR}" "${POLICY_DIR}"
 
@@ -387,34 +388,34 @@ write_if_missing "${DECISIONS_DIR}/decision-index.md" '# Decision Index
 ## Superseded
 '
 
-write_if_missing "${SHADOW_DIR}/project-shadow.md" '# Project Shadow
+write_if_missing "${SHADOW_DIR}/project-shadow.md" "# Project Shadow
 
 - doc_role: router
 - read_path: project-shadow.md -> <bucket>/_index.md -> <bucket>/<unit>/overview.md -> concern leaf
 - fast_entry:
 - bucket_links: apps/_index.md, services/_index.md, packages/_index.md, infra/_index.md, data/_index.md
 - global_doc: _global.md
-- last_updated:
+- last_updated: ${NOW_UTC}
 - updated_by_task:
 - latest_change_note:
-'
+"
 
-write_if_missing "${SHADOW_DIR}/_global.md" '# Shadow Global
+write_if_missing "${SHADOW_DIR}/_global.md" "# Shadow Global
 
 - doc_role: global
 - shared_runtime_rules:
 - shared_config_rules:
 - naming_rules:
 - cross_unit_integration_contracts:
-- last_updated:
-'
+- last_updated: ${NOW_UTC}
+"
 
 for bucket in "${SHADOW_BUCKETS[@]}"; do
   write_if_missing "${SHADOW_DIR}/${bucket}/_index.md" "# Shadow Bucket Index
 
 - doc_role: bucket_index
 - bucket: ${bucket}
-- last_updated:
+- last_updated: ${NOW_UTC}
 
 ## Units
 - no units detected yet

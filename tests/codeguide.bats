@@ -367,6 +367,35 @@ EOF
   [[ "$output" == *"regex_only.forbidden_field must be validator_result"* ]]
 }
 
+@test "validate_docs strict fails when promotion gate token appears only outside scoped block" {
+  sed -i.bak 's/max_effective_risk: medium/max_effective_risk: high/' "$DOCS_ROOT/policy/shadow-rule-registry.md"
+  rm -f "$DOCS_ROOT/policy/shadow-rule-registry.md.bak"
+  cat >> "$DOCS_ROOT/policy/shadow-rule-registry.md" <<'EOF'
+
+<!-- misleading example: max_effective_risk: medium -->
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"regex_only.max_effective_risk must be medium"* ]]
+}
+
+@test "validate_docs strict fails when fallback mapping lacks its own cap" {
+  perl -0pi -e 's/\n          fallback_max_risk: medium//' "$DOCS_ROOT/policy/shadow-rule-registry.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"fallback mapping missing fallback_max_risk"* ]]
+}
+
+@test "validate_docs strict fails when validator evidence type mismatches rule evidence branch" {
+  perl -0pi -e 's/primary: jpa\.repository\.save\@v1/primary: any.runtime.trace\@v1/' "$DOCS_ROOT/policy/shadow-rule-registry.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"primary validator evidence_type mismatch"* ]]
+}
+
 @test "run_codeguide bootstraps orchestration doc for active task" {
   run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "orch-01" --mode advisory
   [ "$status" -eq 0 ]
@@ -468,8 +497,8 @@ EOF
     --axis-verify "verify" \
     --no-init
 
-  sleep 1
-  echo "- acceptance_criteria: changed after shadow sync" >> "$DOCS_ROOT/task/TASK-shadow-lag-01.md"
+  sed -i.bak 's/^- last_updated:.*$/- last_updated: 2000-01-01T00:00:00Z/' "$DOCS_ROOT/shadow/project-shadow.md"
+  rm -f "$DOCS_ROOT/shadow/project-shadow.md.bak"
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
@@ -500,6 +529,23 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
   [[ "$output" == *"shadow bucket index (apps) is missing"* ]]
+}
+
+@test "validate_docs strict fails when tracked shadow last_updated is blank or future" {
+  sed -i.bak 's/^- last_updated:.*$/- last_updated:/' "$DOCS_ROOT/shadow/project-shadow.md"
+  rm -f "$DOCS_ROOT/shadow/project-shadow.md.bak"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"last_updated is present but empty in shadow router"* ]]
+
+  "$INIT_SCAFFOLD" "$TEST_PROJECT"
+  sed -i.bak 's/^- last_updated:.*$/- last_updated: 2999-01-01T00:00:00Z/' "$DOCS_ROOT/shadow/project-shadow.md"
+  rm -f "$DOCS_ROOT/shadow/project-shadow.md.bak"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"last_updated must not be in the future in shadow router"* ]]
 }
 
 @test "validate_docs strict fails when active task has no linked plan file" {
@@ -799,6 +845,108 @@ EOF
   [[ "$output" == *"missing evaluator report for active task TASK-latest-report-01 latest plan v1.1"* ]]
 }
 
+@test "validate_docs strict rejects stale evaluator report for latest plan" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "stale-report-01" \
+    --task-title "Stale report test" \
+    --task-status "in_progress" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "reviewer-1" \
+    --implementation-agents "coder-1" \
+    --validation-agents "validator-1" \
+    --owned-scopes "planner:docs/plan; reviewer:docs/report" \
+    --no-init
+
+  cat > "$DOCS_ROOT/plan/PLAN-stale-report-01-v1.0.md" <<'EOF'
+# PLAN-stale-report-01-v1.0
+
+- task_id: stale-report-01
+- plan_version: v1.0
+- objective: latest plan
+- scope: docs validation
+- assumptions: none
+- risks: medium
+- acceptance_signals: fresh report required
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-02T00:00:00Z
+EOF
+
+  cat > "$DOCS_ROOT/report/PLAN-stale-report-01-v1.0-review-codex-r01.md" <<'EOF'
+# PLAN-stale-report-01-v1.0 review (codex)
+
+- task_id: stale-report-01
+- plan_version: v1.0
+- evaluator: codex
+- review_style: standard
+- review_round: r01
+- verdict: revise
+- summary: stale report
+- strengths: report exists
+- risks: plan changed after review
+- requested_changes: refresh review
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"missing fresh evaluator report for active task TASK-stale-report-01 latest plan v1.0"* ]]
+}
+
+@test "validate_docs strict rejects evaluator report task identity mismatch" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "identity-report-01" \
+    --task-title "Identity report test" \
+    --task-status "in_progress" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "reviewer-1" \
+    --implementation-agents "coder-1" \
+    --validation-agents "validator-1" \
+    --owned-scopes "planner:docs/plan; reviewer:docs/report" \
+    --no-init
+
+  cat > "$DOCS_ROOT/plan/PLAN-identity-report-01-v1.0.md" <<'EOF'
+# PLAN-identity-report-01-v1.0
+
+- task_id: identity-report-01
+- plan_version: v1.0
+- objective: identity plan
+- scope: docs validation
+- assumptions: none
+- risks: medium
+- acceptance_signals: identity mismatch fails
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  cat > "$DOCS_ROOT/report/PLAN-identity-report-01-v1.0-review-codex-r01.md" <<'EOF'
+# PLAN-identity-report-01-v1.0 review (codex)
+
+- task_id: other-task
+- plan_version: v1.0
+- evaluator: codex
+- review_style: standard
+- review_round: r01
+- verdict: revise
+- summary: wrong task
+- strengths: report exists
+- risks: report can attach to wrong task
+- requested_changes: bind identity
+- last_updated: 2026-01-02T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"evaluator report identity mismatch"* ]] || [[ "$output" == *"task_id mismatch between file name and field"* ]]
+}
+
 @test "validate_docs strict fails when high-risk task has only standard review" {
   "$DOC_GARDEN" "$TEST_PROJECT" \
     --task-id "highrisk-01" \
@@ -1086,6 +1234,8 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
   [[ "$output" == *"potential secret values detected"* ]] || [[ "$output" == *"OPENAI API key assignment"* ]]
+  [[ "$output" == *"[REDACTED_SECRET]"* ]]
+  [[ "$output" != *"sk-proj-12345678901234567890"* ]]
 }
 
 @test "validate_docs reports missing rg for secret scanning" {
@@ -1875,7 +2025,11 @@ printf "%s" "$count" > "$count_file"
 printf "%s\n" "$@" > "${TEST_WORKSPACE}/gemini-args.log"
 if [[ "$count" -eq 1 ]]; then
   cat <<EOF
-- summary: malformed first response
+- verdict: accept
+- summary: saved to /tmp/evil-plan.md
+- strengths: This response is otherwise parseable.
+- risks: It claims an unsupported save location.
+- requested_changes: Reject unsupported save-location claims.
 EOF
 else
   cat <<EOF
@@ -1977,6 +2131,10 @@ exit 99'
   run grep "# PLAN-ext-review-01-v1.0" "$handoff_dir/gemini.request.md"
   [ "$status" -eq 0 ]
   run grep "malformed first response" "$handoff_dir/gemini.response.md"
+  [ "$status" -ne 0 ]
+  run grep "/tmp/evil-plan.md" "$handoff_dir/gemini.response.md"
+  [ "$status" -eq 0 ]
+  run grep "unsupported save-location claim" "$handoff_dir/gemini.stderr.md"
   [ "$status" -eq 0 ]
   run grep "review contract should be stricter" "$handoff_dir/gemini.retry-response.md"
   [ "$status" -eq 0 ]
