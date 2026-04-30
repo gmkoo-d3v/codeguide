@@ -225,7 +225,7 @@ redact_secrets_to_file() {
   local target_file="$2"
 
   perl -0pe '
-    s/sk-[A-Za-z0-9]{20,}/[REDACTED_SECRET]/g;
+    s/sk-[A-Za-z0-9_-]{20,}/[REDACTED_SECRET]/g;
     s/ghp_[A-Za-z0-9]{20,}/[REDACTED_SECRET]/g;
     s/AKIA[0-9A-Z]{16}/[REDACTED_AWS_ACCESS_KEY]/g;
     s/-----BEGIN (?:RSA|EC|OPENSSH|PRIVATE) KEY-----.*?-----END (?:RSA|EC|OPENSSH|PRIVATE) KEY-----/[REDACTED_PRIVATE_KEY]/gs;
@@ -478,9 +478,10 @@ EOF
 write_handoff_request() {
   local request_file="$1"
   local response_file="$2"
-  local evaluator="$3"
-  local review_style="$4"
-  local strict_retry="${5:-false}"
+  local command_response_file="$3"
+  local evaluator="$4"
+  local review_style="$5"
+  local strict_retry="${6:-false}"
   local raw_request_file
 
   raw_request_file="$(mktemp)"
@@ -497,6 +498,8 @@ write_handoff_request() {
 - primary_author_tool: ${PRIMARY_TOOL}
 - source_plan_file: ${PLAN_FILE}
 - expected_response_file: ${response_file}
+- command_response_path: ${command_response_file}
+- sanitized_response_file: ${response_file}
 
 ## Why
 
@@ -513,6 +516,7 @@ write_handoff_request() {
 - Use the detailed output contract below exactly.
 - Keep every field value on one line so the wrapper can normalize the response into docs/report/.
 - Prefer concrete defects, missing safeguards, and verification gaps over approval-oriented feedback.
+- Treat command_response_path as the only valid command output path; the wrapper sanitizes it into sanitized_response_file.
 
 ### Detailed Instructions
 
@@ -521,7 +525,9 @@ $(build_prompt "$evaluator" "$review_style" "$strict_retry")
 ## Where
 
 - Source plan file: ${PLAN_FILE}
-- Raw response file expected by wrapper: ${response_file}
+- Command-level response path: ${command_response_file}
+- Sanitized response file: ${response_file}
+- Raw stdout/final-message capture is sanitized into the response file and the raw command-level response path is deleted.
 - Final normalized report directory: ${REPORT_DIR}
 
 ## Verify
@@ -583,7 +589,7 @@ run_tool_prompt() {
 
   case "$tool" in
     gemini)
-      prompt="Read the Markdown request file from disk at ${request_file}. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields to stdout; do not write files. The wrapper will sanitize stdout into ${durable_response_file}."
+      prompt="Read the Markdown request file from disk at ${request_file}. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields to stdout; do not write files. Command-level response path: ${output_capture_file}. Sanitized response file: ${durable_response_file}. The bash wrapper redirects stdout to the command-level response path, sanitizes it, and deletes the raw capture. Do not claim the review was saved anywhere else."
       cmd=("$binary" --approval-mode plan --output-format text --include-directories "$WORKSPACE_ROOT")
       if [[ -n "$model_override" ]]; then
         cmd+=(-m "$model_override")
@@ -591,7 +597,7 @@ run_tool_prompt() {
       cmd+=(-p "$prompt")
       ;;
     claude)
-      prompt="Use read-only file access to read the Markdown request file at ${request_file}. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields to stdout; do not write files. The wrapper will sanitize stdout into ${durable_response_file}."
+      prompt="Use read-only file access to read the Markdown request file at ${request_file}. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields to stdout; do not write files. Command-level response path: ${output_capture_file}. Sanitized response file: ${durable_response_file}. The bash wrapper redirects stdout to the command-level response path, sanitizes it, and deletes the raw capture. Do not claim the review was saved anywhere else."
       cmd=("$binary" -p --permission-mode dontAsk --tools Read --add-dir "$WORKSPACE_ROOT" --output-format text --no-session-persistence)
       if [[ -n "$model_override" ]]; then
         cmd+=(--model "$model_override")
@@ -599,7 +605,7 @@ run_tool_prompt() {
       cmd+=("$prompt")
       ;;
     codex)
-      prompt="Read the Markdown request file from disk at ${request_file}. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields as the final message; do not write files. The wrapper will sanitize the final message into ${durable_response_file}."
+      prompt="Read the Markdown request file from disk at ${request_file}. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields as the final message; do not write files. Command-level response path: ${output_capture_file}. Sanitized response file: ${durable_response_file}. The bash command uses --output-last-message with the command-level response path, sanitizes it, and deletes the raw capture. Do not claim the review was saved anywhere else."
       cmd=("$binary" exec --skip-git-repo-check --sandbox read-only --ephemeral -C "$WORKSPACE_ROOT" --add-dir "$PROJECT_ROOT_ABS" --output-last-message "$output_capture_file")
       if [[ -n "$model_override" ]]; then
         cmd+=(-m "$model_override")
@@ -729,7 +735,7 @@ for reviewer in "${REVIEWERS[@]}"; do
 
   request_file="$HANDOFF_DIR/${reviewer}.request.md"
   response_file="$HANDOFF_DIR/${reviewer}.response.md"
-  response_raw_file="$(mktemp)"
+  response_raw_file="$HANDOFF_DIR/${reviewer}.command-response.raw.md"
   stderr_durable_file="$HANDOFF_DIR/${reviewer}.stderr.md"
   active_stderr_durable_file="$stderr_durable_file"
   stderr_file="$(mktemp)"
@@ -737,11 +743,14 @@ for reviewer in "${REVIEWERS[@]}"; do
   register_tmp_file "$stderr_file"
 
   rm -f "$request_file" "$response_file" "$stderr_durable_file" \
+    "$response_raw_file" \
     "$HANDOFF_DIR/${reviewer}.retry-request.md" \
     "$HANDOFF_DIR/${reviewer}.retry-response.md" \
+    "$HANDOFF_DIR/${reviewer}.retry-command-response.raw.md" \
     "$HANDOFF_DIR/${reviewer}.retry-stderr.md"
 
-  write_handoff_request "$request_file" "$response_file" "$reviewer" "$review_style" "false"
+  write_handoff_request "$request_file" "$response_file" "$response_raw_file" "$reviewer" "$review_style" "false"
+  : > "$response_raw_file"
   run_status=0
   if run_tool_prompt "$reviewer" "$request_file" "$response_raw_file" "$stderr_file" "$response_file"; then
     run_status=0
@@ -749,6 +758,7 @@ for reviewer in "${REVIEWERS[@]}"; do
     run_status=$?
   fi
   redact_secrets_to_file "$response_raw_file" "$response_file"
+  rm -f "$response_raw_file" 2>/dev/null || true
   preserve_stderr_if_needed "$stderr_file" "$stderr_durable_file" "$run_status"
 
   if [[ "$run_status" -eq 0 ]] && parse_review_response "$response_file" "$review_style"; then
@@ -756,12 +766,14 @@ for reviewer in "${REVIEWERS[@]}"; do
   elif [[ "$run_status" -eq 0 ]]; then
     retry_request_file="$HANDOFF_DIR/${reviewer}.retry-request.md"
     retry_response_file="$HANDOFF_DIR/${reviewer}.retry-response.md"
-    retry_response_raw_file="$(mktemp)"
+    retry_response_raw_file="$HANDOFF_DIR/${reviewer}.retry-command-response.raw.md"
     retry_stderr_durable_file="$HANDOFF_DIR/${reviewer}.retry-stderr.md"
     retry_stderr="$(mktemp)"
     register_tmp_file "$retry_response_raw_file"
     register_tmp_file "$retry_stderr"
-    write_handoff_request "$retry_request_file" "$retry_response_file" "$reviewer" "$review_style" "true"
+    rm -f "$retry_response_raw_file"
+    write_handoff_request "$retry_request_file" "$retry_response_file" "$retry_response_raw_file" "$reviewer" "$review_style" "true"
+    : > "$retry_response_raw_file"
     retry_status=0
     if run_tool_prompt "$reviewer" "$retry_request_file" "$retry_response_raw_file" "$retry_stderr" "$retry_response_file"; then
       retry_status=0
@@ -769,6 +781,7 @@ for reviewer in "${REVIEWERS[@]}"; do
       retry_status=$?
     fi
     redact_secrets_to_file "$retry_response_raw_file" "$retry_response_file"
+    rm -f "$retry_response_raw_file" 2>/dev/null || true
     preserve_stderr_if_needed "$retry_stderr" "$retry_stderr_durable_file" "$retry_status"
 
     if [[ "$retry_status" -eq 0 ]] && parse_review_response "$retry_response_file" "$review_style"; then

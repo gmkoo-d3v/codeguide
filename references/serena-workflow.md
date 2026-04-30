@@ -27,6 +27,13 @@ Use this reference when symbolic code navigation can reduce risk, context size, 
 - Use Serena when a code change touches three or more files, unless the change is mechanical, already fully scoped, or Serena is unavailable.
 - Skip Serena when the user disables it, current-runtime verification fails, no concrete trigger fits, the task is an isolated single-file or docs-only change, or the change is mechanical and already fully scoped with direct file reads.
 
+## Context budget role
+- Use Serena to narrow the current-code search space to specific symbols, references, call-chain candidates, and impacted files.
+- Do not paste broad symbolic overviews into the working context when a short list of paths, symbols, and line anchors is enough.
+- Treat Serena output as a navigation index that points to direct source reads; do not treat it as final validation evidence.
+- Prefer Serena before broad manual file reading when symbolic scope is unclear, and skip it when the target file or symbol is already obvious.
+- Do not persist raw Serena observations into mem0, Neo4j, or workspace docs; record only verified source-backed facts or concise pointers.
+
 ## Workflow
 1. Discover Serena tools through the current runtime's approved discovery path.
 2. Activate or select the correct project if required and supported.

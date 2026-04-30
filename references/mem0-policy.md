@@ -52,6 +52,13 @@ Read rules:
 - Report non-exhaustive reads explicitly.
 - Verify memory claims before using them as factual claims.
 
+## Context budget use
+- Use mem0, pgvector, and Neo4j to reduce repeated context loading, not to replace source inspection.
+- Use these tools after docs and current-code discovery when the missing information is prior decision context, stale-memory risk, recurring convention, related concept, or provenance candidate.
+- Prefer returning source refs, decision ids, project scopes, symbols, and short evidence pointers instead of full memory bodies or broad graph neighborhoods.
+- Keep semantic and graph reads bounded; prefer top-k or page-limited retrieval when supported, and report sampled coverage when it affects the conclusion.
+- Do not use memory or graph output as a shortcut around direct source validation for shadow facts, code effects, API behavior, security behavior, or runtime behavior.
+
 ## Write functions
 Write-like functions may include:
 - `add`

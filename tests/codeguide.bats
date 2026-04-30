@@ -262,6 +262,36 @@ write_mock_cli() {
   done
 }
 
+@test "init_docs_scaffold creates shadow policy scaffold files" {
+  run test -f "$DOCS_ROOT/policy/shadow-validator-catalog.md"
+  [ "$status" -eq 0 ]
+  run test -f "$DOCS_ROOT/policy/shadow-regex-patterns.md"
+  [ "$status" -eq 0 ]
+  run test -f "$DOCS_ROOT/policy/shadow-rule-registry.md"
+  [ "$status" -eq 0 ]
+
+  run grep "^- catalog_id: shadow-validator-catalog" "$DOCS_ROOT/policy/shadow-validator-catalog.md"
+  [ "$status" -eq 0 ]
+  run grep "^- registry_id: shadow-regex-patterns" "$DOCS_ROOT/policy/shadow-regex-patterns.md"
+  [ "$status" -eq 0 ]
+  run grep "^- registry_id: shadow-rule-registry" "$DOCS_ROOT/policy/shadow-rule-registry.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "init_docs_scaffold fallback policy templates validate in strict mode" {
+  local package_root="$TEST_WORKSPACE/pkg/codeguide"
+  local fallback_project="$TEST_WORKSPACE/fallback/repo"
+
+  mkdir -p "$package_root/scripts" "$fallback_project"
+  cp "$INIT_SCAFFOLD" "$package_root/scripts/init_docs_scaffold.sh"
+  chmod +x "$package_root/scripts/init_docs_scaffold.sh"
+
+  "$package_root/scripts/init_docs_scaffold.sh" "$fallback_project"
+
+  run "$VALIDATE" "$fallback_project" --mode strict
+  [ "$status" -eq 0 ]
+}
+
 # ========== P1/P2: Validator strict mode non-empty check ==========
 
 @test "validate_docs strict mode fails on empty required fields" {
@@ -283,6 +313,58 @@ write_mock_cli() {
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
   [[ "$output" == *"empty"* ]] || [[ "$output" == *"FAIL"* ]]
+}
+
+@test "validate_docs strict fails when policy rule registry has no mappings" {
+  cat > "$DOCS_ROOT/policy/shadow-rule-registry.md" <<'EOF'
+# Shadow Rule Registry
+
+- registry_id: shadow-rule-registry
+- registry_version: 1
+- status: active-draft
+- linked_task: TASK-shadow-effect-map-01
+- linked_decisions: decision-shadow-practical-contract-01
+- purpose: empty registry should fail
+- last_updated: 2026-04-30T13:49:45Z
+
+## Promotion Gates
+
+```yaml
+promotion_gates:
+  regex_only:
+    max_effective_risk: medium
+  high_or_critical:
+    requires_one_of:
+      - parser_backed_validator
+  unknown_defaults:
+    unlisted_rule: unknown
+    unlisted_boundary: unknown
+    unmapped_stack: unknown
+    unmapped_evidence_type: unknown
+```
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"shadow rule registry missing rules block"* ]] || [[ "$output" == *"must contain at least one rule id mapping"* ]]
+}
+
+@test "validate_docs strict fails on invalid policy fallback risk enum" {
+  sed -i.bak 's/max_promotion_risk: medium/max_promotion_risk: extreme/' "$DOCS_ROOT/policy/shadow-regex-patterns.md"
+  rm -f "$DOCS_ROOT/policy/shadow-regex-patterns.md.bak"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"max_promotion_risk must be low|medium"* ]]
+}
+
+@test "validate_docs strict fails when policy promotion gate contract drifts" {
+  sed -i.bak 's/forbidden_field: validator_result/forbidden_field: claim_result/' "$DOCS_ROOT/policy/shadow-rule-registry.md"
+  rm -f "$DOCS_ROOT/policy/shadow-rule-registry.md.bak"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"regex_only.forbidden_field must be validator_result"* ]]
 }
 
 @test "run_codeguide bootstraps orchestration doc for active task" {
@@ -392,6 +474,24 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
   [[ "$output" == *"shadow graph doc is older than tracked task/decision doc"* ]]
+}
+
+@test "validate_docs strict fails when shadow bucket index lags behind tracked task docs" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "shadow-bucket-lag-01" \
+    --task-title "Shadow bucket lag test" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --no-init
+
+  sed -i.bak 's/^- last_updated:.*$/- last_updated: 2000-01-01T00:00:00Z/' "$DOCS_ROOT/shadow/apps/_index.md"
+  rm -f "$DOCS_ROOT/shadow/apps/_index.md.bak"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"shadow graph doc is older than tracked task/decision doc"* ]]
+  [[ "$output" == *"apps/_index.md"* ]]
 }
 
 @test "validate_docs strict fails when required shadow bucket index is missing" {
@@ -572,14 +672,131 @@ EOF
 - review_round: r01
 - verdict: accept
 - summary: legacy format remains valid
-- strengths:
-- risks:
-- requested_changes:
+- strengths: legacy report still contains parser-compatible fields
+- risks: missing review_style is tolerated for backward compatibility
+- requested_changes: none
 - last_updated: 2026-01-01T00:00:00Z
 EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -eq 0 ]
+}
+
+@test "validate_docs strict fails on hollow evaluator report fields" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "hollow-report-01" \
+    --task-title "Hollow report test" \
+    --task-status "in_progress" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "reviewer-1" \
+    --implementation-agents "coder-1" \
+    --validation-agents "validator-1" \
+    --owned-scopes "planner:docs/plan; reviewer:docs/report" \
+    --no-init
+
+  cat > "$DOCS_ROOT/plan/PLAN-hollow-report-01-v1.0.md" <<'EOF'
+# PLAN-hollow-report-01-v1.0
+
+- task_id: hollow-report-01
+- plan_version: v1.0
+- objective: verify strict report fields
+- scope: docs validation
+- assumptions: none
+- risks: medium
+- acceptance_signals: strict validation fails on empty report field
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  cat > "$DOCS_ROOT/report/PLAN-hollow-report-01-v1.0-review-codex-r01.md" <<'EOF'
+# PLAN-hollow-report-01-v1.0 review (codex)
+
+- task_id: hollow-report-01
+- plan_version: v1.0
+- evaluator: codex
+- review_style: standard
+- review_round: r01
+- verdict: revise
+- summary: report exists
+- strengths: has a strength
+- risks: has a risk
+- requested_changes:
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"requested_changes is present but empty in evaluator report"* ]]
+}
+
+@test "validate_docs strict requires evaluator report for latest plan version" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "latest-report-01" \
+    --task-title "Latest report test" \
+    --task-status "in_progress" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "reviewer-1" \
+    --implementation-agents "coder-1" \
+    --validation-agents "validator-1" \
+    --owned-scopes "planner:docs/plan; reviewer:docs/report" \
+    --no-init
+
+  cat > "$DOCS_ROOT/plan/PLAN-latest-report-01-v1.0.md" <<'EOF'
+# PLAN-latest-report-01-v1.0
+
+- task_id: latest-report-01
+- plan_version: v1.0
+- objective: old plan
+- scope: docs validation
+- assumptions: none
+- risks: medium
+- acceptance_signals: old report exists
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  cat > "$DOCS_ROOT/plan/PLAN-latest-report-01-v1.1.md" <<'EOF'
+# PLAN-latest-report-01-v1.1
+
+- task_id: latest-report-01
+- plan_version: v1.1
+- objective: latest plan
+- scope: docs validation
+- assumptions: none
+- risks: medium
+- acceptance_signals: latest report required
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-02T00:00:00Z
+EOF
+
+  cat > "$DOCS_ROOT/report/PLAN-latest-report-01-v1.0-review-codex-r01.md" <<'EOF'
+# PLAN-latest-report-01-v1.0 review (codex)
+
+- task_id: latest-report-01
+- plan_version: v1.0
+- evaluator: codex
+- review_style: standard
+- review_round: r01
+- verdict: revise
+- summary: old plan reviewed
+- strengths: old report exists
+- risks: latest plan remains unreviewed
+- requested_changes: review the latest plan
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"missing evaluator report for active task TASK-latest-report-01 latest plan v1.1"* ]]
 }
 
 @test "validate_docs strict fails when high-risk task has only standard review" {
@@ -724,8 +941,8 @@ EOF
 - review_round: r01
 - verdict: revise
 - summary: challenge the initial plan once
-- strengths:
-- risks:
+- strengths: adversarial framing is present
+- risks: missing adversarial details should fail strict validation
 - requested_changes: tighten the design before implementation
 - objection: the initial plan may understate failure modes
 - counterproposal:
@@ -782,8 +999,8 @@ EOF
 - review_round: r01
 - verdict: revise
 - summary: adversarial review completed
-- strengths:
-- risks:
+- strengths: adversarial coverage exists
+- risks: rollback and monitoring remain important
 - requested_changes: tighten rollback and monitoring
 - objection: the initial plan may under-test rollback paths
 - counterproposal: add a rollback rehearsal and explicit failure thresholds
@@ -858,6 +1075,17 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -eq 0 ]
+}
+
+@test "validate_docs secret scan catches hyphenated OpenAI key formats" {
+  cat > "$DOCS_ROOT/SECURITY-NOTES.md" <<'EOF'
+# accidental leak
+OPENAI_API_KEY=sk-proj-12345678901234567890
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"potential secret values detected"* ]] || [[ "$output" == *"OPENAI API key assignment"* ]]
 }
 
 @test "validate_docs reports missing rg for secret scanning" {
@@ -1274,6 +1502,26 @@ EOF
   [[ "$output" == *"superseded"* ]]
 }
 
+@test "validate_docs strict escapes decision filenames in decision-index checks" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --decision-id "dot.a" \
+    --decision-title "Dot decision" \
+    --selected-option "Option A" \
+    --axis-why "why" \
+    --axis-what "what" \
+    --axis-how "how" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --no-init
+
+  sed -i.bak 's/decision-dot\.a\.md/decision-dotXa.md/' "$DOCS_ROOT/decisions/decision-index.md"
+  rm -f "$DOCS_ROOT/decisions/decision-index.md.bak"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"decision index missing row for decision-dot.a.md"* ]]
+}
+
 @test "decision-index migrates legacy table format" {
   # Create a legacy table-format decision-index
   cat > "$DOCS_ROOT/decisions/decision-index.md" <<'EOF'
@@ -1597,7 +1845,7 @@ EOF
 - plan_version: v1.0
 - objective: validate external review automation
 - scope: docs-only review pipeline
-- assumptions: mock CLIs are available with api_key="sk-12345678901234567890"
+- assumptions: mock CLIs are available with api_key="sk-12345678901234567890" and OPENAI_API_KEY=sk-proj-12345678901234567890
 - risks: formatting drift
 - acceptance_signals: two review docs are written
 - stop_conditions: report generation completes
@@ -1634,7 +1882,7 @@ else
 - verdict: revise
 - summary: The sequencing is mostly sound, but the review contract should be stricter about malformed output handling.
 - strengths: It clearly stops before auto-versioning the plan.
-- risks: Retry handling and malformed output normalization could still drift if token="ghp_12345678901234567890" is echoed.
+- risks: Retry handling and malformed output normalization could still drift if token="ghp_12345678901234567890" or OPENAI_API_KEY=sk-proj-12345678901234567890 is echoed.
 - requested_changes: Keep the report parser strict and summarize reviewer failures in the final wrapper output.
 EOF
 fi'
@@ -1738,9 +1986,25 @@ exit 99'
   [ "$status" -eq 0 ]
   run grep "sk-12345678901234567890" "$handoff_dir/gemini.request.md"
   [ "$status" -ne 0 ]
+  run grep "sk-proj-12345678901234567890" "$handoff_dir/gemini.request.md"
+  [ "$status" -ne 0 ]
   run grep "ghp_12345678901234567890" "$handoff_dir/gemini.retry-response.md"
   [ "$status" -ne 0 ]
+  run grep "sk-proj-12345678901234567890" "$handoff_dir/gemini.retry-response.md"
+  [ "$status" -ne 0 ]
   run grep "$handoff_dir/gemini.retry-request.md" "$TEST_WORKSPACE/gemini-args.log"
+  [ "$status" -eq 0 ]
+  run grep "$handoff_dir/gemini.retry-command-response.raw.md" "$TEST_WORKSPACE/gemini-args.log"
+  [ "$status" -eq 0 ]
+  run grep "command_response_path: $handoff_dir/gemini.retry-command-response.raw.md" "$handoff_dir/gemini.retry-request.md"
+  [ "$status" -eq 0 ]
+  run grep "sanitized_response_file: $handoff_dir/gemini.retry-response.md" "$handoff_dir/gemini.retry-request.md"
+  [ "$status" -eq 0 ]
+  run test ! -f "$handoff_dir/gemini.retry-command-response.raw.md"
+  [ "$status" -eq 0 ]
+  run grep "$handoff_dir/claude.command-response.raw.md" "$TEST_WORKSPACE/claude-args.log"
+  [ "$status" -eq 0 ]
+  run test ! -f "$handoff_dir/claude.command-response.raw.md"
   [ "$status" -eq 0 ]
 }
 
@@ -1775,7 +2039,7 @@ exit 99'
 
   write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
 printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
-echo "mock claude failure" >&2
+echo "mock claude failure with token=sk-proj-12345678901234567890" >&2
 exit 7'
 
   write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
@@ -1847,6 +2111,14 @@ EOF'
   [ "$status" -eq 0 ]
   run grep "$handoff_dir/codex.request.md" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
+  run grep "$handoff_dir/codex.command-response.raw.md" "$TEST_WORKSPACE/codex-args.log"
+  [ "$status" -eq 0 ]
+  run test ! -f "$handoff_dir/codex.command-response.raw.md"
+  [ "$status" -eq 0 ]
+  run grep -F "[REDACTED_SECRET]" "$handoff_dir/claude.stderr.md"
+  [ "$status" -eq 0 ]
+  run grep "sk-proj-12345678901234567890" "$handoff_dir/claude.stderr.md"
+  [ "$status" -ne 0 ]
 }
 
 @test "run_external_plan_reviews auto-selects adversarial reviewer for high-risk task and supports primary claude success path" {
@@ -1953,6 +2225,10 @@ EOF'
   run test -f "$handoff_dir/codex.request.md"
   [ "$status" -eq 0 ]
   run test -f "$handoff_dir/codex.response.md"
+  [ "$status" -eq 0 ]
+  run grep "$handoff_dir/gemini.command-response.raw.md" "$TEST_WORKSPACE/gemini-args.log"
+  [ "$status" -eq 0 ]
+  run grep "$handoff_dir/codex.command-response.raw.md" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
 }
 

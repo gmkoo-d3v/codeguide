@@ -14,6 +14,7 @@ Options:
   --max-decision-lines <n>    Maximum lines per workspace docs/decisions/decision-*.md (default: 180)
   --max-plan-lines <n>        Maximum lines per workspace docs/plan/PLAN-*.md (default: 220)
   --max-report-lines <n>      Maximum lines per workspace docs/report/PLAN-*-review-*.md (default: 180)
+  --max-policy-lines <n>      Maximum lines per workspace docs/policy/*.md file (default: 220)
   --max-shadow-age-days <n>   Max allowed age for required shadow graph docs (default: 0, disabled)
   --max-task-age-days <n>     Max age for in_progress tasks (default: 7)
   --secret-scan-exclude-glob <glob>
@@ -47,6 +48,7 @@ MAX_DECISION_LINES=180
 MAX_PLAN_LINES=220
 MAX_REPORT_LINES=180
 MAX_ORCHESTRATION_LINES=180
+MAX_POLICY_LINES=220
 MAX_SHADOW_AGE_DAYS=0
 MAX_TASK_AGE_DAYS=7
 SECRET_SCAN_EXCLUDE_GLOBS=(
@@ -117,6 +119,11 @@ while [[ $# -gt 0 ]]; do
       MAX_REPORT_LINES="${2:-}"
       shift 2
       ;;
+    --max-policy-lines)
+      require_option_value "$1" "$#"
+      MAX_POLICY_LINES="${2:-}"
+      shift 2
+      ;;
     --max-shadow-age-days)
       require_option_value "$1" "$#"
       MAX_SHADOW_AGE_DAYS="${2:-}"
@@ -159,6 +166,7 @@ require_positive_integer "--max-task-lines" "$MAX_TASK_LINES"
 require_positive_integer "--max-decision-lines" "$MAX_DECISION_LINES"
 require_positive_integer "--max-plan-lines" "$MAX_PLAN_LINES"
 require_positive_integer "--max-report-lines" "$MAX_REPORT_LINES"
+require_positive_integer "--max-policy-lines" "$MAX_POLICY_LINES"
 require_non_negative_integer "--max-shadow-age-days" "$MAX_SHADOW_AGE_DAYS"
 require_non_negative_integer "--max-task-age-days" "$MAX_TASK_AGE_DAYS"
 
@@ -178,6 +186,7 @@ DECISIONS_DIR="$DOCS_DIR/decisions"
 PLAN_DIR="$DOCS_DIR/plan"
 REPORT_DIR="$DOCS_DIR/report"
 ORCHESTRATION_DIR="$DOCS_DIR/orchestration"
+POLICY_DIR="$DOCS_DIR/policy"
 
 ISSUE_COUNT=0
 
@@ -211,6 +220,77 @@ file_age_days() {
   now_epoch="$(date +%s)"
   mtime_epoch="$(file_mtime_epoch "$file_path")"
   echo $(((now_epoch - mtime_epoch) / 86400))
+}
+
+parse_iso_date_epoch() {
+  local value="$1"
+  local parsed=""
+  local date_part=""
+
+  if [[ "$value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+    if date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$value" "+%s" >/dev/null 2>&1; then
+      parsed="$(date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$value" "+%s")"
+    else
+      parsed="$(date -u -d "$value" "+%s" 2>/dev/null || true)"
+    fi
+  fi
+
+  if [[ -z "$parsed" ]]; then
+    date_part="$(printf "%s" "$value" | grep -Eo '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -n 1 || true)"
+    if [[ -n "$date_part" ]]; then
+      if date -j -f "%Y-%m-%d" "$date_part" "+%s" >/dev/null 2>&1; then
+        parsed="$(date -j -f "%Y-%m-%d" "$date_part" "+%s")"
+      else
+        parsed="$(date -d "$date_part" "+%s" 2>/dev/null || true)"
+      fi
+    fi
+  fi
+
+  if [[ "$parsed" =~ ^[0-9]+$ ]]; then
+    printf "%s" "$parsed"
+  else
+    printf "0"
+  fi
+}
+
+file_effective_epoch() {
+  local file_path="$1"
+  local last_updated
+  local parsed_epoch
+
+  last_updated="$(extract_field_value "$file_path" "last_updated")"
+  if [[ -n "$last_updated" ]]; then
+    parsed_epoch="$(parse_iso_date_epoch "$last_updated")"
+    if (( parsed_epoch > 0 )); then
+      printf "%s" "$parsed_epoch"
+      return
+    fi
+  fi
+
+  file_mtime_epoch "$file_path"
+}
+
+file_newest_change_epoch() {
+  local file_path="$1"
+  local last_updated
+  local parsed_epoch=0
+  local mtime_epoch
+
+  last_updated="$(extract_field_value "$file_path" "last_updated")"
+  if [[ -n "$last_updated" ]]; then
+    parsed_epoch="$(parse_iso_date_epoch "$last_updated")"
+  fi
+
+  mtime_epoch="$(file_mtime_epoch "$file_path")"
+  if (( parsed_epoch > mtime_epoch )); then
+    printf "%s" "$parsed_epoch"
+  else
+    printf "%s" "$mtime_epoch"
+  fi
+}
+
+escape_ere_literal() {
+  printf "%s" "$1" | sed -E 's/[][(){}.^$*+?|\\]/\\&/g'
 }
 
 # Extract the value part of a "- key: value" line. Returns empty if key missing or value empty.
@@ -311,12 +391,7 @@ check_freshness_days() {
     lu_date="$(printf "%s" "$last_updated" | grep -Eo '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -n 1 || true)"
     if [[ -n "$lu_date" ]]; then
       local lu_epoch now_epoch
-      # macOS date -j vs GNU date
-      if date -j -f "%Y-%m-%d" "$lu_date" "+%s" >/dev/null 2>&1; then
-        lu_epoch="$(date -j -f "%Y-%m-%d" "$lu_date" "+%s")"
-      else
-        lu_epoch="$(date -d "$lu_date" "+%s" 2>/dev/null || echo 0)"
-      fi
+      lu_epoch="$(parse_iso_date_epoch "$last_updated")"
       now_epoch="$(date +%s)"
       if (( lu_epoch > 0 )); then
         age_days=$(( (now_epoch - lu_epoch) / 86400 ))
@@ -350,7 +425,7 @@ check_shadow_graph_tracks_doc_updates() {
   newest_doc_epoch="0"
 
   while IFS= read -r candidate; do
-    candidate_epoch="$(file_mtime_epoch "$candidate")"
+    candidate_epoch="$(file_newest_change_epoch "$candidate")"
     if (( candidate_epoch > newest_doc_epoch )); then
       newest_doc_epoch="$candidate_epoch"
       newest_doc="$candidate"
@@ -373,7 +448,7 @@ check_shadow_graph_tracks_doc_updates() {
   for shadow_file in "$@"; do
     [[ -f "$shadow_file" ]] || continue
 
-    shadow_epoch="$(file_mtime_epoch "$shadow_file")"
+    shadow_epoch="$(file_effective_epoch "$shadow_file")"
     if (( shadow_epoch < newest_doc_epoch )); then
       fail "shadow graph doc is older than tracked task/decision doc: ${shadow_file} < ${newest_doc}. Run doc_garden.sh and refresh the shadow graph"
     else
@@ -439,6 +514,215 @@ check_enum_membership() {
   allowed_text="${allowed_text%|}"
   fail "invalid ${field_name} value in ${label}: ${value} (allowed: ${allowed_text})"
   return 1
+}
+
+check_file_contains_pattern() {
+  local file_path="$1"
+  local pattern="$2"
+  local pass_msg="$3"
+  local fail_msg="$4"
+
+  if grep -qE -- "$pattern" "$file_path" 2>/dev/null; then
+    pass "$pass_msg"
+  else
+    fail "$fail_msg"
+  fi
+}
+
+collect_versioned_registry_ids() {
+  local file_path="$1"
+  grep -E '^[[:space:]]{2,}[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+@v[0-9]+:' "$file_path" 2>/dev/null \
+    | sed -E 's/^[[:space:]]*([^:]+):.*$/\1/' \
+    | sort -u || true
+}
+
+collect_rule_registry_refs() {
+  local file_path="$1"
+  local key="$2"
+  grep -E "^[[:space:]]+${key}:[[:space:]]*[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+@v[0-9]+" "$file_path" 2>/dev/null \
+    | sed -E "s/^[[:space:]]+${key}:[[:space:]]*([^ #]+).*$/\1/" \
+    | sort -u || true
+}
+
+check_rule_registry_ref_versions() {
+  local rule_file="$1"
+  local line
+  local key
+  local ref
+  local invalid_count=0
+
+  while IFS= read -r line; do
+    key="$(printf "%s" "$line" | sed -E 's/^[[:space:]]+(primary|fallback):.*$/\1/')"
+    ref="$(printf "%s" "$line" | sed -E 's/^[[:space:]]+(primary|fallback):[[:space:]]*([^ #]+).*$/\2/')"
+    if [[ ! "$ref" =~ ^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+@v[0-9]+$ ]]; then
+      fail "rule registry ${key} reference must be versioned: ${ref} (${rule_file})"
+      invalid_count=$((invalid_count + 1))
+    fi
+  done < <(grep -E '^[[:space:]]+(primary|fallback):' "$rule_file" 2>/dev/null || true)
+
+  if (( invalid_count == 0 )); then
+    pass "rule registry primary/fallback references are versioned"
+  fi
+}
+
+check_policy_risk_field_values() {
+  local file_path="$1"
+  local field_name="$2"
+  local label="$3"
+  local line
+  local value
+  local seen_count=0
+  local invalid_count=0
+
+  while IFS= read -r line; do
+    seen_count=$((seen_count + 1))
+    value="$(printf "%s" "$line" | sed -E "s/^[[:space:]]+${field_name}:[[:space:]]*([^ #]+).*$/\1/")"
+    if [[ ! "$value" =~ ^(low|medium)$ ]]; then
+      fail "${field_name} must be low|medium in ${label}: ${value} (${file_path})"
+      invalid_count=$((invalid_count + 1))
+    fi
+  done < <(grep -E "^[[:space:]]+${field_name}:" "$file_path" 2>/dev/null || true)
+
+  if (( seen_count == 0 )); then
+    fail "${field_name} is missing in ${label}: ${file_path}"
+    return
+  fi
+
+  if (( invalid_count == 0 )); then
+    pass "${field_name} values are low|medium in ${label}"
+  fi
+}
+
+check_rule_registry_refs_exist() {
+  local rule_file="$1"
+  local ref_kind="$2"
+  local known_ids="$3"
+  local known_label="$4"
+  local ref
+  local missing_count=0
+
+  while IFS= read -r ref; do
+    [[ -n "$ref" ]] || continue
+    if ! printf "%s\n" "$known_ids" | grep -Fxq "$ref"; then
+      fail "rule registry references unknown ${ref_kind} ${known_label}: ${ref} (${rule_file})"
+      missing_count=$((missing_count + 1))
+    fi
+  done < <(collect_rule_registry_refs "$rule_file" "$ref_kind")
+
+  if (( missing_count == 0 )); then
+    pass "rule registry ${ref_kind} references resolve against ${known_label}"
+  fi
+}
+
+check_rule_registry_has_mappings() {
+  local rule_file="$1"
+  local rule_count
+  local primary_count
+
+  check_file_contains_pattern "$rule_file" "^[[:space:]]{0,2}rules:" "shadow rule registry declares rules block" "shadow rule registry missing rules block (${rule_file})"
+
+  rule_count="$(grep -E '^[[:space:]]{2,}[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+:' "$rule_file" 2>/dev/null | grep -Ev '@v[0-9]+:' | wc -l | tr -d ' ')"
+  primary_count="$(collect_rule_registry_refs "$rule_file" "primary" | wc -l | tr -d ' ')"
+
+  if (( rule_count == 0 )); then
+    fail "shadow rule registry must contain at least one rule id mapping: $rule_file"
+  else
+    pass "shadow rule registry contains rule id mappings (${rule_count})"
+  fi
+
+  if (( primary_count == 0 )); then
+    fail "shadow rule registry must contain at least one primary validator mapping: $rule_file"
+  else
+    pass "shadow rule registry contains primary validator mappings (${primary_count})"
+  fi
+}
+
+check_shadow_policy_files() {
+  local catalog_file="$POLICY_DIR/shadow-validator-catalog.md"
+  local regex_file="$POLICY_DIR/shadow-regex-patterns.md"
+  local rule_file="$POLICY_DIR/shadow-rule-registry.md"
+  local required_prefix
+  local catalog_ids
+  local regex_ids
+
+  check_file_exists "$catalog_file" "shadow validator catalog"
+  check_file_exists "$regex_file" "shadow regex pattern registry"
+  check_file_exists "$rule_file" "shadow rule registry"
+
+  [[ -f "$catalog_file" && -f "$regex_file" && -f "$rule_file" ]] || return
+
+  check_line_limit "$catalog_file" "$MAX_POLICY_LINES" "shadow validator catalog"
+  check_line_limit "$regex_file" "$MAX_POLICY_LINES" "shadow regex pattern registry"
+  check_line_limit "$rule_file" "$MAX_POLICY_LINES" "shadow rule registry"
+
+  check_field_non_empty "$catalog_file" "catalog_id" "shadow validator catalog"
+  check_field_non_empty "$catalog_file" "catalog_version" "shadow validator catalog"
+  check_field_non_empty "$catalog_file" "status" "shadow validator catalog"
+  check_field_non_empty "$catalog_file" "linked_task" "shadow validator catalog"
+  check_field_non_empty "$catalog_file" "linked_decision" "shadow validator catalog"
+  check_field_non_empty "$catalog_file" "purpose" "shadow validator catalog"
+  check_field_non_empty "$catalog_file" "last_updated" "shadow validator catalog"
+
+  check_field_non_empty "$regex_file" "registry_id" "shadow regex pattern registry"
+  check_field_non_empty "$regex_file" "registry_version" "shadow regex pattern registry"
+  check_field_non_empty "$regex_file" "status" "shadow regex pattern registry"
+  check_field_non_empty "$regex_file" "linked_task" "shadow regex pattern registry"
+  check_field_non_empty "$regex_file" "linked_decision" "shadow regex pattern registry"
+  check_field_non_empty "$regex_file" "purpose" "shadow regex pattern registry"
+  check_field_non_empty "$regex_file" "last_updated" "shadow regex pattern registry"
+
+  check_field_non_empty "$rule_file" "registry_id" "shadow rule registry"
+  check_field_non_empty "$rule_file" "registry_version" "shadow rule registry"
+  check_field_non_empty "$rule_file" "status" "shadow rule registry"
+  check_field_non_empty "$rule_file" "linked_task" "shadow rule registry"
+  check_field_non_empty "$rule_file" "linked_decisions" "shadow rule registry"
+  check_field_non_empty "$rule_file" "purpose" "shadow rule registry"
+  check_field_non_empty "$rule_file" "last_updated" "shadow rule registry"
+
+  for required_prefix in any java js ts py spring_boot express react fastapi jpa sql; do
+    check_file_contains_pattern \
+      "$catalog_file" \
+      "^[[:space:]]{2,}${required_prefix}\\.[a-z0-9_.]+@v[0-9]+:" \
+      "shadow validator catalog includes ${required_prefix} versioned validators" \
+      "shadow validator catalog missing ${required_prefix} versioned validator prefix (${catalog_file})"
+  done
+
+  check_file_contains_pattern \
+    "$regex_file" \
+    "^[[:space:]]{2,}[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+@v[0-9]+:" \
+    "shadow regex registry uses versioned regex ids" \
+    "shadow regex registry has no versioned regex ids (${regex_file})"
+  check_file_contains_pattern "$regex_file" "allowed_paths:" "shadow regex registry declares allowed_paths" "shadow regex registry missing allowed_paths (${regex_file})"
+  check_file_contains_pattern "$regex_file" "excluded_paths:" "shadow regex registry declares excluded_paths" "shadow regex registry missing excluded_paths (${regex_file})"
+  check_file_contains_pattern "$regex_file" "validates:" "shadow regex registry declares validates" "shadow regex registry missing validates (${regex_file})"
+  check_file_contains_pattern "$regex_file" "cannot_validate:" "shadow regex registry declares cannot_validate" "shadow regex registry missing cannot_validate (${regex_file})"
+  check_file_contains_pattern "$regex_file" "max_promotion_risk:" "shadow regex registry declares max_promotion_risk" "shadow regex registry missing max_promotion_risk (${regex_file})"
+
+  check_policy_risk_field_values "$regex_file" "max_promotion_risk" "shadow regex pattern registry"
+
+  check_rule_registry_has_mappings "$rule_file"
+  check_rule_registry_ref_versions "$rule_file"
+  check_file_contains_pattern "$rule_file" "promotion_gates:" "shadow rule registry declares promotion_gates" "shadow rule registry missing promotion_gates (${rule_file})"
+  check_file_contains_pattern "$rule_file" "regex_only:" "shadow rule registry declares regex_only gate" "shadow rule registry missing regex_only gate (${rule_file})"
+  check_file_contains_pattern "$rule_file" "max_effective_risk:[[:space:]]*medium" "shadow rule registry caps regex_only gate at medium" "shadow rule registry regex_only.max_effective_risk must be medium (${rule_file})"
+  check_file_contains_pattern "$rule_file" "evidence_field:[[:space:]]*fallback_result" "shadow rule registry requires fallback_result evidence field" "shadow rule registry regex_only.evidence_field must be fallback_result (${rule_file})"
+  check_file_contains_pattern "$rule_file" "forbidden_field:[[:space:]]*validator_result" "shadow rule registry forbids validator_result on regex_only gate" "shadow rule registry regex_only.forbidden_field must be validator_result (${rule_file})"
+  check_file_contains_pattern "$rule_file" "high_or_critical:" "shadow rule registry declares high_or_critical gate" "shadow rule registry missing high_or_critical gate (${rule_file})"
+  check_file_contains_pattern "$rule_file" "- parser_backed_validator" "shadow rule registry high/critical gate allows parser-backed validator" "shadow rule registry high_or_critical missing parser_backed_validator (${rule_file})"
+  check_file_contains_pattern "$rule_file" "- test_assertion" "shadow rule registry high/critical gate allows test assertion" "shadow rule registry high_or_critical missing test_assertion (${rule_file})"
+  check_file_contains_pattern "$rule_file" "- runtime_trace" "shadow rule registry high/critical gate allows runtime trace" "shadow rule registry high_or_critical missing runtime_trace (${rule_file})"
+  check_file_contains_pattern "$rule_file" "- valid_waiver" "shadow rule registry high/critical gate allows valid waiver" "shadow rule registry high_or_critical missing valid_waiver (${rule_file})"
+  check_file_contains_pattern "$rule_file" "unknown_defaults:" "shadow rule registry declares unknown_defaults" "shadow rule registry missing unknown_defaults (${rule_file})"
+  check_file_contains_pattern "$rule_file" "unlisted_boundary:[[:space:]]*unknown" "shadow rule registry defaults unlisted boundary to unknown" "shadow rule registry must default unlisted_boundary to unknown (${rule_file})"
+  check_file_contains_pattern "$rule_file" "unmapped_stack:[[:space:]]*unknown" "shadow rule registry defaults unmapped stack to unknown" "shadow rule registry must default unmapped_stack to unknown (${rule_file})"
+  check_file_contains_pattern "$rule_file" "unmapped_evidence_type:[[:space:]]*unknown" "shadow rule registry defaults unmapped evidence type to unknown" "shadow rule registry must default unmapped_evidence_type to unknown (${rule_file})"
+
+  check_policy_risk_field_values "$rule_file" "fallback_max_risk" "shadow rule registry"
+
+  catalog_ids="$(collect_versioned_registry_ids "$catalog_file")"
+  regex_ids="$(collect_versioned_registry_ids "$regex_file")"
+  check_rule_registry_refs_exist "$rule_file" "primary" "$catalog_ids" "validator catalog id"
+  check_rule_registry_refs_exist "$rule_file" "fallback" "$regex_ids" "regex pattern id"
 }
 
 risk_level_requires_adversarial() {
@@ -578,31 +862,72 @@ orchestration_execution_mode_for_task() {
   extract_field_value "$orchestration_file" "execution_mode"
 }
 
+latest_plan_version_for_task() {
+  local task_id="$1"
+  local plan_file
+  local plan_base
+  local version
+  local major
+  local minor
+  local best_major=-1
+  local best_minor=-1
+  local best_version=""
+
+  while IFS= read -r plan_file; do
+    plan_base="$(basename "$plan_file")"
+    version="$(printf "%s" "$plan_base" | sed -E 's/^PLAN-.*-(v[0-9]+\.[0-9]+)\.md$/\1/')"
+    [[ "$version" =~ ^v[0-9]+\.[0-9]+$ ]] || continue
+    major="${version#v}"
+    major="${major%%.*}"
+    minor="${version##*.}"
+    major=$((10#$major))
+    minor=$((10#$minor))
+    if (( major > best_major || (major == best_major && minor > best_minor) )); then
+      best_major="$major"
+      best_minor="$minor"
+      best_version="$version"
+    fi
+  done < <(find "$PLAN_DIR" -maxdepth 1 -type f -name "PLAN-${task_id}-v*.md" ! -name 'PLAN-template.md' | sort)
+
+  printf "%s" "$best_version"
+}
+
 check_evaluator_reports_for_task() {
   local task_id="$1"
   local task_ref="$2"
   local execution_mode="$3"
   local adversarial_source="${4:-}"
+  local latest_plan_version="${5:-}"
   local report_count=0
   local adversarial_count=0
   local report_file
   local report_review_style
+  local expected_report_glob
 
-  if compgen -G "$REPORT_DIR/PLAN-${task_id}-v*-review-*.md" >/dev/null; then
+  if [[ -z "$latest_plan_version" ]]; then
+    latest_plan_version="$(latest_plan_version_for_task "$task_id")"
+  fi
+  if [[ -z "$latest_plan_version" ]]; then
+    fail "cannot determine latest plan version for active task ${task_ref}"
+    return
+  fi
+
+  expected_report_glob="$REPORT_DIR/PLAN-${task_id}-${latest_plan_version}-review-*.md"
+  if compgen -G "$expected_report_glob" >/dev/null; then
     while IFS= read -r report_file; do
       report_count=$((report_count + 1))
       report_review_style="$(extract_field_value "$report_file" "review_style")"
       if [[ "$report_review_style" == "adversarial" ]]; then
         adversarial_count=$((adversarial_count + 1))
       fi
-    done < <(find "$REPORT_DIR" -maxdepth 1 -type f -name "PLAN-${task_id}-v*-review-*.md" | sort)
+    done < <(find "$REPORT_DIR" -maxdepth 1 -type f -name "PLAN-${task_id}-${latest_plan_version}-review-*.md" | sort)
   fi
 
   if [[ -n "$adversarial_source" ]]; then
     if (( adversarial_count > 0 )); then
-      pass "adversarial evaluator report exists for high-risk task ${task_ref} (${adversarial_count})"
+      pass "adversarial evaluator report exists for high-risk task ${task_ref} latest plan ${latest_plan_version} (${adversarial_count})"
     else
-      fail "missing adversarial evaluator report for high-risk task ${task_ref} (${adversarial_source}): expected ${REPORT_DIR}/PLAN-${task_id}-v*-review-(gemini|claude|codex)-rNN.md with review_style: adversarial"
+      fail "missing adversarial evaluator report for high-risk task ${task_ref} latest plan ${latest_plan_version} (${adversarial_source}): expected ${REPORT_DIR}/PLAN-${task_id}-${latest_plan_version}-review-(gemini|claude|codex)-rNN.md with review_style: adversarial"
     fi
     return
   fi
@@ -613,9 +938,9 @@ check_evaluator_reports_for_task() {
   fi
 
   if (( report_count > 0 )); then
-    pass "evaluator report exists for active task ${task_ref} (${report_count})"
+    pass "evaluator report exists for active task ${task_ref} latest plan ${latest_plan_version} (${report_count})"
   else
-    fail "missing evaluator report for active task ${task_ref}: expected ${REPORT_DIR}/PLAN-${task_id}-v*-review-(gemini|claude|codex)-rNN.md"
+    fail "missing evaluator report for active task ${task_ref} latest plan ${latest_plan_version}: expected ${REPORT_DIR}/PLAN-${task_id}-${latest_plan_version}-review-(gemini|claude|codex)-rNN.md"
   fi
 }
 
@@ -635,6 +960,7 @@ check_dir_exists "$DECISIONS_DIR" "decisions directory"
 check_dir_exists "$PLAN_DIR" "plan directory"
 check_dir_exists "$REPORT_DIR" "report directory"
 check_dir_exists "$ORCHESTRATION_DIR" "orchestration directory"
+check_dir_exists "$POLICY_DIR" "policy directory"
 
 check_file_exists "$TASK_DIR/project-dictionary.md" "project dictionary"
 check_file_exists "$TASK_DIR/task-index.md" "task index"
@@ -648,7 +974,13 @@ check_file_exists "$PLAN_DIR/PLAN-template.md" "plan template"
 check_file_exists "$REPORT_DIR/LLM-REVIEW-template.md" "report template"
 check_file_exists "$ORCHESTRATION_DIR/ORCH-template.md" "orchestration template"
 
+# --- Shadow policy checks ---
+if [[ -d "$POLICY_DIR" ]]; then
+  check_shadow_policy_files
+fi
+
 # --- Shadow graph checks ---
+SHADOW_TRACKED_FILES=()
 if [[ -d "$SHADOW_DIR" ]]; then
   while IFS= read -r shadow_doc; do
     check_line_limit "$shadow_doc" "$MAX_SHADOW_LINES" "shadow document"
@@ -672,6 +1004,7 @@ if [[ -d "$SHADOW_DIR" ]]; then
 fi
 
 if [[ -f "$SHADOW_DIR/project-shadow.md" ]]; then
+  SHADOW_TRACKED_FILES+=("$SHADOW_DIR/project-shadow.md")
   check_field_value_equals "$SHADOW_DIR/project-shadow.md" "doc_role" "router" "shadow router"
   check_field_exists "$SHADOW_DIR/project-shadow.md" "read_path" "shadow router"
   check_field_exists "$SHADOW_DIR/project-shadow.md" "bucket_links" "shadow router"
@@ -682,6 +1015,7 @@ if [[ -f "$SHADOW_DIR/project-shadow.md" ]]; then
 fi
 
 if [[ -f "$SHADOW_GLOBAL_FILE" ]]; then
+  SHADOW_TRACKED_FILES+=("$SHADOW_GLOBAL_FILE")
   check_field_value_equals "$SHADOW_GLOBAL_FILE" "doc_role" "global" "shadow global"
   check_freshness_days "$SHADOW_GLOBAL_FILE" "$MAX_SHADOW_AGE_DAYS" "shadow global"
 fi
@@ -689,13 +1023,14 @@ fi
 for shadow_bucket in "${SHADOW_BUCKETS[@]}"; do
   shadow_bucket_file="$SHADOW_DIR/${shadow_bucket}/_index.md"
   if [[ -f "$shadow_bucket_file" ]]; then
+    SHADOW_TRACKED_FILES+=("$shadow_bucket_file")
     check_field_value_equals "$shadow_bucket_file" "doc_role" "bucket_index" "shadow bucket index (${shadow_bucket})"
     check_field_value_equals "$shadow_bucket_file" "bucket" "$shadow_bucket" "shadow bucket index (${shadow_bucket})"
     check_freshness_days "$shadow_bucket_file" "$MAX_SHADOW_AGE_DAYS" "shadow bucket index (${shadow_bucket})"
   fi
 done
 
-check_shadow_graph_tracks_doc_updates "$SHADOW_DIR/project-shadow.md"
+check_shadow_graph_tracks_doc_updates "${SHADOW_TRACKED_FILES[@]}"
 
 # --- Task file checks ---
 if [[ -d "$TASK_DIR" ]]; then
@@ -707,6 +1042,7 @@ if [[ -d "$TASK_DIR" ]]; then
     task_risk_level="$(normalize_risk_level_value "$(extract_field_value "$task_file" "risk_level")")"
     orchestration_mode=""
     adversarial_source=""
+    latest_plan_version=""
     check_line_limit "$task_file" "$MAX_TASK_LINES" "task document"
 
     # In strict mode: check non-empty values; in advisory: check existence only
@@ -738,13 +1074,14 @@ if [[ -d "$TASK_DIR" ]]; then
       fi
       if compgen -G "$PLAN_DIR/PLAN-${task_id}-v*.md" >/dev/null; then
         pass "plan exists for active task ${task_ref}"
+        latest_plan_version="$(latest_plan_version_for_task "$task_id")"
       else
         fail "missing plan file for active task ${task_ref}: expected ${PLAN_DIR}/PLAN-${task_id}-v*.md"
       fi
       check_orchestration_file_for_task "$task_id" "$task_ref"
       orchestration_mode="$(orchestration_execution_mode_for_task "$task_id")"
       adversarial_source="$(adversarial_requirement_source_for_task "$task_id")"
-      check_evaluator_reports_for_task "$task_id" "$task_ref" "$orchestration_mode" "$adversarial_source"
+      check_evaluator_reports_for_task "$task_id" "$task_ref" "$orchestration_mode" "$adversarial_source" "$latest_plan_version"
     fi
 
     # Task-index consistency: verify task appears in task-index.md
@@ -760,6 +1097,7 @@ fi
 if [[ -d "$DECISIONS_DIR" ]]; then
   while IFS= read -r decision_file; do
     decision_base="$(basename "$decision_file")"
+    decision_base_escaped="$(escape_ere_literal "$decision_base")"
     decision_scope_type="$(extract_field_value "$decision_file" "scope_type")"
     decision_status="$(extract_field_value "$decision_file" "status")"
     decision_risk_level="$(normalize_risk_level_value "$(extract_field_value "$decision_file" "risk_level")")"
@@ -793,7 +1131,7 @@ if [[ -d "$DECISIONS_DIR" ]]; then
 
     # Decision-index consistency (supports both section-based and legacy table format)
     if [[ -f "$DECISIONS_DIR/decision-index.md" ]]; then
-      if ! grep -qE "(^- ${decision_base} \\||^\\| ${decision_base} \\|)" "$DECISIONS_DIR/decision-index.md" 2>/dev/null; then
+      if ! grep -qE "(^- ${decision_base_escaped} \\||^\\| ${decision_base_escaped} \\|)" "$DECISIONS_DIR/decision-index.md" 2>/dev/null; then
         fail "decision index missing row for ${decision_base}"
       fi
     fi
@@ -858,6 +1196,10 @@ if [[ -d "$REPORT_DIR" ]]; then
       check_field_non_empty "$report_file" "evaluator" "evaluator report"
       check_field_non_empty "$report_file" "review_round" "evaluator report"
       check_field_non_empty "$report_file" "verdict" "evaluator report"
+      check_field_non_empty "$report_file" "summary" "evaluator report"
+      check_field_non_empty "$report_file" "strengths" "evaluator report"
+      check_field_non_empty "$report_file" "risks" "evaluator report"
+      check_field_non_empty "$report_file" "requested_changes" "evaluator report"
       check_field_non_empty "$report_file" "last_updated" "evaluator report"
     else
       check_field_exists "$report_file" "task_id" "evaluator report"
@@ -865,6 +1207,10 @@ if [[ -d "$REPORT_DIR" ]]; then
       check_field_exists "$report_file" "evaluator" "evaluator report"
       check_field_exists "$report_file" "review_round" "evaluator report"
       check_field_exists "$report_file" "verdict" "evaluator report"
+      check_field_exists "$report_file" "summary" "evaluator report"
+      check_field_exists "$report_file" "strengths" "evaluator report"
+      check_field_exists "$report_file" "risks" "evaluator report"
+      check_field_exists "$report_file" "requested_changes" "evaluator report"
       check_field_exists "$report_file" "last_updated" "evaluator report"
     fi
 
@@ -956,7 +1302,7 @@ if ! command -v rg >/dev/null 2>&1; then
   fail "ripgrep (rg) is required for secret scanning but was not found in PATH"
 else
   scan_secret_pattern \
-    "sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN (RSA|EC|OPENSSH|PRIVATE) KEY-----" \
+    "sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN (RSA|EC|OPENSSH|PRIVATE) KEY-----" \
     "potential secret values detected in docs (known key formats)" \
     "no known key-format secret patterns found"
 
@@ -967,13 +1313,13 @@ else
     "true"
 
   scan_secret_pattern \
-    "(api[_-]?key|token|password|secret|private[_-]?key)\\s*[:=]\\s*(sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16})" \
+    "(api[_-]?key|token|password|secret|private[_-]?key)\\s*[:=]\\s*(sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16})" \
     "potential yaml/env-style secret assignments detected in docs" \
     "no yaml/env-style secret assignment patterns found" \
     "true"
 
   scan_secret_pattern \
-    "OPENAI_API_KEY\\s*[:=]\\s*(sk-[A-Za-z0-9]{20,}|\"sk-[A-Za-z0-9]{20,}\"|'sk-[A-Za-z0-9]{20,}')" \
+    "OPENAI_API_KEY\\s*[:=]\\s*(sk-[A-Za-z0-9_-]{20,}|\"sk-[A-Za-z0-9_-]{20,}\"|'sk-[A-Za-z0-9_-]{20,}')" \
     "potential OPENAI API key assignment detected in docs" \
     "no OPENAI API key assignment patterns found"
 fi

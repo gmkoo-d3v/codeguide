@@ -4,6 +4,8 @@ Use this template for semi-automated external ping-pong review of `PLAN-*` docs.
 
 Wrapper scripts must write the full request to a redacted Markdown handoff file and capture sanitized stdout in a Markdown response file before parsing it into `docs/report/`.
 Wrapper scripts should pass only a short instruction plus the absolute request-file path to external CLIs; the Markdown request file is the handoff contract, not stdin.
+The short CLI command must also include an explicit absolute command-output path, either through shell stdout redirection, `tee`, or a tool-specific output-file option such as `--output-last-message`; the wrapper may then sanitize that raw capture into the durable response file and delete the raw capture.
+The prompt text alone is not a sufficient output-location contract.
 When a CLI emits runtime logs on stdout, wrappers should capture the final model message through a dedicated response-file option if the CLI supports one.
 Request handoff files should use metadata plus `Why`, `What`, `How`, `Where`, `Verify`, then payload.
 Valid response handoff files should use the parser-compatible bullet fields below; malformed sanitized stdout may be preserved for retry diagnostics.
@@ -36,5 +38,6 @@ Valid response handoff files should use the parser-compatible bullet fields belo
 ## Output discipline
 - Return only the requested markdown bullet fields.
 - Keep every field value on a single line so wrapper scripts can normalize the response into `docs/report/`.
+- Use only the command-level response path and sanitized response file named by the wrapper; do not claim that the review was saved to any other file.
 - Prefer `revise` or `blocked` unless the plan is clearly ready to execute.
 - Prefer `accept` when remaining issues are minor, already covered by validation, or unlikely to change implementation choices.

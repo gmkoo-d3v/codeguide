@@ -110,7 +110,7 @@ export CODEGUIDE_ROOT="$HOME/.codex/skills/codeguide"
 bats "$CODEGUIDE_ROOT/tests/codeguide.bats"
 ```
 
-`run_external_plan_reviews.sh`는 기본적으로 CLI의 기본 모델을 사용하며, 사용자가 override를 주지 않으면 버전명 하드코딩을 피합니다. 긴 프롬프트는 shell 인자로 직접 넘기지 않고 `docs/orchestration/external-cli/<MonDD_YYYY>/<task-id>/<plan-version>/<round>/` (예: `Apr29_2026/...`) 아래의 Markdown request/response 파일로 왕복합니다. request는 `Why/What/How/Where/Verify` 축을 포함하고, 유효한 response는 parser-friendly bullet field를 따르며, 보존 파일은 저장 전 민감값을 redaction합니다. 이 명령은 review report를 만든 뒤 멈추며, 다음 `PLAN-v1.1`을 자동 생성하지 않습니다.
+`run_external_plan_reviews.sh`는 기본적으로 CLI의 기본 모델을 사용하며, 사용자가 override를 주지 않으면 버전명 하드코딩을 피합니다. 긴 프롬프트는 shell 인자로 직접 넘기지 않고 `docs/orchestration/external-cli/<MonDD_YYYY>/<task-id>/<plan-version>/<round>/` (예: `Apr29_2026/...`) 아래의 Markdown request/response 파일로 왕복합니다. 외부 CLI에 넘기는 짧은 bash 명령은 stdout redirection, `tee`, 또는 `--output-last-message` 같은 도구별 옵션으로 절대 command-output 경로를 명시해야 하며, 프롬프트 안의 경로 언급만으로는 부족합니다. wrapper는 raw command output을 redaction한 뒤 durable response 파일로 저장하고 raw capture를 삭제합니다. request는 `Why/What/How/Where/Verify` 축을 포함하고, 유효한 response는 parser-friendly bullet field를 따르며, 보존 파일은 저장 전 민감값을 redaction합니다. 이 명령은 review report를 만든 뒤 멈추며, 다음 `PLAN-v1.1`을 자동 생성하지 않습니다.
 
 이 명령들은 스킬 사용의 본질이라기보다, 스킬의 운영 상태를 재현하거나 검증하기 위한 보조 인터페이스입니다.
 

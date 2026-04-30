@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -56,10 +58,11 @@ PLAN_DIR="${DOCS_DIR}/plan"
 REPORT_DIR="${DOCS_DIR}/report"
 ORCHESTRATION_DIR="${DOCS_DIR}/orchestration"
 EXTERNAL_CLI_DIR="${ORCHESTRATION_DIR}/external-cli"
+POLICY_DIR="${DOCS_DIR}/policy"
 SHADOW_BUCKETS=(apps services packages infra data)
 SHADOW_ARCHIVE_DIRS=(_deprecated _obsolete)
 
-mkdir -p "${TASK_DIR}" "${SHADOW_DIR}" "${DECISIONS_DIR}" "${PLAN_DIR}" "${REPORT_DIR}" "${ORCHESTRATION_DIR}" "${EXTERNAL_CLI_DIR}"
+mkdir -p "${TASK_DIR}" "${SHADOW_DIR}" "${DECISIONS_DIR}" "${PLAN_DIR}" "${REPORT_DIR}" "${ORCHESTRATION_DIR}" "${EXTERNAL_CLI_DIR}" "${POLICY_DIR}"
 
 for bucket in "${SHADOW_BUCKETS[@]}"; do
   mkdir -p "${SHADOW_DIR}/${bucket}"
@@ -76,6 +79,274 @@ write_if_missing() {
     printf "%s\n" "${content}" > "${file_path}"
   fi
 }
+
+copy_policy_defaults_if_available() {
+  local source_dir="${SCRIPT_DIR}/../../docs/policy"
+  local source_abs
+  local dest_abs
+  local policy_file
+
+  [[ -d "$source_dir" ]] || return 1
+
+  source_abs="$(cd "$source_dir" && pwd)"
+  dest_abs="$(cd "$POLICY_DIR" && pwd)"
+  [[ "$source_abs" == "$dest_abs" ]] && return 0
+
+  for policy_file in shadow-validator-catalog.md shadow-regex-patterns.md shadow-rule-registry.md; do
+    if [[ -f "${source_abs}/${policy_file}" && ! -f "${POLICY_DIR}/${policy_file}" ]]; then
+      cp "${source_abs}/${policy_file}" "${POLICY_DIR}/${policy_file}"
+    fi
+  done
+}
+
+copy_policy_defaults_if_available || true
+
+write_if_missing "${POLICY_DIR}/shadow-validator-catalog.md" '# Shadow Validator Catalog
+
+- catalog_id: shadow-validator-catalog
+- catalog_version: 1
+- status: active-draft
+- linked_task: TASK-shadow-effect-map-01
+- linked_decision: decision-shadow-validator-taxonomy-01
+- purpose: Define which validators can support shadow fact promotion.
+- last_updated: 2026-04-30T13:49:45Z
+
+## Contract
+
+- Validator ids must include category prefix and version suffix.
+- A validator not listed here cannot produce a validated shadow fact.
+
+```yaml
+validators:
+  any.test.assertion@v1:
+    evidence_type: test_assertion
+    validates: matching test assertion exists
+    limitations: [depends_on_test_scope]
+  any.runtime.trace@v1:
+    evidence_type: runtime_trace
+    validates: runtime event exists
+    limitations: [observation_window_may_be_incomplete]
+  java.ast.call_match@v1:
+    evidence_type: code_call
+    validates: Java call exists at source anchor
+    limitations: [does_not_prove_runtime_execution]
+  java.annotation.match@v1:
+    evidence_type: annotation
+    validates: Java annotation exists
+    limitations: [does_not_prove_proxy_activation]
+  js.ast.call_match@v1:
+    evidence_type: code_call
+    validates: JavaScript call exists
+    limitations: [dynamic_dispatch_can_hide_target]
+  ts.ast.call_match@v1:
+    evidence_type: code_call
+    validates: TypeScript call exists
+    limitations: [does_not_prove_runtime_execution]
+  py.ast.call_match@v1:
+    evidence_type: code_call
+    validates: Python call exists
+    limitations: [dynamic_dispatch_can_hide_target]
+  spring_boot.request_mapping@v1:
+    evidence_type: annotation
+    validates: Spring Boot request mapping annotation exists
+    limitations: [does_not_prove_route_reachable]
+  spring_boot.cache_evict.annotation@v1:
+    evidence_type: annotation
+    validates: Spring cache eviction annotation exists
+    limitations: [does_not_prove_proxy_activation]
+  express.route@v1:
+    evidence_type: code_call
+    validates: Express route registration call exists
+    limitations: [does_not_prove_middleware_order]
+  react.effect_hook@v1:
+    evidence_type: code_call
+    validates: React effect hook call exists
+    limitations: [does_not_prove_effect_execution_timing]
+  fastapi.route@v1:
+    evidence_type: annotation
+    validates: FastAPI route decorator exists
+    limitations: [does_not_prove_app_mount]
+  fastapi.dependency@v1:
+    evidence_type: code_reference
+    validates: FastAPI dependency declaration exists
+    limitations: [does_not_prove_dependency_success]
+  jpa.repository.save@v1:
+    evidence_type: code_call
+    validates: JPA repository save-like call exists
+    limitations: [does_not_prove_flush_or_commit]
+  sql.write_call@v1:
+    evidence_type: code_call
+    validates: SQL write invocation exists
+    limitations: [does_not_prove_rows_affected]
+```
+'
+
+write_if_missing "${POLICY_DIR}/shadow-regex-patterns.md" '# Shadow Regex Pattern Registry
+
+- registry_id: shadow-regex-patterns
+- registry_version: 1
+- status: active-draft
+- linked_task: TASK-shadow-effect-map-01
+- linked_decision: decision-shadow-regex-standard-01
+- purpose: Define approved regex fallback patterns for shadow evidence discovery.
+- last_updated: 2026-04-30T13:49:45Z
+
+## Contract
+
+- Regex ids must include a version suffix.
+- Regex-only promotion is capped at low or medium.
+
+```yaml
+regex_patterns:
+  java.regex.method_call_named@v1:
+    pattern: java-call-pattern
+    allowed_paths: ["src/main/java/**"]
+    excluded_paths: ["src/test/**", "build/**", "target/**"]
+    validates: named Java call syntax appears
+    cannot_validate: [runtime_execution, overload_resolution]
+    max_promotion_risk: medium
+  java.regex.repository_save_call@v1:
+    pattern: java-repository-save-pattern
+    allowed_paths: ["src/main/java/**"]
+    excluded_paths: ["src/test/**", "build/**", "target/**"]
+    validates: repository save syntax appears
+    cannot_validate: [transaction_success, downstream_listeners]
+    max_promotion_risk: medium
+  java.regex.annotation_named@v1:
+    pattern: java-annotation-pattern
+    allowed_paths: ["src/main/java/**"]
+    excluded_paths: ["src/test/**", "build/**", "target/**"]
+    validates: named Java annotation syntax appears
+    cannot_validate: [proxy_activation, runtime_behavior]
+    max_promotion_risk: medium
+  spring_boot.regex.request_mapping@v1:
+    pattern: spring-request-mapping-pattern
+    allowed_paths: ["src/main/java/**"]
+    excluded_paths: ["src/test/**", "build/**", "target/**"]
+    validates: Spring request mapping annotation syntax appears
+    cannot_validate: [route_reachable, security_allowed]
+    max_promotion_risk: medium
+  js.regex.call_named@v1:
+    pattern: js-call-pattern
+    allowed_paths: ["src/**", "app/**", "lib/**"]
+    excluded_paths: ["node_modules/**", "dist/**", "build/**"]
+    validates: named JavaScript call syntax appears
+    cannot_validate: [runtime_execution, async_completion]
+    max_promotion_risk: medium
+  py.regex.call_named@v1:
+    pattern: py-call-pattern
+    allowed_paths: ["**/*.py"]
+    excluded_paths: ["tests/**", ".venv/**", "venv/**", "build/**"]
+    validates: named Python call syntax appears
+    cannot_validate: [runtime_execution, monkey_patch_target]
+    max_promotion_risk: medium
+  py.regex.decorator_named@v1:
+    pattern: py-decorator-pattern
+    allowed_paths: ["**/*.py"]
+    excluded_paths: ["tests/**", ".venv/**", "venv/**", "build/**"]
+    validates: named Python decorator syntax appears
+    cannot_validate: [decorator_runtime_behavior, dependency_success]
+    max_promotion_risk: medium
+```
+'
+
+write_if_missing "${POLICY_DIR}/shadow-rule-registry.md" '# Shadow Rule Registry
+
+- registry_id: shadow-rule-registry
+- registry_version: 1
+- status: active-draft
+- linked_task: TASK-shadow-effect-map-01
+- linked_decisions: decision-shadow-practical-contract-01, decision-shadow-validator-taxonomy-01, decision-shadow-regex-standard-01
+- purpose: Map shadow rule ids to compatible validators, approved regex fallback patterns, risk floors, and promotion gates.
+- last_updated: 2026-04-30T13:49:45Z
+
+## Contract
+
+- Rule ids not listed here cannot produce validated shadow facts.
+- Regex fallback must reference shadow-regex-patterns.md.
+- Regex-only promotion cannot exceed medium.
+
+```yaml
+rules:
+  repo.write:
+    validators_by_stack:
+      spring_boot_jpa:
+        code_call:
+          primary: jpa.repository.save@v1
+          fallback: java.regex.repository_save_call@v1
+          fallback_max_risk: medium
+      java_generic:
+        code_call:
+          primary: java.ast.call_match@v1
+          fallback: java.regex.method_call_named@v1
+          fallback_max_risk: medium
+      python:
+        code_call:
+          primary: py.ast.call_match@v1
+          fallback: py.regex.call_named@v1
+          fallback_max_risk: medium
+  cache.evict:
+    validators_by_stack:
+      spring_boot:
+        annotation:
+          primary: spring_boot.cache_evict.annotation@v1
+          fallback: java.regex.annotation_named@v1
+          fallback_max_risk: medium
+  external.call:
+    validators_by_stack:
+      node:
+        code_call:
+          primary: js.ast.call_match@v1
+          fallback: js.regex.call_named@v1
+          fallback_max_risk: medium
+  security.auth:
+    validators_by_stack:
+      spring_boot:
+        annotation:
+          primary: java.annotation.match@v1
+          fallback: java.regex.annotation_named@v1
+          fallback_max_risk: medium
+      common:
+        runtime_trace:
+          primary: any.runtime.trace@v1
+  http.route:
+    validators_by_stack:
+      spring_boot:
+        annotation:
+          primary: spring_boot.request_mapping@v1
+          fallback: spring_boot.regex.request_mapping@v1
+          fallback_max_risk: medium
+      express:
+        code_call:
+          primary: express.route@v1
+          fallback: js.regex.call_named@v1
+          fallback_max_risk: medium
+      fastapi:
+        annotation:
+          primary: fastapi.route@v1
+          fallback: py.regex.decorator_named@v1
+          fallback_max_risk: medium
+```
+
+```yaml
+promotion_gates:
+  regex_only:
+    max_effective_risk: medium
+    evidence_field: fallback_result
+    forbidden_field: validator_result
+  high_or_critical:
+    requires_one_of:
+      - parser_backed_validator
+      - test_assertion
+      - runtime_trace
+      - valid_waiver
+  unknown_defaults:
+    unlisted_rule: unknown
+    unlisted_boundary: unknown
+    unmapped_stack: unknown
+    unmapped_evidence_type: unknown
+```
+'
 
 write_if_missing "${TASK_DIR}/project-dictionary.md" '# Project Dictionary
 

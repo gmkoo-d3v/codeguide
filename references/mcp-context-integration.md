@@ -17,6 +17,17 @@ Use this reference when MCP tools may affect context discovery, source authority
 - A matching flow trigger can use the tool even when the user did not name the tool.
 - A current kill switch overrides normal flow triggers.
 
+## Context budget workflow
+- Use auxiliary tools to reduce files, symbols, and lines to inspect; do not use them to produce final facts.
+- Preferred discovery order for shadow, effect, and architecture work:
+  1. Read workspace docs and shadow docs as the system of record.
+  2. Use `rg` and Serena to narrow current-code anchors, symbols, references, call-chain candidates, and impacted files.
+  3. Use mem0, pgvector, or Neo4j only for bounded prior-decision, stale-context, and related-concept lookup.
+  4. Validate final claims against direct file reads, deterministic checks, tests, command output, or runtime traces.
+- Do not expand context with full search dumps, full graph neighborhoods, or entire memory exports when source paths, symbols, and evidence snippets are enough.
+- Prefer bounded top-k or page-limited retrieval when a tool supports it; report whether the retrieved set is sampled or exhaustive when it materially affects confidence.
+- If the target file or symbol is already obvious, skip auxiliary MCP lookup and inspect the direct source.
+
 ## Evidence report shape
 Use this shape when MCP evidence materially affects a task:
 
@@ -82,9 +93,9 @@ mutations:
 
 ## Combined workflow
 1. Read current docs/system-of-record material when relevant.
-2. Inspect repository files with `rg` and direct reads.
-3. Use Serena only when explicitly requested or a symbolic-code flow trigger fits.
-4. Use mem0 only when explicitly requested, prior context cannot be answered from docs/code, or a phase gate requires memory consistency checks.
+2. Narrow current-code candidates with `rg`, direct path listing, and Serena when a symbolic-code flow trigger fits.
+3. Use mem0, pgvector, or Neo4j only for bounded prior-context lookup when docs and current-code discovery do not answer the historical or cross-context question.
+4. Re-read the minimal direct source, test, command output, or runtime evidence needed to validate the claim.
 5. Synthesize conflicts explicitly.
 6. Implement scoped changes when requested.
 7. Verify with compile checks, tests, runtime checks, or documented review.

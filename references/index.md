@@ -6,12 +6,16 @@ Use this file to pick the smallest authoritative reference set for the active ta
 - Docs system-of-record and templates: `docs-system-of-record.md`
 - Doc-gardening process: `doc-gardening-agent.md`
 - Tools and automation details: `tools-automation.md`
-- MCP context integration policy: `mcp-context-integration.md`
-- Serena symbolic workflow: `serena-workflow.md`
-- mem0 restricted memory policy: `mem0-policy.md`
 - External plan review prompt: `external-plan-review-prompt.md`
 - PR and commit templates: `git-pr-commit-templates.md`
 - Engineering operating principles: `harness-engineering-principles.md`
+
+## Context and Retrieval Routing
+- Context-budget workflow and MCP source-authority rules: `mcp-context-integration.md`
+- Serena symbolic narrowing for current-code anchors, references, call chains, and impact analysis: `serena-workflow.md`
+- mem0, pgvector, and Neo4j restricted prior-context and graph/vector hint policy: `mem0-policy.md`
+- Default order for large or uncertain investigations: docs/shadow first, `rg` plus Serena for current-code narrowing, mem0/pgvector/Neo4j for bounded prior-context hints, then direct source/test/runtime validation.
+- Skip auxiliary retrieval when direct docs or target files already answer the task with low risk.
 
 ## Quality Gates
 - Review checklist: `review-checklist.md`
@@ -38,9 +42,10 @@ Use this file to pick the smallest authoritative reference set for the active ta
 
 ## Selection Rules
 1. Start with one core governance or quality-gate file.
-2. Expand to architecture decision aids only when the task needs structural or integration guidance.
-3. Use deprecated / secondary framework references only for legacy examples or migration context.
-4. Keep outputs concise and evidence-based.
+2. For context-heavy, shadow, MCP, memory, or call-chain work, load `mcp-context-integration.md` before choosing `serena-workflow.md` or `mem0-policy.md`.
+3. Expand to architecture decision aids only when the task needs structural or integration guidance.
+4. Use deprecated / secondary framework references only for legacy examples or migration context.
+5. Keep outputs concise and evidence-based.
 
 ## Exclusions
 - Documents under `mold/` and generated traces under `mold/temp/` are outside this curated index and the English-only documentation policy.
