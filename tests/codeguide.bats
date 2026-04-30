@@ -10,6 +10,7 @@ RUN_EXTERNAL_REVIEWS="$SCRIPTS_DIR/run_external_plan_reviews.sh"
 INIT_SCAFFOLD="$SCRIPTS_DIR/init_docs_scaffold.sh"
 CHECK_ENGLISH_DOCS="$SCRIPTS_DIR/check_english_docs.sh"
 SHADOW_PROBE="$SCRIPTS_DIR/shadow_evidence_probe.py"
+SHADOW_QUEUE="$SCRIPTS_DIR/shadow_review_queue.py"
 
 docs_root_for_project() {
   local project_root="$1"
@@ -552,6 +553,68 @@ EOF
   [ "$status" -eq 64 ]
   [[ "$output" == *"traversal"* ]]
   [[ "$output" == *'"validator_id":"py.ast.call_match@v1"'* ]]
+}
+
+@test "shadow_review_queue turns probe records into bounded human questions" {
+  local probe_file="$TEST_WORKSPACE/probe.jsonl"
+  cat > "$probe_file" <<'EOF'
+{"status":"pass","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/app.py:4","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false}
+{"status":"pass","validator_id":"jpa.repository.save@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/main/java/example/UserService.java:7","validator_kind":"source_probe","parser_backed":false,"promotion_limit":"medium","writes_shadow_docs":false}
+{"status":"unsupported","validator_id":"java.ast.call_match@v99","writes_shadow_docs":false}
+EOF
+
+  run python3 "$SHADOW_QUEUE" \
+    --input "$probe_file" \
+    --task-id "shadow-effect-map-01" \
+    --max-questions 2
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"# Shadow Evidence Review Queue"* ]]
+  [[ "$output" == *"- writes_shadow_docs: false"* ]]
+  [[ "$output" == *"- auto_promotes_facts: false"* ]]
+  [[ "$output" == *"- question_count: 2"* ]]
+  [[ "$output" == *"Does the syntactic source probe"* ]]
+  [[ "$output" == *"Which supported validator or fallback should replace"* ]]
+  [[ "$output" != *"RQ-003"* ]]
+}
+
+@test "shadow_review_queue keeps runtime trace provenance visible" {
+  local probe_file="$TEST_WORKSPACE/runtime.jsonl"
+  cat > "$probe_file" <<'EOF'
+{"status":"pass","validator_id":"any.runtime.trace@v1","evidence_type":"runtime_trace","validator_result":"matched","source_ref":"logs/runtime.trace:2","trace_ref":"logs/runtime.trace:2","artifact_hash":"sha256:abc123","validator_kind":"runtime_trace","parser_backed":false,"promotion_limit":"high","writes_shadow_docs":false}
+EOF
+
+  run python3 "$SHADOW_QUEUE" --input "$probe_file"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"artifact_hash: sha256:abc123"* ]]
+  [[ "$output" == *"Is runtime trace"* ]]
+  [[ "$output" == *"observation window"* ]]
+}
+
+@test "shadow_review_queue can optionally ask about parser-backed pass records" {
+  local probe_file="$TEST_WORKSPACE/parser.jsonl"
+  cat > "$probe_file" <<'EOF'
+{"status":"pass","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/app.py:4","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false}
+EOF
+
+  run python3 "$SHADOW_QUEUE" --input "$probe_file"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"- no user questions generated"* ]]
+
+  run python3 "$SHADOW_QUEUE" --input "$probe_file" --ask-confirmed
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Is parser-backed evidence"* ]]
+}
+
+@test "shadow_review_queue reports invalid JSON as machine-readable error" {
+  local probe_file="$TEST_WORKSPACE/bad.jsonl"
+  printf '{"status":"pass"\n' > "$probe_file"
+
+  run python3 "$SHADOW_QUEUE" --input "$probe_file"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *'"status":"error"'* ]]
 }
 
 # ========== P1/P2: Validator strict mode non-empty check ==========
