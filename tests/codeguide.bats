@@ -9,6 +9,7 @@ RUN_CODEGUIDE="$SCRIPTS_DIR/run_codeguide.sh"
 RUN_EXTERNAL_REVIEWS="$SCRIPTS_DIR/run_external_plan_reviews.sh"
 INIT_SCAFFOLD="$SCRIPTS_DIR/init_docs_scaffold.sh"
 CHECK_ENGLISH_DOCS="$SCRIPTS_DIR/check_english_docs.sh"
+SHADOW_PROBE="$SCRIPTS_DIR/shadow_evidence_probe.py"
 
 docs_root_for_project() {
   local project_root="$1"
@@ -290,6 +291,267 @@ write_mock_cli() {
 
   run "$VALIDATE" "$fallback_project" --mode strict
   [ "$status" -eq 0 ]
+}
+
+@test "shadow_evidence_probe returns unsupported for unknown validator without guessing" {
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "java.ast.call_match@v99"
+
+  [ "$status" -eq 2 ]
+  [[ "$output" == *'"status":"unsupported"'* ]]
+  [[ "$output" == *'"validator_id":"java.ast.call_match@v99"'* ]]
+}
+
+@test "shadow_evidence_probe uses Python AST for real calls and ignores comments or strings" {
+  mkdir -p "$TEST_PROJECT/src"
+  cat > "$TEST_PROJECT/src/app.py" <<'EOF'
+# delete_user()
+text = "delete_user()"
+
+def handler(service):
+    service.save_user()
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "py.ast.call_match@v1" \
+    --source-file "src/app.py" \
+    --callee "save_user"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"parser_backed":true'* ]]
+  [[ "$output" == *'"validator_result":"matched"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "py.ast.call_match@v1" \
+    --source-file "src/app.py" \
+    --callee "delete_user"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+}
+
+@test "shadow_evidence_probe rejects Python AST primary evidence from test paths" {
+  mkdir -p "$TEST_PROJECT/tests"
+  cat > "$TEST_PROJECT/tests/test_app.py" <<'EOF'
+def test_handler():
+    save_user()
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "py.ast.call_match@v1" \
+    --source-file "tests/test_app.py" \
+    --callee "save_user"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *'"status":"error"'* ]]
+  [[ "$output" == *'"validator_id":"py.ast.call_match@v1"'* ]]
+  [[ "$output" == *"primary validator"* ]]
+}
+
+@test "shadow_evidence_probe uses Python AST for real decorators" {
+  mkdir -p "$TEST_PROJECT/src"
+  cat > "$TEST_PROJECT/src/routes.py" <<'EOF'
+class Router:
+    def post(self, path):
+        def wrapper(fn):
+            return fn
+        return wrapper
+
+router = Router()
+
+@router.post("/users")
+def create_user():
+    return None
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "py.decorator.match@v1" \
+    --source-file "src/routes.py" \
+    --decorator "router.post"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"parser_backed":true'* ]]
+}
+
+@test "shadow_evidence_probe regex fallback emits fallback_result only" {
+  mkdir -p "$TEST_PROJECT/src/main/java/example"
+  cat > "$TEST_PROJECT/src/main/java/example/UserService.java" <<'EOF'
+package example;
+
+class UserService {
+  void update(User user) {
+    // auditRepository.save(user);
+    String sample = "auditRepository.save(user)";
+    userRepository.save(user);
+  }
+}
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --fallback-pattern-id "java.regex.repository_save_call@v1" \
+    --source-file "src/main/java/example/UserService.java"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"fallback_result":"matched"'* ]]
+  [[ "$output" == *'"evidence_field":"fallback_result"'* ]]
+  [[ "$output" != *'"validator_result"'* ]]
+}
+
+@test "shadow_evidence_probe Java primary source_probe is scoped and non-parser-backed" {
+  mkdir -p "$TEST_PROJECT/src/main/java/example"
+  cat > "$TEST_PROJECT/src/main/java/example/UserService.java" <<'EOF'
+package example;
+
+class UserService {
+  void update(User user) {
+    userRepository.save(user);
+  }
+}
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "jpa.repository.save@v1" \
+    --source-file "src/main/java/example/UserService.java"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"validator_kind":"source_probe"'* ]]
+  [[ "$output" == *'"parser_backed":false'* ]]
+  [[ "$output" == *'"promotion_limit":"medium"'* ]]
+}
+
+@test "shadow_evidence_probe regex fallback ignores comments and strings" {
+  mkdir -p "$TEST_PROJECT/src/main/java/example"
+  cat > "$TEST_PROJECT/src/main/java/example/CommentOnly.java" <<'EOF'
+package example;
+
+class CommentOnly {
+  void update() {
+    // userRepository.save(user);
+    String sample = "userRepository.save(user)";
+  }
+}
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --fallback-pattern-id "java.regex.repository_save_call@v1" \
+    --source-file "src/main/java/example/CommentOnly.java"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"fallback_result":"not_found"'* ]]
+}
+
+@test "shadow_evidence_probe rejects fallback evidence from excluded paths" {
+  mkdir -p "$TEST_PROJECT/src/test/java/example"
+  cat > "$TEST_PROJECT/src/test/java/example/UserServiceTest.java" <<'EOF'
+class UserServiceTest {
+  void testSave() {
+    userRepository.save(user);
+  }
+}
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --fallback-pattern-id "java.regex.repository_save_call@v1" \
+    --source-file "src/test/java/example/UserServiceTest.java"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *'"status":"error"'* ]]
+  [[ "$output" == *"outside allowed_paths"* || "$output" == *"excluded"* ]]
+}
+
+@test "shadow_evidence_probe rejects primary source_probe evidence from excluded paths" {
+  mkdir -p "$TEST_PROJECT/src/test/java/example"
+  cat > "$TEST_PROJECT/src/test/java/example/UserServiceTest.java" <<'EOF'
+class UserServiceTest {
+  void testSave() {
+    userRepository.save(user);
+  }
+}
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "jpa.repository.save@v1" \
+    --source-file "src/test/java/example/UserServiceTest.java"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *'"status":"error"'* ]]
+  [[ "$output" == *'"validator_id":"jpa.repository.save@v1"'* ]]
+  [[ "$output" == *"primary validator"* ]]
+}
+
+@test "shadow_evidence_probe runtime trace requires exact explicit event line" {
+  mkdir -p "$TEST_PROJECT/logs"
+  cat > "$TEST_PROJECT/logs/runtime.trace" <<'EOF'
+event=user.update started
+event=user.cache.evict userId=42
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "any.runtime.trace@v1" \
+    --trace-file "logs/runtime.trace" \
+    --trace-event "event=user.cache.evict userId=42"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"evidence_type":"runtime_trace"'* ]]
+  [[ "$output" == *'"artifact_hash":"sha256:'* ]]
+  [[ "$output" == *'"trace_ref":"logs/runtime.trace:2"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "any.runtime.trace@v1" \
+    --trace-file "logs/runtime.trace" \
+    --trace-event "user.cache.evict"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+}
+
+@test "shadow_evidence_probe rejects traversal and does not write shadow docs" {
+  mkdir -p "$TEST_PROJECT/src"
+  cat > "$TEST_PROJECT/src/app.py" <<'EOF'
+def handler():
+    save_user()
+EOF
+  find "$DOCS_ROOT/shadow" -type f | sort > "$TEST_WORKSPACE/shadow-before.txt"
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "py.ast.call_match@v1" \
+    --source-file "src/app.py" \
+    --callee "save_user"
+
+  [ "$status" -eq 0 ]
+  find "$DOCS_ROOT/shadow" -type f | sort > "$TEST_WORKSPACE/shadow-after.txt"
+  run cmp "$TEST_WORKSPACE/shadow-before.txt" "$TEST_WORKSPACE/shadow-after.txt"
+  [ "$status" -eq 0 ]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "py.ast.call_match@v1" \
+    --source-file "../outside.py" \
+    --callee "save_user"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"traversal"* ]]
+  [[ "$output" == *'"validator_id":"py.ast.call_match@v1"'* ]]
 }
 
 # ========== P1/P2: Validator strict mode non-empty check ==========
