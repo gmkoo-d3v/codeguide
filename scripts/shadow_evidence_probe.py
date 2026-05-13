@@ -80,6 +80,18 @@ class AdapterRegistry:
 PRIMARY_ADAPTERS: tuple[ValidatorAdapter, ...] = (
     ValidatorAdapter("any.runtime.trace@v1", PrimarySpec("runtime_trace", "runtime_trace", False, "high")),
     ValidatorAdapter(
+        "java.ast.call_match@v1",
+        PrimarySpec(
+            "code_call",
+            "java_token_parser",
+            True,
+            "high",
+            "java",
+            ("src/main/java/**",),
+            ("src/test/**", "build/**", "target/**", ".gradle/**"),
+        ),
+    ),
+    ValidatorAdapter(
         "java.annotation.match@v1",
         PrimarySpec(
             "annotation",
@@ -513,6 +525,119 @@ def match_python_decorator(args: argparse.Namespace, root: Path, spec: PrimarySp
     return False, primary_payload("fail", "py.decorator.match@v1", spec, rel_path, "not_found", source_hash)
 
 
+def java_tokens(text: str) -> list[tuple[str, str, int]]:
+    tokens: list[tuple[str, str, int]] = []
+    token_re = re.compile(r"(?P<identifier>[A-Za-z_$][A-Za-z0-9_$]*)|(?P<symbol>[(){};=.,@])")
+    for match in token_re.finditer(mask_c_like_code(text)):
+        kind = "identifier" if match.group("identifier") else "symbol"
+        tokens.append((kind, match.group(0), line_for_offset(text, match.start())))
+    return tokens
+
+
+def matching_java_paren(tokens: list[tuple[str, str, int]], open_index: int) -> int | None:
+    depth = 0
+    for index in range(open_index, len(tokens)):
+        value = tokens[index][1]
+        if value == "(":
+            depth += 1
+        elif value == ")":
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+JAVA_DECLARATION_FOLLOWERS = {"{", "default", "throws"}
+JAVA_DECLARATION_PREFIXES = {
+    "abstract",
+    "boolean",
+    "byte",
+    "char",
+    "class",
+    "default",
+    "double",
+    "final",
+    "float",
+    "int",
+    "long",
+    "native",
+    "private",
+    "protected",
+    "public",
+    "short",
+    "static",
+    "strictfp",
+    "synchronized",
+    "transient",
+    "void",
+    "volatile",
+}
+JAVA_CALL_CONTEXT_PREFIXES = {"new", "return", "throw", "if", "while", "for", "switch", "assert"}
+JAVA_NON_DECLARATION_PREFIX_TOKENS = {"=", ".", ","}
+
+
+def java_statement_prefix(tokens: list[tuple[str, str, int]], callee_index: int) -> list[str]:
+    start = callee_index - 1
+    while start >= 0 and tokens[start][1] not in {";", "{", "}"}:
+        start -= 1
+    return [value for _, value, _ in tokens[start + 1 : callee_index]]
+
+
+def is_probable_java_declaration(tokens: list[tuple[str, str, int]], callee_index: int, close_index: int) -> bool:
+    next_value = tokens[close_index + 1][1] if close_index + 1 < len(tokens) else None
+    prev_value = tokens[callee_index - 1][1] if callee_index > 0 else None
+    prefix = java_statement_prefix(tokens, callee_index)
+
+    if next_value in JAVA_DECLARATION_FOLLOWERS:
+        return prev_value not in JAVA_CALL_CONTEXT_PREFIXES
+    if next_value == ";" and prev_value in JAVA_DECLARATION_PREFIXES:
+        return True
+    if next_value == ";" and prefix:
+        if prefix[0] in JAVA_CALL_CONTEXT_PREFIXES:
+            return False
+        if not any(token in JAVA_NON_DECLARATION_PREFIX_TOKENS for token in prefix):
+            return True
+    if next_value == ";" and callee_index >= 2 and tokens[callee_index - 2][1] in {"{", ";", "}"}:
+        return prev_value not in JAVA_CALL_CONTEXT_PREFIXES
+    return False
+
+
+def match_java_call(args: argparse.Namespace, root: Path, spec: PrimarySpec) -> tuple[bool, dict[str, object]]:
+    callee = param(args, "callee") or param(args, "method")
+    if not callee:
+        raise ProbeError("--callee is required for java.ast.call_match@v1")
+    receiver = param(args, "receiver")
+
+    source = resolve_inside(root, args.source_file, "source file")
+    rel_path = normalize_rel_path(source, root)
+    enforce_primary_path_scope(rel_path, spec)
+    source_hash = sha256_file(source)
+    tokens = java_tokens(read_text(source))
+
+    for index, (kind, value, line_no) in enumerate(tokens):
+        if kind != "identifier" or value != callee:
+            continue
+        if index + 1 >= len(tokens) or tokens[index + 1][1] != "(":
+            continue
+        close_index = matching_java_paren(tokens, index + 1)
+        if close_index is None:
+            continue
+        actual_receiver = None
+        if index >= 2 and tokens[index - 1][1] == "." and tokens[index - 2][0] == "identifier":
+            actual_receiver = tokens[index - 2][1]
+        if receiver and actual_receiver != receiver:
+            continue
+        if actual_receiver is None and is_probable_java_declaration(tokens, index, close_index):
+            continue
+        matched_symbol = f"{actual_receiver}.{callee}" if actual_receiver else callee
+        payload = primary_payload(
+            "pass", "java.ast.call_match@v1", spec, f"{rel_path}:{line_no}", "matched", source_hash
+        )
+        payload["matched_symbol"] = matched_symbol
+        return True, payload
+    return False, primary_payload("fail", "java.ast.call_match@v1", spec, rel_path, "not_found", source_hash)
+
+
 def primary_payload(
     status: str,
     validator_id: str,
@@ -599,6 +724,8 @@ def run_primary_adapter(args: argparse.Namespace, root: Path, adapter: Validator
         matched, payload = match_python_call(args, root, spec)
     elif validator_id == "py.decorator.match@v1":
         matched, payload = match_python_decorator(args, root, spec)
+    elif validator_id == "java.ast.call_match@v1":
+        matched, payload = match_java_call(args, root, spec)
     elif validator_id == "any.runtime.trace@v1":
         matched, payload = match_runtime_trace(args, root, spec)
     else:

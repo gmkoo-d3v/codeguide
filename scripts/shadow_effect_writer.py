@@ -255,7 +255,7 @@ def anchor_symbol_matches_probe_args(evidence: dict[str, Any], anchor: dict[str,
     if not isinstance(probe_args, dict):
         return True
     ref = evidence.get("ref")
-    if ref == "py.ast.call_match@v1":
+    if ref in {"py.ast.call_match@v1", "java.ast.call_match@v1"}:
         callee = probe_args.get("callee")
         receiver = probe_args.get("receiver")
         if isinstance(receiver, str) and receiver.strip() and isinstance(callee, str) and callee.strip():
@@ -394,14 +394,16 @@ def build_probe_command(evidence: dict[str, Any], project_root: Path) -> tuple[l
         if not has_text(source_ref):
             return [], ["deterministic_code evidence.source_ref is required before probe rerun"]
         command.extend(["--source-file", source_path_from_ref(str(source_ref))])
-        if ref == "py.ast.call_match@v1":
+        if ref in {"py.ast.call_match@v1", "java.ast.call_match@v1"}:
             callee = probe_arg_value(evidence, "callee")
             if callee is None:
-                return [], ["deterministic_code evidence.probe_args.callee is required for py.ast.call_match@v1"]
+                return [], [f"deterministic_code evidence.probe_args.callee is required for {ref}"]
             command.extend(["--callee", callee])
             receiver = probe_arg_value(evidence, "receiver")
+            if ref == "java.ast.call_match@v1" and receiver is None:
+                return [], ["deterministic_code evidence.probe_args.receiver is required for confirmed java.ast.call_match@v1"]
             if evidence.get("rule_id") == "repo.write" and receiver is None:
-                return [], ["deterministic_code evidence.probe_args.receiver is required for repo.write py.ast.call_match@v1"]
+                return [], [f"deterministic_code evidence.probe_args.receiver is required for repo.write {ref}"]
             if receiver is not None:
                 command.extend(["--receiver", receiver])
         elif ref == "py.decorator.match@v1":

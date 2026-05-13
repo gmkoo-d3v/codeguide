@@ -102,8 +102,8 @@ validators:
     limitations: [observation_window_may_be_incomplete]
   java.ast.call_match@v1:
     evidence_type: code_call
-    validates: Java call exists at source anchor
-    limitations: [does_not_prove_runtime_execution]
+    validates: Java call syntax exists at source anchor; confirmed evidence requires receiver binding
+    limitations: [does_not_prove_runtime_execution, does_not_prove_overload_resolution]
   java.annotation.match@v1:
     evidence_type: annotation
     validates: Java annotation exists
@@ -163,8 +163,8 @@ validators:
 ```yaml
 probe_coverage:
   probe_script: scripts/shadow_evidence_probe.py
-  implemented_primary_v1: [py.ast.call_match@v1, py.decorator.match@v1, java.annotation.match@v1, spring_boot.request_mapping@v1, spring_boot.cache_evict.annotation@v1, jpa.repository.save@v1, any.runtime.trace@v1]
-  parser_backed_now: [py.ast.call_match@v1, py.decorator.match@v1]
+  implemented_primary_v1: [py.ast.call_match@v1, py.decorator.match@v1, java.ast.call_match@v1, java.annotation.match@v1, spring_boot.request_mapping@v1, spring_boot.cache_evict.annotation@v1, jpa.repository.save@v1, any.runtime.trace@v1]
+  parser_backed_now: [py.ast.call_match@v1, py.decorator.match@v1, java.ast.call_match@v1]
   source_probe_only: [java.annotation.match@v1, spring_boot.request_mapping@v1, spring_boot.cache_evict.annotation@v1, jpa.repository.save@v1]
   unsupported_behavior: unsupported_no_infer_no_write_no_promote
 ```
@@ -622,9 +622,9 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 - Create plan file first: project docs `plan/PLAN-<task-id>-v1.0.md`.
 - Write evaluator report files in project docs `report/` with evaluator labels: gemini | claude | codex.
 - External CLI handoff files live under `orchestration/external-cli/<MonDD_YYYY>/<task-id>/<plan-version>/<round>/`, for example `Apr29_2026/...`.
-- External CLI requests use metadata plus `Why`, `What`, `How`, `Where`, `Verify`, then payload; CLI stdout is captured as sanitized Markdown and valid responses use parser-compatible bullet fields.
-- Pass only a short instruction plus the request file path to the CLI.
-- Default ping-pong mode uses external evaluators; if the user explicitly asks for sub-agent ping-pong review, interpret it as Codex sub-agent mode instead.
+- External CLI requests use metadata plus `Why`, `What`, `How`, `Where`, `Verify`, then payload; the command itself must name an explicit command-output path before the wrapper captures sanitized Markdown and parser-compatible bullet fields.
+- Pass only a short instruction plus the request file path and command-output path to the CLI; do not rely on output paths mentioned only inside the prompt.
+- External CLI ping-pong runs only when explicitly approved with concrete approval provenance; if the user explicitly asks for sub-agent ping-pong review, interpret it as Codex sub-agent mode instead.
 - Mark high-risk work with `risk_level: high|critical` on the task or linked decision.
 - Advisory validation warns when an active task omits `risk_level`.
 - If a task or linked non-superseded decision is high-risk, strict validation requires one adversarial review pass with objection/counterproposal/rebuttal/residual_risk.

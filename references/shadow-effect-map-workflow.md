@@ -66,7 +66,7 @@ An effect may become `confirmed` only when all applicable checks pass:
 - Evidence type is allowed for the target risk level.
 - Registered `rule_id` or separate fact-evidence `user_decision` reference exists; final apply decisions authorize writes only and include rationale and source refs.
 - Validator output is implemented and parser-backed when claimed as code validation.
-- v2 parser-backed code confirmation is implemented for Python AST validators; Java, Spring, JPA, JavaScript, TypeScript, and FastAPI entries remain cataloged as source-probe or planned parser-backed coverage unless the validator catalog marks them implemented and parser-backed.
+- v2 parser-backed code confirmation is implemented for Python AST validators and the narrow Java call matcher `java.ast.call_match@v1`; confirmed Java call evidence requires `probe_args.receiver`; Spring, JPA, JavaScript, TypeScript, and FastAPI entries remain cataloged as source-probe or planned parser-backed coverage unless the validator catalog marks them implemented and parser-backed.
 - Runtime trace has exact artifact reference and scenario confirmation when needed.
 - Stale and conflict checks pass.
 - No `unsupported`, `error`, `fail`, `source_probe`, or `fallback_regex` result is being hidden.

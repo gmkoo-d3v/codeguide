@@ -12,7 +12,7 @@ Options:
   --plan-version <vX.Y>             Plan version to review (required)
   --primary-tool <tool>             Plan author tool: gemini|claude|codex (required)
   --review-round <rNN>              Review round label, e.g. r01 (required)
-  --risk-preflight-status <status>  Required gate before external review: pass|approved|blocked|approval_required
+  --risk-preflight-status <status>  Required gate before external review: approved (pass is rejected for external CLI)
   --risk-preflight-recorded-by <id> Main-thread actor that performed preflight (default: main-thread-supervising-lead-architect)
   --risk-preflight-summary "<text>" Required gate summary (default: external review cleared by main thread)
   --approval-ref <ref>              Required when risk-preflight-status=approved
@@ -267,6 +267,10 @@ fi
 validate_risk_preflight_status "$RISK_PREFLIGHT_STATUS"
 if [[ "$RISK_PREFLIGHT_STATUS" == "blocked" || "$RISK_PREFLIGHT_STATUS" == "approval_required" ]]; then
   echo "[BLOCKED] Risk preflight status=${RISK_PREFLIGHT_STATUS}; external review is stopped before orchestration/delegation. Provide approval and rerun with --risk-preflight-status approved --approval-ref <ref> --approved-next-step <step>." >&2
+  exit 1
+fi
+if [[ "$RISK_PREFLIGHT_STATUS" == "pass" ]]; then
+  echo "[BLOCKED] External CLI review requires explicit user approval provenance; rerun with --risk-preflight-status approved --approval-ref <ref> --approved-next-step <step>." >&2
   exit 1
 fi
 validate_risk_preflight_recorder "$RISK_PREFLIGHT_RECORDED_BY"
@@ -844,6 +848,50 @@ parse_review_response() {
   return 0
 }
 
+file_sha256_ref() {
+  local file_path="$1"
+  local digest
+
+  digest="$(shasum -a 256 "$file_path" | awk '{print $1}')"
+  printf "sha256:%s" "$digest"
+}
+
+write_response_provenance_file() {
+  local evaluator="$1"
+  local review_style="$2"
+  local response_file="$3"
+  local request_file="$4"
+  local command_response_file="$5"
+  local provenance_file
+  local now_utc
+  local response_hash
+
+  provenance_file="${response_file%.md}.provenance.md"
+  ensure_handoff_path "$provenance_file" "response_provenance_file"
+  now_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  response_hash="$(file_sha256_ref "$response_file")"
+
+  cat > "$provenance_file" <<EOF
+# External CLI Review Response Provenance
+
+- artifact_kind: external_cli_review_response_provenance
+- generated_by: run_external_plan_reviews.sh
+- generated_at: ${now_utc}
+- task_id: ${TASK_ID}
+- plan_version: ${PLAN_VERSION}
+- review_round: ${REVIEW_ROUND}
+- evaluator: ${evaluator}
+- review_style: ${review_style}
+- verdict: ${PARSED_VERDICT}
+- request_file: ${request_file}
+- response_file: ${response_file}
+- response_sha256: ${response_hash}
+- command_response_path: ${command_response_file}
+- raw_capture_deleted: true
+- sanitized_response: true
+EOF
+}
+
 write_report_file() {
   local evaluator="$1"
   local review_style="$2"
@@ -907,10 +955,14 @@ for reviewer in "${REVIEWERS[@]}"; do
     "$response_raw_file" \
     "$HANDOFF_DIR/${reviewer}.retry-request.md" \
     "$HANDOFF_DIR/${reviewer}.retry-response.md" \
+    "$HANDOFF_DIR/${reviewer}.response.provenance.md" \
+    "$HANDOFF_DIR/${reviewer}.retry-response.provenance.md" \
     "$HANDOFF_DIR/${reviewer}.retry-command-response.raw.md" \
     "$HANDOFF_DIR/${reviewer}.retry-stderr.md"
 
   write_handoff_request "$request_file" "$response_file" "$response_raw_file" "$reviewer" "$review_style" "false"
+  effective_request_file="$request_file"
+  effective_response_raw_file="$response_raw_file"
   : > "$response_raw_file"
   run_status=0
   if run_tool_prompt "$reviewer" "$request_file" "$response_raw_file" "$stderr_file" "$response_file"; then
@@ -965,6 +1017,8 @@ for reviewer in "${REVIEWERS[@]}"; do
 
     if [[ "$retry_status" -eq 0 && "$retry_invalid_response_claim" == "false" ]] && parse_review_response "$retry_response_file" "$review_style"; then
       response_file="$retry_response_file"
+      effective_request_file="$retry_request_file"
+      effective_response_raw_file="$retry_response_raw_file"
       stderr_file="$retry_stderr"
       active_stderr_durable_file="$retry_stderr_durable_file"
       run_status=0
@@ -978,6 +1032,7 @@ for reviewer in "${REVIEWERS[@]}"; do
   fi
 
   if [[ "$run_status" -eq 0 ]]; then
+    write_response_provenance_file "$reviewer" "$review_style" "$response_file" "$effective_request_file" "$effective_response_raw_file"
     write_report_file "$reviewer" "$review_style" "$report_file"
     SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
     if [[ "$review_style" == "adversarial" ]]; then

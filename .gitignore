@@ -11,6 +11,13 @@
 *~
 .idea/
 .vscode/
+.cursor/
+
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+!.env.*.example
 
 # Keep workspace docs outside repo tracking if a local docs/ folder appears
 docs/
@@ -23,7 +30,19 @@ __pycache__/
 .mypy_cache/
 .coverage
 .coverage.*
+coverage/
+
+# Dependency and build outputs
+node_modules/
+dist/
+build/
 
 # Local tool state
 .serena/
+.gemini/
+.claude/
+.cache/
 tmp/
+
+# Local logs
+*.log

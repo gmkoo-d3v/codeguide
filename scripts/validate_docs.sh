@@ -1693,6 +1693,9 @@ check_orchestration_file_for_task() {
       fail "orchestration approved preflight requires approved_next_step: ${orchestration_file}"
     fi
   fi
+  if [[ "$review_mode" == "external_cli" && "$risk_preflight_status" != "approved" ]]; then
+    fail "orchestration review_mode=external_cli requires risk_preflight_status=approved with concrete approval provenance: ${orchestration_file}"
+  fi
 
   if [[ "$execution_mode" != "solo" || "$review_mode" == "external_cli" || "$review_mode" == "codex_subagents" ]]; then
     if [[ "$MODE" == "strict" ]]; then

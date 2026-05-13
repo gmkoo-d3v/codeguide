@@ -572,6 +572,11 @@ if [[ -z "$RISK_PREFLIGHT_SUMMARY" ]]; then
   fi
 fi
 
+if [[ "$REVIEW_MODE" == "external_cli" && "$RISK_PREFLIGHT_STATUS" == "pass" ]]; then
+  echo "[ERROR] External CLI review requires --risk-preflight-status approved with concrete --approval-ref and --approved-next-step" >&2
+  exit 1
+fi
+
 APPROVAL_REQUIRED="false"
 case "$RISK_PREFLIGHT_STATUS" in
   approved)

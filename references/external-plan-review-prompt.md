@@ -3,7 +3,7 @@
 Use this template for semi-automated external ping-pong review of `PLAN-*` docs.
 
 External reviewer output is advisory only. The supervising lead architect owns risk preflight, approval gates, convergence, and the final decision to proceed.
-Wrappers must not invoke external reviewers until main-thread risk preflight has passed or the user has approved the exact next step.
+Wrappers must not invoke external reviewers until the main thread records `risk_preflight_status: approved` with a concrete approval ref and exact approved next step.
 Wrapper scripts must write the full request to a redacted Markdown handoff file and capture sanitized stdout in a Markdown response file before parsing it into `docs/report/`.
 Wrapper scripts should pass only a short instruction plus the absolute request-file path to external CLIs; the Markdown request file is the handoff contract, not stdin.
 The short CLI command must also include an explicit absolute command-output path, either through shell stdout redirection, `tee`, or a tool-specific output-file option such as `--output-last-message`; the wrapper may then sanitize that raw capture into the durable response file and delete the raw capture.

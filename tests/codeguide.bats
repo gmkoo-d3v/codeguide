@@ -16,6 +16,10 @@ SHADOW_USER_DECISION="$SCRIPTS_DIR/shadow_user_decision_wrapper.py"
 SHADOW_APPLY_GATE="$SCRIPTS_DIR/shadow_apply_gate.py"
 SHADOW_EFFECT_WRITER="$SCRIPTS_DIR/shadow_effect_writer.py"
 SHADOW_POLICY_LOADER="$SCRIPTS_DIR/shadow_policy_loader.py"
+SHADOW_V2_SKELETON="$SCRIPTS_DIR/shadow_v2_gate_skeleton.py"
+SHADOW_V2_USER_DECISION="$SCRIPTS_DIR/shadow_v2_user_decision_assistant.py"
+SHADOW_V2_REVIEW_PACKET="$SCRIPTS_DIR/shadow_v2_review_packet_generator.py"
+SHADOW_V2_PIPELINE="$SCRIPTS_DIR/shadow_v2_pipeline_wrapper.py"
 source "$SCRIPTS_DIR/codeguide_paths.sh"
 
 docs_root_for_project() {
@@ -70,6 +74,73 @@ write_mock_cli() {
   local content="$2"
   printf '%s\n' "$content" > "$path"
   chmod +x "$path"
+}
+
+create_mock_external_review_artifact() {
+  local task_id="$1"
+  local reviewer="$2"
+  local plan_version="v1.0"
+  local review_round="r01"
+  local plan_file="$DOCS_ROOT/plan/PLAN-${task_id}-${plan_version}.md"
+  local mock_bin="$TEST_WORKSPACE/mock-bin-${task_id}"
+  local run_output="$TEST_WORKSPACE/${task_id}-external-review.out"
+  local handoff_dir
+
+  cat > "$plan_file" <<EOF
+# PLAN-${task_id}-${plan_version}
+
+- task_id: ${task_id}
+- plan_version: ${plan_version}
+- objective: create wrapper-generated external review artifacts
+- scope: test fixture generation
+- assumptions: mock CLIs return parser-compatible accept responses
+- risks: fixture generation failure
+- acceptance_signals: response and provenance files are written
+- stop_conditions: wrapper completes
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+cat <<EOF
+- verdict: accept
+- summary: Mock Gemini accepts the bounded review packet.
+- strengths: The handoff is constrained.
+- risks: This is a deterministic test fixture.
+- requested_changes: None.
+EOF'
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+cat <<EOF
+- verdict: accept
+- summary: Mock Claude accepts the bounded review packet.
+- strengths: The handoff is constrained.
+- risks: This is a deterministic test fixture.
+- requested_changes: None.
+EOF'
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+echo "codex should not be called for primary=codex" >&2
+exit 99'
+
+  env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "$task_id" \
+    --plan-version "$plan_version" \
+    --primary-tool "codex" \
+    --review-round "$review_round" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-${task_id}" \
+    --approved-next-step "run external review ${task_id} ${plan_version} ${review_round}" \
+    > "$run_output" 2>&1 || {
+      cat "$run_output" >&2
+      return 1
+    }
+
+  handoff_dir="$(external_handoff_dir "$task_id" "$plan_version" "$review_round")"
+  if [[ -z "$handoff_dir" ]]; then
+    cat "$run_output" >&2
+    return 1
+  fi
+  printf "%s/%s.response.md\n" "$handoff_dir" "$reviewer"
 }
 
 # ========== P0: Empty value overwrite prevention ==========
@@ -488,6 +559,137 @@ EOF
   [[ "$output" == *'"parser_backed":false'* ]]
   [[ "$output" == *'"promotion_limit":"medium"'* ]]
   [[ "$output" == *'"source_hash":"sha256:'* ]]
+}
+
+@test "shadow_evidence_probe Java parser-backed call matcher ignores comments and strings" {
+  mkdir -p "$TEST_PROJECT/src/main/java/example"
+  cat > "$TEST_PROJECT/src/main/java/example/UserService.java" <<'EOF'
+package example;
+
+class UserService {
+  void update(User user) {
+    // userRepository.delete(user);
+    String text = "userRepository.delete(user)";
+    userRepository.save(user);
+  }
+}
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "java.ast.call_match@v1" \
+    --source-file "src/main/java/example/UserService.java" \
+    --callee "save" \
+    --receiver "userRepository"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"probe_status":"pass"'* ]]
+  [[ "$output" == *'"fact_status":"deterministic_evidence"'* ]]
+  [[ "$output" == *'"validator_kind":"java_token_parser"'* ]]
+  [[ "$output" == *'"parser_backed":true'* ]]
+  [[ "$output" == *'"matched_symbol":"userRepository.save"'* ]]
+  [[ "$output" == *'"source_hash":"sha256:'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "java.ast.call_match@v1" \
+    --source-file "src/main/java/example/UserService.java" \
+    --callee "delete" \
+    --receiver "userRepository"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+}
+
+@test "shadow_evidence_probe Java parser-backed call matcher rejects declarations and test paths" {
+  mkdir -p "$TEST_PROJECT/src/main/java/example" "$TEST_PROJECT/src/test/java/example"
+  cat > "$TEST_PROJECT/src/main/java/example/UserService.java" <<'EOF'
+package example;
+
+@interface UserAnnotation {
+  String value() default "";
+}
+
+interface UserPort {
+  User save(User user);
+}
+
+abstract class AbstractUserService {
+  public abstract User save(User user);
+}
+
+class UserService {
+  UserService(User user) {}
+  void save(User user) {}
+  void update(User user) {
+    save(user);
+  }
+}
+EOF
+  cat > "$TEST_PROJECT/src/test/java/example/UserServiceTest.java" <<'EOF'
+package example;
+
+class UserServiceTest {
+  void update(User user) {
+    userRepository.save(user);
+  }
+}
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "java.ast.call_match@v1" \
+    --source-file "src/main/java/example/UserService.java" \
+    --callee "save"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"matched_symbol":"save"'* ]]
+  [[ "$output" == *'"source_ref":"src/main/java/example/UserService.java:15"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "java.ast.call_match@v1" \
+    --source-file "src/main/java/example/UserService.java" \
+    --callee "UserService"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "java.ast.call_match@v1" \
+    --source-file "src/main/java/example/UserService.java" \
+    --callee "value"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "java.ast.call_match@v1" \
+    --source-file "src/main/java/example/UserService.java" \
+    --callee "save" \
+    --receiver "missingReceiver"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "java.ast.call_match@v1" \
+    --source-file "src/test/java/example/UserServiceTest.java" \
+    --callee "save" \
+    --receiver "userRepository"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *'"status":"error"'* ]]
+  [[ "$output" == *"outside allowed_paths"* ]]
 }
 
 @test "shadow_evidence_probe regex fallback ignores comments and strings" {
@@ -1450,6 +1652,112 @@ EOF
   [[ "$output" == *"evidence_artifact_hash: $runtime_hash"* ]]
 }
 
+@test "shadow_effect_writer accepts Java parser-backed deterministic code evidence" {
+  local candidate_file="$TEST_WORKSPACE/candidate.json"
+  local decision_file="$TEST_WORKSPACE/decision.json"
+  local record_file="$TEST_WORKSPACE/record.json"
+  local probe_result_file="$TEST_WORKSPACE/java-probe.json"
+  local draft_file="$TEST_WORKSPACE/draft.md"
+  local source_file="$TEST_PROJECT/src/main/java/example/UserService.java"
+  local source_ref
+  local source_hash
+  local probe_hash
+  local anchor_line
+
+  mkdir -p "$(dirname "$source_file")"
+  cat > "$source_file" <<'EOF'
+package example;
+
+class UserService {
+  void update(User user) {
+    userRepository.save(user);
+  }
+}
+EOF
+
+  python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "java.ast.call_match@v1" \
+    --source-file "src/main/java/example/UserService.java" \
+    --callee "save" \
+    --receiver "userRepository" > "$probe_result_file"
+  source_ref="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_ref"])' "$probe_result_file")"
+  source_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_hash"])' "$probe_result_file")"
+  probe_hash="$(sha256_file_ref "$probe_result_file")"
+  anchor_line="${source_ref##*:}"
+
+  printf 'Draft for Java parser-backed deterministic evidence\n' > "$draft_file"
+  python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --output "$candidate_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "$source_ref" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  local candidate_id
+  candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
+  cat > "$decision_file" <<EOF
+{"user_decision":{"id":"UD-java-001","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-java-001","SE-java-002"],"rationale":"Approve evaluating Java parser-backed deterministic evidence.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$record_file" <<EOF
+{"record_id":"SE-java-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Java repository save is backed by parser evidence.","anchor":{"file":"src/main/java/example/UserService.java","line":$anchor_line,"symbol":"userRepository.save"},"evidence":{"type":"deterministic_code","ref":"java.ast.call_match@v1","rule_id":"repo.write","validator_kind":"java_token_parser","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"save","receiver":"userRepository"}}}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$probe_result_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *"evidence_ref: java.ast.call_match@v1"* ]]
+  [[ "$output" == *"evidence_validator_kind: java_token_parser"* ]]
+  [[ "$output" == *"evidence_parser_backed: True"* ]]
+  [[ "$output" == *"evidence_source_hash: $source_hash"* ]]
+
+  cat > "$record_file" <<EOF
+{"record_id":"SE-java-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Bare Java parser evidence must not confirm without receiver binding.","anchor":{"file":"src/main/java/example/UserService.java","line":$anchor_line,"symbol":"save"},"evidence":{"type":"deterministic_code","ref":"java.ast.call_match@v1","rule_id":"repo.write","validator_kind":"java_token_parser","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"save"}}}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$probe_result_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"receiver is required for confirmed java.ast.call_match@v1"* ]]
+
+  perl -0pi -e 's/```yaml\nrules:\n/```yaml\nrules:\n  java.bare_call:\n    allowed_effect_types: [external_call]\n    validators_by_stack:\n      java_generic:\n        code_call:\n          primary: java.ast.call_match\@v1\n          fallback: java.regex.method_call_named\@v1\n          fallback_max_risk: medium\n/' "$DOCS_ROOT/policy/shadow-rule-registry.md"
+  cat > "$record_file" <<EOF
+{"record_id":"SE-java-002","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"Java confirmed evidence requires receiver even outside repo.write.","anchor":{"file":"src/main/java/example/UserService.java","line":$anchor_line,"symbol":"save"},"evidence":{"type":"deterministic_code","ref":"java.ast.call_match@v1","rule_id":"java.bare_call","validator_kind":"java_token_parser","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"save"}}}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$probe_result_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"receiver is required for confirmed java.ast.call_match@v1"* ]]
+}
+
 @test "shadow_effect_writer binds deterministic evidence to policy registry and source hashes" {
   local candidate_file="$TEST_WORKSPACE/candidate.json"
   local decision_file="$TEST_WORKSPACE/decision.json"
@@ -1575,7 +1883,7 @@ EOF
 {"record_id":"SE-user-019","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Runtime evidence must use a runtime trace validator.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.command.output@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
 EOF
   cat > "$unimplemented_record" <<EOF
-{"record_id":"SE-user-020","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Documented-only Java AST validator cannot be forged as implemented.","anchor":{"file":"src/main/java/example/UserService.java","symbol":"userRepository.save"},"evidence":{"type":"deterministic_code","ref":"java.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/main/java/example/UserService.java:5","source_hash":"$java_source_hash","probe_args":{"callee":"save"}}}
+{"record_id":"SE-user-020","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"api_route","statement":"Documented-only Express route validator cannot be forged as implemented.","anchor":{"file":"src/main/java/example/UserService.java","symbol":"app.get"},"evidence":{"type":"deterministic_code","ref":"express.route@v1","rule_id":"http.route","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/main/java/example/UserService.java:5","source_hash":"$java_source_hash","probe_args":{"callee":"get","receiver":"app"}}}
 EOF
   cat > "$stale_runtime_record" <<EOF
 {"record_id":"SE-user-023","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Stale runtime hash must not validate.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","scenario_ref":"scenario:user-update-cache","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
@@ -2455,6 +2763,821 @@ EOF
   [[ "$output" == *"fallback regex evidence_type mismatch"* ]]
 }
 
+@test "shadow_v2_gate_skeleton prints a no-write Phase 0 contract" {
+  find "$DOCS_ROOT/shadow" -type f | sort > "$TEST_WORKSPACE/shadow-v2-before.txt"
+
+  run python3 "$SHADOW_V2_SKELETON" --project-root "$TEST_PROJECT" --print-contract
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *'"phase":"shadow_v2_phase0_gate_skeleton"'* ]]
+  [[ "$output" == *'"writes_shadow_docs":false'* ]]
+  [[ "$output" == *'"auto_promotes_facts":false'* ]]
+  [[ "$output" == *'"batch_apply_enabled":false'* ]]
+  [[ "$output" == *'user_decision_assistant'* ]]
+  [[ "$output" == *'review_packet_generator'* ]]
+  [[ "$output" == *'supervised_pipeline_wrapper'* ]]
+
+  find "$DOCS_ROOT/shadow" -type f | sort > "$TEST_WORKSPACE/shadow-v2-after.txt"
+  run cmp "$TEST_WORKSPACE/shadow-v2-before.txt" "$TEST_WORKSPACE/shadow-v2-after.txt"
+  [ "$status" -eq 0 ]
+}
+
+@test "shadow_v2_gate_skeleton activates hints only after project scope is verified" {
+  local fresh_project="$TEST_WORKSPACE/unscaffolded-repo"
+  mkdir -p "$fresh_project"
+
+  run python3 "$SHADOW_V2_SKELETON" --project-root "$fresh_project" --check-scope
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"docs_root must exist before automatic hint lookup"* ]]
+  [[ "$output" == *'"allowed":false'* ]]
+  [[ "$output" == *'"mode":"hint_only"'* ]]
+
+  run python3 "$SHADOW_V2_SKELETON" --project-root "$TEST_PROJECT" --project-id "test-project" --check-scope
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"allowed":true'* ]]
+  [[ "$output" == *'"trigger":"project_scope_verified"'* ]]
+  [[ "$output" == *'"project_identity":"test-project"'* ]]
+}
+
+@test "shadow_v2_gate_skeleton blocks external review by default and disables batch apply" {
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --review-route "external_gemini_claude" \
+    --record-count 2 \
+    --print-contract
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"external Gemini/Claude review requires explicit user request"* ]]
+  [[ "$output" == *"batch apply is disabled in Phase 0"* ]]
+  [[ "$output" == *'"writes_shadow_docs":false'* ]]
+
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --review-route "external_gemini_claude" \
+    --external-review-requested \
+    --print-contract
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"external Gemini/Claude review requires concrete approval_ref"* ]]
+  [[ "$output" == *"external Gemini/Claude review requires approved_next_step"* ]]
+  [[ "$output" == *"external Gemini/Claude review requires main-thread recorded_by"* ]]
+
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --review-route "external_gemini_claude" \
+    --external-review-requested \
+    --external-review-approval-ref "user-approval-001" \
+    --external-review-approved-next-step "generate external review packet only" \
+    --external-review-recorded-by "main-thread-supervising-lead-architect" \
+    --print-contract
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+}
+
+@test "shadow_v2_gate_skeleton blocks combined close when required external review is blocked" {
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "external_gemini_claude" \
+    --completed-review "codex_subagent_md_handoff" \
+    --blocked-review "external_gemini_claude" \
+    --print-contract
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"blocked"'* ]]
+  [[ "$output" == *"required review route is blocked: external_gemini_claude"* ]]
+  [[ "$output" == *"stop without substituting another reviewer route"* ]]
+  [[ "$output" == *"sub-agent acceptance cannot substitute for blocked external Gemini/Claude review"* ]]
+  [[ "$output" == *'"combined_review_close_gate":"all_required_routes_must_complete"'* ]]
+
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "external_gemini_claude" \
+    --completed-review "codex_subagent_md_handoff" \
+    --print-contract
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"required review route is missing: external_gemini_claude"* ]]
+}
+
+@test "shadow_v2_gate_skeleton requires durable accepted external review artifact before close completion" {
+  local stub_artifact="$TEST_WORKSPACE/external-stub-review.md"
+  local empty_dir="$DOCS_ROOT/orchestration/external-cli/May13_2026/shadow-v2-close/v1.0/r-empty"
+  local blocked_dir="$DOCS_ROOT/orchestration/external-cli/May13_2026/shadow-v2-close/v1.0/r-blocked"
+  local no_manifest_dir="$DOCS_ROOT/orchestration/external-cli/May13_2026/shadow-v2-close/v1.0/r-no-manifest"
+  local empty_artifact="$empty_dir/gemini.response.md"
+  local blocked_artifact="$blocked_dir/gemini.response.md"
+  local no_manifest_artifact="$no_manifest_dir/gemini.response.md"
+  local accepted_artifact
+  mkdir -p "$empty_dir" "$blocked_dir" "$no_manifest_dir"
+  cat > "$stub_artifact" <<'EOF'
+evaluator: gemini
+verdict: accept
+priority_findings: none
+EOF
+  : > "$empty_artifact"
+  cat > "$empty_dir/gemini.request.md" <<EOF
+evaluator: gemini
+command_response_path: $empty_dir/gemini.command-response.raw.md
+sanitized_response_file: $empty_artifact
+EOF
+  cat > "$blocked_artifact" <<'EOF'
+evaluator: gemini
+verdict: block
+status: blocked
+EOF
+  cat > "$blocked_dir/gemini.request.md" <<EOF
+evaluator: gemini
+command_response_path: $blocked_dir/gemini.command-response.raw.md
+sanitized_response_file: $blocked_artifact
+EOF
+  local blocked_hash
+  blocked_hash="$(sha256_file_ref "$blocked_artifact")"
+  cat > "$blocked_dir/gemini.response.provenance.md" <<EOF
+artifact_kind: external_cli_review_response_provenance
+generated_by: run_external_plan_reviews.sh
+evaluator: gemini
+verdict: block
+request_file: $blocked_dir/gemini.request.md
+response_file: $blocked_artifact
+response_sha256: $blocked_hash
+command_response_path: $blocked_dir/gemini.command-response.raw.md
+raw_capture_deleted: true
+sanitized_response: true
+EOF
+  cat > "$no_manifest_artifact" <<'EOF'
+evaluator: gemini
+verdict: accept
+priority_findings: none
+EOF
+  cat > "$no_manifest_dir/gemini.request.md" <<EOF
+evaluator: gemini
+command_response_path: $no_manifest_dir/gemini.command-response.raw.md
+sanitized_response_file: $no_manifest_artifact
+EOF
+  accepted_artifact="$(create_mock_external_review_artifact "shadow-v2-close-accepted" "gemini")"
+  [ -n "$accepted_artifact" ]
+  run test -f "$accepted_artifact"
+  [ "$status" -eq 0 ]
+  run test -f "${accepted_artifact%.md}.provenance.md"
+  [ "$status" -eq 0 ]
+
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --external-review-requested \
+    --external-review-approval-ref "user-approval-001" \
+    --external-review-approved-next-step "close shadow v2 external review gate" \
+    --external-review-recorded-by "main-thread-supervising-lead-architect" \
+    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "external_gemini_claude" \
+    --completed-review "codex_subagent_md_handoff" \
+    --completed-review "external_gemini_claude" \
+    --print-contract
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"completed external Gemini/Claude review requires a durable response artifact"* ]]
+
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --external-review-requested \
+    --external-review-approval-ref "user-approval-001" \
+    --external-review-approved-next-step "close shadow v2 external review gate" \
+    --external-review-recorded-by "main-thread-supervising-lead-architect" \
+    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "external_gemini_claude" \
+    --completed-review "codex_subagent_md_handoff" \
+    --completed-review "external_gemini_claude" \
+    --completed-review-artifact "external_gemini_claude=$stub_artifact" \
+    --print-contract
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"completed external Gemini/Claude review artifact must be under docs/orchestration/external-cli"* ]]
+
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --external-review-requested \
+    --external-review-approval-ref "user-approval-001" \
+    --external-review-approved-next-step "close shadow v2 external review gate" \
+    --external-review-recorded-by "main-thread-supervising-lead-architect" \
+    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "external_gemini_claude" \
+    --completed-review "codex_subagent_md_handoff" \
+    --completed-review "external_gemini_claude" \
+    --completed-review-artifact "external_gemini_claude=$no_manifest_artifact" \
+    --print-contract
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"completed external Gemini/Claude review artifact requires provenance manifest"* ]]
+
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --external-review-requested \
+    --external-review-approval-ref "user-approval-001" \
+    --external-review-approved-next-step "close shadow v2 external review gate" \
+    --external-review-recorded-by "main-thread-supervising-lead-architect" \
+    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "external_gemini_claude" \
+    --completed-review "codex_subagent_md_handoff" \
+    --completed-review "external_gemini_claude" \
+    --completed-review-artifact "external_gemini_claude=$empty_artifact" \
+    --print-contract
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"completed review artifact must be non-empty for route external_gemini_claude"* ]]
+
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --external-review-requested \
+    --external-review-approval-ref "user-approval-001" \
+    --external-review-approved-next-step "close shadow v2 external review gate" \
+    --external-review-recorded-by "main-thread-supervising-lead-architect" \
+    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "external_gemini_claude" \
+    --completed-review "codex_subagent_md_handoff" \
+    --completed-review "external_gemini_claude" \
+    --completed-review-artifact "external_gemini_claude=$blocked_artifact" \
+    --print-contract
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"completed external Gemini/Claude review artifact verdict must be accept"* ]]
+  [[ "$output" == *"completed external Gemini/Claude review artifact contains blocked/error/no-response marker"* ]]
+
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --external-review-requested \
+    --external-review-approval-ref "user-approval-001" \
+    --external-review-approved-next-step "close shadow v2 external review gate" \
+    --external-review-recorded-by "main-thread-supervising-lead-architect" \
+    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "external_gemini_claude" \
+    --completed-review "codex_subagent_md_handoff" \
+    --completed-review "external_gemini_claude" \
+    --completed-review-artifact "external_gemini_claude=$accepted_artifact" \
+    --print-contract
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *'"sha256":"sha256:'* ]]
+  [[ "$output" == *'"evaluator":"gemini"'* ]]
+  [[ "$output" == *'"request_file":'* ]]
+  [[ "$output" == *'"command_response_path":'* ]]
+  [[ "$output" == *'"provenance_file":'* ]]
+}
+
+@test "shadow_v2_gate_skeleton ignores optional blocked external close route" {
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --close-required-review "codex_subagent_md_handoff" \
+    --completed-review "codex_subagent_md_handoff" \
+    --blocked-review "external_gemini_claude" \
+    --print-contract
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" != *"sub-agent acceptance cannot substitute for blocked external Gemini/Claude review"* ]]
+}
+
+@test "shadow_v2_gate_skeleton rejects hint evidence for confirmed facts" {
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --target-status "confirmed" \
+    --evidence-type "auxiliary_hint" \
+    --evidence-type "source_probe" \
+    --print-contract
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evidence_type cannot confirm facts in v2 gates: auxiliary_hint"* ]]
+  [[ "$output" == *"evidence_type cannot confirm facts in v2 gates: source_probe"* ]]
+
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --target-status "confirmed" \
+    --evidence-type "deterministic_code" \
+    --evidence-type "user_decision_fact_evidence" \
+    --decision-type "business_intent" \
+    --print-contract
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+}
+
+@test "shadow_v2_gate_skeleton rejects generic user decisions and final apply as fact evidence" {
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --target-status "confirmed" \
+    --evidence-type "user_decision" \
+    --print-contract
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"generic user_decision cannot confirm facts"* ]]
+
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --target-status "confirmed" \
+    --evidence-type "user_decision_fact_evidence" \
+    --decision-type "final_shadow_apply" \
+    --print-contract
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"final_shadow_apply cannot confirm facts"* ]]
+}
+
+@test "shadow_v2_user_decision_assistant turns source probes into bounded user questions" {
+  local probe_file="$TEST_WORKSPACE/source-probe.jsonl"
+  cat > "$probe_file" <<'EOF'
+{"status":"pass","validator_id":"jpa.repository.save@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/UserService.java:6","validator_kind":"source_probe","parser_backed":false,"promotion_limit":"medium","entry_ref":"UserController.update","call_chain_candidate":"UserController.update -> UserService.updateUser -> UserRepository.save","anchor_file":"src/UserService.java","anchor_symbol":"userRepository.save","missing_evidence":"parser-backed Java validator","recommended_default_status":"unknown","writes_shadow_docs":false}
+EOF
+  find "$DOCS_ROOT/shadow" -type f | sort > "$TEST_WORKSPACE/shadow-v2-decision-before.txt"
+
+  run python3 "$SHADOW_V2_USER_DECISION" --project-root "$TEST_PROJECT" --input "$probe_file" --task-id "shadow-effect-map-01"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"# Shadow v2 User Decision Assistant"* ]]
+  [[ "$output" == *"- writes_shadow_docs: false"* ]]
+  [[ "$output" == *"- auto_promotes_facts: false"* ]]
+  [[ "$output" == *"- question_count: 1"* ]]
+  [[ "$output" == *"source_kind: evidence_candidate"* ]]
+  [[ "$output" == *"decision_type: classification_or_evidence_gap"* ]]
+  [[ "$output" == *"recommended_default_status: unknown"* ]]
+  [[ "$output" == *"command_ready: false"* ]]
+  [[ "$output" == *"Does the syntactic source probe"* ]]
+
+  find "$DOCS_ROOT/shadow" -type f | sort > "$TEST_WORKSPACE/shadow-v2-decision-after.txt"
+  run cmp "$TEST_WORKSPACE/shadow-v2-decision-before.txt" "$TEST_WORKSPACE/shadow-v2-decision-after.txt"
+  [ "$status" -eq 0 ]
+}
+
+@test "shadow_v2_user_decision_assistant enforces project-scope hint activation" {
+  local fresh_project="$TEST_WORKSPACE/unscaffolded-decision-repo"
+  mkdir -p "$fresh_project"
+
+  run python3 "$SHADOW_V2_USER_DECISION" --project-root "$fresh_project" --enable-hints --format json
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status": "blocked"'* ]]
+  [[ "$output" == *"docs_root must exist before automatic hint lookup"* ]]
+  [[ "$output" == *'"allowed": false'* ]]
+
+  run python3 "$SHADOW_V2_USER_DECISION" --project-root "$TEST_PROJECT" --enable-hints --format json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status": "ok"'* ]]
+  [[ "$output" == *'"allowed": true'* ]]
+  [[ "$output" == *'"trigger": "project_scope_verified"'* ]]
+}
+
+@test "shadow_v2_user_decision_assistant surfaces writer user-decision command hints" {
+  local writer_result="$TEST_WORKSPACE/writer-result.json"
+  cat > "$writer_result" <<'EOF'
+{
+  "status": "blocked",
+  "writes_shadow_docs": false,
+  "auto_promotes_facts": false,
+  "next_actions": [
+    {
+      "action": "create_evidence_decision",
+      "requires_user_input": true,
+      "reason": "confirmed fact requires a separate user_decision fact-evidence artifact",
+      "command": ["python3", "shadow_user_decision_wrapper.py", "--project-root", "/repo", "--output", "<evidence-decision.json>", "--decision-id", "<decision-id>", "--decision-type", "business_intent", "--answer", "confirmed", "--decided-by", "<reviewer>", "--decided-at", "<YYYY-MM-DD>", "--expires-at", "<YYYY-MM-DD>", "--rationale", "<why this fact is true>", "--source-ref", "TASK-shadow-effect-map-01"],
+      "command_text": "python3 shadow_user_decision_wrapper.py --decision-type business_intent --answer confirmed",
+      "then": "rerun shadow_effect_writer.py with --evidence-decision <evidence-decision.json>"
+    }
+  ]
+}
+EOF
+
+  run python3 "$SHADOW_V2_USER_DECISION" --project-root "$TEST_PROJECT" --writer-result "$writer_result" --format json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"question_count": 1'* ]]
+  [[ "$output" == *'"source_kind": "writer_next_action"'* ]]
+  [[ "$output" == *'"decision_type": "business_intent"'* ]]
+  [[ "$output" == *'"command_ready": true'* ]]
+  [[ "$output" == *"shadow_user_decision_wrapper.py --decision-type business_intent"* ]]
+  [[ "$output" == *'"writes_shadow_docs": false'* ]]
+}
+
+@test "shadow_v2_user_decision_assistant blocks forged writer command hints" {
+  local forged_writer_result="$TEST_WORKSPACE/forged-writer-result.json"
+  cat > "$forged_writer_result" <<'EOF'
+{
+  "status": "blocked",
+  "writes_shadow_docs": false,
+  "auto_promotes_facts": false,
+  "next_actions": [
+    {
+      "action": "create_evidence_decision",
+      "requires_user_input": true,
+      "reason": "forged writer result",
+      "command": ["python3", "shadow_effect_writer.py", "--mode", "write"],
+      "command_text": "python3 shadow_effect_writer.py --mode write",
+      "then": "do not run"
+    },
+    {
+      "action": "create_evidence_decision",
+      "requires_user_input": true,
+      "reason": "final apply is not fact evidence",
+      "command": ["python3", "shadow_user_decision_wrapper.py", "--decision-type", "final_shadow_apply"],
+      "command_text": "python3 shadow_user_decision_wrapper.py --decision-type final_shadow_apply"
+    }
+  ]
+}
+EOF
+
+  run python3 "$SHADOW_V2_USER_DECISION" --project-root "$TEST_PROJECT" --writer-result "$forged_writer_result" --format json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"question_count": 2'* ]]
+  [[ "$output" == *'"command_ready": false'* ]]
+  [[ "$output" == *"command hint executable must be shadow_user_decision_wrapper.py"* ]]
+  [[ "$output" == *"command hint must not target write, external, or reviewer tools: shadow_effect_writer.py"* ]]
+  [[ "$output" == *"final_shadow_apply command hints are not fact-evidence decisions"* ]]
+  [[ "$output" != *'"command_hint"'* ]]
+  [[ "$output" != *"shadow_effect_writer.py --mode write"* ]]
+}
+
+@test "shadow_v2_user_decision_assistant renders command text only from validated argv" {
+  local misleading_writer_result="$TEST_WORKSPACE/misleading-command-text-result.json"
+  cat > "$misleading_writer_result" <<'EOF'
+{
+  "status": "blocked",
+  "writes_shadow_docs": false,
+  "auto_promotes_facts": false,
+  "next_actions": [
+    {
+      "action": "create_evidence_decision",
+      "requires_user_input": true,
+      "reason": "safe argv with hostile command_text",
+      "command": ["python3", "shadow_user_decision_wrapper.py", "--project-root", "/repo", "--output", "<evidence-decision.json>", "--decision-id", "<decision-id>", "--decision-type", "business_intent", "--answer", "confirmed", "--decided-by", "<reviewer>", "--decided-at", "<YYYY-MM-DD>", "--expires-at", "<YYYY-MM-DD>", "--rationale", "<why this fact is true>", "--source-ref", "TASK-shadow-effect-map-01"],
+      "command_text": "python3 shadow_effect_writer.py --mode write"
+    }
+  ]
+}
+EOF
+
+  run python3 "$SHADOW_V2_USER_DECISION" --project-root "$TEST_PROJECT" --writer-result "$misleading_writer_result" --format json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"command_ready": true'* ]]
+  [[ "$output" == *"shadow_user_decision_wrapper.py"* ]]
+  [[ "$output" == *"--decision-type"* ]]
+  [[ "$output" == *"business_intent"* ]]
+  [[ "$output" != *"shadow_effect_writer.py --mode write"* ]]
+}
+
+@test "shadow_v2_user_decision_assistant rejects python command smuggling" {
+  local smuggled_writer_result="$TEST_WORKSPACE/smuggled-command-result.json"
+  cat > "$smuggled_writer_result" <<'EOF'
+{
+  "status": "blocked",
+  "writes_shadow_docs": false,
+  "auto_promotes_facts": false,
+  "next_actions": [
+    {
+      "action": "create_evidence_decision",
+      "requires_user_input": true,
+      "reason": "wrapper appears only as argument",
+      "command": ["python3", "-c", "print('x')", "shadow_user_decision_wrapper.py", "--project-root", "/repo", "--output", "<evidence-decision.json>", "--decision-id", "<decision-id>", "--decision-type", "business_intent", "--answer", "confirmed", "--decided-by", "<reviewer>", "--decided-at", "<YYYY-MM-DD>", "--expires-at", "<YYYY-MM-DD>", "--rationale", "<why this fact is true>", "--source-ref", "TASK-shadow-effect-map-01"]
+    }
+  ]
+}
+EOF
+
+  run python3 "$SHADOW_V2_USER_DECISION" --project-root "$TEST_PROJECT" --writer-result "$smuggled_writer_result" --format json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"command_ready": false'* ]]
+  [[ "$output" == *"python command hint must execute shadow_user_decision_wrapper.py directly"* ]]
+  [[ "$output" == *"command hint must not use python -c"* ]]
+  [[ "$output" != *'"command_hint"'* ]]
+}
+
+@test "shadow_v2_user_decision_assistant rejects duplicate decision flags" {
+  local duplicate_flag_result="$TEST_WORKSPACE/duplicate-flag-command-result.json"
+  cat > "$duplicate_flag_result" <<'EOF'
+{
+  "status": "blocked",
+  "writes_shadow_docs": false,
+  "auto_promotes_facts": false,
+  "next_actions": [
+    {
+      "action": "create_evidence_decision",
+      "requires_user_input": true,
+      "reason": "duplicate decision type",
+      "command": ["python3", "shadow_user_decision_wrapper.py", "--project-root", "/repo", "--output", "<evidence-decision.json>", "--decision-id", "<decision-id>", "--decision-type", "business_intent", "--answer", "confirmed", "--decided-by", "<reviewer>", "--decided-at", "<YYYY-MM-DD>", "--expires-at", "<YYYY-MM-DD>", "--rationale", "<why this fact is true>", "--source-ref", "TASK-shadow-effect-map-01", "--decision-type", "final_shadow_apply"]
+    }
+  ]
+}
+EOF
+
+  run python3 "$SHADOW_V2_USER_DECISION" --project-root "$TEST_PROJECT" --writer-result "$duplicate_flag_result" --format json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"command_ready": false'* ]]
+  [[ "$output" == *"command hint duplicate flag is not allowed: --decision-type"* ]]
+  [[ "$output" != *'"command_hint"'* ]]
+}
+
+@test "shadow_v2_user_decision_assistant rejects spoofed wrapper paths" {
+  local spoofed_path_result="$TEST_WORKSPACE/spoofed-wrapper-path-result.json"
+  cat > "$spoofed_path_result" <<'EOF'
+{
+  "status": "blocked",
+  "writes_shadow_docs": false,
+  "auto_promotes_facts": false,
+  "next_actions": [
+    {
+      "action": "create_evidence_decision",
+      "requires_user_input": true,
+      "reason": "spoofed wrapper path",
+      "command": ["python3", "/tmp/shadow_user_decision_wrapper.py", "--project-root", "/repo", "--output", "<evidence-decision.json>", "--decision-id", "<decision-id>", "--decision-type", "business_intent", "--answer", "confirmed", "--decided-by", "<reviewer>", "--decided-at", "<YYYY-MM-DD>", "--expires-at", "<YYYY-MM-DD>", "--rationale", "<why this fact is true>", "--source-ref", "TASK-shadow-effect-map-01"]
+    }
+  ]
+}
+EOF
+
+  run python3 "$SHADOW_V2_USER_DECISION" --project-root "$TEST_PROJECT" --writer-result "$spoofed_path_result" --format json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"command_ready": false'* ]]
+  [[ "$output" == *"python command hint must execute shadow_user_decision_wrapper.py directly"* ]]
+  [[ "$output" != *'"command_hint"'* ]]
+}
+
+@test "shadow_v2_user_decision_assistant refuses outputs under docs shadow" {
+  run python3 "$SHADOW_V2_USER_DECISION" \
+    --project-root "$TEST_PROJECT" \
+    --output "$DOCS_ROOT/shadow/user-decision-packet.md"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"--output must not be under docs/shadow"* ]]
+  [[ "$output" == *'"writes_shadow_docs":false'* ]]
+
+  run python3 "$SHADOW_V2_USER_DECISION" \
+    --project-root "$TEST_PROJECT" \
+    --output "$TEST_WORKSPACE/outside-user-decision-packet.md"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"--output must be under project docs"* ]]
+}
+
+@test "shadow_v2_review_packet_generator emits bounded internal review packets" {
+  local writer_result="$TEST_WORKSPACE/review-writer-result.json"
+  cat > "$writer_result" <<'EOF'
+{
+  "status": "blocked",
+  "writes_shadow_docs": false,
+  "auto_promotes_facts": false,
+  "next_actions": [
+    {
+      "action": "create_evidence_decision",
+      "requires_user_input": true,
+      "reason": "confirmed fact requires a separate user_decision fact-evidence artifact",
+      "then": "rerun writer"
+    }
+  ],
+  "source_refs": ["src/UserService.java:6"]
+}
+EOF
+  find "$DOCS_ROOT/shadow" -type f | sort > "$TEST_WORKSPACE/shadow-v2-review-before.txt"
+
+  run python3 "$SHADOW_V2_REVIEW_PACKET" \
+    --project-root "$TEST_PROJECT" \
+    --task-id "shadow-effect-map-01" \
+    --writer-result "$writer_result" \
+    --source-ref "TASK-shadow-effect-map-01"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"# Shadow v2 Review Packet"* ]]
+  [[ "$output" == *"review_route: codex_subagent_md_handoff"* ]]
+  [[ "$output" == *"privacy_boundary: packet_only_no_workspace_dump"* ]]
+  [[ "$output" == *"review_provenance: internal_md_handoff"* ]]
+  [[ "$output" == *"unsupported_by_packet: none"* ]]
+  [[ "$output" == *"kind: writer_result"* ]]
+  [[ "$output" == *"TASK-shadow-effect-map-01"* ]]
+  [[ "$output" == *"src/UserService.java:6"* ]]
+  [[ "$output" == *"- writes_shadow_docs: false"* ]]
+
+  find "$DOCS_ROOT/shadow" -type f | sort > "$TEST_WORKSPACE/shadow-v2-review-after.txt"
+  run cmp "$TEST_WORKSPACE/shadow-v2-review-before.txt" "$TEST_WORKSPACE/shadow-v2-review-after.txt"
+  [ "$status" -eq 0 ]
+}
+
+@test "shadow_v2_review_packet_generator blocks external route unless requested" {
+  run python3 "$SHADOW_V2_REVIEW_PACKET" \
+    --project-root "$TEST_PROJECT" \
+    --review-route "external_gemini_claude" \
+    --format json
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status": "blocked"'* ]]
+  [[ "$output" == *"external Gemini/Claude review requires explicit user request"* ]]
+  [[ "$output" == *"external_review_user_request"* ]]
+  [[ "$output" == *"external_review_approval_ref"* ]]
+  [[ "$output" == *"external_review_approved_next_step"* ]]
+  [[ "$output" == *"external_review_recorded_by"* ]]
+  [[ "$output" == *'"review_provenance": "external_review_missing_user_request"'* ]]
+  [[ "$output" != *'"review_provenance": "external_user_approved"'* ]]
+
+  run python3 "$SHADOW_V2_REVIEW_PACKET" \
+    --project-root "$TEST_PROJECT" \
+    --review-route "external_gemini_claude" \
+    --external-review-requested \
+    --source-ref "TASK-shadow-effect-map-01" \
+    --format json
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"review_provenance": "external_review_missing_approval_provenance"'* ]]
+  [[ "$output" == *"external Gemini/Claude review requires concrete approval_ref"* ]]
+
+  run python3 "$SHADOW_V2_REVIEW_PACKET" \
+    --project-root "$TEST_PROJECT" \
+    --review-route "external_gemini_claude" \
+    --external-review-requested \
+    --external-review-approval-ref "user-approval-001" \
+    --external-review-approved-next-step "generate external review packet only" \
+    --external-review-recorded-by "main-thread-supervising-lead-architect" \
+    --source-ref "TASK-shadow-effect-map-01" \
+    --format json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status": "ok"'* ]]
+  [[ "$output" == *'"review_provenance": "external_user_approved"'* ]]
+  [[ "$output" == *'"external_review_approval_ref": "user-approval-001"'* ]]
+}
+
+@test "shadow_v2_review_packet_generator refuses outputs under docs shadow" {
+  run python3 "$SHADOW_V2_REVIEW_PACKET" \
+    --project-root "$TEST_PROJECT" \
+    --source-ref "TASK-shadow-effect-map-01" \
+    --output "$DOCS_ROOT/shadow/review-packet.md"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"--output must not be under docs/shadow"* ]]
+  [[ "$output" == *'"writes_shadow_docs":false'* ]]
+
+  run python3 "$SHADOW_V2_REVIEW_PACKET" \
+    --project-root "$TEST_PROJECT" \
+    --source-ref "TASK-shadow-effect-map-01" \
+    --output "$TEST_WORKSPACE/outside-review-packet.md"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"--output must be under project docs"* ]]
+}
+
+@test "shadow_v2_pipeline_wrapper emits incomplete dry-run plans without executing commands" {
+  run python3 "$SHADOW_V2_PIPELINE" --project-root "$TEST_PROJECT" --format json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status": "incomplete"'* ]]
+  [[ "$output" == *'"plan_kind": "dry_run_plan"'* ]]
+  [[ "$output" == *'"executes_commands": false'* ]]
+  [[ "$output" == *'"final_apply": "blocked"'* ]]
+  [[ "$output" == *"run_deterministic_probes"* ]]
+  [[ "$output" == *"pending_input"* ]]
+  [[ "$output" == *"final_shadow_apply"* ]]
+}
+
+@test "shadow_v2_pipeline_wrapper writer command is dry-run only" {
+  run python3 "$SHADOW_V2_PIPELINE" \
+    --project-root "$TEST_PROJECT" \
+    --record "$TEST_WORKSPACE/record.json" \
+    --candidate-file "$TEST_WORKSPACE/candidate.json" \
+    --user-decision "$TEST_WORKSPACE/decision.json" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --format json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status": "incomplete"'* ]]
+  [[ "$output" == *"shadow_effect_writer.py"* ]]
+  [[ "$output" == *"--mode"* ]]
+  [[ "$output" == *"dry-run"* ]]
+  [[ "$output" != *"--mode write"* ]]
+}
+
+@test "shadow_v2_pipeline_wrapper blocks external review route without approval" {
+  run python3 "$SHADOW_V2_PIPELINE" \
+    --project-root "$TEST_PROJECT" \
+    --review-route "external_gemini_claude" \
+    --format json
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status": "blocked"'* ]]
+  [[ "$output" == *"external Gemini/Claude review requires explicit user request"* ]]
+  [[ "$output" == *'"executes_commands": false'* ]]
+
+  run python3 "$SHADOW_V2_PIPELINE" \
+    --project-root "$TEST_PROJECT" \
+    --review-route "external_gemini_claude" \
+    --external-review-requested \
+    --format json
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"external Gemini/Claude review requires concrete approval_ref"* ]]
+  [[ "$output" == *"external Gemini/Claude review requires approved_next_step"* ]]
+  [[ "$output" == *"external Gemini/Claude review requires main-thread recorded_by"* ]]
+
+  run python3 "$SHADOW_V2_PIPELINE" \
+    --project-root "$TEST_PROJECT" \
+    --review-route "external_gemini_claude" \
+    --external-review-requested \
+    --external-review-approval-ref "user-approval-001" \
+    --external-review-approved-next-step "generate external review packet only" \
+    --external-review-recorded-by "main-thread-supervising-lead-architect" \
+    --format json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status": "incomplete"'* ]]
+  [[ "$output" == *'"approval_ref": "user-approval-001"'* ]]
+  [[ "$output" == *'"executes_commands": false'* ]]
+}
+
+@test "shadow_v2_pipeline_wrapper blocks combined close when required external review is blocked" {
+  run python3 "$SHADOW_V2_PIPELINE" \
+    --project-root "$TEST_PROJECT" \
+    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "external_gemini_claude" \
+    --completed-review "codex_subagent_md_handoff" \
+    --blocked-review "external_gemini_claude" \
+    --format json
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status": "blocked"'* ]]
+  [[ "$output" == *"close_review_gate"* ]]
+  [[ "$output" == *"required review route is blocked: external_gemini_claude"* ]]
+  [[ "$output" == *"sub-agent acceptance cannot substitute for blocked external Gemini/Claude review"* ]]
+  [[ "$output" == *'"executes_commands": false'* ]]
+}
+
+@test "shadow_v2_pipeline_wrapper requires external close artifact provenance" {
+  local accepted_artifact
+  accepted_artifact="$(create_mock_external_review_artifact "shadow-v2-pipeline-accepted" "claude")"
+  [ -n "$accepted_artifact" ]
+  run test -f "$accepted_artifact"
+  [ "$status" -eq 0 ]
+  run test -f "${accepted_artifact%.md}.provenance.md"
+  [ "$status" -eq 0 ]
+
+  run python3 "$SHADOW_V2_PIPELINE" \
+    --project-root "$TEST_PROJECT" \
+    --external-review-requested \
+    --external-review-approval-ref "user-approval-001" \
+    --external-review-approved-next-step "close shadow v2 external review gate" \
+    --external-review-recorded-by "main-thread-supervising-lead-architect" \
+    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "external_gemini_claude" \
+    --completed-review "codex_subagent_md_handoff" \
+    --completed-review "external_gemini_claude" \
+    --format json
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status": "blocked"'* ]]
+  [[ "$output" == *"completed external Gemini/Claude review requires a durable response artifact"* ]]
+  [[ "$output" == *'"executes_commands": false'* ]]
+
+  run python3 "$SHADOW_V2_PIPELINE" \
+    --project-root "$TEST_PROJECT" \
+    --external-review-requested \
+    --external-review-approval-ref "user-approval-001" \
+    --external-review-approved-next-step "close shadow v2 external review gate" \
+    --external-review-recorded-by "main-thread-supervising-lead-architect" \
+    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "external_gemini_claude" \
+    --completed-review "codex_subagent_md_handoff" \
+    --completed-review "external_gemini_claude" \
+    --completed-review-artifact "external_gemini_claude=$accepted_artifact" \
+    --format json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"close_review_gate"'* ]]
+  [[ "$output" == *'"status": "satisfied"'* ]]
+  [[ "$output" == *'"completed_review_artifacts"'* ]]
+  [[ "$output" == *'"sha256": "sha256:'* ]]
+  [[ "$output" != *"completed external Gemini/Claude review requires a durable response artifact"* ]]
+}
+
+@test "shadow_v2_pipeline_wrapper refuses outputs under docs shadow" {
+  run python3 "$SHADOW_V2_PIPELINE" \
+    --project-root "$TEST_PROJECT" \
+    --output "$DOCS_ROOT/shadow/pipeline-plan.md"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"--output must not be under docs/shadow"* ]]
+  [[ "$output" == *'"writes_shadow_docs":false'* ]]
+
+  run python3 "$SHADOW_V2_PIPELINE" \
+    --project-root "$TEST_PROJECT" \
+    --output "$TEST_WORKSPACE/outside-pipeline-plan.md"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"--output must be under project docs"* ]]
+}
+
 @test "run_codeguide bootstraps orchestration doc for active task" {
   run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "orch-01" --mode advisory
   [ "$status" -eq 0 ]
@@ -2537,7 +3660,7 @@ EOF
 EOF
 
   local orch_file="$DOCS_ROOT/orchestration/ORCH-orch-preflight-01.md"
-  perl -0pi -e 's/^- risk_preflight_status: pass$/- risk_preflight_status: approval_required/m; s/^- approval_required: false$/- approval_required: true/m' "$orch_file"
+  perl -0pi -e 's/^- risk_preflight_status: pass$/- risk_preflight_status: approval_required/m; s/^- approval_required: false$/- approval_required: true/m; s/^- approval_ref:.*$/- approval_ref: user-approval-pending-001/m; s/^- approved_next_step:.*$/- approved_next_step: await user approval/m' "$orch_file"
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
@@ -2681,6 +3804,25 @@ exit 99'
   run test ! -e "$TEST_WORKSPACE/gemini-approved-placeholder-called"
   [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/claude-approved-placeholder-called"
+  [ "$status" -eq 0 ]
+}
+
+@test "doc_garden rejects external_cli review with pass preflight" {
+  run "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "orch-external-pass-01" \
+    --task-title "External pass should block" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "pass" \
+    --primary-author-tool "codex" \
+    --review-mode "external_cli" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "external-cli:gemini" \
+    --owned-scopes "planner:docs/plan; reviewer:docs/report" \
+    --no-init
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"External CLI review requires --risk-preflight-status approved"* ]]
+  run test ! -f "$DOCS_ROOT/orchestration/ORCH-orch-external-pass-01.md"
   [ "$status" -eq 0 ]
 }
 
@@ -3433,7 +4575,9 @@ EOF
     --axis-where "where" \
     --axis-verify "verify" \
     --execution-mode "supervisor_subagents" \
-    --risk-preflight-status "pass" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-highrisk-pass-01" \
+    --approved-next-step "record external adversarial review for highrisk-pass-01" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -4417,6 +5561,20 @@ exit 99'
     --plan-version "v1.0" \
     --primary-tool "codex" \
     --review-round "r01" \
+    --risk-preflight-status "pass"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"External CLI review requires explicit user approval provenance"* ]]
+  run test ! -e "$TEST_WORKSPACE/gemini-called"
+  [ "$status" -eq 0 ]
+  run test ! -e "$TEST_WORKSPACE/claude-called"
+  [ "$status" -eq 0 ]
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-review-gate" \
+    --plan-version "v1.0" \
+    --primary-tool "codex" \
+    --review-round "r01" \
     --risk-preflight-status "approval_required"
 
   [ "$status" -ne 0 ]
@@ -4501,7 +5659,9 @@ exit 99'
     --plan-version "v1.0" \
     --primary-tool "codex" \
     --review-round "r01" \
-    --risk-preflight-status "pass"
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-review-01" \
+    --approved-next-step "run external review ext-review-01 v1.0 r01"
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"[OK] evaluator=gemini"* ]]
@@ -4518,9 +5678,11 @@ exit 99'
   [ "$status" -eq 0 ]
   run grep "^- review_mode: external_cli" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
   [ "$status" -eq 0 ]
-  run grep "^- risk_preflight_status: pass" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
+  run grep "^- risk_preflight_status: approved" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
   [ "$status" -eq 0 ]
-  run grep "^- approval_required: false" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
+  run grep "^- approval_required: true" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
+  [ "$status" -eq 0 ]
+  run grep "^- approval_ref: user-approval-ext-review-01" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
   [ "$status" -eq 0 ]
   run grep "^- reviewer_agents: external-cli:gemini,claude" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
   [ "$status" -eq 0 ]
@@ -4612,9 +5774,27 @@ exit 99'
   [ "$status" -eq 0 ]
   run test ! -f "$handoff_dir/gemini.retry-command-response.raw.md"
   [ "$status" -eq 0 ]
+  run test -f "$handoff_dir/gemini.retry-response.provenance.md"
+  [ "$status" -eq 0 ]
+  local gemini_retry_hash
+  gemini_retry_hash="$(sha256_file_ref "$handoff_dir/gemini.retry-response.md")"
+  run grep "artifact_kind: external_cli_review_response_provenance" "$handoff_dir/gemini.retry-response.provenance.md"
+  [ "$status" -eq 0 ]
+  run grep "generated_by: run_external_plan_reviews.sh" "$handoff_dir/gemini.retry-response.provenance.md"
+  [ "$status" -eq 0 ]
+  run grep "response_file: $handoff_dir/gemini.retry-response.md" "$handoff_dir/gemini.retry-response.provenance.md"
+  [ "$status" -eq 0 ]
+  run grep "response_sha256: $gemini_retry_hash" "$handoff_dir/gemini.retry-response.provenance.md"
+  [ "$status" -eq 0 ]
+  run grep "command_response_path: $handoff_dir/gemini.retry-command-response.raw.md" "$handoff_dir/gemini.retry-response.provenance.md"
+  [ "$status" -eq 0 ]
+  run grep "raw_capture_deleted: true" "$handoff_dir/gemini.retry-response.provenance.md"
+  [ "$status" -eq 0 ]
   run grep "$handoff_dir/claude.command-response.raw.md" "$TEST_WORKSPACE/claude-args.log"
   [ "$status" -eq 0 ]
   run test ! -f "$handoff_dir/claude.command-response.raw.md"
+  [ "$status" -eq 0 ]
+  run test -f "$handoff_dir/claude.response.provenance.md"
   [ "$status" -eq 0 ]
 }
 
@@ -4683,7 +5863,9 @@ EOF'
     --plan-version "v1.0" \
     --primary-tool "gemini" \
     --review-round "r02" \
-    --risk-preflight-status "pass" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-review-02" \
+    --approved-next-step "run external review ext-review-02 v1.0 r02" \
     --allow-partial-review \
     --adversarial-evaluator "codex" \
     --codex-model "gpt-5.4"
@@ -4743,7 +5925,9 @@ EOF'
     --task-title "High risk ext review" \
     --risk-level "high" \
     --execution-mode "supervisor_subagents" \
-    --risk-preflight-status "pass" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-review-04" \
+    --approved-next-step "run external review ext-review-04 v1.0 r04" \
     --primary-author-tool "codex" \
     --review-mode "external_cli" \
     --planner-agents "planner-1" \
@@ -4821,7 +6005,9 @@ EOF'
     --plan-version "v1.0" \
     --primary-tool "claude" \
     --review-round "r04" \
-    --risk-preflight-status "pass"
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-review-04" \
+    --approved-next-step "run external review ext-review-04 v1.0 r04"
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"auto-selecting adversarial evaluator=gemini"* ]]
@@ -4915,7 +6101,9 @@ exit 4'
     --plan-version "v1.0" \
     --primary-tool "claude" \
     --review-round "r03" \
-    --risk-preflight-status "pass"
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-review-03" \
+    --approved-next-step "run external review ext-review-03 v1.0 r03"
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"[FAIL] evaluator=gemini"* ]]
@@ -4934,7 +6122,9 @@ exit 4'
     --task-title "Adversarial failure test" \
     --risk-level "high" \
     --execution-mode "supervisor_subagents" \
-    --risk-preflight-status "pass" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-review-05" \
+    --approved-next-step "run external review ext-review-05 v1.0 r05" \
     --primary-author-tool "codex" \
     --review-mode "external_cli" \
     --planner-agents "planner-1" \
@@ -5001,7 +6191,9 @@ EOF'
     --plan-version "v1.0" \
     --primary-tool "claude" \
     --review-round "r05" \
-    --risk-preflight-status "pass"
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-review-05" \
+    --approved-next-step "run external review ext-review-05 v1.0 r05"
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"Required adversarial review did not complete successfully"* ]]
@@ -5052,7 +6244,9 @@ exit 0'
     --plan-version "v1.0" \
     --primary-tool "gemini" \
     --review-round "r06" \
-    --risk-preflight-status "pass"
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-review-06" \
+    --approved-next-step "run external review ext-review-06 v1.0 r06"
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"[FAIL] evaluator=codex"* ]]

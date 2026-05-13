@@ -14,6 +14,7 @@ Use this file to pick the smallest authoritative reference set for the active ta
 ## Context and Retrieval Routing
 - Context-budget workflow and MCP source-authority rules: `mcp-context-integration.md`
 - Shadow effect-map workflow, document role separation, evidence hierarchy, and user-question gates: `shadow-effect-map-workflow.md`
+- Shadow v2 automation plan and user-decision assistant scope: `shadow-v2-automation-plan.md`
 - Serena symbolic narrowing for current-code anchors, references, call chains, and impact analysis: `serena-workflow.md`
 - mem0, pgvector, and Neo4j restricted prior-context and graph/vector hint policy: `mem0-policy.md`
 - Default order for large or uncertain investigations: docs/shadow first, `rg` plus Serena for current-code narrowing, mem0/pgvector/Neo4j for bounded prior-context hints, then direct source/test/runtime validation.
