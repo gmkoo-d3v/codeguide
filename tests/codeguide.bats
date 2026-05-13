@@ -11,15 +11,31 @@ INIT_SCAFFOLD="$SCRIPTS_DIR/init_docs_scaffold.sh"
 CHECK_ENGLISH_DOCS="$SCRIPTS_DIR/check_english_docs.sh"
 SHADOW_PROBE="$SCRIPTS_DIR/shadow_evidence_probe.py"
 SHADOW_QUEUE="$SCRIPTS_DIR/shadow_review_queue.py"
+SHADOW_LLM_CANDIDATE="$SCRIPTS_DIR/shadow_llm_candidate_wrapper.py"
+SHADOW_USER_DECISION="$SCRIPTS_DIR/shadow_user_decision_wrapper.py"
+SHADOW_APPLY_GATE="$SCRIPTS_DIR/shadow_apply_gate.py"
+SHADOW_EFFECT_WRITER="$SCRIPTS_DIR/shadow_effect_writer.py"
+SHADOW_POLICY_LOADER="$SCRIPTS_DIR/shadow_policy_loader.py"
+source "$SCRIPTS_DIR/codeguide_paths.sh"
 
 docs_root_for_project() {
   local project_root="$1"
   local project_root_abs
-  local workspace_root
 
-  project_root_abs="$(cd "$project_root" && pwd)"
-  workspace_root="$(cd "$project_root_abs/.." && pwd)"
-  printf "%s/docs" "$workspace_root"
+  project_root_abs="$(codeguide_resolve_project_root "$project_root")"
+  codeguide_docs_root "$project_root_abs"
+}
+
+sha256_file_ref() {
+  python3 -c 'import hashlib,sys; p=sys.argv[1]; print("sha256:"+hashlib.sha256(open(p,"rb").read()).hexdigest())' "$1"
+}
+
+sha256_text_ref() {
+  python3 -c 'import hashlib,sys; print("sha256:"+hashlib.sha256(sys.argv[1].encode("utf-8")).hexdigest())' "$1"
+}
+
+sha256_json_file_ref() {
+  python3 -c 'import hashlib,json,sys; value=json.load(open(sys.argv[1])); encoded=json.dumps(value,sort_keys=True,separators=(",",":")); print("sha256:"+hashlib.sha256(encoded.encode("utf-8")).hexdigest())' "$1"
 }
 
 external_handoff_dir() {
@@ -220,7 +236,7 @@ write_mock_cli() {
   [[ "$output" == *"task_id: BRANCH-42"* ]]
 }
 
-@test "init_docs_scaffold uses workspace docs root directly" {
+@test "init_docs_scaffold uses project docs root directly" {
   run test -d "$DOCS_ROOT/task"
   [ "$status" -eq 0 ]
   run test -d "$DOCS_ROOT/shadow"
@@ -231,6 +247,33 @@ write_mock_cli() {
   [ "$status" -eq 0 ]
   run test ! -d "$DOCS_ROOT/repos"
   [ "$status" -eq 0 ]
+}
+
+@test "init_docs_scaffold resolves git subdir to project docs root" {
+  local workspace
+  local proj
+  local app_dir
+  local docs_root
+  local expected_docs_root
+  workspace="$(mktemp -d)"
+  proj="$workspace/wall"
+  app_dir="$proj/backend"
+  mkdir -p "$app_dir"
+  git -C "$proj" init >/dev/null 2>&1
+
+  "$INIT_SCAFFOLD" "$app_dir"
+  docs_root="$(docs_root_for_project "$app_dir")"
+  expected_docs_root="$(cd "$proj" && pwd -P)/docs"
+
+  [ "$docs_root" = "$expected_docs_root" ]
+  run test -d "$proj/docs/task"
+  [ "$status" -eq 0 ]
+  run test -d "$proj/docs/shadow"
+  [ "$status" -eq 0 ]
+  run test ! -e "$workspace/docs"
+  [ "$status" -eq 0 ]
+
+  rm -rf "$workspace"
 }
 
 @test "init_docs_scaffold creates shadow graph scaffold files" {
@@ -274,9 +317,15 @@ write_mock_cli() {
 
   run grep "^- catalog_id: shadow-validator-catalog" "$DOCS_ROOT/policy/shadow-validator-catalog.md"
   [ "$status" -eq 0 ]
+  run grep "^- template_linked_task: TASK-shadow-effect-map-01" "$DOCS_ROOT/policy/shadow-validator-catalog.md"
+  [ "$status" -eq 0 ]
   run grep "^- registry_id: shadow-regex-patterns" "$DOCS_ROOT/policy/shadow-regex-patterns.md"
   [ "$status" -eq 0 ]
+  run grep "^- template_linked_decision: decision-shadow-regex-standard-01" "$DOCS_ROOT/policy/shadow-regex-patterns.md"
+  [ "$status" -eq 0 ]
   run grep "^- registry_id: shadow-rule-registry" "$DOCS_ROOT/policy/shadow-rule-registry.md"
+  [ "$status" -eq 0 ]
+  run grep "^- template_linked_decisions: decision-shadow-practical-contract-01, decision-shadow-validator-taxonomy-01, decision-shadow-regex-standard-01" "$DOCS_ROOT/policy/shadow-rule-registry.md"
   [ "$status" -eq 0 ]
 }
 
@@ -286,6 +335,8 @@ write_mock_cli() {
 
   mkdir -p "$package_root/scripts" "$fallback_project"
   cp "$INIT_SCAFFOLD" "$package_root/scripts/init_docs_scaffold.sh"
+  cp "$SCRIPTS_DIR/codeguide_paths.sh" "$package_root/scripts/codeguide_paths.sh"
+  cp "$SCRIPTS_DIR/codeguide_paths.py" "$package_root/scripts/codeguide_paths.py"
   chmod +x "$package_root/scripts/init_docs_scaffold.sh"
 
   "$package_root/scripts/init_docs_scaffold.sh" "$fallback_project"
@@ -324,6 +375,7 @@ EOF
   [[ "$output" == *'"status":"pass"'* ]]
   [[ "$output" == *'"parser_backed":true'* ]]
   [[ "$output" == *'"validator_result":"matched"'* ]]
+  [[ "$output" == *'"source_hash":"sha256:'* ]]
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -403,8 +455,11 @@ EOF
 
   [ "$status" -eq 0 ]
   [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"probe_status":"pass"'* ]]
+  [[ "$output" == *'"fact_status":"candidate_only"'* ]]
   [[ "$output" == *'"fallback_result":"matched"'* ]]
   [[ "$output" == *'"evidence_field":"fallback_result"'* ]]
+  [[ "$output" == *'"source_hash":"sha256:'* ]]
   [[ "$output" != *'"validator_result"'* ]]
 }
 
@@ -427,9 +482,12 @@ EOF
 
   [ "$status" -eq 0 ]
   [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"probe_status":"pass"'* ]]
+  [[ "$output" == *'"fact_status":"candidate_only"'* ]]
   [[ "$output" == *'"validator_kind":"source_probe"'* ]]
   [[ "$output" == *'"parser_backed":false'* ]]
   [[ "$output" == *'"promotion_limit":"medium"'* ]]
+  [[ "$output" == *'"source_hash":"sha256:'* ]]
 }
 
 @test "shadow_evidence_probe regex fallback ignores comments and strings" {
@@ -511,6 +569,8 @@ EOF
 
   [ "$status" -eq 0 ]
   [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"probe_status":"pass"'* ]]
+  [[ "$output" == *'"fact_status":"deterministic_evidence"'* ]]
   [[ "$output" == *'"evidence_type":"runtime_trace"'* ]]
   [[ "$output" == *'"artifact_hash":"sha256:'* ]]
   [[ "$output" == *'"trace_ref":"logs/runtime.trace:2"'* ]]
@@ -559,8 +619,8 @@ EOF
   local probe_file="$TEST_WORKSPACE/probe.jsonl"
   cat > "$probe_file" <<'EOF'
 {"status":"pass","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/app.py:4","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false}
-{"status":"pass","validator_id":"jpa.repository.save@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/main/java/example/UserService.java:7","validator_kind":"source_probe","parser_backed":false,"promotion_limit":"medium","writes_shadow_docs":false}
-{"status":"unsupported","validator_id":"java.ast.call_match@v99","writes_shadow_docs":false}
+{"status":"pass","validator_id":"jpa.repository.save@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/main/java/example/UserService.java:7","validator_kind":"source_probe","parser_backed":false,"promotion_limit":"medium","entry_ref":"UserController.update","call_chain_candidate":"UserController.update -> UserService.updateUser -> UserRepository.save","anchor_file":"src/main/java/example/UserService.java","anchor_symbol":"userRepository.save","missing_evidence":"parser-backed Java validator","recommended_default_status":"unknown","writes_shadow_docs":false}
+{"status":"unsupported","validator_id":"java.ast.call_match@v99","source_ref":"src/main/java/example/UserService.java:7","entry_ref":"UserController.update","call_chain_candidate":"UserController.update -> UserService.updateUser -> UserRepository.save","anchor_file":"src/main/java/example/UserService.java","anchor_symbol":"userRepository.save","missing_evidence":"supported validator","recommended_default_status":"blocked","writes_shadow_docs":false}
 EOF
 
   run python3 "$SHADOW_QUEUE" \
@@ -572,16 +632,74 @@ EOF
   [[ "$output" == *"# Shadow Evidence Review Queue"* ]]
   [[ "$output" == *"- writes_shadow_docs: false"* ]]
   [[ "$output" == *"- auto_promotes_facts: false"* ]]
+  [[ "$output" == *"- doc_role: review_queue"* ]]
   [[ "$output" == *"- question_count: 2"* ]]
   [[ "$output" == *"Does the syntactic source probe"* ]]
   [[ "$output" == *"Which supported validator or fallback should replace"* ]]
   [[ "$output" != *"RQ-003"* ]]
 }
 
+@test "shadow_review_queue never hides high unresolved questions behind max_questions" {
+  local probe_file="$TEST_WORKSPACE/high-questions.jsonl"
+  cat > "$probe_file" <<'EOF'
+{"status":"unsupported","validator_id":"java.ast.call_match@v99","source_ref":"src/UserService.java:4","entry_ref":"UserController.update","call_chain_candidate":"UserController.update -> UserService.updateUser","anchor_file":"src/UserService.java","anchor_symbol":"UserService.updateUser","missing_evidence":"supported validator","recommended_default_status":"blocked","writes_shadow_docs":false}
+{"status":"error","validator_id":"bad.validator@v1","source_ref":"src/UserService.java:5","entry_ref":"UserController.update","call_chain_candidate":"UserController.update -> UserService.updateUser","anchor_file":"src/UserService.java","anchor_symbol":"UserService.updateUser","missing_evidence":"valid probe input","recommended_default_status":"blocked","writes_shadow_docs":false}
+{"status":"pass","validator_id":"jpa.repository.save@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/UserService.java:6","validator_kind":"source_probe","parser_backed":false,"promotion_limit":"medium","entry_ref":"UserController.update","call_chain_candidate":"UserController.update -> UserService.updateUser -> UserRepository.save","anchor_file":"src/UserService.java","anchor_symbol":"userRepository.save","missing_evidence":"parser-backed Java validator","recommended_default_status":"unknown","writes_shadow_docs":false}
+{"status":"pass","validator_id":"any.runtime.trace@v1","evidence_type":"runtime_trace","validator_result":"matched","trace_ref":"logs/runtime.trace:2","artifact_hash":"sha256:abc123","promotion_limit":"medium","entry_ref":"UserController.update","call_chain_candidate":"UserController.update -> UserService.updateUser","anchor_file":"logs/runtime.trace","anchor_symbol":"event=user.cache.evict","missing_evidence":"runtime scenario fit decision","recommended_default_status":"unknown","writes_shadow_docs":false}
+EOF
+
+  run python3 "$SHADOW_QUEUE" \
+    --input "$probe_file" \
+    --task-id "shadow-effect-map-01" \
+    --max-questions 1
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"- max_questions: 1"* ]]
+  [[ "$output" == *"- question_count: 2"* ]]
+  [[ "$output" == *"- uncapped_required_questions: 2"* ]]
+  [[ "$output" == *"- deferred_question_count: 2"* ]]
+  [[ "$output" != *"RQ-003"* ]]
+  [[ "$output" == *"Error, unsupported, and trusted high/critical policy questions are emitted"* ]]
+}
+
+@test "shadow_review_queue does not trust arbitrary priority or risk fields for cap bypass" {
+  local probe_file="$TEST_WORKSPACE/untrusted-priority.jsonl"
+  cat > "$probe_file" <<'EOF'
+{"status":"pass","validator_id":"jpa.repository.save@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/UserService.java:6","validator_kind":"source_probe","parser_backed":false,"promotion_limit":"critical","priority":"high","risk":"critical","entry_ref":"UserController.update","call_chain_candidate":"UserController.update -> UserService.updateUser -> UserRepository.save","anchor_file":"src/UserService.java","anchor_symbol":"userRepository.save","missing_evidence":"parser-backed Java validator","recommended_default_status":"unknown","writes_shadow_docs":false}
+{"status":"pass","validator_id":"any.runtime.trace@v1","evidence_type":"runtime_trace","validator_result":"matched","trace_ref":"logs/runtime.trace:2","artifact_hash":"sha256:abc123","promotion_limit":"medium","entry_ref":"UserController.update","call_chain_candidate":"UserController.update -> UserService.updateUser","anchor_file":"logs/runtime.trace","anchor_symbol":"event=user.cache.evict","missing_evidence":"runtime scenario fit decision","recommended_default_status":"unknown","writes_shadow_docs":false}
+{"status":"pass","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/auth.py:8","validator_kind":"ast","parser_backed":true,"promotion_limit":"medium","review_risk":"critical","review_risk_source":"policy","entry_ref":"AuthController.login","call_chain_candidate":"AuthController.login -> AuthService.issueToken","anchor_file":"src/auth.py","anchor_symbol":"issue_token","missing_evidence":"security intent approval","recommended_default_status":"blocked","writes_shadow_docs":false}
+EOF
+
+  run python3 "$SHADOW_QUEUE" --input "$probe_file" --max-questions 0
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"- question_count: 1"* ]]
+  [[ "$output" == *"- uncapped_required_questions: 1"* ]]
+  [[ "$output" == *"- deferred_question_count: 2"* ]]
+  [[ "$output" == *"trusted_review_risk: critical"* ]]
+  [[ "$output" == *"priority: critical"* ]]
+}
+
+@test "shadow_review_queue defers under-specified questions instead of asking user" {
+  local probe_file="$TEST_WORKSPACE/missing-context.jsonl"
+  cat > "$probe_file" <<'EOF'
+{"status":"pass","validator_id":"jpa.repository.save@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/UserService.java:6","validator_kind":"source_probe","parser_backed":false,"promotion_limit":"medium","writes_shadow_docs":false}
+EOF
+
+  run python3 "$SHADOW_QUEUE" --input "$probe_file" --max-questions 5
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"- question_count: 0"* ]]
+  [[ "$output" == *"- deferred_missing_context_count: 1"* ]]
+  [[ "$output" == *"question_state: deferred_missing_context"* ]]
+  [[ "$output" == *"missing_question_context:"* ]]
+  [[ "$output" == *"- no user questions generated"* ]]
+}
+
 @test "shadow_review_queue keeps runtime trace provenance visible" {
   local probe_file="$TEST_WORKSPACE/runtime.jsonl"
   cat > "$probe_file" <<'EOF'
-{"status":"pass","validator_id":"any.runtime.trace@v1","evidence_type":"runtime_trace","validator_result":"matched","source_ref":"logs/runtime.trace:2","trace_ref":"logs/runtime.trace:2","artifact_hash":"sha256:abc123","validator_kind":"runtime_trace","parser_backed":false,"promotion_limit":"high","writes_shadow_docs":false}
+{"status":"pass","validator_id":"any.runtime.trace@v1","evidence_type":"runtime_trace","validator_result":"matched","source_ref":"logs/runtime.trace:2","trace_ref":"logs/runtime.trace:2","artifact_hash":"sha256:abc123","validator_kind":"runtime_trace","parser_backed":false,"promotion_limit":"high","entry_ref":"UserController.update","call_chain_candidate":"UserController.update -> UserService.updateUser","anchor_file":"logs/runtime.trace","anchor_symbol":"event=user.cache.evict","missing_evidence":"runtime scenario fit decision","recommended_default_status":"unknown","writes_shadow_docs":false}
 EOF
 
   run python3 "$SHADOW_QUEUE" --input "$probe_file"
@@ -592,10 +710,33 @@ EOF
   [[ "$output" == *"observation window"* ]]
 }
 
+@test "shadow_review_queue renders deterministic metadata and decision context" {
+  local probe_file="$TEST_WORKSPACE/context.jsonl"
+  cat > "$probe_file" <<'EOF'
+{"status":"fail","validator_id":"py.ast.call_match@v1","rule_id":"repo.write","evidence_type":"code_call","validator_result":"missing","source_ref":"src/app.py:4","validator_kind":"ast","parser_backed":true,"promotion_limit":"medium","entry_ref":"UserController.update","endpoint":"POST /users/{id}","call_chain_candidate":"UserController.update -> UserService.updateUser -> UserRepository.save","anchor_file":"src/UserService.java","anchor_symbol":"UserRepository.save","missing_evidence":"JpaRepository.save call","recommended_default_status":"unknown","writes_shadow_docs":false}
+EOF
+
+  run python3 "$SHADOW_QUEUE" --input "$probe_file" --max-questions 1
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"rule_id: repo.write"* ]]
+  [[ "$output" == *"validator_kind: ast"* ]]
+  [[ "$output" == *"parser_backed: True"* ]]
+  [[ "$output" == *"validator_result: missing"* ]]
+  [[ "$output" == *"entry_ref: UserController.update"* ]]
+  [[ "$output" == *"endpoint: POST /users/{id}"* ]]
+  [[ "$output" == *"call_chain_candidate: UserController.update -> UserService.updateUser -> UserRepository.save"* ]]
+  [[ "$output" == *"anchor_file: src/UserService.java"* ]]
+  [[ "$output" == *"anchor_symbol: UserRepository.save"* ]]
+  [[ "$output" == *"missing_evidence: JpaRepository.save call"* ]]
+  [[ "$output" == *"decision_policy_ref: shadow-effect-map-workflow.md#stop-and-ask"* ]]
+  [[ "$output" == *"default_status: unknown"* ]]
+}
+
 @test "shadow_review_queue can optionally ask about parser-backed pass records" {
   local probe_file="$TEST_WORKSPACE/parser.jsonl"
   cat > "$probe_file" <<'EOF'
-{"status":"pass","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/app.py:4","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false}
+{"status":"pass","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/app.py:4","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","entry_ref":"UserController.update","call_chain_candidate":"UserController.update -> UserService.updateUser -> UserRepository.save","anchor_file":"src/app.py","anchor_symbol":"repository.save","missing_evidence":"human intent decision","recommended_default_status":"unknown","writes_shadow_docs":false}
 EOF
 
   run python3 "$SHADOW_QUEUE" --input "$probe_file"
@@ -615,6 +756,1312 @@ EOF
 
   [ "$status" -eq 64 ]
   [[ "$output" == *'"status":"error"'* ]]
+}
+
+@test "shadow_llm_candidate_wrapper creates non-promotable candidate with provenance" {
+  local draft_file="$TEST_WORKSPACE/draft.md"
+  cat > "$draft_file" <<'EOF'
+Possible call chain:
+- UserController.update
+- UserService.updateUser
+EOF
+
+  run python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "src/UserService.java:42" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"llm_candidate"'* ]]
+  [[ "$output" == *'"evidence_type":"llm_hint"'* ]]
+  [[ "$output" == *'"non_promotion_status":true'* ]]
+  [[ "$output" == *'"shadow_action":"candidate_only"'* ]]
+  [[ "$output" == *'"writes_shadow_docs":false'* ]]
+  [[ "$output" == *'"auto_promotes_facts":false'* ]]
+  [[ "$output" == *'"raw_draft_hash":"sha256:'* ]]
+  [[ "$output" == *'"source_refs":["src/UserService.java:42"]'* ]]
+}
+
+@test "shadow_llm_candidate_wrapper rejects missing provenance and forbidden markers" {
+  local draft_file="$TEST_WORKSPACE/unsafe.md"
+  cat > "$draft_file" <<'EOF'
+status: validated
+writes_shadow_docs: true
+"shadow_action": "apply"
+EOF
+
+  run python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"at least one --source-ref is required"* ]]
+
+  run python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "src/UserService.java:42" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"forbidden production-action markers"* ]]
+  [[ "$output" == *"shadow_write_true"* ]]
+  [[ "$output" == *"direct_apply"* ]]
+  [[ "$output" == *"validated_status"* ]]
+}
+
+@test "shadow_llm_candidate_wrapper refuses output under docs shadow" {
+  local draft_file="$TEST_WORKSPACE/draft.md"
+  printf 'Candidate draft only\n' > "$draft_file"
+
+  run python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --output "$DOCS_ROOT/shadow/candidate.json" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "src/UserService.java:42" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"must not be under docs/shadow"* ]]
+  [[ "$output" == *'"writes_shadow_docs":false'* ]]
+}
+
+@test "shadow_apply_gate blocks without final user decision and allows supervised dry-run" {
+  local draft_file="$TEST_WORKSPACE/draft.md"
+  local candidate_file="$TEST_WORKSPACE/candidate.json"
+  local bad_decision_file="$TEST_WORKSPACE/bad-decision.json"
+  local good_decision_file="$TEST_WORKSPACE/good-decision.json"
+
+  printf 'Review question draft\n' > "$draft_file"
+  python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --output "$candidate_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "src/UserService.java:42" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  local candidate_id
+  candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
+
+  cat > "$bad_decision_file" <<EOF
+{"user_decision":{"id":"UD-001","decision_type":"final_shadow_apply","answer":"unknown","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id"]}}
+EOF
+
+  run python3 "$SHADOW_APPLY_GATE" \
+    --project-root "$TEST_PROJECT" \
+    --candidate "$candidate_file" \
+    --user-decision "$bad_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"blocked"'* ]]
+  [[ "$output" == *"answer must be yes or approve_apply"* ]]
+  [[ "$output" == *'"writes_shadow_docs":false'* ]]
+
+  cat > "$good_decision_file" <<EOF
+{"user_decision":{"id":"UD-002","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id"],"rationale":"Approve dry-run apply check for this candidate.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+
+  run python3 "$SHADOW_APPLY_GATE" \
+    --project-root "$TEST_PROJECT" \
+    --candidate "$candidate_file" \
+    --user-decision "$good_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"allowed"'* ]]
+  [[ "$output" == *'"shadow_apply_allowed":true'* ]]
+  [[ "$output" == *'"apply_mode":"supervised_dry_run"'* ]]
+  [[ "$output" == *'"writes_shadow_docs":false'* ]]
+
+  run python3 "$SHADOW_APPLY_GATE" \
+    --project-root "$TEST_PROJECT" \
+    --candidate "$candidate_file" \
+    --user-decision "$good_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --today "2000-01-01"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"today_override_warning"'* ]]
+}
+
+@test "shadow_apply_gate rejects forged candidate provenance and expired decisions" {
+  local forged_candidate_file="$TEST_WORKSPACE/forged-candidate.json"
+  local expired_decision_file="$TEST_WORKSPACE/expired-decision.json"
+  local mismatch_decision_file="$TEST_WORKSPACE/mismatch-decision.json"
+  local candidate_id="LC-1234567890abcdef"
+
+  cat > "$forged_candidate_file" <<EOF
+{"status":"llm_candidate","artifact_kind":"llm_candidate","candidate_id":"$candidate_id","task_id":"shadow-effect-map-01","writes_shadow_docs":false,"auto_promotes_facts":false,"non_promotion_status":true,"can_validate":false,"evidence_type":"llm_hint","raw_draft_hash":"sha256:abcdef","raw_draft_bytes":20}
+EOF
+  cat > "$expired_decision_file" <<EOF
+{"user_decision":{"id":"UD-003","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-03","applies_to":["$candidate_id"],"rationale":"Approve forged candidate check.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+
+  run python3 "$SHADOW_APPLY_GATE" \
+    --project-root "$TEST_PROJECT" \
+    --candidate "$forged_candidate_file" \
+    --user-decision "$expired_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --today "2026-05-04"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"candidate.model_id is required"* ]]
+  [[ "$output" == *"candidate.tool_id is required"* ]]
+  [[ "$output" == *"candidate.created_at is required"* ]]
+  [[ "$output" == *"candidate.source_refs must be a non-empty list of strings"* ]]
+  [[ "$output" == *"candidate.shadow_action must be candidate_only"* ]]
+  [[ "$output" == *"candidate.raw_draft_hash must be a sha256 reference"* ]]
+  [[ "$output" == *"user_decision is expired"* ]]
+
+  cat > "$forged_candidate_file" <<EOF
+{"status":"llm_candidate","artifact_kind":"llm_candidate","candidate_id":"$candidate_id","task_id":"shadow-effect-map-01","created_at":"2026-05-02T00:00:00Z","model_id":"test-model","tool_id":"codex","source_refs":["src/UserService.java:42"],"writes_shadow_docs":false,"auto_promotes_facts":false,"non_promotion_status":true,"can_validate":false,"shadow_action":"candidate_only","evidence_type":"llm_hint","raw_draft_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","raw_draft_bytes":20}
+EOF
+  cat > "$expired_decision_file" <<EOF
+{"user_decision":{"id":"UD-004","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id"],"rationale":"Approve candidate digest binding check.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+
+  run python3 "$SHADOW_APPLY_GATE" \
+    --project-root "$TEST_PROJECT" \
+    --candidate "$forged_candidate_file" \
+    --user-decision "$expired_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"candidate.candidate_id must match provenance digest"* ]]
+
+  cat > "$mismatch_decision_file" <<EOF
+{"user_decision":{"id":"UD-005","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["LC-0000000000000000"],"rationale":"Approve mismatch check.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+
+  run python3 "$SHADOW_APPLY_GATE" \
+    --project-root "$TEST_PROJECT" \
+    --candidate "$forged_candidate_file" \
+    --user-decision "$mismatch_decision_file" \
+    --target-shadow-file "../outside.md" \
+    --today "2026-05-02"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"traversal"* ]]
+
+  run python3 "$SHADOW_APPLY_GATE" \
+    --project-root "$TEST_PROJECT" \
+    --candidate "$forged_candidate_file" \
+    --user-decision "$mismatch_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"user_decision.applies_to must reference candidate_id"* ]]
+}
+
+@test "shadow_user_decision_wrapper creates gated apply and fact evidence artifacts" {
+  local candidate_file="$TEST_WORKSPACE/candidate.json"
+  local apply_decision_file="$TEST_WORKSPACE/apply-decision.json"
+  local evidence_decision_file="$TEST_WORKSPACE/evidence-decision.json"
+  local bad_decision_file="$TEST_WORKSPACE/bad-decision.json"
+  local draft_file="$TEST_WORKSPACE/draft.md"
+  local record_file="$TEST_WORKSPACE/record.json"
+  local fact_record_file="$TEST_WORKSPACE/fact-record.json"
+  local bad_record_file="$TEST_WORKSPACE/bad-record.json"
+  local fact_statement="Human decision confirms intended product meaning."
+
+  printf 'Draft for wrapped user decisions\n' > "$draft_file"
+  python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --output "$candidate_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "src/UserService.java:42" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  local candidate_id
+  candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
+
+  cat > "$record_file" <<EOF
+{"record_id":"SE-user-050","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"unknown","effect_type":"db_write","statement":"Unknown code effect needs deterministic evidence.","reason":"Parser-backed deterministic evidence is not attached yet.","anchor":{"file":"src/UserService.java","line":42,"symbol":"UserRepository.save"},"source_refs":["src/UserService.java:42"]}
+EOF
+  cat > "$fact_record_file" <<EOF
+{"record_id":"SE-user-051","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"business_intent","statement":"$fact_statement","anchor":{"file":"docs/task/TASK-shadow-effect-map-01.md","symbol":"user decision"},"evidence":{"type":"user_decision","ref":"UD-wrap-fact"},"source_refs":["TASK-shadow-effect-map-01"]}
+EOF
+  cat > "$bad_record_file" <<EOF
+{"record_id":"SE-user-052","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"User decision must not confirm a code-level write.","anchor":{"file":"src/UserService.java","symbol":"UserRepository.save"},"evidence":{"type":"user_decision","ref":"UD-wrap-bad"},"source_refs":["src/UserService.java:42"]}
+EOF
+
+  run python3 "$SHADOW_USER_DECISION" \
+    --project-root "$TEST_PROJECT" \
+    --output "$apply_decision_file" \
+    --decision-id "UD-wrap-apply" \
+    --decision-type "final_shadow_apply" \
+    --answer "yes" \
+    --decided-by "gm" \
+    --decided-at "2026-05-02" \
+    --expires-at "2026-05-09" \
+    --candidate-id "$candidate_id" \
+    --record "$record_file" \
+    --record "$fact_record_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --rationale "Approve this exact structured record for dry-run." \
+    --source-ref "TASK-shadow-effect-map-01" \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *'"writes_shadow_docs":false'* ]]
+  run grep '"target_shadow_file": "packages/codeguide/effects.md"' "$apply_decision_file"
+  [ "$status" -eq 0 ]
+
+  run python3 "$SHADOW_APPLY_GATE" \
+    --project-root "$TEST_PROJECT" \
+    --candidate "$candidate_file" \
+    --user-decision "$apply_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"allowed":true'* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$apply_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+
+  run python3 "$SHADOW_USER_DECISION" \
+    --project-root "$TEST_PROJECT" \
+    --output "$evidence_decision_file" \
+    --decision-id "UD-wrap-fact" \
+    --decision-type "business_intent" \
+    --answer "confirmed" \
+    --decided-by "gm" \
+    --decided-at "2026-05-02" \
+    --expires-at "2026-05-09" \
+    --record "$fact_record_file" \
+    --rationale "Confirm this human-only product meaning." \
+    --source-ref "TASK-shadow-effect-map-01" \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  run grep '"statement_hash": "' "$evidence_decision_file"
+  [ "$status" -eq 0 ]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$fact_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$apply_decision_file" \
+    --evidence-decision "$evidence_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"evidence_ref: UD-wrap-fact"* ]]
+
+  run python3 "$SHADOW_USER_DECISION" \
+    --project-root "$TEST_PROJECT" \
+    --output "$bad_decision_file" \
+    --decision-id "UD-wrap-bad" \
+    --decision-type "business_intent" \
+    --answer "confirmed" \
+    --decided-by "gm" \
+    --decided-at "2026-05-02" \
+    --expires-at "2026-05-09" \
+    --record "$bad_record_file" \
+    --rationale "This should be rejected." \
+    --source-ref "src/UserService.java:42" \
+    --today "2026-05-02"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"human-only record.effect_type"* ]]
+}
+
+@test "shadow_effect_writer dry-run previews without writing shadow docs" {
+  local candidate_file="$TEST_WORKSPACE/candidate.json"
+  local decision_file="$TEST_WORKSPACE/decision.json"
+  local record_file="$TEST_WORKSPACE/record.json"
+  local draft_file="$TEST_WORKSPACE/draft.md"
+
+  printf 'Draft for structured record\n' > "$draft_file"
+  python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --output "$candidate_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "src/UserService.java:42" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  local candidate_id
+  candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
+
+  cat > "$decision_file" <<EOF
+{"user_decision":{"id":"UD-010","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-user-001"],"rationale":"Approve writing this exact record.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$record_file" <<EOF
+{"record_id":"SE-user-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"unknown","effect_type":"db_write","statement":"User update writes through repository save needs deterministic evidence.","reason":"Final apply approval is not fact evidence.","anchor":{"file":"src/UserService.java","line":42,"symbol":"UserRepository.save"},"source_refs":["src/UserService.java:42"]}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *'"mode":"dry-run"'* ]]
+  [[ "$output" == *'"writes_shadow_docs":false'* ]]
+  [[ "$output" == *"shadow-effect-record:SE-user-001 begin"* ]]
+  [ ! -e "$DOCS_ROOT/shadow/packages/codeguide/effects.md" ]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2000-01-01"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"today_override_warning"'* ]]
+}
+
+@test "shadow_effect_writer separates final apply approval from user decision evidence" {
+  local candidate_file="$TEST_WORKSPACE/candidate.json"
+  local apply_decision_file="$TEST_WORKSPACE/apply-decision.json"
+  local evidence_decision_file="$TEST_WORKSPACE/evidence-decision.json"
+  local negative_decision_file="$TEST_WORKSPACE/negative-decision.json"
+  local bad_record_file="$TEST_WORKSPACE/bad-record.json"
+  local good_record_file="$TEST_WORKSPACE/good-record.json"
+  local negative_record_file="$TEST_WORKSPACE/negative-record.json"
+  local code_claim_record_file="$TEST_WORKSPACE/code-claim-record.json"
+  local draft_file="$TEST_WORKSPACE/draft.md"
+  local good_statement="Separate fact decision can support human-only meaning."
+  local negative_statement="Negative user decision must not confirm human-only meaning."
+  local code_claim_statement="User decision must not confirm code-level db write."
+  local good_statement_hash
+  local negative_statement_hash
+  local code_claim_statement_hash
+
+  printf 'Draft for user decision evidence split\n' > "$draft_file"
+  python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --output "$candidate_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "src/UserService.java:42" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  local candidate_id
+  candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
+  good_statement_hash="$(sha256_text_ref "$good_statement")"
+  negative_statement_hash="$(sha256_text_ref "$negative_statement")"
+  code_claim_statement_hash="$(sha256_text_ref "$code_claim_statement")"
+  cat > "$apply_decision_file" <<EOF
+{"user_decision":{"id":"UD-apply-001","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-user-021","SE-user-022","SE-user-027","SE-user-028"],"rationale":"Approve applying only these records.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$evidence_decision_file" <<EOF
+{"user_decision":{"id":"UD-evidence-001","decision_type":"business_intent","answer":"confirmed","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":[{"record_id":"SE-user-022","effect_type":"business_intent","statement_hash":"$good_statement_hash","anchor_file":"docs/task/TASK-shadow-effect-map-01.md","anchor_symbol":"user decision"}],"rationale":"Confirm this is an intended product-side effect, not code proof.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$negative_decision_file" <<EOF
+{"user_decision":{"id":"UD-evidence-negative","decision_type":"business_intent","answer":"no","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":[{"record_id":"SE-user-027","effect_type":"business_intent","statement_hash":"$negative_statement_hash","anchor_file":"docs/task/TASK-shadow-effect-map-01.md","anchor_symbol":"user decision"}],"rationale":"This explicitly rejects the claimed effect intent.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$bad_record_file" <<EOF
+{"record_id":"SE-user-021","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"business_intent","statement":"Final apply approval must not become fact evidence.","anchor":{"file":"docs/task/TASK-shadow-effect-map-01.md","symbol":"user decision"},"evidence":{"type":"user_decision","ref":"UD-apply-001"},"source_refs":["TASK-shadow-effect-map-01"]}
+EOF
+  cat > "$good_record_file" <<EOF
+{"record_id":"SE-user-022","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"business_intent","statement":"$good_statement","anchor":{"file":"docs/task/TASK-shadow-effect-map-01.md","symbol":"user decision"},"evidence":{"type":"user_decision","ref":"UD-evidence-001"},"source_refs":["TASK-shadow-effect-map-01"]}
+EOF
+  cat > "$negative_record_file" <<EOF
+{"record_id":"SE-user-027","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"business_intent","statement":"$negative_statement","anchor":{"file":"docs/task/TASK-shadow-effect-map-01.md","symbol":"user decision"},"evidence":{"type":"user_decision","ref":"UD-evidence-negative"},"source_refs":["TASK-shadow-effect-map-01"]}
+EOF
+  cat > "$code_claim_record_file" <<EOF
+{"record_id":"SE-user-028","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"$code_claim_statement","anchor":{"file":"src/UserService.java","symbol":"UserRepository.save"},"evidence":{"type":"user_decision","ref":"UD-evidence-001"},"source_refs":["src/UserService.java:42"]}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$bad_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$apply_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"separate from final_shadow_apply"* ]]
+  [[ "$output" == *'"next_actions"'* ]]
+  [[ "$output" == *'"action":"create_evidence_decision"'* ]]
+  [[ "$output" == *"--decision-type business_intent"* ]]
+  [[ "$output" == *"--record"* ]]
+  [[ "$output" != *"--applies-record-id"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$good_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$apply_decision_file" \
+    --evidence-decision "$evidence_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *"evidence_ref: UD-evidence-001"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$negative_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$apply_decision_file" \
+    --evidence-decision "$negative_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"answer must affirm"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$code_claim_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$apply_decision_file" \
+    --evidence-decision "$evidence_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"human-only effect types"* ]]
+}
+
+@test "shadow_effect_writer enforces deterministic evidence metadata" {
+  local candidate_file="$TEST_WORKSPACE/candidate.json"
+  local decision_file="$TEST_WORKSPACE/decision.json"
+  local code_record_file="$TEST_WORKSPACE/code-record.json"
+  local runtime_record_file="$TEST_WORKSPACE/runtime-record.json"
+  local bad_runtime_record_file="$TEST_WORKSPACE/bad-runtime-record.json"
+  local good_code_record_file="$TEST_WORKSPACE/good-code-record.json"
+  local good_runtime_record_file="$TEST_WORKSPACE/good-runtime-record.json"
+  local code_probe_file="$TEST_WORKSPACE/code-probe.json"
+  local runtime_probe_file="$TEST_WORKSPACE/runtime-probe.json"
+  local runtime_decision_file="$TEST_WORKSPACE/runtime-decision.json"
+  local draft_file="$TEST_WORKSPACE/draft.md"
+  local source_hash
+  local runtime_hash
+  local code_probe_hash
+  local runtime_probe_hash
+  local runtime_statement="Cache eviction is backed by a runtime trace artifact."
+  local runtime_statement_hash
+
+  mkdir -p "$TEST_PROJECT/src" "$TEST_PROJECT/logs"
+  cat > "$TEST_PROJECT/src/app.py" <<'EOF'
+class Repository:
+    def save(self, user):
+        return user
+
+def handler(repository, user):
+    repository.save(user)
+EOF
+  cat > "$TEST_PROJECT/logs/runtime.trace" <<'EOF'
+event=user.update started
+event=user.cache.evict userId=42
+EOF
+  source_hash="$(sha256_file_ref "$TEST_PROJECT/src/app.py")"
+  runtime_hash="$(sha256_file_ref "$TEST_PROJECT/logs/runtime.trace")"
+  cat > "$code_probe_file" <<EOF
+{"status":"pass","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/app.py:6","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
+EOF
+  cat > "$runtime_probe_file" <<EOF
+{"status":"pass","validator_id":"any.runtime.trace@v1","evidence_type":"runtime_trace","validator_result":"matched","trace_ref":"logs/runtime.trace:2","artifact_hash":"$runtime_hash","validator_kind":"runtime_trace","parser_backed":false,"promotion_limit":"high","writes_shadow_docs":false}
+EOF
+  code_probe_hash="$(sha256_file_ref "$code_probe_file")"
+  runtime_probe_hash="$(sha256_file_ref "$runtime_probe_file")"
+  runtime_statement_hash="$(sha256_text_ref "$runtime_statement")"
+
+  printf 'Draft for deterministic evidence records\n' > "$draft_file"
+  python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --output "$candidate_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "src/UserService.java:42" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  local candidate_id
+  candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
+
+  cat > "$decision_file" <<EOF
+{"user_decision":{"id":"UD-013","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-user-004","SE-user-005","SE-user-006","SE-user-007","SE-user-008"],"rationale":"Approve evaluating deterministic evidence metadata.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$runtime_decision_file" <<EOF
+{"user_decision":{"id":"UD-runtime-013","decision_type":"runtime_scenario_fit","answer":"confirmed","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":[{"record_id":"SE-user-008","effect_type":"cache_evict","statement_hash":"$runtime_statement_hash","anchor_file":"logs/runtime.trace","anchor_line":"2","anchor_symbol":"event=user.cache.evict","trace_ref":"logs/runtime.trace:2","scenario_ref":"scenario:user-update-cache"}],"rationale":"The trace scenario matches the user update cache-evict scenario.","source_refs":["logs/runtime.trace:2","scenario:user-update-cache"]}}
+EOF
+  cat > "$code_record_file" <<EOF
+{"record_id":"SE-user-004","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Repository save is claimed by deterministic code evidence.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:6","source_hash":"$source_hash"}}
+EOF
+  cat > "$runtime_record_file" <<EOF
+{"record_id":"SE-user-005","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Cache eviction is claimed by deterministic runtime evidence.","anchor":{"file":"src/UserService.java","symbol":"UserCache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","scenario_ref":"scenario:user-update-cache"}}
+EOF
+  cat > "$bad_runtime_record_file" <<EOF
+{"record_id":"SE-user-007","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Cache eviction has malformed runtime hash evidence.","anchor":{"file":"src/UserService.java","symbol":"UserCache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","trace_ref":"logs/runtime.trace:2","artifact_hash":"sha256:x","scenario_ref":"scenario:user-update-cache"}}
+EOF
+  cat > "$good_code_record_file" <<EOF
+{"record_id":"SE-user-006","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Repository save is backed by parser evidence.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:6","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
+EOF
+  cat > "$good_runtime_record_file" <<EOF
+{"record_id":"SE-user-008","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_statement","anchor":{"file":"logs/runtime.trace","line":2,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:2","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","user_decision_ref":"UD-runtime-013","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$code_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$code_probe_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"deterministic_code evidence.rule_id is required"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$runtime_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$runtime_probe_file" \
+    --evidence-decision "$runtime_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"deterministic_runtime evidence.trace_ref is required"* ]]
+  [[ "$output" == *"deterministic_runtime evidence.artifact_hash must be a sha256 reference"* ]]
+  [[ "$output" == *'"action":"complete_runtime_scenario_fit_args"'* ]]
+  [[ "$output" != *"--decision-type runtime_scenario_fit"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$bad_runtime_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"deterministic_runtime evidence.artifact_hash must be a sha256 reference"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$good_code_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"next_actions"'* ]]
+  [[ "$output" == *'"action":"run_probe"'* ]]
+  [[ "$output" == *"shadow_evidence_probe.py"* ]]
+  [[ "$output" == *"--probe-result"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$good_code_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$code_probe_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *"evidence_rule_id: repo.write"* ]]
+  [[ "$output" == *"evidence_parser_backed: True"* ]]
+  [[ "$output" == *"evidence_source_hash: $source_hash"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$good_runtime_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$runtime_probe_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"next_actions"'* ]]
+  [[ "$output" == *"--decision-type runtime_scenario_fit"* ]]
+  [[ "$output" == *"--trace-ref logs/runtime.trace:2"* ]]
+  [[ "$output" == *"--scenario-ref scenario:user-update-cache"* ]]
+  [[ "$output" != *"choose_supported_fact_decision_type"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$good_runtime_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$runtime_probe_file" \
+    --evidence-decision "$runtime_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *"evidence_artifact_hash: $runtime_hash"* ]]
+}
+
+@test "shadow_effect_writer binds deterministic evidence to policy registry and source hashes" {
+  local candidate_file="$TEST_WORKSPACE/candidate.json"
+  local decision_file="$TEST_WORKSPACE/decision.json"
+  local draft_file="$TEST_WORKSPACE/draft.md"
+  local source_file="$TEST_PROJECT/src/app.py"
+  local java_source_file="$TEST_PROJECT/src/main/java/example/UserService.java"
+  local bad_rule_record="$TEST_WORKSPACE/bad-rule-record.json"
+  local incompatible_record="$TEST_WORKSPACE/incompatible-record.json"
+  local source_probe_record="$TEST_WORKSPACE/source-probe-record.json"
+  local stale_source_record="$TEST_WORKSPACE/stale-source-record.json"
+  local runtime_ref_record="$TEST_WORKSPACE/runtime-ref-record.json"
+  local unimplemented_record="$TEST_WORKSPACE/unimplemented-record.json"
+  local stale_runtime_record="$TEST_WORKSPACE/stale-runtime-record.json"
+  local trace_file="$TEST_PROJECT/logs/runtime.trace"
+  local forged_code_record="$TEST_WORKSPACE/forged-code-record.json"
+  local wrong_code_probe_file="$TEST_WORKSPACE/wrong-code-probe.json"
+  local runtime_scenario_record="$TEST_WORKSPACE/runtime-scenario-record.json"
+  local runtime_bad_decision_record="$TEST_WORKSPACE/runtime-bad-decision-record.json"
+  local runtime_bad_decision_file="$TEST_WORKSPACE/runtime-bad-decision.json"
+  local runtime_probe_file="$TEST_WORKSPACE/runtime-probe.json"
+  local source_hash
+  local java_source_hash
+  local runtime_hash
+  local code_probe_file="$TEST_WORKSPACE/code-probe.json"
+  local code_probe_hash
+  local runtime_probe_hash
+  local wrong_effect_record="$TEST_WORKSPACE/wrong-effect-record.json"
+  local wrong_symbol_record="$TEST_WORKSPACE/wrong-symbol-record.json"
+  local path_only_source_record="$TEST_WORKSPACE/path-only-source-record.json"
+  local runtime_one_sided_record="$TEST_WORKSPACE/runtime-one-sided-record.json"
+  local runtime_one_sided_decision_file="$TEST_WORKSPACE/runtime-one-sided-decision.json"
+  local runtime_mismatch_record="$TEST_WORKSPACE/runtime-mismatch-record.json"
+  local runtime_mismatch_decision_file="$TEST_WORKSPACE/runtime-mismatch-decision.json"
+  local same_file_wrong_line_record="$TEST_WORKSPACE/same-file-wrong-line-record.json"
+  local custom_rule_record="$TEST_WORKSPACE/custom-rule-record.json"
+  local runtime_wrong_effect_record="$TEST_WORKSPACE/runtime-wrong-effect-record.json"
+  local runtime_wrong_anchor_record="$TEST_WORKSPACE/runtime-wrong-anchor-record.json"
+  local human_mismatch_decision_file="$TEST_WORKSPACE/human-mismatch-decision.json"
+  local human_mismatch_record="$TEST_WORKSPACE/human-mismatch-record.json"
+  local runtime_statement="One-sided runtime source refs must not confirm scenario fit."
+  local runtime_mismatch_statement="Runtime applies_to trace line must match exactly."
+  local human_mismatch_statement="Mismatched human decision type must not confirm effect intent."
+  local runtime_statement_hash
+  local runtime_mismatch_statement_hash
+  local human_mismatch_statement_hash
+
+  mkdir -p "$(dirname "$source_file")" "$(dirname "$java_source_file")" "$(dirname "$trace_file")"
+  cat > "$source_file" <<'EOF'
+def handler(repository, user):
+    repository.save(user)
+EOF
+  cat > "$java_source_file" <<'EOF'
+package example;
+
+class UserService {
+  void update(User user) {
+    userRepository.save(user);
+  }
+}
+EOF
+  cat > "$trace_file" <<'EOF'
+event=user.cache.evict userId=42
+EOF
+  source_hash="$(sha256_file_ref "$source_file")"
+  java_source_hash="$(sha256_file_ref "$java_source_file")"
+  runtime_hash="$(sha256_file_ref "$trace_file")"
+  cat > "$code_probe_file" <<EOF
+{"status":"pass","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
+EOF
+  cat > "$wrong_code_probe_file" <<EOF
+{"status":"pass","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/other.py:1","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
+EOF
+  cat > "$runtime_probe_file" <<EOF
+{"status":"pass","validator_id":"any.runtime.trace@v1","evidence_type":"runtime_trace","validator_result":"matched","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","validator_kind":"runtime_trace","parser_backed":false,"promotion_limit":"high","writes_shadow_docs":false}
+EOF
+  code_probe_hash="$(sha256_file_ref "$code_probe_file")"
+  runtime_probe_hash="$(sha256_file_ref "$runtime_probe_file")"
+  runtime_statement_hash="$(sha256_text_ref "$runtime_statement")"
+  runtime_mismatch_statement_hash="$(sha256_text_ref "$runtime_mismatch_statement")"
+  human_mismatch_statement_hash="$(sha256_text_ref "$human_mismatch_statement")"
+
+  printf 'Draft for policy-bound deterministic evidence records\n' > "$draft_file"
+  python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --output "$candidate_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "src/app.py:2" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  local candidate_id
+  candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
+  perl -0pi -e 's/\n  cache\.evict:/\n  custom.missing_effect:\n    description: test rule without effect-type contract\n    validators_by_stack:\n      python:\n        code_call:\n          primary: py.ast.call_match\@v1\n          fallback: py.regex.call_named\@v1\n          fallback_max_risk: medium\n\n  cache.evict:/' "$DOCS_ROOT/policy/shadow-rule-registry.md"
+  cat > "$decision_file" <<EOF
+{"user_decision":{"id":"UD-015","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-user-015","SE-user-016","SE-user-017","SE-user-018","SE-user-019","SE-user-020","SE-user-023","SE-user-024","SE-user-025","SE-user-026","SE-user-027","SE-user-028","SE-user-029","SE-user-030","SE-user-031","SE-user-032","SE-user-033","SE-user-034","SE-user-035","SE-user-036"],"rationale":"Approve evaluating policy-bound deterministic evidence.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$runtime_bad_decision_file" <<'EOF'
+{"user_decision":{"id":"UD-runtime-bad","decision_type":"business_intent","answer":"no","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["SE-user-026"],"rationale":"This does not confirm runtime scenario fit.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$runtime_one_sided_decision_file" <<EOF
+{"user_decision":{"id":"UD-runtime-one-sided","decision_type":"runtime_scenario_fit","answer":"confirmed","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":[{"record_id":"SE-user-030","effect_type":"cache_evict","statement_hash":"$runtime_statement_hash","anchor_file":"logs/runtime.trace","anchor_line":"1","anchor_symbol":"event=user.cache.evict","trace_ref":"logs/runtime.trace:1","scenario_ref":"scenario:user-update-cache"}],"rationale":"This cites only the trace, not the scenario.","source_refs":["logs/runtime.trace:1"]}}
+EOF
+  cat > "$runtime_mismatch_decision_file" <<EOF
+{"user_decision":{"id":"UD-runtime-mismatch","decision_type":"runtime_scenario_fit","answer":"confirmed","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":[{"record_id":"SE-user-031","effect_type":"cache_evict","statement_hash":"$runtime_mismatch_statement_hash","anchor_file":"logs/runtime.trace","anchor_line":"1","anchor_symbol":"event=user.cache.evict","trace_ref":"logs/runtime.trace:2","scenario_ref":"scenario:user-update-cache"}],"rationale":"This binds the right record but a different trace line.","source_refs":["logs/runtime.trace:1","scenario:user-update-cache"]}}
+EOF
+  cat > "$human_mismatch_decision_file" <<EOF
+{"user_decision":{"id":"UD-human-mismatch","decision_type":"business_risk","answer":"confirmed","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":[{"record_id":"SE-user-036","effect_type":"effect_intent","statement_hash":"$human_mismatch_statement_hash","anchor_file":"docs/task/TASK-shadow-effect-map-01.md","anchor_symbol":"user decision"}],"rationale":"This decision type does not match effect intent.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$bad_rule_record" <<EOF
+{"record_id":"SE-user-015","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Unregistered rule must not validate.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"made.up","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","probe_args":{"callee":"save"}}}
+EOF
+  cat > "$incompatible_record" <<EOF
+{"record_id":"SE-user-016","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Incompatible rule/ref must not validate.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"cache.evict","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","probe_args":{"callee":"save"}}}
+EOF
+  cat > "$source_probe_record" <<EOF
+{"record_id":"SE-user-017","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Source probe cannot be upgraded by declaring parser_backed.","anchor":{"file":"src/main/java/example/UserService.java","symbol":"userRepository.save"},"evidence":{"type":"deterministic_code","ref":"jpa.repository.save@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/main/java/example/UserService.java:5","source_hash":"$java_source_hash"}}
+EOF
+  cat > "$stale_source_record" <<EOF
+{"record_id":"SE-user-018","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Stale source hash must not validate.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:2","source_hash":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","probe_args":{"callee":"save","receiver":"repository"}}}
+EOF
+  cat > "$runtime_ref_record" <<EOF
+{"record_id":"SE-user-019","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Runtime evidence must use a runtime trace validator.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.command.output@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+EOF
+  cat > "$unimplemented_record" <<EOF
+{"record_id":"SE-user-020","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Documented-only Java AST validator cannot be forged as implemented.","anchor":{"file":"src/main/java/example/UserService.java","symbol":"userRepository.save"},"evidence":{"type":"deterministic_code","ref":"java.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/main/java/example/UserService.java:5","source_hash":"$java_source_hash","probe_args":{"callee":"save"}}}
+EOF
+  cat > "$stale_runtime_record" <<EOF
+{"record_id":"SE-user-023","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Stale runtime hash must not validate.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","scenario_ref":"scenario:user-update-cache","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+EOF
+  cat > "$forged_code_record" <<EOF
+{"record_id":"SE-user-024","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Current source hash is not enough without matching probe result.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","probe_args":{"callee":"save","receiver":"repository"}}}
+EOF
+  cat > "$wrong_effect_record" <<EOF
+{"record_id":"SE-user-027","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Repo write rule must not confirm cache eviction.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
+EOF
+  cat > "$wrong_symbol_record" <<EOF
+{"record_id":"SE-user-028","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Anchor symbol must match deterministic probe args.","anchor":{"file":"src/app.py","symbol":"repository.delete"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
+EOF
+  cat > "$path_only_source_record" <<EOF
+{"record_id":"SE-user-029","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Path-only source refs are accepted when the probe rerun binds the same file.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
+EOF
+  cat > "$runtime_scenario_record" <<EOF
+{"record_id":"SE-user-025","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Scenario ref alone is not fact evidence.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+EOF
+  cat > "$runtime_bad_decision_record" <<EOF
+{"record_id":"SE-user-026","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Negative or unrelated decisions cannot confirm runtime scenario fit.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","user_decision_ref":"UD-runtime-bad","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+EOF
+  cat > "$runtime_one_sided_record" <<EOF
+{"record_id":"SE-user-030","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_statement","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","user_decision_ref":"UD-runtime-one-sided","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+EOF
+  cat > "$runtime_mismatch_record" <<EOF
+{"record_id":"SE-user-031","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_mismatch_statement","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","user_decision_ref":"UD-runtime-mismatch","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+EOF
+  cat > "$runtime_wrong_effect_record" <<EOF
+{"record_id":"SE-user-034","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"Runtime cache trace must not confirm arbitrary external call.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","user_decision_ref":"UD-runtime-one-sided","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+EOF
+  cat > "$runtime_wrong_anchor_record" <<EOF
+{"record_id":"SE-user-035","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Runtime trace must not confirm unrelated anchor file.","anchor":{"file":"src/app.py","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","user_decision_ref":"UD-runtime-one-sided","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+EOF
+  cat > "$human_mismatch_record" <<EOF
+{"record_id":"SE-user-036","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"effect_intent","statement":"$human_mismatch_statement","anchor":{"file":"docs/task/TASK-shadow-effect-map-01.md","symbol":"user decision"},"evidence":{"type":"user_decision","ref":"UD-human-mismatch"},"source_refs":["TASK-shadow-effect-map-01"]}
+EOF
+  cat > "$same_file_wrong_line_record" <<EOF
+{"record_id":"SE-user-032","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Line-qualified source refs must bind the exact matched node.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:999","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
+EOF
+  cat > "$custom_rule_record" <<EOF
+{"record_id":"SE-user-033","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Registered rules without effect type mapping fail closed.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"custom.missing_effect","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$bad_rule_record" --candidate "$candidate_file" --user-decision "$decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evidence.rule_id is not registered"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$incompatible_record" --candidate "$candidate_file" --user-decision "$decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evidence.ref is not compatible with evidence.rule_id"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$source_probe_record" --candidate "$candidate_file" --user-decision "$decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"source_probe-only"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$stale_source_record" --candidate "$candidate_file" --user-decision "$decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"source_hash must match"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$runtime_ref_record" --candidate "$candidate_file" --user-decision "$decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"runtime_trace validator"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$unimplemented_record" --candidate "$candidate_file" --user-decision "$decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"implemented by shadow_evidence_probe"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$stale_runtime_record" --candidate "$candidate_file" --user-decision "$decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"artifact_hash must match"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$forged_code_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$wrong_code_probe_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"probe_result.source_ref must match"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$wrong_effect_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$code_probe_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"rule_id is not compatible with record.effect_type"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$wrong_symbol_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$code_probe_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"anchor.symbol must match deterministic probe args"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$path_only_source_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$code_probe_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$same_file_wrong_line_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$code_probe_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"source_ref must match"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$custom_rule_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$code_probe_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no allowed_effect_types policy mapping"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$runtime_scenario_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$runtime_probe_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"user_decision_ref is required"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$runtime_bad_decision_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$runtime_probe_file" --evidence-decision "$runtime_bad_decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"decision_type must be runtime_scenario_fit"* ]]
+  [[ "$output" == *"answer must affirm"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$runtime_one_sided_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$runtime_probe_file" --evidence-decision "$runtime_one_sided_decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"source_refs must include all required evidence refs"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$runtime_mismatch_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$runtime_probe_file" --evidence-decision "$runtime_mismatch_decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"applies_to must bind"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$runtime_wrong_effect_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$runtime_probe_file" --evidence-decision "$runtime_one_sided_decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"rule_id is not compatible with record.effect_type"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$runtime_wrong_anchor_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$runtime_probe_file" --evidence-decision "$runtime_one_sided_decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"anchor.file must match"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$human_mismatch_record" --candidate "$candidate_file" --user-decision "$decision_file" --evidence-decision "$human_mismatch_decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"decision_type is not compatible"* ]]
+}
+
+@test "shadow_effect_writer write requires target hash and updates exact record id" {
+  local candidate_file="$TEST_WORKSPACE/candidate.json"
+  local decision_file="$TEST_WORKSPACE/decision.json"
+  local update_decision_file="$TEST_WORKSPACE/update-decision.json"
+  local record_file="$TEST_WORKSPACE/record.json"
+  local record_update_file="$TEST_WORKSPACE/record-update.json"
+  local draft_file="$TEST_WORKSPACE/draft.md"
+  local target_file="$DOCS_ROOT/shadow/packages/codeguide/effects.md"
+
+  mkdir -p "$(dirname "$target_file")"
+  printf 'Draft for structured record\n' > "$draft_file"
+  python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --output "$candidate_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "src/UserService.java:42" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  local candidate_id
+  candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
+  local statement_hash
+  statement_hash="$(sha256_text_ref "Cache behavior needs confirmation.")"
+  cat > "$decision_file" <<EOF
+{"user_decision":{"id":"UD-011","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id",{"record_id":"SE-user-002","lifecycle":"unknown","effect_type":"cache_evict","statement_hash":"$statement_hash","target_shadow_file":"packages/codeguide/effects.md","anchor_file":"src/UserService.java","anchor_symbol":"UserService.updateUser"}],"rationale":"Approve writing this exact record.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$record_file" <<EOF
+{"record_id":"SE-user-002","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"unknown","effect_type":"cache_evict","statement":"Cache behavior needs confirmation.","reason":"No parser-backed cache evidence found.","anchor":{"file":"src/UserService.java","symbol":"UserService.updateUser"},"source_refs":["src/UserService.java:42"]}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode write \
+    --today "2026-05-02"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"--expected-target-hash is required"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --expected-target-hash "missing" \
+    --mode write \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"operation":"create"'* ]]
+  [[ "$output" == *'"writes_shadow_docs":true'* ]]
+  run grep -c "shadow-effect-record:SE-user-002 begin" "$target_file"
+  [ "$status" -eq 0 ]
+  [ "$output" -eq 1 ]
+
+  local current_hash
+  current_hash="$(python3 -c 'import hashlib,sys; p=sys.argv[1]; print("sha256:"+hashlib.sha256(open(p,"rb").read()).hexdigest())' "$target_file")"
+  local update_statement_hash
+  update_statement_hash="$(sha256_text_ref "Updated cache behavior still needs confirmation.")"
+  cat > "$record_update_file" <<EOF
+{"record_id":"SE-user-002","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"unknown","effect_type":"cache_evict","statement":"Updated cache behavior still needs confirmation.","reason":"Still missing cache evidence.","anchor":{"file":"src/UserService.java","symbol":"UserService.updateUser"},"source_refs":["src/UserService.java:42"]}
+EOF
+  cat > "$update_decision_file" <<EOF
+{"user_decision":{"id":"UD-011-update","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id",{"record_id":"SE-user-002","lifecycle":"unknown","effect_type":"cache_evict","statement_hash":"$update_statement_hash","target_shadow_file":"packages/codeguide/effects.md","anchor_file":"src/UserService.java","anchor_symbol":"UserService.updateUser"}],"rationale":"Approve writing this exact updated record.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_update_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --expected-target-hash "$current_hash" \
+    --mode write \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"record content"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_update_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$update_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --expected-target-hash "$current_hash" \
+    --mode write \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"operation":"update"'* ]]
+  run grep -c "shadow-effect-record:SE-user-002 begin" "$target_file"
+  [ "$status" -eq 0 ]
+  [ "$output" -eq 1 ]
+  run grep "Updated cache behavior" "$target_file"
+  [ "$status" -eq 0 ]
+
+  printf '\n<!-- shadow-effect-record:SE-user-002 begin -->\nextra\n<!-- shadow-effect-record:SE-user-002 end -->\n' >> "$target_file"
+  current_hash="$(python3 -c 'import hashlib,sys; p=sys.argv[1]; print("sha256:"+hashlib.sha256(open(p,"rb").read()).hexdigest())' "$target_file")"
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_update_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$update_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --expected-target-hash "$current_hash" \
+    --mode write \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"exactly one begin and end marker"* ]]
+
+}
+
+@test "shadow_effect_writer refuses non-effect-map shadow targets" {
+  local candidate_file="$TEST_WORKSPACE/candidate.json"
+  local decision_file="$TEST_WORKSPACE/decision.json"
+  local record_file="$TEST_WORKSPACE/record.json"
+  local draft_file="$TEST_WORKSPACE/draft.md"
+  local target_file="$DOCS_ROOT/shadow/project-shadow.md"
+
+  mkdir -p "$(dirname "$target_file")"
+  cat > "$target_file" <<'EOF'
+# Project Shadow
+
+- doc_role: project_router
+- generated_by: test
+
+## Misleading Body Example
+
+- doc_role: effect_map
+EOF
+
+  printf 'Draft for target role check\n' > "$draft_file"
+  python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --output "$candidate_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "src/UserService.java:42" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  local candidate_id
+  candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
+  cat > "$decision_file" <<EOF
+{"user_decision":{"id":"UD-014","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-user-008"],"rationale":"Approve evaluating target role gate.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$record_file" <<EOF
+{"record_id":"SE-user-008","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"unknown","effect_type":"db_write","statement":"Target role should block this record.","reason":"Non-effect-map target.","anchor":{"file":"src/UserService.java","symbol":"UserRepository.save"},"source_refs":["src/UserService.java:42"]}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "project-shadow.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"target shadow file must declare doc_role: effect_map"* ]]
+  run grep "shadow-effect-record:SE-user-008" "$target_file"
+  [ "$status" -eq 1 ]
+
+  rm -f "$target_file"
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "project-shadow.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"must not create reserved shadow navigation paths"* ]]
+}
+
+@test "shadow_effect_writer rejects malformed record refs and existing markers" {
+  local candidate_file="$TEST_WORKSPACE/candidate.json"
+  local decision_file="$TEST_WORKSPACE/decision.json"
+  local bad_record_file="$TEST_WORKSPACE/bad-record.json"
+  local missing_effect_record_file="$TEST_WORKSPACE/missing-effect-record.json"
+  local marker_record_file="$TEST_WORKSPACE/marker-record.json"
+  local draft_file="$TEST_WORKSPACE/draft.md"
+  local target_file="$DOCS_ROOT/shadow/packages/codeguide/effects.md"
+
+  mkdir -p "$(dirname "$target_file")"
+  printf 'Draft for malformed marker checks\n' > "$draft_file"
+  python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --output "$candidate_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "src/UserService.java:42" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  local candidate_id
+  candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
+  cat > "$decision_file" <<EOF
+{"user_decision":{"id":"UD-016","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE--bad","SE-user-019","SE-user-020"],"rationale":"Approve malformed marker checks.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$bad_record_file" <<EOF
+{"record_id":"SE--bad","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"unknown","effect_type":"db_write","statement":"Malformed record metadata should block.","reason":"Bad metadata.","anchor":{"file":"src/UserService.java","symbol":"UserRepository.save"},"source_refs":"src/UserService.java:42"}
+EOF
+  cat > "$missing_effect_record_file" <<EOF
+{"record_id":"SE-user-019","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"unknown","statement":"Effect type is required for all effect-map records.","reason":"Missing effect type.","anchor":{"file":"src/UserService.java","symbol":"UserRepository.save"},"source_refs":["src/UserService.java:42"]}
+EOF
+  cat > "$marker_record_file" <<EOF
+{"record_id":"SE-user-020","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"unknown","effect_type":"db_write","statement":"Existing malformed marker state should block.","reason":"Target has an orphan marker.","anchor":{"file":"src/UserService.java","symbol":"UserRepository.save"},"source_refs":["src/UserService.java:42"]}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$bad_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"record.record_id must not contain --"* ]]
+  [[ "$output" == *"record.source_refs must be a list"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$missing_effect_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"record.effect_type is required"* ]]
+
+  cat > "$target_file" <<'EOF'
+# Shadow Effects
+
+- doc_role: effect_map
+- generated_by: test
+
+<!-- shadow-effect-record:SE-user-previous begin -->
+## Previous
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$marker_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"exactly one begin and end marker"* ]]
+
+  cat > "$target_file" <<'EOF'
+# Shadow Effects
+
+- doc_role: effect_map
+- generated_by: test
+
+<!-- shadow-effect-record:SE-user-a begin -->
+## A
+<!-- shadow-effect-record:SE-user-b begin -->
+## B
+<!-- shadow-effect-record:SE-user-a end -->
+<!-- shadow-effect-record:SE-user-b end -->
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$marker_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"interleaved shadow-effect-record markers"* ]]
+}
+
+@test "shadow_effect_writer blocks stale target hash traversal and llm evidence" {
+  local candidate_file="$TEST_WORKSPACE/candidate.json"
+  local decision_file="$TEST_WORKSPACE/decision.json"
+  local record_file="$TEST_WORKSPACE/record.json"
+  local unknown_record_file="$TEST_WORKSPACE/unknown-record.json"
+  local draft_file="$TEST_WORKSPACE/draft.md"
+
+  printf 'Draft for blocked record\n' > "$draft_file"
+  python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --output "$candidate_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "src/UserService.java:42" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  local candidate_id
+  candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
+  cat > "$decision_file" <<EOF
+{"user_decision":{"id":"UD-012","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-user-003","SE-user-009"],"rationale":"Approve evaluating this exact record.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$record_file" <<EOF
+{"record_id":"SE-user-003","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Bad evidence should block <!-- shadow-effect-record:SE-user-999 begin -->.","anchor":{"file":"src/UserService.java","symbol":"UserRepository.save"},"evidence":{"type":"llm_hint","ref":"LC-draft"}}
+EOF
+  cat > "$unknown_record_file" <<EOF
+{"record_id":"SE-user-009","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"unknown","effect_type":"db_write","statement":"Unknown records must not preserve LLM hints as evidence.","reason":"LLM hint is not evidence.","anchor":{"file":"src/UserService.java","symbol":"UserRepository.save"},"evidence":{"type":"llm_hint","ref":"LC-draft"}}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --expected-target-hash "sha256:not-current" \
+    --mode write \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"llm_hint"* ]]
+  [[ "$output" == *"target hash mismatch"* ]]
+  [[ "$output" == *"forbidden Markdown marker"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$unknown_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"llm_hint"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "../outside.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"traversal"* ]]
 }
 
 # ========== P1/P2: Validator strict mode non-empty check ==========
@@ -638,6 +2085,211 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
   [[ "$output" == *"empty"* ]] || [[ "$output" == *"FAIL"* ]]
+}
+
+@test "validate_docs strict audits effect_map markers and confirmed fields" {
+  local effect_file="$DOCS_ROOT/shadow/packages/codeguide/effects.md"
+  mkdir -p "$(dirname "$effect_file")"
+  cat > "$effect_file" <<'EOF'
+# Effects
+
+- doc_role: effect_map
+
+<!-- shadow-effect-record:SE-user-100 begin -->
+## SE-user-100
+
+- record_id: SE-user-100
+- record_type: effect_map_entry
+- lifecycle: confirmed
+- effect_type: db_write
+- statement: confirmed record missing evidence fields
+- anchor_file: src/UserService.java
+- anchor_symbol: UserRepository.save
+
+<!-- shadow-effect-record:SE-user-100 end -->
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"confirmed record requires evidence_type"* ]]
+  [[ "$output" == *"shadow effect_map"* ]]
+
+  cat > "$effect_file" <<'EOF'
+# Effects
+
+- doc_role: effect_map
+
+<!-- shadow-effect-record:SE-user-101 begin -->
+## SE-user-101
+
+- record_id: SE-user-101
+- record_type: effect_map_entry
+- lifecycle: confirmed
+- effect_type: db_write
+- statement: confirmed deterministic code record has shallow evidence only
+- anchor_file: src/UserService.java
+- anchor_symbol: UserRepository.save
+- evidence_type: deterministic_code
+- evidence_ref: py.ast.call_match@v1
+
+<!-- shadow-effect-record:SE-user-101 end -->
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"deterministic_code record requires evidence_rule_id"* ]]
+  [[ "$output" == *"deterministic_code record requires evidence_probe_result_hash"* ]]
+
+  cat > "$effect_file" <<'EOF'
+# Effects
+
+- doc_role: effect_map
+
+<!-- shadow-effect-record:SE-user-102 begin -->
+## SE-user-102
+
+- record_id: SE-user-102
+- record_type: effect_map_entry
+- lifecycle: confirmed
+- effect_type: cache_evict
+- statement: forged deterministic code metadata must still fail semantic checks
+- anchor_file: src/UserService.java
+- anchor_symbol: UserRepository.save
+- evidence_type: deterministic_code
+- evidence_ref: py.ast.call_match@v1
+- evidence_rule_id: repo.write
+- evidence_validator_kind: ast
+- evidence_parser_backed: true
+- evidence_validator_result: matched
+- evidence_source_ref: src/OtherService.java:9
+- evidence_source_hash: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+- evidence_probe_result_ref: missing-probe.json
+- evidence_probe_result_hash: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+<!-- shadow-effect-record:SE-user-102 end -->
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"evidence_rule_id is not compatible with effect_type"* ]]
+  [[ "$output" == *"anchor_file must match evidence ref path"* ]]
+  [[ "$output" == *"probe artifact must exist"* ]]
+}
+
+@test "validate_docs strict accepts canonical probe coverage for valid effect_map evidence" {
+  local effect_file="$DOCS_ROOT/shadow/packages/codeguide/effects.md"
+  local source_file="$TEST_PROJECT/src/app.py"
+  local probe_file="$TEST_PROJECT/probe-results/code-probe.json"
+  local source_hash
+  local probe_hash
+
+  mkdir -p "$(dirname "$effect_file")" "$(dirname "$source_file")" "$(dirname "$probe_file")"
+  cat > "$source_file" <<'EOF'
+def handler(repository, user):
+    repository.save(user)
+EOF
+  source_hash="$(sha256_file_ref "$source_file")"
+  cat > "$probe_file" <<EOF
+{"status":"pass","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
+EOF
+  probe_hash="$(sha256_file_ref "$probe_file")"
+  cat > "$effect_file" <<EOF
+# Effects
+
+- doc_role: effect_map
+
+<!-- shadow-effect-record:SE-user-103 begin -->
+## SE-user-103
+
+- record_id: SE-user-103
+- record_type: effect_map_entry
+- lifecycle: confirmed
+- effect_type: db_write
+- statement: Repository save is backed by canonical parser evidence.
+- anchor_file: src/app.py
+- anchor_symbol: repository.save
+- evidence_type: deterministic_code
+- evidence_ref: py.ast.call_match@v1
+- evidence_rule_id: repo.write
+- evidence_validator_kind: ast
+- evidence_parser_backed: true
+- evidence_validator_result: matched
+- evidence_source_ref: src/app.py:2
+- evidence_source_hash: $source_hash
+- evidence_probe_result_ref: probe-results/code-probe.json
+- evidence_probe_result_hash: $probe_hash
+
+<!-- shadow-effect-record:SE-user-103 end -->
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow effect_map records valid"* ]]
+}
+
+@test "validate_docs strict audits review_queue metadata" {
+  local queue_file="$DOCS_ROOT/report/shadow-review-queue.md"
+  cat > "$queue_file" <<'EOF'
+# Shadow Evidence Review Queue
+
+- doc_role: review_queue
+- task_id: shadow-effect-map-01
+- generated_by: shadow_review_queue.py
+- generated_at: 2026-05-03T00:00:00Z
+- writes_shadow_docs: false
+- auto_promotes_facts: false
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ttl_days"* ]]
+}
+
+@test "validate_docs strict allows mixed review_queue with deferred and bounded question" {
+  local queue_file="$DOCS_ROOT/report/shadow-review-queue.md"
+  cat > "$queue_file" <<'EOF'
+# Shadow Evidence Review Queue
+
+- doc_role: review_queue
+- task_id: shadow-effect-map-01
+- generated_by: shadow_review_queue.py
+- generated_at: 2026-05-03T00:00:00Z
+- ttl_days: 7
+- writes_shadow_docs: false
+- auto_promotes_facts: false
+- input_records: 2
+- max_questions: 1
+- question_count: 1
+
+## Evidence Candidates
+
+- id: QE-001
+  status: pass
+  evidence_ref: jpa.repository.save@v1
+  evidence_type: code_call
+  strength: source_probe
+  source_ref: unknown
+  question_state: deferred_missing_context
+  missing_question_context: source_ref_or_trace_ref
+- id: QE-002
+  status: fail
+  evidence_ref: py.ast.call_match@v1
+  evidence_type: code_call
+  strength: parser_backed
+  source_ref: src/app.py:4
+  question_state: ready
+
+## Review Questions
+
+- id: RQ-001
+  evidence_ref: QE-002
+  priority: medium
+  question: Should missing evidence stay unknown?
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow review_queue source refs are bounded"* ]]
 }
 
 @test "validate_docs strict fails when policy rule registry has no mappings" {
@@ -721,6 +2373,88 @@ EOF
   [[ "$output" == *"primary validator evidence_type mismatch"* ]]
 }
 
+@test "shadow_policy_loader reports adapter ids and catalog parity" {
+  run python3 "$SHADOW_POLICY_LOADER" --adapter-module "$SHADOW_PROBE" --print-adapter-ids
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"py.ast.call_match@v1"* ]]
+  [[ "$output" == *"any.runtime.trace@v1"* ]]
+
+  run python3 "$SHADOW_POLICY_LOADER" --policy-dir "$DOCS_ROOT/policy" --adapter-module "$SHADOW_PROBE" --check-parity
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+
+  perl -0pi -e 's/(implemented_primary_v1: \[[^\]]*any\.runtime\.trace\@v1)/$1, js.ast.call_match\@v1/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
+  run python3 "$SHADOW_POLICY_LOADER" --policy-dir "$DOCS_ROOT/policy" --adapter-module "$SHADOW_PROBE" --check-parity
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"implemented_primary_v1 id must be implemented by shadow_evidence_probe.py"* ]]
+}
+
+@test "validate_docs strict fails when policy roots leave fenced yaml blocks" {
+  perl -0pi -e 's/```yaml\nvalidators:/```text\nvalidators:/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"must define validators inside a fenced yaml block"* ]]
+}
+
+@test "validate_docs strict fails when validator catalog probe coverage metadata is missing" {
+  perl -0pi -e 's/\n  source_probe_only:.*//' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"must declare source_probe_only"* ]]
+}
+
+@test "validate_docs strict fails when catalog coverage id is undeclared" {
+  perl -0pi -e 's/(implemented_primary_v1: \[[^\]]*any\.runtime\.trace\@v1)/$1, py.missing_validator\@v1/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"implemented_primary_v1 id must be declared in validators block"* ]]
+}
+
+@test "validate_docs strict fails when catalog claims unimplemented probe primary" {
+  perl -0pi -e 's/(implemented_primary_v1: \[[^\]]*any\.runtime\.trace\@v1)/$1, js.ast.call_match\@v1/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"implemented_primary_v1 id must be implemented by shadow_evidence_probe.py"* ]]
+}
+
+@test "validate_docs strict ignores validator ids declared outside validators block" {
+  perl -0pi -e 's/(implemented_primary_v1: \[[^\]]*any\.runtime\.trace\@v1)/$1, py.outside_block\@v1/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
+  cat >> "$DOCS_ROOT/policy/shadow-validator-catalog.md" <<'EOF'
+
+## Non Validator Example
+
+```yaml
+examples:
+  py.outside_block@v1:
+    evidence_type: code_call
+```
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"implemented_primary_v1 id must be declared in validators block"* ]]
+}
+
+@test "validate_docs strict fails when adapter metadata drifts from catalog" {
+  perl -0pi -e 's/(py\.ast\.call_match\@v1:\n\s+)evidence_type: code_call/${1}evidence_type: runtime_trace/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"evidence_type must match AdapterRegistry"* ]]
+}
+
+@test "validate_docs strict fails when fallback regex evidence type mismatches rule evidence branch" {
+  perl -0pi -e 's/target: code_call/target: annotation/' "$DOCS_ROOT/policy/shadow-regex-patterns.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"fallback regex evidence_type mismatch"* ]]
+}
+
 @test "run_codeguide bootstraps orchestration doc for active task" {
   run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "orch-01" --mode advisory
   [ "$status" -eq 0 ]
@@ -728,9 +2462,11 @@ EOF
   local orch_file="$DOCS_ROOT/orchestration/ORCH-orch-01.md"
   run test -f "$orch_file"
   [ "$status" -eq 0 ]
-  run grep "^- execution_mode: supervisor_subagents" "$orch_file"
+  run grep "^- execution_mode: solo" "$orch_file"
   [ "$status" -eq 0 ]
   run grep "^- supervisor_agent: main-thread-supervising-lead-architect" "$orch_file"
+  [ "$status" -eq 0 ]
+  run grep "^- delegation_note: Solo execution selected; no sub-agent or external review requested." "$orch_file"
   [ "$status" -eq 0 ]
 }
 
@@ -741,6 +2477,10 @@ EOF
     --axis-why "why" \
     --axis-where "where" \
     --axis-verify "verify" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "pass" \
+    --primary-author-tool "codex" \
+    --review-mode "codex_subagents" \
     --no-init
 
   cat > "$DOCS_ROOT/plan/PLAN-orch-strict-01-v1.0.md" <<'EOF'
@@ -763,6 +2503,228 @@ EOF
   [[ "$output" == *"planner_agents"* ]] || [[ "$output" == *"implementation_agents"* ]] || [[ "$output" == *"validation_agents"* ]]
 }
 
+@test "validate_docs strict fails when delegated orchestration preflight is blocked" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "orch-preflight-01" \
+    --task-title "Orchestration preflight strict test" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "pass" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "reviewer-1" \
+    --implementation-agents "coder-1" \
+    --validation-agents "validator-1" \
+    --owned-scopes "planner:docs/plan; coder:src/app" \
+    --primary-author-tool "codex" \
+    --review-mode "codex_subagents" \
+    --no-init
+
+  cat > "$DOCS_ROOT/plan/PLAN-orch-preflight-01-v1.0.md" <<'EOF'
+# PLAN-orch-preflight-01-v1.0
+
+- task_id: orch-preflight-01
+- plan_version: v1.0
+- objective: validate orchestration preflight strictness
+- scope: docs validation
+- assumptions: none
+- risks: low
+- acceptance_signals: strict validation fails on blocked preflight
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local orch_file="$DOCS_ROOT/orchestration/ORCH-orch-preflight-01.md"
+  perl -0pi -e 's/^- risk_preflight_status: pass$/- risk_preflight_status: approval_required/m; s/^- approval_required: false$/- approval_required: true/m' "$orch_file"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"orchestration risk preflight must be pass or approved"* ]]
+}
+
+@test "doc_garden records blocked delegation when preflight still needs approval" {
+  run "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "orch-approval-stop-01" \
+    --task-title "Approval stop test" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "approval_required" \
+    --primary-author-tool "codex" \
+    --review-mode "codex_subagents" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "reviewer-1" \
+    --implementation-agents "coder-1" \
+    --validation-agents "validator-1" \
+    --owned-scopes "planner:docs/plan; coder:src/app" \
+    --no-init
+
+  [ "$status" -eq 0 ]
+  local orch_file="$DOCS_ROOT/orchestration/ORCH-orch-approval-stop-01.md"
+  run grep "^- delegation_status: blocked" "$orch_file"
+  [ "$status" -eq 0 ]
+  run grep "^- approval_required: true" "$orch_file"
+  [ "$status" -eq 0 ]
+  run grep "Delegation stopped before agent or external work" "$orch_file"
+  [ "$status" -eq 0 ]
+}
+
+@test "validate_docs strict fails when approved preflight leaves approval_required false" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "orch-approved-01" \
+    --task-title "Approved preflight consistency test" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-001" \
+    --approved-next-step "run delegated review round r01" \
+    --primary-author-tool "codex" \
+    --review-mode "codex_subagents" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "reviewer-1" \
+    --implementation-agents "coder-1" \
+    --validation-agents "validator-1" \
+    --owned-scopes "planner:docs/plan; coder:src/app" \
+    --no-init
+
+  cat > "$DOCS_ROOT/plan/PLAN-orch-approved-01-v1.0.md" <<'EOF'
+# PLAN-orch-approved-01-v1.0
+
+- task_id: orch-approved-01
+- plan_version: v1.0
+- objective: validate approved preflight field consistency
+- scope: docs validation
+- assumptions: none
+- risks: low
+- acceptance_signals: strict validation fails on approved/false mismatch
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local orch_file="$DOCS_ROOT/orchestration/ORCH-orch-approved-01.md"
+  perl -0pi -e 's/^- approval_required: true$/- approval_required: false/m' "$orch_file"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"risk_preflight_status=approved requires approval_required=true"* ]]
+}
+
+@test "approved preflight rejects placeholder approval metadata before recording or external review" {
+  run "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "orch-approved-placeholder-01" \
+    --task-title "Approved placeholder test" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "approved" \
+    --approval-ref "not_required" \
+    --approved-next-step "run delegated review" \
+    --primary-author-tool "codex" \
+    --review-mode "codex_subagents" \
+    --no-init
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Concrete --approval-ref"* ]]
+  run test ! -f "$DOCS_ROOT/orchestration/ORCH-orch-approved-placeholder-01.md"
+  [ "$status" -eq 0 ]
+
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" \
+    --task-id "run-approved-placeholder-01" \
+    --mode advisory \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-001" \
+    --approved-next-step "pending_user_approval"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Concrete --approval-ref"* ]]
+  run test ! -f "$DOCS_ROOT/orchestration/ORCH-run-approved-placeholder-01.md"
+  [ "$status" -eq 0 ]
+
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-approved-placeholder-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-approved-placeholder-v1.0
+
+- task_id: ext-approved-placeholder
+- plan_version: v1.0
+- objective: validate placeholder approval is rejected before external review
+- scope: external review safety gate
+- assumptions: placeholder approval metadata must not invoke reviewers
+- risks: unauthorized external review
+- acceptance_signals: wrapper blocks before reviewer invocation
+- stop_conditions: placeholder approval rejected
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin-approved-placeholder"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/gemini-approved-placeholder-called"
+exit 99'
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/claude-approved-placeholder-called"
+exit 99'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-approved-placeholder" \
+    --plan-version "v1.0" \
+    --primary-tool "codex" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "pending_user_approval" \
+    --approved-next-step "run external reviewers"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Concrete --approval-ref"* ]]
+  run test ! -e "$TEST_WORKSPACE/gemini-approved-placeholder-called"
+  [ "$status" -eq 0 ]
+  run test ! -e "$TEST_WORKSPACE/claude-approved-placeholder-called"
+  [ "$status" -eq 0 ]
+}
+
+@test "validate_docs strict rejects evaluator identity recorder case-insensitively" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "orch-recorder-01" \
+    --task-title "Recorder identity test" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "pass" \
+    --primary-author-tool "codex" \
+    --review-mode "codex_subagents" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "reviewer-1" \
+    --implementation-agents "coder-1" \
+    --validation-agents "validator-1" \
+    --owned-scopes "planner:docs/plan; coder:src/app" \
+    --no-init
+
+  cat > "$DOCS_ROOT/plan/PLAN-orch-recorder-01-v1.0.md" <<'EOF'
+# PLAN-orch-recorder-01-v1.0
+
+- task_id: orch-recorder-01
+- plan_version: v1.0
+- objective: validate recorder identity normalization
+- scope: docs validation
+- assumptions: none
+- risks: low
+- acceptance_signals: strict validation rejects evaluator identity regardless of case
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local orch_file="$DOCS_ROOT/orchestration/ORCH-orch-recorder-01.md"
+  perl -0pi -e 's/^- risk_preflight_recorded_by: .+$/- risk_preflight_recorded_by: Gemini/m' "$orch_file"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"risk_preflight_recorded_by must identify the main-thread supervising lead architect"* ]]
+}
+
 @test "validate_docs strict fails when supervisor_subagents task has no evaluator report" {
   "$DOC_GARDEN" "$TEST_PROJECT" \
     --task-id "report-strict-01" \
@@ -770,6 +2732,10 @@ EOF
     --axis-why "why" \
     --axis-where "where" \
     --axis-verify "verify" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "pass" \
+    --primary-author-tool "codex" \
+    --review-mode "codex_subagents" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -975,6 +2941,10 @@ EOF
     --axis-why "why" \
     --axis-where "where" \
     --axis-verify "verify" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "pass" \
+    --primary-author-tool "codex" \
+    --review-mode "codex_subagents" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -1061,6 +3031,10 @@ EOF
     --axis-why "why" \
     --axis-where "where" \
     --axis-verify "verify" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "pass" \
+    --primary-author-tool "codex" \
+    --review-mode "codex_subagents" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -1112,6 +3086,10 @@ EOF
     --axis-why "why" \
     --axis-where "where" \
     --axis-verify "verify" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "pass" \
+    --primary-author-tool "codex" \
+    --review-mode "codex_subagents" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -1178,6 +3156,10 @@ EOF
     --axis-why "why" \
     --axis-where "where" \
     --axis-verify "verify" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "pass" \
+    --primary-author-tool "codex" \
+    --review-mode "codex_subagents" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -1229,6 +3211,10 @@ EOF
     --axis-why "why" \
     --axis-where "where" \
     --axis-verify "verify" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "pass" \
+    --primary-author-tool "codex" \
+    --review-mode "codex_subagents" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -1281,6 +3267,10 @@ EOF
     --axis-why "why" \
     --axis-where "where" \
     --axis-verify "verify" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "pass" \
+    --primary-author-tool "codex" \
+    --review-mode "codex_subagents" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -1332,6 +3322,10 @@ EOF
     --axis-why "why" \
     --axis-where "where" \
     --axis-verify "verify" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "pass" \
+    --primary-author-tool "codex" \
+    --review-mode "codex_subagents" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -1438,6 +3432,8 @@ EOF
     --axis-why "why" \
     --axis-where "where" \
     --axis-verify "verify" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "pass" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -1652,6 +3648,33 @@ EOF
   [[ "$output" == *"Option --mode requires a value"* ]]
 }
 
+@test "run_codeguide requires risk preflight before delegated orchestration" {
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" \
+    --task-id "run-preflight-gate-01" \
+    --mode advisory \
+    --execution-mode "supervisor_subagents"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--risk-preflight-status is required before delegated orchestration"* ]]
+  run test ! -f "$DOCS_ROOT/orchestration/ORCH-run-preflight-gate-01.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_codeguide records blocked delegation when preflight requires approval" {
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" \
+    --task-id "run-approval-stop-01" \
+    --mode advisory \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "approval_required"
+
+  [ "$status" -eq 0 ]
+  local orch_file="$DOCS_ROOT/orchestration/ORCH-run-approval-stop-01.md"
+  run grep "^- delegation_status: blocked" "$orch_file"
+  [ "$status" -eq 0 ]
+  run grep "Delegation stopped before agent or external work" "$orch_file"
+  [ "$status" -eq 0 ]
+}
+
 @test "run_codeguide reports code-or-runtime when runtime cmd provided" {
   local allow_file="$TEST_PROJECT/runtime-allow.txt"
   printf "echo\necho test-pass\n" > "$allow_file"
@@ -1759,6 +3782,18 @@ EOF
   run "$CHECK_ENGLISH_DOCS" "$(cd "$SCRIPTS_DIR/.." && pwd)"
   [ "$status" -eq 0 ]
   [[ "$output" == *"English-only"* ]]
+}
+
+@test "SKILL.md documents pre-orchestration risk approval gate" {
+  local skill_file
+  skill_file="$(cd "$SCRIPTS_DIR/.." && pwd)/SKILL.md"
+
+  run grep "Run risk preflight in the main thread before spawning sub-agents" "$skill_file"
+  [ "$status" -eq 0 ]
+  run grep "do not spawn new sub-agents, do not invoke external CLIs" "$skill_file"
+  [ "$status" -eq 0 ]
+  run grep "Ping-pong starts only after the supervising lead architect records the risk gate outcome" "$skill_file"
+  [ "$status" -eq 0 ]
 }
 
 @test "check_english_docs fails on Korean text outside research exclusions" {
@@ -1871,6 +3906,21 @@ EOF
   run "$DOC_GARDEN" "$TEST_PROJECT" --task-id
   [ "$status" -ne 0 ]
   [[ "$output" == *"Option --task-id requires a value"* ]]
+}
+
+@test "doc_garden requires risk preflight before delegated orchestration is recorded" {
+  run "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "doc-preflight-gate-01" \
+    --task-title "Doc preflight gate" \
+    --execution-mode "supervisor_subagents" \
+    --primary-author-tool "codex" \
+    --review-mode "codex_subagents" \
+    --no-init
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"requires --risk-preflight-status"* ]]
+  run test ! -f "$DOCS_ROOT/orchestration/ORCH-doc-preflight-gate-01.md"
+  [ "$status" -eq 0 ]
 }
 
 @test "doc_garden rejects invalid task id characters" {
@@ -2209,15 +4259,18 @@ EOF
 
 @test "run_codeguide in non-git with no tasks uses timestamp fallback" {
   # Fresh project with no task files
+  local fresh_workspace
   local fresh_project
-  fresh_project="$(mktemp -d)"
+  fresh_workspace="$(mktemp -d)"
+  fresh_project="$fresh_workspace/repo"
+  mkdir -p "$fresh_project"
   "$INIT_SCAFFOLD" "$fresh_project"
 
   run "$RUN_CODEGUIDE" "$fresh_project" --mode advisory
   [ "$status" -eq 0 ]
   # Timestamp fallback starts with "A" followed by digits
   [[ "$output" == *"task_id: A2"* ]]
-  rm -rf "$fresh_project"
+  rm -rf "$fresh_workspace"
 }
 
 # ========== init_docs_scaffold edge cases ==========
@@ -2255,7 +4308,7 @@ EOF
   workspace="$(mktemp -d)"
   proj="$workspace/repo"
   mkdir -p "$proj"
-  touch "$workspace/docs"  # create a file, not a directory
+  touch "$proj/docs"  # create a file, not a directory
 
   run "$INIT_SCAFFOLD" "$proj"
   [ "$status" -ne 0 ]
@@ -2288,6 +4341,8 @@ EOF
   [ "$status" -eq 0 ]
   run grep "Plan orchestration loop" "$docs_root/DOC-GOVERNANCE.md"
   [ "$status" -eq 0 ]
+  run grep "Run main-thread risk preflight before sub-agents" "$docs_root/DOC-GOVERNANCE.md"
+  [ "$status" -eq 0 ]
 
   run test -d "$docs_root/plan"
   [ "$status" -eq 0 ]
@@ -2309,6 +4364,67 @@ EOF
   [ "$status" -eq 0 ]
 
   rm -rf "$workspace"
+}
+
+@test "run_external_plan_reviews requires passing preflight before invoking reviewers" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-review-gate-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-review-gate-v1.0
+
+- task_id: ext-review-gate
+- plan_version: v1.0
+- objective: verify preflight gate before external review
+- scope: external review safety gate
+- assumptions: reviewers must not run before preflight passes
+- risks: token waste and unapproved external side effects
+- acceptance_signals: wrapper blocks before reviewer invocation
+- stop_conditions: preflight block is surfaced
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Try to run reviewers without a passing preflight.
+2. Confirm no external CLI is invoked.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/gemini-called"
+exit 99'
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/claude-called"
+exit 99'
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/codex-called"
+exit 99'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-review-gate" \
+    --plan-version "v1.0" \
+    --primary-tool "codex" \
+    --review-round "r01"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--risk-preflight-status is required"* ]]
+  run test ! -e "$TEST_WORKSPACE/gemini-called"
+  [ "$status" -eq 0 ]
+  run test ! -e "$TEST_WORKSPACE/claude-called"
+  [ "$status" -eq 0 ]
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-review-gate" \
+    --plan-version "v1.0" \
+    --primary-tool "codex" \
+    --review-round "r01" \
+    --risk-preflight-status "approval_required"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"external review is stopped before orchestration/delegation"* ]]
+  run test ! -e "$TEST_WORKSPACE/gemini-called"
+  [ "$status" -eq 0 ]
+  run test ! -e "$TEST_WORKSPACE/claude-called"
+  [ "$status" -eq 0 ]
 }
 
 @test "run_external_plan_reviews retries malformed output and writes reports without mutating the plan" {
@@ -2384,7 +4500,8 @@ exit 99'
     --task-id "ext-review-01" \
     --plan-version "v1.0" \
     --primary-tool "codex" \
-    --review-round "r01"
+    --review-round "r01" \
+    --risk-preflight-status "pass"
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"[OK] evaluator=gemini"* ]]
@@ -2401,6 +4518,10 @@ exit 99'
   [ "$status" -eq 0 ]
   run grep "^- review_mode: external_cli" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
   [ "$status" -eq 0 ]
+  run grep "^- risk_preflight_status: pass" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
+  [ "$status" -eq 0 ]
+  run grep "^- approval_required: false" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
+  [ "$status" -eq 0 ]
   run grep "^- reviewer_agents: external-cli:gemini,claude" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
   [ "$status" -eq 0 ]
 
@@ -2413,6 +4534,12 @@ exit 99'
   run grep -E -- '(^|[[:space:]])--model([[:space:]]|$)' "$TEST_WORKSPACE/claude-args.log"
   [ "$status" -ne 0 ]
   run grep -- "--include-directories" "$TEST_WORKSPACE/gemini-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "$TEST_PROJECT" "$TEST_WORKSPACE/gemini-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "--add-dir" "$TEST_WORKSPACE/claude-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "$TEST_PROJECT" "$TEST_WORKSPACE/claude-args.log"
   [ "$status" -eq 0 ]
   run grep -- "--tools" "$TEST_WORKSPACE/claude-args.log"
   [ "$status" -eq 0 ]
@@ -2556,6 +4683,8 @@ EOF'
     --plan-version "v1.0" \
     --primary-tool "gemini" \
     --review-round "r02" \
+    --risk-preflight-status "pass" \
+    --allow-partial-review \
     --adversarial-evaluator "codex" \
     --codex-model "gpt-5.4"
 
@@ -2578,6 +4707,10 @@ EOF'
   run grep -- "--ephemeral" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
   run grep -- "--output-last-message" "$TEST_WORKSPACE/codex-args.log"
+  [ "$status" -eq 0 ]
+  run grep -F -- "-C" "$TEST_WORKSPACE/codex-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "$TEST_PROJECT" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
 
   local handoff_dir
@@ -2609,6 +4742,10 @@ EOF'
     --task-id "ext-review-04" \
     --task-title "High risk ext review" \
     --risk-level "high" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "pass" \
+    --primary-author-tool "codex" \
+    --review-mode "external_cli" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -2683,7 +4820,8 @@ EOF'
     --task-id "ext-review-04" \
     --plan-version "v1.0" \
     --primary-tool "claude" \
-    --review-round "r04"
+    --review-round "r04" \
+    --risk-preflight-status "pass"
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"auto-selecting adversarial evaluator=gemini"* ]]
@@ -2776,7 +4914,8 @@ exit 4'
     --task-id "ext-review-03" \
     --plan-version "v1.0" \
     --primary-tool "claude" \
-    --review-round "r03"
+    --review-round "r03" \
+    --risk-preflight-status "pass"
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"[FAIL] evaluator=gemini"* ]]
@@ -2794,6 +4933,10 @@ exit 4'
     --task-id "ext-review-05" \
     --task-title "Adversarial failure test" \
     --risk-level "high" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "pass" \
+    --primary-author-tool "codex" \
+    --review-mode "external_cli" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -2857,7 +5000,8 @@ EOF'
     --task-id "ext-review-05" \
     --plan-version "v1.0" \
     --primary-tool "claude" \
-    --review-round "r05"
+    --review-round "r05" \
+    --risk-preflight-status "pass"
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"Required adversarial review did not complete successfully"* ]]
@@ -2907,7 +5051,8 @@ exit 0'
     --task-id "ext-review-06" \
     --plan-version "v1.0" \
     --primary-tool "gemini" \
-    --review-round "r06"
+    --review-round "r06" \
+    --risk-preflight-status "pass"
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"[FAIL] evaluator=codex"* ]]

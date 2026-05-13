@@ -162,6 +162,6 @@ Then continue with docs, code, validated command output, and `rg`. Use Serena on
 ## Conflict handling
 - Current instructions override memory.
 - Docs are the system of record, but code/tests/runtime evidence can mark docs as stale candidates.
-- Repository files, command output, tests, runtime evidence, and workspace docs override unsupported memory.
+- Repository files, command output, tests, runtime evidence, and project docs override unsupported memory.
 - When memory conflicts with current sources, use the current source for the immediate task and report the stale memory only if it affects confidence or user expectations.
 - Do not persist conflict corrections unless the user gives explicit consent for the replacement memory item.

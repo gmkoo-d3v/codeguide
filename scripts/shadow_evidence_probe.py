@@ -50,63 +50,112 @@ class FallbackSpec:
     promotion_limit: str = "medium"
 
 
-PRIMARY_VALIDATORS: dict[str, PrimarySpec] = {
-    "any.runtime.trace@v1": PrimarySpec("runtime_trace", "runtime_trace", False, "high"),
-    "java.annotation.match@v1": PrimarySpec(
-        "annotation",
-        "source_probe",
-        False,
-        "medium",
-        "java",
-        ("src/main/java/**",),
-        ("src/test/**", "build/**", "target/**", ".gradle/**"),
+@dataclass(frozen=True)
+class ValidatorAdapter:
+    validator_id: str
+    spec: PrimarySpec
+
+
+class AdapterRegistry:
+    """Static registry of primary validators that can actually execute."""
+
+    def __init__(self, adapters: Iterable[ValidatorAdapter]):
+        self._adapters = {adapter.validator_id: adapter for adapter in adapters}
+
+    def ids(self) -> tuple[str, ...]:
+        return tuple(sorted(self._adapters))
+
+    def get(self, validator_id: str | None) -> ValidatorAdapter | None:
+        if not validator_id:
+            return None
+        return self._adapters.get(validator_id)
+
+    def validate(self, probe_args: dict[str, str | None], root: Path) -> tuple[bool, dict[str, object]] | None:
+        adapter = self.get(probe_args.get("validator_id"))
+        if adapter is None:
+            return None
+        return run_primary_adapter(argparse.Namespace(**probe_args), root, adapter)
+
+
+PRIMARY_ADAPTERS: tuple[ValidatorAdapter, ...] = (
+    ValidatorAdapter("any.runtime.trace@v1", PrimarySpec("runtime_trace", "runtime_trace", False, "high")),
+    ValidatorAdapter(
+        "java.annotation.match@v1",
+        PrimarySpec(
+            "annotation",
+            "source_probe",
+            False,
+            "medium",
+            "java",
+            ("src/main/java/**",),
+            ("src/test/**", "build/**", "target/**", ".gradle/**"),
+        ),
     ),
-    "spring_boot.request_mapping@v1": PrimarySpec(
-        "annotation",
-        "source_probe",
-        False,
-        "medium",
-        "java",
-        ("src/main/java/**",),
-        ("src/test/**", "build/**", "target/**", ".gradle/**"),
+    ValidatorAdapter(
+        "spring_boot.request_mapping@v1",
+        PrimarySpec(
+            "annotation",
+            "source_probe",
+            False,
+            "medium",
+            "java",
+            ("src/main/java/**",),
+            ("src/test/**", "build/**", "target/**", ".gradle/**"),
+        ),
     ),
-    "spring_boot.cache_evict.annotation@v1": PrimarySpec(
-        "annotation",
-        "source_probe",
-        False,
-        "medium",
-        "java",
-        ("src/main/java/**",),
-        ("src/test/**", "build/**", "target/**", ".gradle/**"),
+    ValidatorAdapter(
+        "spring_boot.cache_evict.annotation@v1",
+        PrimarySpec(
+            "annotation",
+            "source_probe",
+            False,
+            "medium",
+            "java",
+            ("src/main/java/**",),
+            ("src/test/**", "build/**", "target/**", ".gradle/**"),
+        ),
     ),
-    "jpa.repository.save@v1": PrimarySpec(
-        "code_call",
-        "source_probe",
-        False,
-        "medium",
-        "java",
-        ("src/main/java/**",),
-        ("src/test/**", "build/**", "target/**", ".gradle/**"),
+    ValidatorAdapter(
+        "jpa.repository.save@v1",
+        PrimarySpec(
+            "code_call",
+            "source_probe",
+            False,
+            "medium",
+            "java",
+            ("src/main/java/**",),
+            ("src/test/**", "build/**", "target/**", ".gradle/**"),
+        ),
     ),
-    "py.ast.call_match@v1": PrimarySpec(
-        "code_call",
-        "ast",
-        True,
-        "high",
-        "python",
-        ("**/*.py",),
-        ("tests/**", ".venv/**", "venv/**", "build/**", "dist/**"),
+    ValidatorAdapter(
+        "py.ast.call_match@v1",
+        PrimarySpec(
+            "code_call",
+            "ast",
+            True,
+            "high",
+            "python",
+            ("**/*.py",),
+            ("tests/**", ".venv/**", "venv/**", "build/**", "dist/**"),
+        ),
     ),
-    "py.decorator.match@v1": PrimarySpec(
-        "annotation",
-        "ast",
-        True,
-        "high",
-        "python",
-        ("**/*.py",),
-        ("tests/**", ".venv/**", "venv/**", "build/**", "dist/**"),
+    ValidatorAdapter(
+        "py.decorator.match@v1",
+        PrimarySpec(
+            "annotation",
+            "ast",
+            True,
+            "high",
+            "python",
+            ("**/*.py",),
+            ("tests/**", ".venv/**", "venv/**", "build/**", "dist/**"),
+        ),
     ),
-}
+)
+
+
+ADAPTER_REGISTRY = AdapterRegistry(PRIMARY_ADAPTERS)
+PRIMARY_VALIDATORS: dict[str, PrimarySpec] = {adapter.validator_id: adapter.spec for adapter in PRIMARY_ADAPTERS}
 
 
 FALLBACK_PATTERNS: dict[str, FallbackSpec] = {
@@ -393,6 +442,7 @@ def match_regex_source(args: argparse.Namespace, root: Path, pattern_id: str, sp
     source = resolve_inside(root, args.source_file, "source file")
     rel_path = normalize_rel_path(source, root)
     enforce_path_scope(rel_path, spec)
+    source_hash = sha256_file(source)
 
     text = read_text(source)
     masked = mask_for_language(text, spec.language)
@@ -400,11 +450,14 @@ def match_regex_source(args: argparse.Namespace, root: Path, pattern_id: str, sp
     match = regex.search(masked)
     payload = {
         "status": "pass" if match else "fail",
+        "probe_status": "pass" if match else "fail",
+        "fact_status": "candidate_only",
         "fallback_pattern_id": pattern_id,
         "evidence_type": spec.evidence_type,
         "evidence_field": "fallback_result",
         "fallback_result": "matched" if match else "not_found",
         "source_ref": rel_path if not match else f"{rel_path}:{line_for_offset(masked, match.start())}",
+        "source_hash": source_hash,
         "promotion_limit": spec.promotion_limit,
         "parser_backed": False,
         "writes_shadow_docs": False,
@@ -416,16 +469,26 @@ def match_python_call(args: argparse.Namespace, root: Path, spec: PrimarySpec) -
     callee = param(args, "callee")
     if not callee:
         raise ProbeError("--callee is required for py.ast.call_match@v1")
+    receiver = param(args, "receiver")
 
     source = resolve_inside(root, args.source_file, "source file")
     rel_path = normalize_rel_path(source, root)
     enforce_primary_path_scope(rel_path, spec)
+    source_hash = sha256_file(source)
     tree = ast.parse(read_text(source), filename=rel_path)
 
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and name_matches(ast_call_name(node.func), callee):
-            return True, primary_payload("pass", "py.ast.call_match@v1", spec, f"{rel_path}:{node.lineno}", "matched")
-    return False, primary_payload("fail", "py.ast.call_match@v1", spec, rel_path, "not_found")
+        actual_name = ast_call_name(node.func) if isinstance(node, ast.Call) else None
+        if not isinstance(node, ast.Call) or not name_matches(actual_name, callee):
+            continue
+        if receiver and actual_name != f"{receiver}.{callee}":
+            continue
+        payload = primary_payload(
+            "pass", "py.ast.call_match@v1", spec, f"{rel_path}:{node.lineno}", "matched", source_hash
+        )
+        payload["matched_symbol"] = actual_name or callee
+        return True, payload
+    return False, primary_payload("fail", "py.ast.call_match@v1", spec, rel_path, "not_found", source_hash)
 
 
 def match_python_decorator(args: argparse.Namespace, root: Path, spec: PrimarySpec) -> tuple[bool, dict[str, object]]:
@@ -436,6 +499,7 @@ def match_python_decorator(args: argparse.Namespace, root: Path, spec: PrimarySp
     source = resolve_inside(root, args.source_file, "source file")
     rel_path = normalize_rel_path(source, root)
     enforce_primary_path_scope(rel_path, spec)
+    source_hash = sha256_file(source)
     tree = ast.parse(read_text(source), filename=rel_path)
 
     for node in ast.walk(tree):
@@ -443,13 +507,24 @@ def match_python_decorator(args: argparse.Namespace, root: Path, spec: PrimarySp
             for deco in node.decorator_list:
                 target = deco.func if isinstance(deco, ast.Call) else deco
                 if name_matches(ast_call_name(target), decorator):
-                    return True, primary_payload("pass", "py.decorator.match@v1", spec, f"{rel_path}:{deco.lineno}", "matched")
-    return False, primary_payload("fail", "py.decorator.match@v1", spec, rel_path, "not_found")
+                    return True, primary_payload(
+                        "pass", "py.decorator.match@v1", spec, f"{rel_path}:{deco.lineno}", "matched", source_hash
+                    )
+    return False, primary_payload("fail", "py.decorator.match@v1", spec, rel_path, "not_found", source_hash)
 
 
-def primary_payload(status: str, validator_id: str, spec: PrimarySpec, source_ref: str, validator_result: str) -> dict[str, object]:
-    return {
+def primary_payload(
+    status: str,
+    validator_id: str,
+    spec: PrimarySpec,
+    source_ref: str,
+    validator_result: str,
+    source_hash: str | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
         "status": status,
+        "probe_status": status,
+        "fact_status": "deterministic_evidence" if spec.parser_backed or spec.evidence_type == "runtime_trace" else "candidate_only",
         "validator_id": validator_id,
         "evidence_type": spec.evidence_type,
         "evidence_field": "validator_result",
@@ -460,12 +535,16 @@ def primary_payload(status: str, validator_id: str, spec: PrimarySpec, source_re
         "promotion_limit": spec.promotion_limit,
         "writes_shadow_docs": False,
     }
+    if source_hash is not None:
+        payload["source_hash"] = source_hash
+    return payload
 
 
 def match_source_probe(args: argparse.Namespace, root: Path, validator_id: str, spec: PrimarySpec) -> tuple[bool, dict[str, object]]:
     source = resolve_inside(root, args.source_file, "source file")
     rel_path = normalize_rel_path(source, root)
     enforce_primary_path_scope(rel_path, spec)
+    source_hash = sha256_file(source)
     text = read_text(source)
     masked = mask_c_like_code(text)
 
@@ -490,6 +569,7 @@ def match_source_probe(args: argparse.Namespace, root: Path, validator_id: str, 
         spec,
         rel_path if not match else f"{rel_path}:{line_for_offset(masked, match.start())}",
         "matched" if match else "not_found",
+        source_hash,
     )
 
 
@@ -512,13 +592,9 @@ def match_runtime_trace(args: argparse.Namespace, root: Path, spec: PrimarySpec)
     return False, payload
 
 
-def run_primary(args: argparse.Namespace, root: Path) -> int:
-    validator_id = args.validator_id
-    spec = PRIMARY_VALIDATORS.get(validator_id)
-    if spec is None:
-        emit({"status": "unsupported", "validator_id": validator_id, "writes_shadow_docs": False})
-        return UNSUPPORTED
-
+def run_primary_adapter(args: argparse.Namespace, root: Path, adapter: ValidatorAdapter) -> tuple[bool, dict[str, object]]:
+    validator_id = adapter.validator_id
+    spec = adapter.spec
     if validator_id == "py.ast.call_match@v1":
         matched, payload = match_python_call(args, root, spec)
     elif validator_id == "py.decorator.match@v1":
@@ -527,6 +603,32 @@ def run_primary(args: argparse.Namespace, root: Path) -> int:
         matched, payload = match_runtime_trace(args, root, spec)
     else:
         matched, payload = match_source_probe(args, root, validator_id, spec)
+    return matched, payload
+
+
+def primary_probe_args(args: argparse.Namespace) -> dict[str, str | None]:
+    return {
+        "validator_id": args.validator_id,
+        "source_file": args.source_file,
+        "trace_file": args.trace_file,
+        "trace_event": args.trace_event,
+        "symbol": args.symbol,
+        "annotation": args.annotation,
+        "decorator": args.decorator,
+        "callee": args.callee,
+        "receiver": args.receiver,
+        "method": args.method,
+    }
+
+
+def run_primary(args: argparse.Namespace, root: Path) -> int:
+    validator_id = args.validator_id
+    result = ADAPTER_REGISTRY.validate(primary_probe_args(args), root)
+    if result is None:
+        emit({"status": "unsupported", "validator_id": validator_id, "writes_shadow_docs": False})
+        return UNSUPPORTED
+
+    matched, payload = result
 
     emit(payload)
     return PASS if matched else FAIL

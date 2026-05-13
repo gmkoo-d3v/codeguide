@@ -2,14 +2,12 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 usage() {
   cat <<'EOF'
 Usage:
   init_docs_scaffold.sh [project-root]
 
-Initializes the workspace docs/ scaffold for codeguide documentation.
+Initializes the project docs/ scaffold for codeguide documentation.
 Creates directories and template files only when missing (idempotent).
 
 Options:
@@ -34,16 +32,11 @@ if [[ ! -d "$TARGET_ROOT" ]]; then
   exit 1
 fi
 
-INPUT_ROOT_ABS="$(cd "$TARGET_ROOT" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/codeguide_paths.sh"
 
-resolve_repo_root() {
-  git -C "$INPUT_ROOT_ABS" rev-parse --show-toplevel 2>/dev/null || printf "%s" "$INPUT_ROOT_ABS"
-}
-
-PROJECT_ROOT_ABS="$(resolve_repo_root)"
-WORKSPACE_ROOT="$(cd "$PROJECT_ROOT_ABS/.." && pwd)"
-WORKSPACE_DOCS_ROOT="${WORKSPACE_ROOT}/docs"
-DOCS_DIR="${WORKSPACE_DOCS_ROOT}"
+PROJECT_ROOT_ABS="$(codeguide_resolve_project_root "$TARGET_ROOT")"
+DOCS_DIR="$(codeguide_docs_root "$PROJECT_ROOT_ABS")"
 
 # Guard: if docs path exists but is a file, abort
 if [[ -e "$DOCS_DIR" && ! -d "$DOCS_DIR" ]]; then
@@ -81,41 +74,21 @@ write_if_missing() {
   fi
 }
 
-copy_policy_defaults_if_available() {
-  local source_dir="${SCRIPT_DIR}/../../docs/policy"
-  local source_abs
-  local dest_abs
-  local policy_file
-
-  [[ -d "$source_dir" ]] || return 1
-
-  source_abs="$(cd "$source_dir" && pwd)"
-  dest_abs="$(cd "$POLICY_DIR" && pwd)"
-  [[ "$source_abs" == "$dest_abs" ]] && return 0
-
-  for policy_file in shadow-validator-catalog.md shadow-regex-patterns.md shadow-rule-registry.md; do
-    if [[ -f "${source_abs}/${policy_file}" && ! -f "${POLICY_DIR}/${policy_file}" ]]; then
-      cp "${source_abs}/${policy_file}" "${POLICY_DIR}/${policy_file}"
-    fi
-  done
-}
-
-copy_policy_defaults_if_available || true
-
 write_if_missing "${POLICY_DIR}/shadow-validator-catalog.md" '# Shadow Validator Catalog
 
 - catalog_id: shadow-validator-catalog
 - catalog_version: 1
 - status: active-draft
-- linked_task: TASK-shadow-effect-map-01
-- linked_decision: decision-shadow-validator-taxonomy-01
+- template_linked_task: TASK-shadow-effect-map-01
+- template_linked_decision: decision-shadow-validator-taxonomy-01
+- template_lineage: codeguide built-in shadow v2 policy template; replace with local linked_task and linked_decision after project adoption
 - purpose: Define which validators can support shadow fact promotion.
 - last_updated: 2026-04-30T13:49:45Z
 
 ## Contract
 
 - Validator ids must include category prefix and version suffix.
-- A validator not listed here cannot produce a validated shadow fact.
+- A validator not listed here cannot produce a confirmed shadow fact.
 
 ```yaml
 validators:
@@ -147,6 +120,10 @@ validators:
     evidence_type: code_call
     validates: Python call exists
     limitations: [dynamic_dispatch_can_hide_target]
+  py.decorator.match@v1:
+    evidence_type: annotation
+    validates: Python decorator exists
+    limitations: [dynamic_imports_can_hide_route_registration]
   spring_boot.request_mapping@v1:
     evidence_type: annotation
     validates: Spring Boot request mapping annotation exists
@@ -180,6 +157,17 @@ validators:
     validates: SQL write invocation exists
     limitations: [does_not_prove_rows_affected]
 ```
+
+## Probe Implementation Coverage
+
+```yaml
+probe_coverage:
+  probe_script: scripts/shadow_evidence_probe.py
+  implemented_primary_v1: [py.ast.call_match@v1, py.decorator.match@v1, java.annotation.match@v1, spring_boot.request_mapping@v1, spring_boot.cache_evict.annotation@v1, jpa.repository.save@v1, any.runtime.trace@v1]
+  parser_backed_now: [py.ast.call_match@v1, py.decorator.match@v1]
+  source_probe_only: [java.annotation.match@v1, spring_boot.request_mapping@v1, spring_boot.cache_evict.annotation@v1, jpa.repository.save@v1]
+  unsupported_behavior: unsupported_no_infer_no_write_no_promote
+```
 '
 
 write_if_missing "${POLICY_DIR}/shadow-regex-patterns.md" '# Shadow Regex Pattern Registry
@@ -187,8 +175,9 @@ write_if_missing "${POLICY_DIR}/shadow-regex-patterns.md" '# Shadow Regex Patter
 - registry_id: shadow-regex-patterns
 - registry_version: 1
 - status: active-draft
-- linked_task: TASK-shadow-effect-map-01
-- linked_decision: decision-shadow-regex-standard-01
+- template_linked_task: TASK-shadow-effect-map-01
+- template_linked_decision: decision-shadow-regex-standard-01
+- template_lineage: codeguide built-in shadow v2 policy template; replace with local linked_task and linked_decision after project adoption
 - purpose: Define approved regex fallback patterns for shadow evidence discovery.
 - last_updated: 2026-04-30T13:49:45Z
 
@@ -201,6 +190,7 @@ write_if_missing "${POLICY_DIR}/shadow-regex-patterns.md" '# Shadow Regex Patter
 regex_patterns:
   java.regex.method_call_named@v1:
     pattern: java-call-pattern
+    target: code_call
     allowed_paths: ["src/main/java/**"]
     excluded_paths: ["src/test/**", "build/**", "target/**"]
     validates: named Java call syntax appears
@@ -208,6 +198,7 @@ regex_patterns:
     max_promotion_risk: medium
   java.regex.repository_save_call@v1:
     pattern: java-repository-save-pattern
+    target: code_call
     allowed_paths: ["src/main/java/**"]
     excluded_paths: ["src/test/**", "build/**", "target/**"]
     validates: repository save syntax appears
@@ -215,6 +206,7 @@ regex_patterns:
     max_promotion_risk: medium
   java.regex.annotation_named@v1:
     pattern: java-annotation-pattern
+    target: annotation
     allowed_paths: ["src/main/java/**"]
     excluded_paths: ["src/test/**", "build/**", "target/**"]
     validates: named Java annotation syntax appears
@@ -222,6 +214,7 @@ regex_patterns:
     max_promotion_risk: medium
   spring_boot.regex.request_mapping@v1:
     pattern: spring-request-mapping-pattern
+    target: annotation
     allowed_paths: ["src/main/java/**"]
     excluded_paths: ["src/test/**", "build/**", "target/**"]
     validates: Spring request mapping annotation syntax appears
@@ -229,6 +222,7 @@ regex_patterns:
     max_promotion_risk: medium
   js.regex.call_named@v1:
     pattern: js-call-pattern
+    target: code_call
     allowed_paths: ["src/**", "app/**", "lib/**"]
     excluded_paths: ["node_modules/**", "dist/**", "build/**"]
     validates: named JavaScript call syntax appears
@@ -236,6 +230,7 @@ regex_patterns:
     max_promotion_risk: medium
   py.regex.call_named@v1:
     pattern: py-call-pattern
+    target: code_call
     allowed_paths: ["**/*.py"]
     excluded_paths: ["tests/**", ".venv/**", "venv/**", "build/**"]
     validates: named Python call syntax appears
@@ -243,6 +238,7 @@ regex_patterns:
     max_promotion_risk: medium
   py.regex.decorator_named@v1:
     pattern: py-decorator-pattern
+    target: annotation
     allowed_paths: ["**/*.py"]
     excluded_paths: ["tests/**", ".venv/**", "venv/**", "build/**"]
     validates: named Python decorator syntax appears
@@ -256,20 +252,22 @@ write_if_missing "${POLICY_DIR}/shadow-rule-registry.md" '# Shadow Rule Registry
 - registry_id: shadow-rule-registry
 - registry_version: 1
 - status: active-draft
-- linked_task: TASK-shadow-effect-map-01
-- linked_decisions: decision-shadow-practical-contract-01, decision-shadow-validator-taxonomy-01, decision-shadow-regex-standard-01
+- template_linked_task: TASK-shadow-effect-map-01
+- template_linked_decisions: decision-shadow-practical-contract-01, decision-shadow-validator-taxonomy-01, decision-shadow-regex-standard-01
+- template_lineage: codeguide built-in shadow v2 policy template; replace with local linked_task and linked_decisions after project adoption
 - purpose: Map shadow rule ids to compatible validators, approved regex fallback patterns, risk floors, and promotion gates.
 - last_updated: 2026-04-30T13:49:45Z
 
 ## Contract
 
-- Rule ids not listed here cannot produce validated shadow facts.
+- Rule ids not listed here cannot produce confirmed shadow facts.
 - Regex fallback must reference shadow-regex-patterns.md.
 - Regex-only promotion cannot exceed medium.
 
 ```yaml
 rules:
   repo.write:
+    allowed_effect_types: [db_write]
     validators_by_stack:
       spring_boot_jpa:
         code_call:
@@ -287,13 +285,18 @@ rules:
           fallback: py.regex.call_named@v1
           fallback_max_risk: medium
   cache.evict:
+    allowed_effect_types: [cache_evict]
     validators_by_stack:
       spring_boot:
         annotation:
           primary: spring_boot.cache_evict.annotation@v1
           fallback: java.regex.annotation_named@v1
           fallback_max_risk: medium
+      common:
+        runtime_trace:
+          primary: any.runtime.trace@v1
   external.call:
+    allowed_effect_types: [external_call]
     validators_by_stack:
       node:
         code_call:
@@ -301,6 +304,7 @@ rules:
           fallback: js.regex.call_named@v1
           fallback_max_risk: medium
   security.auth:
+    allowed_effect_types: [auth, auth_boundary, security_boundary]
     validators_by_stack:
       spring_boot:
         annotation:
@@ -311,6 +315,7 @@ rules:
         runtime_trace:
           primary: any.runtime.trace@v1
   http.route:
+    allowed_effect_types: [http_route, api_route]
     validators_by_stack:
       spring_boot:
         annotation:
@@ -520,6 +525,12 @@ write_if_missing "${ORCHESTRATION_DIR}/ORCH-template.md" '# ORCH-<task-id>
 - owned_scopes:
 - delegation_status: planned | active | completed | blocked
 - delegation_note:
+- risk_preflight_status: pass | approved | blocked | approval_required
+- risk_preflight_recorded_by:
+- risk_preflight_summary:
+- approval_required: true | false
+- approval_ref:
+- approved_next_step:
 - last_updated:
 '
 
@@ -556,9 +567,9 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 
 ## Docs root
 
-- Docs live under workspace-root `docs/...`.
-- The workspace root is exactly one level above the git-tracked project root.
-- Do not add an extra `docs/<repo-name>` or `docs/repos/<repo-name>` layer unless the user explicitly requests it.
+- Docs live under the project root `docs/...`.
+- The project root is the selected root; when invoked inside a git repository, scripts resolve it to the git root.
+- Do not create sibling `../docs`, `docs/<repo-name>`, or `docs/repos/<repo-name>` layers unless the user explicitly requests it.
 
 ## Shadow graph contract
 
@@ -588,8 +599,12 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 ## Orchestration contract
 
 - Main thread is the supervising lead architect, not the primary implementer.
+- Run main-thread risk preflight before sub-agents, external reviewers, or ping-pong loops.
+- If preflight finds a safety, privacy, permission, destructive-action, external-side-effect, sensitive-data, scope, or user-decision gate, stop before delegation/external review until the user approves the exact next step.
+- Record `risk_preflight_status`, `risk_preflight_recorded_by`, `risk_preflight_summary`, `approval_required`, `approval_ref`, and `approved_next_step` in `orchestration/ORCH-<task-id>.md`.
+- `risk_preflight_recorded_by` must identify the main-thread supervising lead architect, not evaluator/tool identity; `approved` requires `approval_required: true`, a concrete `approval_ref`, and a concrete `approved_next_step`.
 - Active tasks require `orchestration/ORCH-<task-id>.md`.
-- `execution_mode: supervisor_subagents` is the default path.
+- Default orchestration is `execution_mode: solo`; `execution_mode: supervisor_subagents` or delegated/external review fields are available only after the preflight gate allows delegation.
 - Orchestration rules still apply in `docs-only` work.
 - Record `primary_author_tool` and `review_mode` for plan review routing.
 - Treat `서브에이전트`, `서브 에이전트`, `subagent`, `subagents`, `sub-agent`, and `sub-agents` as the same sub-agent trigger.
@@ -604,8 +619,8 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 
 ## Plan orchestration loop
 
-- Create plan file first: workspace docs `plan/PLAN-<task-id>-v1.0.md`.
-- Write evaluator report files in workspace docs `report/` with evaluator labels: gemini | claude | codex.
+- Create plan file first: project docs `plan/PLAN-<task-id>-v1.0.md`.
+- Write evaluator report files in project docs `report/` with evaluator labels: gemini | claude | codex.
 - External CLI handoff files live under `orchestration/external-cli/<MonDD_YYYY>/<task-id>/<plan-version>/<round>/`, for example `Apr29_2026/...`.
 - External CLI requests use metadata plus `Why`, `What`, `How`, `Where`, `Verify`, then payload; CLI stdout is captured as sanitized Markdown and valid responses use parser-compatible bullet fields.
 - Pass only a short instruction plus the request file path to the CLI.
@@ -615,7 +630,9 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 - If a task or linked non-superseded decision is high-risk, strict validation requires one adversarial review pass with objection/counterproposal/rebuttal/residual_risk.
 - For each revision, create a new versioned plan file (v1.1, v1.2, ...), do not overwrite old versions.
 - Semi-automated external review must stop after collecting report docs and showing the user the result; it does not auto-create the next plan version.
-- Repeat review/revision loop until execution-ready or user stop.
+- Do not use a fixed iteration count, token budget, or cost cap as the primary stop condition.
+- Continue only while iterations produce new material evidence, reduce verified risk, fix a checked failure, improve validation, or move toward explicit acceptance criteria.
+- Stop when acceptance criteria and required verification pass, no new material findings appear, the same failure repeats without new evidence, an off-goal loop is detected, scope expands beyond the approved goal, a hard gate applies, or user decision/approval is required.
 
 ## Anti-dump limits
 
@@ -643,9 +660,8 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 - task files: Why/Where/Verify
 '
 
-echo "Initialized workspace docs scaffold under: ${DOCS_DIR}"
+echo "Initialized project docs scaffold under: ${DOCS_DIR}"
 echo "Repository root: ${PROJECT_ROOT_ABS}"
-echo "Workspace root: ${WORKSPACE_ROOT}"
 echo "Created directories:"
 echo "  - ${TASK_DIR}"
 echo "  - ${SHADOW_DIR}"

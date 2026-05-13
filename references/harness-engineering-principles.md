@@ -27,7 +27,7 @@ Use this reference when defining team process for agentic software development.
   - document decisions and progress in-repo
 
 ### 2) Repository as memory
-- Keep durable knowledge in workspace `docs/task`, `docs/shadow`, `docs/decisions`.
+- Keep durable knowledge in project `docs/task`, `docs/shadow`, `docs/decisions`.
 - Keep `AGENTS.md` as a concise map to standards and key references.
 - Avoid hidden decisions in chat-only history.
 - Treat `docs/shadow/project-shadow.md` as the top router into the shadow graph for agent onboarding.
@@ -51,6 +51,9 @@ Use this reference when defining team process for agentic software development.
 - Prefer small, reviewable increments.
 - Keep deployment and rollback simple.
 - Do not block progress for perfection when risks are bounded and follow-up tasks are captured.
+- For goal-oriented code loops, do not stop because an arbitrary iteration count, token budget, or cost cap was reached.
+- Continue implementation/test-fix loops while each pass reduces a verified failure or produces new evidence.
+- Stop code loops when verification passes, the same failure repeats without a new hypothesis, scope expands beyond the approved goal, or user approval is required.
 
 ### 6) Autonomy ladder
 - Level 1: suggest only
@@ -75,3 +78,4 @@ Define the required level per task in `docs/task/TASK-<id>.md`.
 - [ ] Escalation rules are explicit for risky actions.
 - [ ] Cleanup cadence is scheduled and tracked.
 - [ ] Docs contain no raw secret values.
+- [ ] Goal loops use evidence and verification gates instead of fixed iteration limits.

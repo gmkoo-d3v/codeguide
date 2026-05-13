@@ -12,7 +12,13 @@ Options:
   --plan-version <vX.Y>             Plan version to review (required)
   --primary-tool <tool>             Plan author tool: gemini|claude|codex (required)
   --review-round <rNN>              Review round label, e.g. r01 (required)
+  --risk-preflight-status <status>  Required gate before external review: pass|approved|blocked|approval_required
+  --risk-preflight-recorded-by <id> Main-thread actor that performed preflight (default: main-thread-supervising-lead-architect)
+  --risk-preflight-summary "<text>" Required gate summary (default: external review cleared by main thread)
+  --approval-ref <ref>              Required when risk-preflight-status=approved
+  --approved-next-step "<text>"     Exact approved step when approval was required
   --adversarial-evaluator <tool>    Optional reviewer to run in adversarial mode
+  --allow-partial-review            Allow success when only one non-required reviewer succeeds
   --gemini-model <model>            Optional Gemini model override
   --claude-model <model>            Optional Claude model override
   --codex-model <model>             Optional Codex model override
@@ -38,7 +44,13 @@ TASK_ID=""
 PLAN_VERSION=""
 PRIMARY_TOOL=""
 REVIEW_ROUND=""
+RISK_PREFLIGHT_STATUS=""
+RISK_PREFLIGHT_RECORDED_BY="main-thread-supervising-lead-architect"
+RISK_PREFLIGHT_SUMMARY=""
+APPROVAL_REF=""
+APPROVED_NEXT_STEP=""
 ADVERSARIAL_EVALUATOR=""
+ALLOW_PARTIAL_REVIEW="false"
 GEMINI_MODEL="${CODEGUIDE_GEMINI_MODEL:-}"
 CLAUDE_MODEL="${CODEGUIDE_CLAUDE_MODEL:-}"
 CODEX_MODEL="${CODEGUIDE_CODEX_MODEL:-}"
@@ -109,6 +121,47 @@ validate_review_round() {
   fi
 }
 
+validate_risk_preflight_status() {
+  local value="$1"
+  case "$value" in
+    pass|approved|blocked|approval_required) ;;
+    *)
+      echo "[ERROR] Invalid --risk-preflight-status: ${value} (use pass, approved, blocked, or approval_required)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+validate_risk_preflight_recorder() {
+  local value="$1"
+  local normalized
+  if [[ -z "$value" ]]; then
+    echo "[ERROR] --risk-preflight-recorded-by must be non-empty" >&2
+    exit 1
+  fi
+  normalized="$(printf "%s" "$value" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  case "$normalized" in
+    gemini|claude|codex|external-review-wrapper|external-cli*)
+      echo "[ERROR] --risk-preflight-recorded-by must identify the main-thread supervising lead architect, not evaluator/tool identity: ${value}" >&2
+      exit 1
+      ;;
+  esac
+}
+
+is_placeholder_approval_value() {
+  local value="$1"
+  local normalized
+  normalized="$(printf "%s" "$value" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  case "$normalized" in
+    ""|not_required|pending_user_approval|awaiting_approval|none|null|n/a|na|tbd|todo)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --task-id)
@@ -131,10 +184,39 @@ while [[ $# -gt 0 ]]; do
       REVIEW_ROUND="${2:-}"
       shift 2
       ;;
+    --risk-preflight-status)
+      require_option_value "$1" "$#"
+      RISK_PREFLIGHT_STATUS="${2:-}"
+      shift 2
+      ;;
+    --risk-preflight-recorded-by)
+      require_option_value "$1" "$#"
+      RISK_PREFLIGHT_RECORDED_BY="${2:-}"
+      shift 2
+      ;;
+    --risk-preflight-summary)
+      require_option_value "$1" "$#"
+      RISK_PREFLIGHT_SUMMARY="${2:-}"
+      shift 2
+      ;;
+    --approval-ref)
+      require_option_value "$1" "$#"
+      APPROVAL_REF="${2:-}"
+      shift 2
+      ;;
+    --approved-next-step)
+      require_option_value "$1" "$#"
+      APPROVED_NEXT_STEP="${2:-}"
+      shift 2
+      ;;
     --adversarial-evaluator)
       require_option_value "$1" "$#"
       ADVERSARIAL_EVALUATOR="${2:-}"
       shift 2
+      ;;
+    --allow-partial-review)
+      ALLOW_PARTIAL_REVIEW="true"
+      shift
       ;;
     --gemini-model)
       require_option_value "$1" "$#"
@@ -178,18 +260,38 @@ validate_identifier "--task-id" "$TASK_ID"
 validate_plan_version "$PLAN_VERSION"
 validate_tool "--primary-tool" "$PRIMARY_TOOL"
 validate_review_round "$REVIEW_ROUND"
+if [[ -z "$RISK_PREFLIGHT_STATUS" ]]; then
+  echo "[ERROR] --risk-preflight-status is required before external reviewers can be invoked" >&2
+  exit 1
+fi
+validate_risk_preflight_status "$RISK_PREFLIGHT_STATUS"
+if [[ "$RISK_PREFLIGHT_STATUS" == "blocked" || "$RISK_PREFLIGHT_STATUS" == "approval_required" ]]; then
+  echo "[BLOCKED] Risk preflight status=${RISK_PREFLIGHT_STATUS}; external review is stopped before orchestration/delegation. Provide approval and rerun with --risk-preflight-status approved --approval-ref <ref> --approved-next-step <step>." >&2
+  exit 1
+fi
+validate_risk_preflight_recorder "$RISK_PREFLIGHT_RECORDED_BY"
+if [[ -z "$RISK_PREFLIGHT_SUMMARY" ]]; then
+  RISK_PREFLIGHT_SUMMARY="Main-thread risk preflight cleared this external review round."
+fi
+if [[ "$RISK_PREFLIGHT_STATUS" == "approved" ]]; then
+  if is_placeholder_approval_value "$APPROVAL_REF" || is_placeholder_approval_value "$APPROVED_NEXT_STEP"; then
+    echo "[ERROR] Concrete --approval-ref and --approved-next-step are required when --risk-preflight-status approved" >&2
+    exit 1
+  fi
+else
+  APPROVAL_REF="${APPROVAL_REF:-not_required}"
+  APPROVED_NEXT_STEP="${APPROVED_NEXT_STEP:-external review ${TASK_ID} ${PLAN_VERSION} ${REVIEW_ROUND}}"
+fi
 if [[ -n "$ADVERSARIAL_EVALUATOR" ]]; then
   validate_tool "--adversarial-evaluator" "$ADVERSARIAL_EVALUATOR"
 fi
 
-INPUT_ROOT_ABS="$(cd "$PROJECT_ROOT" && pwd)"
-resolve_repo_root() {
-  git -C "$INPUT_ROOT_ABS" rev-parse --show-toplevel 2>/dev/null || printf "%s" "$INPUT_ROOT_ABS"
-}
+THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$THIS_DIR/codeguide_paths.sh"
 
-PROJECT_ROOT_ABS="$(resolve_repo_root)"
-WORKSPACE_ROOT="$(cd "$PROJECT_ROOT_ABS/.." && pwd)"
-DOCS_DIR="$WORKSPACE_ROOT/docs"
+PROJECT_ROOT_ABS="$(codeguide_resolve_project_root "$PROJECT_ROOT")"
+CONTEXT_ROOT="$(codeguide_context_root "$PROJECT_ROOT_ABS")"
+DOCS_DIR="$(codeguide_docs_root "$PROJECT_ROOT_ABS")"
 TASK_DIR="$DOCS_DIR/task"
 DECISIONS_DIR="$DOCS_DIR/decisions"
 PLAN_DIR="$DOCS_DIR/plan"
@@ -198,7 +300,6 @@ ORCHESTRATION_DIR="$DOCS_DIR/orchestration"
 HANDOFF_DATE="$(LC_TIME=C date +"%b%d_%Y")"
 HANDOFF_DIR="$ORCHESTRATION_DIR/external-cli/$HANDOFF_DATE/$TASK_ID/$PLAN_VERSION/$REVIEW_ROUND"
 
-THIS_DIR="$(cd "$(dirname "$0")" && pwd)"
 INIT_SCRIPT="$THIS_DIR/init_docs_scaffold.sh"
 PROMPT_TEMPLATE_FILE="$THIS_DIR/../references/external-plan-review-prompt.md"
 
@@ -340,6 +441,12 @@ ensure_orchestration_file() {
 - owned_scopes:
 - delegation_status: planned | active | completed | blocked
 - delegation_note:
+- risk_preflight_status: pass | approved | blocked | approval_required
+- risk_preflight_recorded_by:
+- risk_preflight_summary:
+- approval_required: true | false
+- approval_ref:
+- approved_next_step:
 - last_updated:
 EOF
 }
@@ -423,10 +530,20 @@ ORCHESTRATION_FILE="$ORCHESTRATION_DIR/ORCH-${TASK_ID}.md"
 ensure_orchestration_file "$ORCHESTRATION_FILE"
 NOW_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 upsert_field "$ORCHESTRATION_FILE" "task_id" "$TASK_ID"
-upsert_field_if_blank "$ORCHESTRATION_FILE" "execution_mode" "supervisor_subagents"
+upsert_field "$ORCHESTRATION_FILE" "execution_mode" "supervisor_subagents"
 upsert_field "$ORCHESTRATION_FILE" "primary_author_tool" "$PRIMARY_TOOL"
 upsert_field "$ORCHESTRATION_FILE" "review_mode" "external_cli"
-upsert_field_if_blank "$ORCHESTRATION_FILE" "supervisor_agent" "external-review-wrapper"
+upsert_field_if_blank "$ORCHESTRATION_FILE" "supervisor_agent" "$RISK_PREFLIGHT_RECORDED_BY"
+upsert_field "$ORCHESTRATION_FILE" "risk_preflight_status" "$RISK_PREFLIGHT_STATUS"
+upsert_field "$ORCHESTRATION_FILE" "risk_preflight_recorded_by" "$RISK_PREFLIGHT_RECORDED_BY"
+upsert_field "$ORCHESTRATION_FILE" "risk_preflight_summary" "$RISK_PREFLIGHT_SUMMARY"
+if [[ "$RISK_PREFLIGHT_STATUS" == "approved" ]]; then
+  upsert_field "$ORCHESTRATION_FILE" "approval_required" "true"
+else
+  upsert_field "$ORCHESTRATION_FILE" "approval_required" "false"
+fi
+upsert_field "$ORCHESTRATION_FILE" "approval_ref" "$APPROVAL_REF"
+upsert_field "$ORCHESTRATION_FILE" "approved_next_step" "$APPROVED_NEXT_STEP"
 upsert_field "$ORCHESTRATION_FILE" "last_updated" "$NOW_UTC"
 
 ALL_TOOLS=(gemini claude codex)
@@ -629,7 +746,7 @@ run_tool_prompt() {
   case "$tool" in
     gemini)
       prompt="Read the Markdown request file from disk at ${request_file}. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields to stdout; do not write files. Command-level response path: ${output_capture_file}. Sanitized response file: ${durable_response_file}. The bash wrapper redirects stdout to the command-level response path, sanitizes it, and deletes the raw capture. Do not claim the review was saved anywhere else."
-      cmd=("$binary" --approval-mode plan --output-format text --include-directories "$WORKSPACE_ROOT")
+      cmd=("$binary" --approval-mode plan --output-format text --include-directories "$CONTEXT_ROOT")
       if [[ -n "$model_override" ]]; then
         cmd+=(-m "$model_override")
       fi
@@ -637,7 +754,7 @@ run_tool_prompt() {
       ;;
     claude)
       prompt="Use read-only file access to read the Markdown request file at ${request_file}. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields to stdout; do not write files. Command-level response path: ${output_capture_file}. Sanitized response file: ${durable_response_file}. The bash wrapper redirects stdout to the command-level response path, sanitizes it, and deletes the raw capture. Do not claim the review was saved anywhere else."
-      cmd=("$binary" -p --permission-mode dontAsk --tools Read --add-dir "$WORKSPACE_ROOT" --output-format text --no-session-persistence)
+      cmd=("$binary" -p --permission-mode dontAsk --tools Read --add-dir "$CONTEXT_ROOT" --output-format text --no-session-persistence)
       if [[ -n "$model_override" ]]; then
         cmd+=(--model "$model_override")
       fi
@@ -645,7 +762,7 @@ run_tool_prompt() {
       ;;
     codex)
       prompt="Read the Markdown request file from disk at ${request_file}. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields as the final message; do not write files. Command-level response path: ${output_capture_file}. Sanitized response file: ${durable_response_file}. The bash command uses --output-last-message with the command-level response path, sanitizes it, and deletes the raw capture. Do not claim the review was saved anywhere else."
-      cmd=("$binary" exec --skip-git-repo-check --sandbox read-only --ephemeral -C "$WORKSPACE_ROOT" --add-dir "$PROJECT_ROOT_ABS" --output-last-message "$output_capture_file")
+      cmd=("$binary" exec --skip-git-repo-check --sandbox read-only --ephemeral -C "$CONTEXT_ROOT" --add-dir "$PROJECT_ROOT_ABS" --output-last-message "$output_capture_file")
       if [[ -n "$model_override" ]]; then
         cmd+=(-m "$model_override")
       fi
@@ -886,8 +1003,17 @@ if [[ -n "$ADVERSARIAL_EVALUATOR" && "$ADVERSARIAL_SUCCESS" != "true" ]]; then
   exit 1
 fi
 
-if [[ "$SUCCESS_COUNT" -gt 0 ]]; then
+if [[ "$SUCCESS_COUNT" -eq "${#REVIEWERS[@]}" ]]; then
   exit 0
+fi
+
+if [[ "$SUCCESS_COUNT" -gt 0 && "$ALLOW_PARTIAL_REVIEW" == "true" ]]; then
+  echo "[WARN] Partial external review accepted by --allow-partial-review; successful reviewers=${SUCCESS_COUNT}/${#REVIEWERS[@]}." >&2
+  exit 0
+fi
+
+if [[ "$SUCCESS_COUNT" -gt 0 ]]; then
+  echo "[ERROR] External review round incomplete: successful reviewers=${SUCCESS_COUNT}/${#REVIEWERS[@]}. Rerun failed reviewers or pass --allow-partial-review to accept a partial round explicitly." >&2
 fi
 
 exit 1

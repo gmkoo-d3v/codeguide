@@ -9,12 +9,12 @@ Usage:
 
 Options:
   --mode <advisory|strict>   Validation mode (default: advisory)
-  --max-shadow-lines <n>      Maximum lines per workspace docs/shadow/*.md file (default: 300)
-  --max-task-lines <n>        Maximum lines per workspace docs/task/TASK-*.md (default: 220)
-  --max-decision-lines <n>    Maximum lines per workspace docs/decisions/decision-*.md (default: 180)
-  --max-plan-lines <n>        Maximum lines per workspace docs/plan/PLAN-*.md (default: 220)
-  --max-report-lines <n>      Maximum lines per workspace docs/report/PLAN-*-review-*.md (default: 180)
-  --max-policy-lines <n>      Maximum lines per workspace docs/policy/*.md file (default: 220)
+  --max-shadow-lines <n>      Maximum lines per project docs/shadow/*.md file (default: 300)
+  --max-task-lines <n>        Maximum lines per project docs/task/TASK-*.md (default: 220)
+  --max-decision-lines <n>    Maximum lines per project docs/decisions/decision-*.md (default: 180)
+  --max-plan-lines <n>        Maximum lines per project docs/plan/PLAN-*.md (default: 220)
+  --max-report-lines <n>      Maximum lines per project docs/report/PLAN-*-review-*.md (default: 180)
+  --max-policy-lines <n>      Maximum lines per project docs/policy/*.md file (default: 220)
   --max-shadow-age-days <n>   Max allowed age for required shadow graph docs (default: 0, disabled)
   --max-task-age-days <n>     Max age for in_progress tasks (default: 7)
   --secret-scan-exclude-glob <glob>
@@ -170,14 +170,11 @@ require_positive_integer "--max-policy-lines" "$MAX_POLICY_LINES"
 require_non_negative_integer "--max-shadow-age-days" "$MAX_SHADOW_AGE_DAYS"
 require_non_negative_integer "--max-task-age-days" "$MAX_TASK_AGE_DAYS"
 
-INPUT_ROOT_ABS="$(cd "$PROJECT_ROOT" && pwd)"
-resolve_repo_root() {
-  git -C "$INPUT_ROOT_ABS" rev-parse --show-toplevel 2>/dev/null || printf "%s" "$INPUT_ROOT_ABS"
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/codeguide_paths.sh"
 
-PROJECT_ROOT_ABS="$(resolve_repo_root)"
-WORKSPACE_ROOT="$(cd "$PROJECT_ROOT_ABS/.." && pwd)"
-DOCS_DIR="$WORKSPACE_ROOT/docs"
+PROJECT_ROOT_ABS="$(codeguide_resolve_project_root "$PROJECT_ROOT")"
+DOCS_DIR="$(codeguide_docs_root "$PROJECT_ROOT_ABS")"
 TASK_DIR="$DOCS_DIR/task"
 SHADOW_DIR="$DOCS_DIR/shadow"
 SHADOW_GLOBAL_FILE="$SHADOW_DIR/_global.md"
@@ -352,6 +349,27 @@ check_field_non_empty() {
   return 0
 }
 
+check_any_field_non_empty() {
+  local file_path="$1"
+  local label="$2"
+  shift 2
+  local key
+  local value
+  local keys_text
+
+  for key in "$@"; do
+    value="$(extract_field_value "$file_path" "$key")"
+    if [[ -n "$value" ]]; then
+      return 0
+    fi
+  done
+
+  keys_text="$(printf "%s|" "$@")"
+  keys_text="${keys_text%|}"
+  fail "one of ${keys_text} is required and non-empty in ${label}: $file_path"
+  return 1
+}
+
 # Check field exists (key presence only, for backward compat in advisory mode)
 check_field_exists() {
   local file_path="$1"
@@ -398,6 +416,343 @@ check_redirect_shim_file() {
   check_field_value_equals "$file_path" "edit_policy" "read_only" "$label"
   check_field_exists "$file_path" "replacement_reason" "$label"
   check_field_exists "$file_path" "last_updated" "$label"
+}
+
+check_effect_map_file() {
+  local file_path="$1"
+  local issue_output
+
+  check_field_value_equals "$file_path" "doc_role" "effect_map" "shadow effect_map"
+  issue_output="$(python3 - "$file_path" "$POLICY_DIR" "$PROJECT_ROOT_ABS" "$SCRIPT_DIR" <<'PY'
+import hashlib
+import re
+import sys
+from pathlib import Path
+
+path = sys.argv[1]
+policy_dir = Path(sys.argv[2])
+project_root = Path(sys.argv[3])
+script_dir = Path(sys.argv[4])
+sys.path.insert(0, str(script_dir))
+from shadow_policy_loader import load_policy_registry_from_dir
+marker = re.compile(r"^<!--\s*shadow-effect-record:([A-Za-z0-9_.:-]+)\s+(begin|end)\s*-->$")
+markerish = re.compile(r"shadow-effect-record:")
+allowed_lifecycles = {"confirmed", "unknown", "blocked", "stale"}
+human_effect_types = {
+    "business_intent",
+    "business_risk",
+    "bug_or_intended_design",
+    "domain_intent",
+    "effect_intent",
+    "human_fact",
+    "waiver_approval",
+}
+sha_re = re.compile(r"^sha256:[0-9a-f]{64}$")
+id_re = re.compile(r"^ {2,}([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+@v[0-9]+):\s*$")
+bt = chr(96)
+issues = []
+open_id = None
+fields = {}
+record_count = 0
+
+
+def parse_inline_list(value: str) -> set[str]:
+    value = value.strip()
+    if value.startswith("[") and value.endswith("]"):
+        value = value[1:-1]
+    return {item.strip().strip("\"'") for item in value.split(",") if item.strip()}
+
+
+policy_registry = load_policy_registry_from_dir(policy_dir)
+catalog_evidence_types = policy_registry.validators
+implemented_validators = policy_registry.implemented_primary
+parser_backed_validators = policy_registry.parser_backed_now
+rule_allowed_effects = policy_registry.rule_effect_types
+rule_compatible_refs = {
+    rule_id: {item for refs in evidence_refs.values() for item in refs}
+    for rule_id, evidence_refs in policy_registry.rule_primaries.items()
+}
+
+
+def sha256_file(value: Path) -> str:
+    digest = hashlib.sha256()
+    with value.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return "sha256:" + digest.hexdigest()
+
+
+def source_path_from_ref(ref: str) -> str:
+    head, sep, tail = ref.rpartition(":")
+    if sep and tail.isdigit() and head and ("/" in head or "\\" in head or Path(head).suffix):
+        return head
+    return ref
+
+
+def line_from_ref(ref: str) -> str | None:
+    head, sep, tail = ref.rpartition(":")
+    if sep and tail.isdigit() and head and ("/" in head or "\\" in head or Path(head).suffix):
+        return tail
+    return None
+
+
+def normalized_path(ref: str) -> Path:
+    raw = Path(source_path_from_ref(ref))
+    if not raw.is_absolute():
+        raw = project_root / raw
+    return raw.resolve(strict=False)
+
+
+def check_path_binding(record_id: str, prefix: str, anchor_file: str, ref: str, anchor_line: str | None = None) -> None:
+    if anchor_file and ref and normalized_path(anchor_file) != normalized_path(ref):
+        issues.append(f"record {record_id}: {prefix} anchor_file must match evidence ref path")
+    ref_line = line_from_ref(ref or "")
+    if anchor_line and ref_line and str(anchor_line).strip() != ref_line:
+        issues.append(f"record {record_id}: {prefix} anchor_line must match evidence ref line")
+
+
+def check_probe_artifact(record_id: str, probe_ref: str, probe_hash: str, label: str) -> None:
+    if not sha_re.match(probe_hash or ""):
+        return
+    if not probe_ref:
+        return
+    probe_path = Path(source_path_from_ref(probe_ref))
+    if not probe_path.is_absolute():
+        probe_path = project_root / probe_path
+    try:
+        resolved = probe_path.resolve(strict=True)
+    except OSError:
+        issues.append(f"record {record_id}: {label} probe artifact must exist")
+        return
+    if not resolved.is_file():
+        issues.append(f"record {record_id}: {label} probe artifact must be a file")
+        return
+    try:
+        if sha256_file(resolved) != probe_hash:
+            issues.append(f"record {record_id}: {label} probe artifact hash must match")
+    except OSError as exc:
+        issues.append(f"record {record_id}: {label} probe artifact hash could not be verified: {exc}")
+
+
+def check_rule(record_id: str, evidence_type: str, rule_id: str, effect_type: str, evidence_ref: str) -> None:
+    if not rule_id:
+        issues.append(f"record {record_id}: {evidence_type} evidence_rule_id is required")
+        return
+    if rule_id not in rule_allowed_effects:
+        issues.append(f"record {record_id}: {evidence_type} evidence_rule_id must be registered")
+        return
+    if effect_type not in rule_allowed_effects.get(rule_id, set()):
+        issues.append(f"record {record_id}: {evidence_type} evidence_rule_id is not compatible with effect_type")
+    if evidence_ref not in rule_compatible_refs.get(rule_id, set()):
+        issues.append(f"record {record_id}: {evidence_type} evidence_ref is not compatible with evidence_rule_id")
+
+
+def finish(line_no: int, end_id: str) -> None:
+    global open_id, fields, record_count
+    if open_id is None:
+        issues.append(f"line {line_no}: end marker without begin marker")
+        return
+    if end_id != open_id:
+        issues.append(f"line {line_no}: marker id mismatch for {open_id}")
+    record_count += 1
+    lifecycle = fields.get("lifecycle", "")
+    if lifecycle not in allowed_lifecycles:
+        issues.append(f"record {open_id}: lifecycle must be confirmed, unknown, blocked, or stale")
+    if not fields.get("record_id"):
+        issues.append(f"record {open_id}: record_id is required")
+    elif fields["record_id"] != open_id:
+        issues.append(f"record {open_id}: record_id must match marker id")
+    if fields.get("record_type") != "effect_map_entry":
+        issues.append(f"record {open_id}: record_type must be effect_map_entry")
+    if not fields.get("effect_type"):
+        issues.append(f"record {open_id}: effect_type is required")
+    if lifecycle == "confirmed":
+        for key in ("anchor_file", "anchor_symbol", "evidence_type", "evidence_ref"):
+            if not fields.get(key):
+                issues.append(f"record {open_id}: confirmed record requires {key}")
+        evidence_type = fields.get("evidence_type", "")
+        if evidence_type == "deterministic_code":
+            for key in (
+                "evidence_rule_id",
+                "evidence_validator_kind",
+                "evidence_parser_backed",
+                "evidence_validator_result",
+                "evidence_source_ref",
+                "evidence_source_hash",
+                "evidence_probe_result_ref",
+                "evidence_probe_result_hash",
+            ):
+                if not fields.get(key):
+                    issues.append(f"record {open_id}: deterministic_code record requires {key}")
+            if fields.get("evidence_parser_backed", "").lower() != "true":
+                issues.append(f"record {open_id}: deterministic_code evidence_parser_backed must be true")
+            if fields.get("evidence_validator_result") != "matched":
+                issues.append(f"record {open_id}: deterministic_code evidence_validator_result must be matched")
+            if fields.get("evidence_source_hash") and not sha_re.match(fields["evidence_source_hash"]):
+                issues.append(f"record {open_id}: deterministic_code evidence_source_hash must be sha256")
+            if fields.get("evidence_probe_result_hash") and not sha_re.match(fields["evidence_probe_result_hash"]):
+                issues.append(f"record {open_id}: deterministic_code evidence_probe_result_hash must be sha256")
+            check_rule(open_id, "deterministic_code", fields.get("evidence_rule_id", ""), fields.get("effect_type", ""), fields.get("evidence_ref", ""))
+            if fields.get("evidence_ref") not in catalog_evidence_types:
+                issues.append(f"record {open_id}: deterministic_code evidence_ref must be registered in validator catalog")
+            elif catalog_evidence_types.get(fields.get("evidence_ref")) not in {"code_call", "annotation", "code_reference", "config_binding"}:
+                issues.append(f"record {open_id}: deterministic_code evidence_ref must reference source evidence")
+            if fields.get("evidence_ref") not in implemented_validators:
+                issues.append(f"record {open_id}: deterministic_code evidence_ref must be implemented")
+            if fields.get("evidence_ref") not in parser_backed_validators:
+                issues.append(f"record {open_id}: deterministic_code evidence_ref must be parser-backed")
+            check_path_binding(open_id, "deterministic_code", fields.get("anchor_file", ""), fields.get("evidence_source_ref", ""), fields.get("anchor_line"))
+            check_probe_artifact(open_id, fields.get("evidence_probe_result_ref", ""), fields.get("evidence_probe_result_hash", ""), "deterministic_code")
+        elif evidence_type == "deterministic_runtime":
+            for key in (
+                "evidence_rule_id",
+                "evidence_trace_ref",
+                "evidence_artifact_hash",
+                "evidence_scenario_ref",
+                "evidence_user_decision_ref",
+                "evidence_probe_result_ref",
+                "evidence_probe_result_hash",
+            ):
+                if not fields.get(key):
+                    issues.append(f"record {open_id}: deterministic_runtime record requires {key}")
+            if fields.get("evidence_artifact_hash") and not sha_re.match(fields["evidence_artifact_hash"]):
+                issues.append(f"record {open_id}: deterministic_runtime evidence_artifact_hash must be sha256")
+            if fields.get("evidence_probe_result_hash") and not sha_re.match(fields["evidence_probe_result_hash"]):
+                issues.append(f"record {open_id}: deterministic_runtime evidence_probe_result_hash must be sha256")
+            check_rule(open_id, "deterministic_runtime", fields.get("evidence_rule_id", ""), fields.get("effect_type", ""), fields.get("evidence_ref", ""))
+            if catalog_evidence_types.get(fields.get("evidence_ref")) != "runtime_trace":
+                issues.append(f"record {open_id}: deterministic_runtime evidence_ref must reference runtime_trace")
+            if fields.get("evidence_ref") not in implemented_validators:
+                issues.append(f"record {open_id}: deterministic_runtime evidence_ref must be implemented")
+            check_path_binding(open_id, "deterministic_runtime", fields.get("anchor_file", ""), fields.get("evidence_trace_ref", ""), fields.get("anchor_line"))
+            check_probe_artifact(open_id, fields.get("evidence_probe_result_ref", ""), fields.get("evidence_probe_result_hash", ""), "deterministic_runtime")
+        elif evidence_type == "user_decision":
+            if fields.get("effect_type") not in human_effect_types:
+                issues.append(f"record {open_id}: user_decision evidence requires human-only effect_type")
+            if fields.get("evidence_ref") and fields.get("user_decision_ref") and fields["evidence_ref"] == fields["user_decision_ref"]:
+                issues.append(f"record {open_id}: user_decision evidence_ref must be separate from final apply user_decision_ref")
+        elif evidence_type:
+            issues.append(f"record {open_id}: unsupported evidence_type {evidence_type}")
+    elif lifecycle in {"unknown", "blocked", "stale"} and not fields.get("reason"):
+        issues.append(f"record {open_id}: non-confirmed record requires reason")
+    open_id = None
+    fields = {}
+
+with open(path, encoding="utf-8", errors="replace") as fh:
+    for line_no, raw in enumerate(fh, start=1):
+        line = raw.rstrip("\n")
+        match = marker.match(line)
+        if markerish.search(line) and not match:
+            issues.append(f"line {line_no}: malformed shadow-effect-record marker")
+        if match and match.group(2) == "begin":
+            if open_id is not None:
+                issues.append(f"line {line_no}: nested begin marker before closing {open_id}")
+            open_id = match.group(1)
+            fields = {}
+            continue
+        if match and match.group(2) == "end":
+            finish(line_no, match.group(1))
+            continue
+        if open_id is not None and line.startswith("- ") and ":" in line:
+            key, value = line[2:].split(":", 1)
+            fields[key.strip()] = value.strip()
+
+if open_id is not None:
+    issues.append(f"record {open_id}: missing end marker")
+
+for issue in issues:
+    print(issue)
+PY
+)"
+  if [[ -n "$issue_output" ]]; then
+    while IFS= read -r issue; do
+      [[ -n "$issue" ]] && fail "${issue} in shadow effect_map: $file_path"
+    done <<< "$issue_output"
+  else
+    pass "shadow effect_map records valid: $file_path"
+  fi
+}
+
+check_review_queue_file() {
+  local file_path="$1"
+  local issue_output
+
+  check_field_value_equals "$file_path" "doc_role" "review_queue" "shadow review_queue"
+  check_field_non_empty "$file_path" "task_id" "shadow review_queue"
+  check_field_value_equals "$file_path" "generated_by" "shadow_review_queue.py" "shadow review_queue"
+  check_field_non_empty "$file_path" "generated_at" "shadow review_queue"
+  check_field_non_empty "$file_path" "ttl_days" "shadow review_queue"
+  check_field_value_equals "$file_path" "writes_shadow_docs" "false" "shadow review_queue"
+  check_field_value_equals "$file_path" "auto_promotes_facts" "false" "shadow review_queue"
+
+  issue_output="$(python3 - "$file_path" <<'PY'
+import sys
+
+path = sys.argv[1]
+candidates = {}
+questions = []
+section = ""
+current = None
+current_kind = ""
+
+def flush():
+    global current
+    if not current:
+        return
+    if current_kind == "candidate":
+        candidates[current.get("id", "")] = dict(current)
+    elif current_kind == "question":
+        questions.append(dict(current))
+    current = None
+
+with open(path, encoding="utf-8", errors="replace") as fh:
+    for raw in fh:
+        line = raw.rstrip("\n")
+        if line == "## Evidence Candidates":
+            flush()
+            section = "candidates"
+            continue
+        if line == "## Review Questions":
+            flush()
+            section = "questions"
+            continue
+        if line.startswith("## "):
+            flush()
+            section = ""
+            continue
+        if line.startswith("- id: ") and section in {"candidates", "questions"}:
+            flush()
+            current_kind = "candidate" if section == "candidates" else "question"
+            current = {"id": line.split(":", 1)[1].strip()}
+            continue
+        if current is not None and line.startswith("  ") and ":" in line:
+            key, value = line.strip().split(":", 1)
+            current[key.strip()] = value.strip()
+flush()
+
+issues = []
+for candidate_id, candidate in candidates.items():
+    if candidate.get("source_ref") == "unknown" and candidate.get("question_state") != "deferred_missing_context":
+        issues.append(f"candidate {candidate_id}: unknown source_ref requires question_state deferred_missing_context")
+for question in questions:
+    ref = question.get("evidence_ref", "")
+    candidate = candidates.get(ref)
+    if not candidate:
+        issues.append(f"question {question.get('id', '<unknown>')}: evidence_ref does not resolve to candidate {ref}")
+        continue
+    if candidate.get("source_ref") == "unknown" or candidate.get("question_state") == "deferred_missing_context":
+        issues.append(f"question {question.get('id', '<unknown>')}: must not ask about deferred or unknown-source candidate {ref}")
+for issue in issues:
+    print(issue)
+PY
+)"
+  if [[ -n "$issue_output" ]]; then
+    while IFS= read -r issue; do
+      [[ -n "$issue" ]] && fail "${issue} in shadow review_queue: $file_path"
+    done <<< "$issue_output"
+  else
+    pass "shadow review_queue source refs are bounded: $file_path"
+  fi
 }
 
 # Freshness check using last_updated field first, then mtime fallback
@@ -545,6 +900,20 @@ check_enum_membership() {
   return 1
 }
 
+is_placeholder_approval_value() {
+  local value="$1"
+  local normalized
+  normalized="$(printf "%s" "$value" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  case "$normalized" in
+    ""|not_required|pending_user_approval|awaiting_approval|none|null|n/a|na|tbd|todo)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 check_file_contains_pattern() {
   local file_path="$1"
   local pattern="$2"
@@ -565,12 +934,193 @@ collect_versioned_registry_ids() {
     | sort -u || true
 }
 
+collect_versioned_registry_ids_in_block() {
+  local file_path="$1"
+  local block_name="$2"
+  awk -v block_name="$block_name" '
+    $0 == block_name ":" {
+      in_block=1
+      next
+    }
+    in_block && /^```/ {
+      in_block=0
+      next
+    }
+    in_block && /^[^[:space:]`#][^:]*:/ && $0 != block_name ":" {
+      in_block=0
+      next
+    }
+    in_block && /^[[:space:]]{2,}[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+@v[0-9]+:/ {
+      id=$1
+      sub(/:$/, "", id)
+      print id
+    }
+  ' "$file_path" | sort -u || true
+}
+
 collect_rule_registry_refs() {
   local file_path="$1"
   local key="$2"
   grep -E "^[[:space:]]+${key}:[[:space:]]*[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+@v[0-9]+" "$file_path" 2>/dev/null \
     | sed -E "s/^[[:space:]]+${key}:[[:space:]]*([^ #]+).*$/\1/" \
     | sort -u || true
+}
+
+collect_backtick_registry_ids_for_field() {
+  local file_path="$1"
+  local field_name="$2"
+  grep -E "^[[:space:]]*-[[:space:]]*${field_name}:" "$file_path" 2>/dev/null \
+    | grep -oE '`[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+@v[0-9]+`' \
+    | tr -d '`' \
+    | sort -u || true
+}
+
+collect_probe_primary_validator_ids() {
+  local probe_script="$1"
+  python3 "$SCRIPT_DIR/shadow_policy_loader.py" --adapter-module "$probe_script" --print-adapter-ids 2>/dev/null || true
+}
+
+collect_policy_loader_ids() {
+  local field_name="$1"
+  set +e
+  python3 "$SCRIPT_DIR/shadow_policy_loader.py" --policy-dir "$POLICY_DIR" --print-policy-json 2>/dev/null \
+    | python3 -c 'import json,sys
+field=sys.argv[1]
+try:
+    data=json.load(sys.stdin)
+except Exception:
+    data={}
+value=data.get(field)
+if isinstance(value, dict):
+    items=sorted(value.keys())
+elif isinstance(value, list):
+    items=sorted(str(item) for item in value)
+else:
+    items=[]
+for item in items:
+    print(item)
+' "$field_name"
+  local status=$?
+  set -e
+  return "$status"
+}
+
+check_policy_loader_contract() {
+  local loader_output
+  local loader_status
+  local issue_output
+
+  set +e
+  loader_output="$(python3 "$SCRIPT_DIR/shadow_policy_loader.py" --policy-dir "$POLICY_DIR" --adapter-module "$SCRIPT_DIR/shadow_evidence_probe.py" --check-parity 2>&1)"
+  loader_status=$?
+  set -e
+  if (( loader_status == 0 )); then
+    pass "shadow policy loader strict contract passes"
+    return
+  fi
+
+  issue_output="$(printf "%s" "$loader_output" | python3 -c 'import json,sys
+raw=sys.stdin.read()
+try:
+    data=json.loads(raw)
+    errors=data.get("errors") or [data.get("error") or raw]
+except Exception:
+    errors=[raw]
+for item in errors:
+    print(item)
+' 2>/dev/null || printf "%s\n" "$loader_output")"
+  while IFS= read -r issue; do
+    [[ -n "$issue" ]] && fail "shadow policy loader strict contract failed: ${issue}"
+  done <<< "$issue_output"
+}
+
+check_catalog_probe_coverage() {
+  local catalog_file="$1"
+  local implemented_ids
+  local parser_ids
+  local source_probe_ids
+  local declared_ids
+  local probe_ids
+  local id
+  local mismatch_count=0
+
+  declared_ids="$(collect_policy_loader_ids "validators")"
+  implemented_ids="$(collect_policy_loader_ids "implemented_primary")"
+  parser_ids="$(collect_policy_loader_ids "parser_backed_now")"
+  source_probe_ids="$(collect_policy_loader_ids "source_probe_only")"
+  probe_ids="$(collect_probe_primary_validator_ids "$SCRIPT_DIR/shadow_evidence_probe.py")"
+
+  if [[ -z "$implemented_ids" ]]; then
+    fail "shadow validator catalog must declare implemented_primary_v1 (${catalog_file})"
+  else
+    pass "shadow validator catalog declares implemented_primary_v1"
+  fi
+  if [[ -z "$parser_ids" ]]; then
+    fail "shadow validator catalog must declare parser_backed_now (${catalog_file})"
+  else
+    pass "shadow validator catalog declares parser_backed_now"
+  fi
+  if [[ -z "$source_probe_ids" ]]; then
+    fail "shadow validator catalog must declare source_probe_only (${catalog_file})"
+  else
+    pass "shadow validator catalog declares source_probe_only"
+  fi
+  if [[ -z "$probe_ids" ]]; then
+    fail "shadow_evidence_probe.py must expose primary AdapterRegistry ids (${catalog_file})"
+    mismatch_count=$((mismatch_count + 1))
+  fi
+
+  while IFS= read -r id; do
+    [[ -n "$id" ]] || continue
+    if ! printf "%s\n" "$declared_ids" | grep -Fxq "$id"; then
+      fail "implemented_primary_v1 id must be declared in validators block: ${id} (${catalog_file})"
+      mismatch_count=$((mismatch_count + 1))
+    fi
+    if [[ -n "$probe_ids" ]] && ! printf "%s\n" "$probe_ids" | grep -Fxq "$id"; then
+      fail "implemented_primary_v1 id must be implemented by shadow_evidence_probe.py: ${id} (${catalog_file})"
+      mismatch_count=$((mismatch_count + 1))
+    fi
+  done <<< "$implemented_ids"
+
+  while IFS= read -r id; do
+    [[ -n "$id" ]] || continue
+    if ! printf "%s\n" "$implemented_ids" | grep -Fxq "$id"; then
+      fail "shadow_evidence_probe.py primary validator missing from implemented_primary_v1: ${id} (${catalog_file})"
+      mismatch_count=$((mismatch_count + 1))
+    fi
+  done <<< "$probe_ids"
+
+  while IFS= read -r id; do
+    [[ -n "$id" ]] || continue
+    if ! printf "%s\n" "$declared_ids" | grep -Fxq "$id"; then
+      fail "parser_backed_now id must be declared in validators block: ${id} (${catalog_file})"
+      mismatch_count=$((mismatch_count + 1))
+    fi
+    if ! printf "%s\n" "$implemented_ids" | grep -Fxq "$id"; then
+      fail "parser_backed_now id must also be implemented_primary_v1: ${id} (${catalog_file})"
+      mismatch_count=$((mismatch_count + 1))
+    fi
+  done <<< "$parser_ids"
+
+  while IFS= read -r id; do
+    [[ -n "$id" ]] || continue
+    if ! printf "%s\n" "$declared_ids" | grep -Fxq "$id"; then
+      fail "source_probe_only id must be declared in validators block: ${id} (${catalog_file})"
+      mismatch_count=$((mismatch_count + 1))
+    fi
+    if ! printf "%s\n" "$implemented_ids" | grep -Fxq "$id"; then
+      fail "source_probe_only id must also be implemented_primary_v1: ${id} (${catalog_file})"
+      mismatch_count=$((mismatch_count + 1))
+    fi
+    if printf "%s\n" "$parser_ids" | grep -Fxq "$id"; then
+      fail "source_probe_only id must not also be parser_backed_now: ${id} (${catalog_file})"
+      mismatch_count=$((mismatch_count + 1))
+    fi
+  done <<< "$source_probe_ids"
+
+  if (( mismatch_count == 0 )); then
+    pass "shadow validator catalog probe coverage sets are internally consistent"
+  fi
 }
 
 check_rule_registry_ref_versions() {
@@ -650,9 +1200,9 @@ collect_regex_evidence_map() {
       current=id
       next
     }
-    current != "" && /^[[:space:]]+target:[[:space:]]*/ {
+    current != "" && /^[[:space:]]+(target|evidence_type):[[:space:]]*/ {
       evidence=$0
-      sub(/^[[:space:]]+target:[[:space:]]*/, "", evidence)
+      sub(/^[[:space:]]+(target|evidence_type):[[:space:]]*/, "", evidence)
       sub(/[[:space:]#].*$/, "", evidence)
       print current " " evidence
       current=""
@@ -859,11 +1409,14 @@ check_rule_registry_has_mappings() {
   local rule_file="$1"
   local rule_count
   local primary_count
+  local effect_type_count
+  local effect_type_failures
 
   check_file_contains_pattern "$rule_file" "^[[:space:]]{0,2}rules:" "shadow rule registry declares rules block" "shadow rule registry missing rules block (${rule_file})"
 
   rule_count="$(grep -E '^[[:space:]]{2,}[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+:' "$rule_file" 2>/dev/null | grep -Ev '@v[0-9]+:' | wc -l | tr -d ' ')"
   primary_count="$(collect_rule_registry_refs "$rule_file" "primary" | wc -l | tr -d ' ')"
+  effect_type_count="$(grep -E '^[[:space:]]{4}allowed_effect_types:[[:space:]]*\[[a-z0-9_,[:space:]]+\]' "$rule_file" 2>/dev/null | wc -l | tr -d ' ')"
 
   if (( rule_count == 0 )); then
     fail "shadow rule registry must contain at least one rule id mapping: $rule_file"
@@ -875,6 +1428,35 @@ check_rule_registry_has_mappings() {
     fail "shadow rule registry must contain at least one primary validator mapping: $rule_file"
   else
     pass "shadow rule registry contains primary validator mappings (${primary_count})"
+  fi
+
+  if (( effect_type_count < rule_count )); then
+    fail "shadow rule registry must declare allowed_effect_types for every rule (${effect_type_count}/${rule_count}): $rule_file"
+  else
+    pass "shadow rule registry declares allowed_effect_types for every rule (${effect_type_count})"
+  fi
+
+  effect_type_failures="$(awk '
+    /^[[:space:]]{4}allowed_effect_types:[[:space:]]*/ {
+      value=$0
+      sub(/^[[:space:]]+allowed_effect_types:[[:space:]]*\[/, "", value)
+      sub(/\].*$/, "", value)
+      n=split(value, parts, ",")
+      for (i=1; i<=n; i++) {
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", parts[i])
+        if (parts[i] !~ /^[a-z][a-z0-9_]*$/) {
+          print "invalid allowed_effect_types value: " parts[i] " at line " NR
+        }
+      }
+    }
+  ' "$rule_file")"
+  if [[ -n "$effect_type_failures" ]]; then
+    while IFS= read -r failure_line; do
+      [[ -n "$failure_line" ]] || continue
+      fail "${failure_line} (${rule_file})"
+    done <<< "$effect_type_failures"
+  else
+    pass "shadow rule registry allowed_effect_types values are structurally valid"
   fi
 }
 
@@ -899,24 +1481,24 @@ check_shadow_policy_files() {
   check_field_non_empty "$catalog_file" "catalog_id" "shadow validator catalog"
   check_field_non_empty "$catalog_file" "catalog_version" "shadow validator catalog"
   check_field_non_empty "$catalog_file" "status" "shadow validator catalog"
-  check_field_non_empty "$catalog_file" "linked_task" "shadow validator catalog"
-  check_field_non_empty "$catalog_file" "linked_decision" "shadow validator catalog"
+  check_any_field_non_empty "$catalog_file" "shadow validator catalog" "linked_task" "template_linked_task"
+  check_any_field_non_empty "$catalog_file" "shadow validator catalog" "linked_decision" "template_linked_decision"
   check_field_non_empty "$catalog_file" "purpose" "shadow validator catalog"
   check_field_non_empty "$catalog_file" "last_updated" "shadow validator catalog"
 
   check_field_non_empty "$regex_file" "registry_id" "shadow regex pattern registry"
   check_field_non_empty "$regex_file" "registry_version" "shadow regex pattern registry"
   check_field_non_empty "$regex_file" "status" "shadow regex pattern registry"
-  check_field_non_empty "$regex_file" "linked_task" "shadow regex pattern registry"
-  check_field_non_empty "$regex_file" "linked_decision" "shadow regex pattern registry"
+  check_any_field_non_empty "$regex_file" "shadow regex pattern registry" "linked_task" "template_linked_task"
+  check_any_field_non_empty "$regex_file" "shadow regex pattern registry" "linked_decision" "template_linked_decision"
   check_field_non_empty "$regex_file" "purpose" "shadow regex pattern registry"
   check_field_non_empty "$regex_file" "last_updated" "shadow regex pattern registry"
 
   check_field_non_empty "$rule_file" "registry_id" "shadow rule registry"
   check_field_non_empty "$rule_file" "registry_version" "shadow rule registry"
   check_field_non_empty "$rule_file" "status" "shadow rule registry"
-  check_field_non_empty "$rule_file" "linked_task" "shadow rule registry"
-  check_field_non_empty "$rule_file" "linked_decisions" "shadow rule registry"
+  check_any_field_non_empty "$rule_file" "shadow rule registry" "linked_task" "template_linked_task"
+  check_any_field_non_empty "$rule_file" "shadow rule registry" "linked_decisions" "template_linked_decisions"
   check_field_non_empty "$rule_file" "purpose" "shadow rule registry"
   check_field_non_empty "$rule_file" "last_updated" "shadow rule registry"
 
@@ -927,6 +1509,8 @@ check_shadow_policy_files() {
       "shadow validator catalog includes ${required_prefix} versioned validators" \
       "shadow validator catalog missing ${required_prefix} versioned validator prefix (${catalog_file})"
   done
+  check_catalog_probe_coverage "$catalog_file"
+  check_policy_loader_contract
 
   check_file_contains_pattern \
     "$regex_file" \
@@ -946,8 +1530,8 @@ check_shadow_policy_files() {
   check_rule_registry_promotion_gates "$rule_file"
   check_rule_registry_mapping_contracts "$rule_file" "$catalog_file" "$regex_file"
 
-  catalog_ids="$(collect_versioned_registry_ids "$catalog_file")"
-  regex_ids="$(collect_versioned_registry_ids "$regex_file")"
+  catalog_ids="$(collect_versioned_registry_ids_in_block "$catalog_file" "validators")"
+  regex_ids="$(collect_versioned_registry_ids_in_block "$regex_file" "regex_patterns")"
   check_rule_registry_refs_exist "$rule_file" "primary" "$catalog_ids" "validator catalog id"
   check_rule_registry_refs_exist "$rule_file" "fallback" "$regex_ids" "regex pattern id"
 }
@@ -1013,6 +1597,12 @@ check_orchestration_file_for_task() {
   local doc_task_id
   local primary_author_tool
   local review_mode
+  local risk_preflight_status
+  local risk_preflight_recorded_by
+  local approval_required
+  local approval_ref
+  local approved_next_step
+  local risk_preflight_recorded_by_normalized
 
   if [[ ! -f "$orchestration_file" ]]; then
     fail "missing orchestration file for active task ${task_ref}: expected ${orchestration_file}"
@@ -1025,10 +1615,16 @@ check_orchestration_file_for_task() {
   if [[ "$MODE" == "strict" ]]; then
     check_field_non_empty "$orchestration_file" "task_id" "orchestration"
     check_field_non_empty "$orchestration_file" "execution_mode" "orchestration"
-    check_field_non_empty "$orchestration_file" "primary_author_tool" "orchestration"
-    check_field_non_empty "$orchestration_file" "review_mode" "orchestration"
+    check_field_exists "$orchestration_file" "primary_author_tool" "orchestration"
+    check_field_exists "$orchestration_file" "review_mode" "orchestration"
     check_field_non_empty "$orchestration_file" "supervisor_agent" "orchestration"
     check_field_non_empty "$orchestration_file" "delegation_status" "orchestration"
+    check_field_non_empty "$orchestration_file" "risk_preflight_status" "orchestration"
+    check_field_non_empty "$orchestration_file" "risk_preflight_recorded_by" "orchestration"
+    check_field_non_empty "$orchestration_file" "risk_preflight_summary" "orchestration"
+    check_field_non_empty "$orchestration_file" "approval_required" "orchestration"
+    check_field_non_empty "$orchestration_file" "approval_ref" "orchestration"
+    check_field_non_empty "$orchestration_file" "approved_next_step" "orchestration"
     check_field_non_empty "$orchestration_file" "last_updated" "orchestration"
   else
     check_field_exists "$orchestration_file" "task_id" "orchestration"
@@ -1037,6 +1633,12 @@ check_orchestration_file_for_task() {
     check_field_exists "$orchestration_file" "review_mode" "orchestration"
     check_field_exists "$orchestration_file" "supervisor_agent" "orchestration"
     check_field_exists "$orchestration_file" "delegation_status" "orchestration"
+    check_field_exists "$orchestration_file" "risk_preflight_status" "orchestration"
+    check_field_exists "$orchestration_file" "risk_preflight_recorded_by" "orchestration"
+    check_field_exists "$orchestration_file" "risk_preflight_summary" "orchestration"
+    check_field_exists "$orchestration_file" "approval_required" "orchestration"
+    check_field_exists "$orchestration_file" "approval_ref" "orchestration"
+    check_field_exists "$orchestration_file" "approved_next_step" "orchestration"
     check_field_exists "$orchestration_file" "last_updated" "orchestration"
   fi
 
@@ -1049,10 +1651,58 @@ check_orchestration_file_for_task() {
   primary_author_tool="$(extract_field_value "$orchestration_file" "primary_author_tool")"
   review_mode="$(extract_field_value "$orchestration_file" "review_mode")"
   delegation_status="$(extract_field_value "$orchestration_file" "delegation_status")"
+  risk_preflight_status="$(extract_field_value "$orchestration_file" "risk_preflight_status")"
+  risk_preflight_recorded_by="$(extract_field_value "$orchestration_file" "risk_preflight_recorded_by")"
+  approval_required="$(extract_field_value "$orchestration_file" "approval_required")"
+  approval_ref="$(extract_field_value "$orchestration_file" "approval_ref")"
+  approved_next_step="$(extract_field_value "$orchestration_file" "approved_next_step")"
   check_enum_membership "$execution_mode" "orchestration.execution_mode" "$orchestration_file" supervisor_subagents solo || true
   check_enum_membership "$primary_author_tool" "orchestration.primary_author_tool" "$orchestration_file" gemini claude codex || true
   check_enum_membership "$review_mode" "orchestration.review_mode" "$orchestration_file" external_cli codex_subagents || true
   check_enum_membership "$delegation_status" "orchestration.delegation_status" "$orchestration_file" planned active completed blocked || true
+  check_enum_membership "$risk_preflight_status" "orchestration.risk_preflight_status" "$orchestration_file" pass approved blocked approval_required || true
+  check_enum_membership "$approval_required" "orchestration.approval_required" "$orchestration_file" true false || true
+
+  risk_preflight_recorded_by_normalized="$(printf "%s" "$risk_preflight_recorded_by" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  case "$risk_preflight_recorded_by_normalized" in
+    gemini|claude|codex|external-review-wrapper|external-cli*)
+      fail "orchestration risk_preflight_recorded_by must identify the main-thread supervising lead architect, not evaluator/tool identity: ${orchestration_file}"
+      ;;
+  esac
+
+  if [[ "$risk_preflight_status" == "approved" && "$approval_required" != "true" ]]; then
+    fail "orchestration risk_preflight_status=approved requires approval_required=true: ${orchestration_file}"
+  fi
+  if [[ "$risk_preflight_status" == "approval_required" && "$approval_required" != "true" ]]; then
+    fail "orchestration risk_preflight_status=approval_required requires approval_required=true: ${orchestration_file}"
+  fi
+  if [[ "$risk_preflight_status" == "pass" && "$approval_required" != "false" ]]; then
+    fail "orchestration risk_preflight_status=pass requires approval_required=false: ${orchestration_file}"
+  fi
+  if [[ "$risk_preflight_status" == "blocked" && "$approval_required" != "false" ]]; then
+    fail "orchestration risk_preflight_status=blocked requires approval_required=false: ${orchestration_file}"
+  fi
+  if [[ "$approval_required" == "true" && "$risk_preflight_status" != "approved" && "$risk_preflight_status" != "approval_required" ]]; then
+    fail "orchestration approval_required=true requires risk_preflight_status=approved or approval_required: ${orchestration_file}"
+  fi
+  if [[ "$risk_preflight_status" == "approved" ]]; then
+    if is_placeholder_approval_value "$approval_ref"; then
+      fail "orchestration approved preflight requires a concrete approval_ref: ${orchestration_file}"
+    fi
+    if is_placeholder_approval_value "$approved_next_step"; then
+      fail "orchestration approved preflight requires approved_next_step: ${orchestration_file}"
+    fi
+  fi
+
+  if [[ "$execution_mode" != "solo" || "$review_mode" == "external_cli" || "$review_mode" == "codex_subagents" ]]; then
+    if [[ "$MODE" == "strict" ]]; then
+      check_field_non_empty "$orchestration_file" "primary_author_tool" "orchestration"
+      check_field_non_empty "$orchestration_file" "review_mode" "orchestration"
+    fi
+    if [[ "$risk_preflight_status" == "blocked" || "$risk_preflight_status" == "approval_required" ]]; then
+      fail "orchestration risk preflight must be pass or approved before delegated/external review: ${orchestration_file}"
+    fi
+  fi
 
   if [[ "$execution_mode" == "solo" ]]; then
     if [[ "$MODE" == "strict" ]]; then
@@ -1249,8 +1899,24 @@ SHADOW_TRACKED_FILES=()
 if [[ -d "$SHADOW_DIR" ]]; then
   while IFS= read -r shadow_doc; do
     check_line_limit "$shadow_doc" "$MAX_SHADOW_LINES" "shadow document"
+    if [[ "$(extract_field_value "$shadow_doc" "doc_role")" == "effect_map" ]]; then
+      check_effect_map_file "$shadow_doc"
+    fi
   done < <(
     find "$SHADOW_DIR" -type f -name '*.md' \
+      ! -path "$SHADOW_DIR/_deprecated/*" \
+      ! -path "$SHADOW_DIR/_obsolete/*" \
+      | sort
+  )
+fi
+
+if [[ -d "$DOCS_DIR" ]]; then
+  while IFS= read -r review_queue_doc; do
+    if [[ "$(extract_field_value "$review_queue_doc" "doc_role")" == "review_queue" ]]; then
+      check_review_queue_file "$review_queue_doc"
+    fi
+  done < <(
+    find "$DOCS_DIR" -type f -name '*.md' \
       ! -path "$SHADOW_DIR/_deprecated/*" \
       ! -path "$SHADOW_DIR/_obsolete/*" \
       | sort

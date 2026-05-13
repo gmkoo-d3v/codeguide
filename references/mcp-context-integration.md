@@ -20,7 +20,7 @@ Use this reference when MCP tools may affect context discovery, source authority
 ## Context budget workflow
 - Use auxiliary tools to reduce files, symbols, and lines to inspect; do not use them to produce final facts.
 - Preferred discovery order for shadow, effect, and architecture work:
-  1. Read workspace docs and shadow docs as the system of record.
+  1. Read project docs and shadow docs as the system of record.
   2. Use `rg` and Serena to narrow current-code anchors, symbols, references, call-chain candidates, and impacted files.
   3. Use mem0, pgvector, or Neo4j only for bounded prior-decision, stale-context, and related-concept lookup.
   4. Validate final claims against direct file reads, deterministic checks, tests, command output, or runtime traces.
@@ -110,7 +110,7 @@ mutations:
 - Do not use stale MCP context to override a newer user instruction or verified docs update.
 
 ## Fallback rules
-- If an MCP server is unavailable, stale, misconfigured, disabled, slow, or irrelevant, continue with `rg`, direct file reads, workspace docs, validated command output, and runtime evidence.
+- If an MCP server is unavailable, stale, misconfigured, disabled, slow, or irrelevant, continue with `rg`, direct file reads, project docs, validated command output, and runtime evidence.
 - Fallback must not block low-risk work when direct sources are sufficient.
 - Report fallback briefly when it materially affects confidence, completeness, or documentation.
 - Do not invent MCP results to fill a missing lookup.

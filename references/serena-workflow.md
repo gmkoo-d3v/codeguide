@@ -32,7 +32,7 @@ Use this reference when symbolic code navigation can reduce risk, context size, 
 - Do not paste broad symbolic overviews into the working context when a short list of paths, symbols, and line anchors is enough.
 - Treat Serena output as a navigation index that points to direct source reads; do not treat it as final validation evidence.
 - Prefer Serena before broad manual file reading when symbolic scope is unclear, and skip it when the target file or symbol is already obvious.
-- Do not persist raw Serena observations into mem0, Neo4j, or workspace docs; record only verified source-backed facts or concise pointers.
+- Do not persist raw Serena observations into mem0, Neo4j, or project docs; record only verified source-backed facts or concise pointers.
 
 ## Workflow
 1. Discover Serena tools through the current runtime's approved discovery path.
@@ -42,7 +42,7 @@ Use this reference when symbolic code navigation can reduce risk, context size, 
 5. Verify every material observation with direct file reads, `rg`, command output, tests, or runtime evidence before editing.
 6. Apply edits within the requested ownership boundary.
 7. Run the smallest validation set that proves the changed behavior.
-8. Refresh workspace docs or shadow docs when the symbolic change affects behavior, architecture, public contracts, or verified project knowledge.
+8. Refresh project docs or shadow docs when the symbolic change affects behavior, architecture, public contracts, or verified project knowledge.
 
 ## Fallback
 - If Serena is unavailable, stale, misconfigured, disabled, too slow, or not useful, continue with `rg`, direct file reads, docs, validated command output, and runtime evidence.
@@ -74,7 +74,7 @@ Use this reference when symbolic code navigation can reduce risk, context size, 
 - Confirm the active project before reading or writing Serena project memory.
 - Do not add DB-level project-id isolation to normal Serena project memories unless the runtime model changes.
 - Treat global Serena memories or global Serena configuration as shared auxiliary context; verify them against docs, code, or runtime evidence before use.
-- Keep workspace `docs/` as the system of record even when Serena project memory contains a matching summary.
+- Keep project `docs/` as the system of record even when Serena project memory contains a matching summary.
 
 ## Verification expectations
 - For refactors, prove references compile or tests cover the changed surface.

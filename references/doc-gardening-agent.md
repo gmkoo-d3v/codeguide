@@ -3,7 +3,7 @@
 Use this reference to keep repository docs continuously synchronized with code and decisions.
 
 ## Objective
-- Keep workspace docs under `docs/` current for material tasks.
+- Keep project docs under `docs/` current for material tasks.
 - Prevent stale context that causes wrong agent behavior.
 
 ## Execution points
@@ -15,7 +15,7 @@ Use this reference to keep repository docs continuously synchronized with code a
 - Skip this workflow for small direct answers and trivial edits unless the user explicitly requests docs sync.
 
 Recommended command flow:
-- `scripts/run_codeguide.sh <project-root> --mode auto` (preferred semi-auto; docs resolve to `<project-root>/../docs`)
+- `scripts/run_codeguide.sh <project-root> --mode auto` (preferred semi-auto; docs resolve to `<project-root>/docs`)
 - `scripts/doc_garden.sh <project-root> --task-id <TASK_ID> --task-status in_progress`
 - `scripts/doc_garden.sh <project-root> --task-id <TASK_ID> --decision-id <DECISION_ID> --scope-type <type> --selected-option "<choice>"`
 - `scripts/validate_docs.sh <project-root> --mode advisory`
@@ -27,8 +27,9 @@ Recommended command flow:
   - otherwise `task`
 - `task_id`:
   - explicit `--task-id` wins
+  - else branch pattern `ABC-123`
+  - else branch numeric id, such as `feature/123-name`
   - else most recent `docs/task/TASK-*.md`
-  - else branch pattern (`ABC-123` or numeric id)
   - else UTC timestamp id
 - `decision_id`:
   - explicit `--decision-id` wins
@@ -42,7 +43,11 @@ Recommended command flow:
 - Trigger condition: user invokes this skill for material architecture, multi-file, cross-service, delegated, or durable planning work.
 - Agent action:
   - supervising lead architect runs start sync automatically with `--task-status in_progress`
-  - supervising lead architect delegates plan drafting/review to sub-agents only when the user explicitly requested delegation or external review and the task is separable enough to justify it
+  - supervising lead architect runs risk preflight before sub-agents, external reviewers, or ping-pong loops
+  - if preflight finds a safety, privacy, permission, destructive-action, external-side-effect, sensitive-data, scope, or user-decision gate, stop before delegation/external review until the user approves the exact next step
+  - default `execution_mode` is `solo`; delegated agent fields, external review fields, or `supervisor_subagents` require explicit `risk_preflight_status`
+  - `approved` preflight requires `approval_required: true`, concrete approval metadata, and a main-thread recorder rather than evaluator/tool identity
+  - supervising lead architect delegates plan drafting/review to sub-agents only when the user explicitly requested delegation or external review, preflight permits it, and the task is separable enough to justify it
   - supervising lead architect delegates implementation to coding sub-agents with disjoint ownership only when explicitly requested and practical
   - supervising lead architect runs finish sync automatically with `--task-status done` (or `blocked`)
   - bootstrap `docs/plan/PLAN-<task-id>-v1.0.md` automatically when planning artifacts are needed
@@ -85,7 +90,7 @@ Recommended command flow:
   - keep unit `overview.md` files as landing docs plus concern routing
   - keep concern leaf docs factual and concrete
 - `docs/orchestration`:
-  - record supervising lead architect identity, delegated agent roles, owned scopes, and exception notes
+  - record supervising lead architect identity, delegated agent roles, owned scopes, risk preflight status, approval refs, and exception notes
 
 ## Quality checks
 - Check that every user decision is traceable to a decision file.

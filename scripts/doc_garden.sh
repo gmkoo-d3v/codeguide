@@ -8,11 +8,11 @@ Usage:
   doc_garden.sh <project-root> [options]
 
 Options:
-  --task-id <id>                  Task ID (creates/updates workspace docs/task/TASK-<id>.md)
+  --task-id <id>                  Task ID (creates/updates project docs/task/TASK-<id>.md)
   --task-title "<title>"          Task title
   --task-status <status>          planned|in_progress|blocked|done (default: in_progress)
   --risk-level <level>            low|medium|high|critical (applies to task and/or decision docs)
-  --decision-id <id>              Decision ID (creates/updates workspace docs/decisions/decision-<id>.md)
+  --decision-id <id>              Decision ID (creates/updates project docs/decisions/decision-<id>.md)
   --decision-title "<title>"      Decision title
   --scope-type <type>             task|hotfix|pr|release|incident|ops|other (default: task)
   --decision-status <status>      proposed|accepted|superseded (default: accepted)
@@ -30,9 +30,16 @@ Options:
   --axis-how "<text>"             Implementation choices (patterns/refactor/smells)
   --axis-where "<text>"           Structural placement (MVC/Layered/Hexagonal/Clean)
   --axis-verify "<text>"          Verification strategy (TDD/pyramid/FIRST)
-  --execution-mode <mode>         supervisor_subagents|solo (default: supervisor_subagents)
+  --execution-mode <mode>         supervisor_subagents|solo (default: solo)
   --primary-author-tool <tool>    gemini|claude|codex
   --review-mode <mode>            external_cli|codex_subagents
+  --risk-preflight-status <status> pass|approved|blocked|approval_required (required before delegated/external orchestration)
+  --risk-preflight-recorded-by "<name>"
+                                  Main-thread recorder identity (default: main-thread-supervising-lead-architect)
+  --risk-preflight-summary "<text>"
+                                  Main-thread risk preflight summary
+  --approval-ref "<ref>"          Required when --risk-preflight-status approved
+  --approved-next-step "<text>"   Required when --risk-preflight-status approved
   --supervisor-agent "<name>"     Main-thread supervising lead architect identifier
   --planner-agents "<list>"       Planner sub-agent identifier(s)
   --reviewer-agents "<list>"      Reviewer sub-agent identifier(s)
@@ -90,9 +97,14 @@ AXIS_WHAT=""
 AXIS_HOW=""
 AXIS_WHERE=""
 AXIS_VERIFY=""
-EXECUTION_MODE="supervisor_subagents"
+EXECUTION_MODE="solo"
 PRIMARY_AUTHOR_TOOL=""
 REVIEW_MODE=""
+RISK_PREFLIGHT_STATUS=""
+RISK_PREFLIGHT_RECORDED_BY="main-thread-supervising-lead-architect"
+RISK_PREFLIGHT_SUMMARY=""
+APPROVAL_REF=""
+APPROVED_NEXT_STEP=""
 SUPERVISOR_AGENT="main-thread-supervising-lead-architect"
 PLANNER_AGENTS=""
 REVIEWER_AGENTS=""
@@ -199,6 +211,47 @@ validate_review_mode() {
     *)
       echo "[ERROR] Invalid --review-mode: ${value} (use external_cli or codex_subagents)" >&2
       exit 1
+      ;;
+  esac
+}
+
+validate_risk_preflight_status() {
+  local value="$1"
+  case "$value" in
+    pass|approved|blocked|approval_required) ;;
+    *)
+      echo "[ERROR] Invalid --risk-preflight-status: ${value} (use pass, approved, blocked, or approval_required)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+validate_risk_preflight_recorder() {
+  local value="$1"
+  local normalized
+  if [[ -z "$value" ]]; then
+    echo "[ERROR] --risk-preflight-recorded-by must be non-empty" >&2
+    exit 1
+  fi
+  normalized="$(printf "%s" "$value" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  case "$normalized" in
+    gemini|claude|codex|external-review-wrapper|external-cli*)
+      echo "[ERROR] --risk-preflight-recorded-by must identify the main-thread supervising lead architect, not evaluator/tool identity: ${value}" >&2
+      exit 1
+      ;;
+  esac
+}
+
+is_placeholder_approval_value() {
+  local value="$1"
+  local normalized
+  normalized="$(printf "%s" "$value" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  case "$normalized" in
+    ""|not_required|pending_user_approval|awaiting_approval|none|null|n/a|na|tbd|todo)
+      return 0
+      ;;
+    *)
+      return 1
       ;;
   esac
 }
@@ -352,6 +405,31 @@ while [[ $# -gt 0 ]]; do
       REVIEW_MODE="${2:-}"
       shift 2
       ;;
+    --risk-preflight-status)
+      require_option_value "$1" "$#"
+      RISK_PREFLIGHT_STATUS="${2:-}"
+      shift 2
+      ;;
+    --risk-preflight-recorded-by)
+      require_option_value "$1" "$#"
+      RISK_PREFLIGHT_RECORDED_BY="${2:-}"
+      shift 2
+      ;;
+    --risk-preflight-summary)
+      require_option_value "$1" "$#"
+      RISK_PREFLIGHT_SUMMARY="${2:-}"
+      shift 2
+      ;;
+    --approval-ref)
+      require_option_value "$1" "$#"
+      APPROVAL_REF="${2:-}"
+      shift 2
+      ;;
+    --approved-next-step)
+      require_option_value "$1" "$#"
+      APPROVED_NEXT_STEP="${2:-}"
+      shift 2
+      ;;
     --supervisor-agent)
       require_option_value "$1" "$#"
       SUPERVISOR_AGENT="${2:-}"
@@ -453,10 +531,85 @@ fi
 if [[ -n "$REVIEW_MODE" ]]; then
   validate_review_mode "$REVIEW_MODE"
 fi
+if [[ -n "$RISK_PREFLIGHT_STATUS" ]]; then
+  validate_risk_preflight_status "$RISK_PREFLIGHT_STATUS"
+fi
+validate_risk_preflight_recorder "$RISK_PREFLIGHT_RECORDED_BY"
 if [[ -n "$DELEGATION_STATUS" ]]; then
   validate_delegation_status "$DELEGATION_STATUS"
 fi
 validate_shadow_refresh_mode "$SHADOW_REFRESH_MODE"
+
+HAS_DELEGATION_FIELDS="false"
+if [[ -n "$PRIMARY_AUTHOR_TOOL" || -n "$REVIEW_MODE" || -n "$PLANNER_AGENTS" || -n "$REVIEWER_AGENTS" || -n "$IMPLEMENTATION_AGENTS" || -n "$VALIDATION_AGENTS" || -n "$OWNED_SCOPES" ]]; then
+  HAS_DELEGATION_FIELDS="true"
+fi
+
+if [[ "$EXECUTION_MODE" == "solo" && "$HAS_DELEGATION_FIELDS" == "true" ]]; then
+  echo "[ERROR] Delegated agent or external review fields require --execution-mode supervisor_subagents" >&2
+  exit 1
+fi
+
+NEEDS_RISK_PREFLIGHT="false"
+if [[ "$EXECUTION_MODE" != "solo" || "$HAS_DELEGATION_FIELDS" == "true" ]]; then
+  NEEDS_RISK_PREFLIGHT="true"
+fi
+
+if [[ "$NEEDS_RISK_PREFLIGHT" == "true" && -z "$RISK_PREFLIGHT_STATUS" ]]; then
+  echo "[ERROR] Delegated or external orchestration requires --risk-preflight-status before agent/reviewer work can be recorded" >&2
+  exit 1
+fi
+
+if [[ -z "$RISK_PREFLIGHT_STATUS" ]]; then
+  RISK_PREFLIGHT_STATUS="pass"
+fi
+
+if [[ -z "$RISK_PREFLIGHT_SUMMARY" ]]; then
+  if [[ "$NEEDS_RISK_PREFLIGHT" == "true" ]]; then
+    RISK_PREFLIGHT_SUMMARY="Main-thread risk preflight recorded before delegated or external orchestration."
+  else
+    RISK_PREFLIGHT_SUMMARY="Solo docs lifecycle update; no delegated or external orchestration requested."
+  fi
+fi
+
+APPROVAL_REQUIRED="false"
+case "$RISK_PREFLIGHT_STATUS" in
+  approved)
+    APPROVAL_REQUIRED="true"
+    if is_placeholder_approval_value "$APPROVAL_REF" || is_placeholder_approval_value "$APPROVED_NEXT_STEP"; then
+      echo "[ERROR] Concrete --approval-ref and --approved-next-step are required when --risk-preflight-status approved" >&2
+      exit 1
+    fi
+    ;;
+  approval_required)
+    APPROVAL_REQUIRED="true"
+    APPROVAL_REF="${APPROVAL_REF:-pending_user_approval}"
+    APPROVED_NEXT_STEP="${APPROVED_NEXT_STEP:-stop before delegated or external orchestration until explicit approval}"
+    ;;
+  blocked)
+    APPROVAL_REF="${APPROVAL_REF:-not_required}"
+    APPROVED_NEXT_STEP="${APPROVED_NEXT_STEP:-stop before delegated or external orchestration}"
+    ;;
+  pass)
+    APPROVAL_REF="${APPROVAL_REF:-not_required}"
+    if [[ "$NEEDS_RISK_PREFLIGHT" == "true" ]]; then
+      APPROVED_NEXT_STEP="${APPROVED_NEXT_STEP:-delegated or external orchestration may proceed within recorded scope}"
+    else
+      APPROVED_NEXT_STEP="${APPROVED_NEXT_STEP:-solo docs lifecycle update}"
+    fi
+    ;;
+esac
+
+if [[ "$NEEDS_RISK_PREFLIGHT" == "true" && ( "$RISK_PREFLIGHT_STATUS" == "blocked" || "$RISK_PREFLIGHT_STATUS" == "approval_required" ) ]]; then
+  DELEGATION_STATUS="blocked"
+  if [[ -z "$DELEGATION_NOTE" ]]; then
+    DELEGATION_NOTE="Delegation stopped before agent or external work because risk preflight status is ${RISK_PREFLIGHT_STATUS}."
+  fi
+fi
+
+if [[ "$EXECUTION_MODE" == "solo" && -z "$DELEGATION_NOTE" ]]; then
+  DELEGATION_NOTE="Solo execution selected; no sub-agent or external review requested."
+fi
 
 if [[ "$SHADOW_REFRESH_MODE" == "git_diff" && -z "$SHADOW_GIT_RANGE" ]]; then
   echo "[ERROR] --shadow-git-range is required when --shadow-refresh-mode git_diff is used" >&2
@@ -477,16 +630,12 @@ if [[ -z "$DELEGATION_STATUS" ]]; then
   esac
 fi
 
-INPUT_ROOT_ABS="$(cd "$PROJECT_ROOT" && pwd)"
-resolve_repo_root() {
-  git -C "$INPUT_ROOT_ABS" rev-parse --show-toplevel 2>/dev/null || printf "%s" "$INPUT_ROOT_ABS"
-}
+THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$THIS_DIR/codeguide_paths.sh"
 
-PROJECT_ROOT_ABS="$(resolve_repo_root)"
-WORKSPACE_ROOT="$(cd "$PROJECT_ROOT_ABS/.." && pwd)"
-THIS_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT_ABS="$(codeguide_resolve_project_root "$PROJECT_ROOT")"
 INIT_SCRIPT="$THIS_DIR/init_docs_scaffold.sh"
-DOCS_DIR="$WORKSPACE_ROOT/docs"
+DOCS_DIR="$(codeguide_docs_root "$PROJECT_ROOT_ABS")"
 TASK_DIR="$DOCS_DIR/task"
 SHADOW_DIR="$DOCS_DIR/shadow"
 DECISIONS_DIR="$DOCS_DIR/decisions"
@@ -578,6 +727,20 @@ upsert_field() {
   else
     printf -- "- %s: %s\n" "$key" "$normalized" >> "$file_path"
   fi
+}
+
+upsert_field_if_blank() {
+  local file_path="$1"
+  local key="$2"
+  local value="$3"
+  local current_value
+
+  current_value="$(grep -E "^- ${key}:" "$file_path" 2>/dev/null | head -n 1 | sed "s/^- ${key}:[[:space:]]*//" || true)"
+  current_value="$(trim_value "$current_value")"
+  if [[ -n "$current_value" && "$current_value" != *" | "* ]]; then
+    return 0
+  fi
+  upsert_field "$file_path" "$key" "$value"
 }
 
 is_git_repo() {
@@ -718,6 +881,12 @@ ensure_orchestration_file() {
 - owned_scopes:
 - delegation_status: planned | active | completed | blocked
 - delegation_note:
+- risk_preflight_status: pass | approved | blocked | approval_required
+- risk_preflight_recorded_by:
+- risk_preflight_summary:
+- approval_required: true | false
+- approval_ref:
+- approved_next_step:
 - last_updated:
 EOF
     fi
@@ -1034,6 +1203,12 @@ if [[ -n "$TASK_ID" ]]; then
   upsert_field "$ORCHESTRATION_FILE" "owned_scopes" "$OWNED_SCOPES"
   upsert_field "$ORCHESTRATION_FILE" "delegation_status" "$DELEGATION_STATUS"
   upsert_field "$ORCHESTRATION_FILE" "delegation_note" "$DELEGATION_NOTE"
+  upsert_field "$ORCHESTRATION_FILE" "risk_preflight_status" "$RISK_PREFLIGHT_STATUS"
+  upsert_field "$ORCHESTRATION_FILE" "risk_preflight_recorded_by" "$RISK_PREFLIGHT_RECORDED_BY"
+  upsert_field "$ORCHESTRATION_FILE" "risk_preflight_summary" "$RISK_PREFLIGHT_SUMMARY"
+  upsert_field "$ORCHESTRATION_FILE" "approval_required" "$APPROVAL_REQUIRED"
+  upsert_field "$ORCHESTRATION_FILE" "approval_ref" "$APPROVAL_REF"
+  upsert_field "$ORCHESTRATION_FILE" "approved_next_step" "$APPROVED_NEXT_STEP"
   upsert_field "$ORCHESTRATION_FILE" "last_updated" "$NOW_UTC"
 fi
 

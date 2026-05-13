@@ -1,6 +1,6 @@
 ---
 name: codeguide
-description: Production-grade architecture and code quality guidance for designing, refactoring, reviewing, and debugging full-stack systems. Use when Codex must enforce SOLID/DRY/KISS/Clean Code/Boy Scout, config-first rules, centralized cross-cutting concerns, secure coding, and test/review standards across Java/Spring Boot, Node/Express, Python/FastAPI, React, and Vue. Also use to run a supervising-lead-architect multi-agent workflow where workspace docs remain the system of record, sub-agents handle planning/review/coding loops, and collaboration requires Korean-facing reports with English internal planning.
+description: Production-grade architecture and code quality guidance for designing, refactoring, reviewing, and debugging full-stack systems. Use when Codex must enforce SOLID/DRY/KISS/Clean Code/Boy Scout, config-first rules, centralized cross-cutting concerns, secure coding, and test/review standards across Java/Spring Boot, Node/Express, Python/FastAPI, React, and Vue. Also use to run a supervising-lead-architect multi-agent workflow where project docs remain the system of record, sub-agents handle planning/review/coding loops, and collaboration requires Korean-facing reports with English internal planning.
 ---
 
 # Code Guide
@@ -30,7 +30,7 @@ Outcome-first governance skill for architecture, code quality, documentation lif
 ## Response Shape Policy
 - User-requested structure wins over the default codeguide structure unless it violates safety, grounding, or required validation.
 - Use plain concise prose by default. Add headers, bullets, tables, or fixed sections only when they improve comprehension, traceability, reviewability, or product UI fit.
-- Use the `Why/What/How/Where/Verify` axis for substantial software engineering work, architecture decisions, implementation plans, durable handoff files, and workspace docs.
+- Use the `Why/What/How/Where/Verify` axis for substantial software engineering work, architecture decisions, implementation plans, durable handoff files, and project docs.
 - For small answers, direct questions, trivial edits, or strict artifacts, use the lightest structure that satisfies the user.
 - Preserve requested artifact type, length, structure, and genre when editing or drafting; improve clarity and correctness without inventing unsupported claims.
 
@@ -51,6 +51,15 @@ Outcome-first governance skill for architecture, code quality, documentation lif
 - For trivial or low-risk changes, fold design reasoning into the implementation and final note instead of forcing visible ceremony.
 - Run edge-case scans for non-trivial or risk-bearing work, covering null/empty input, boundary values, concurrency, resource exhaustion, timeout/network failure, and security-sensitive cases when relevant.
 - Do not implement speculative abstractions, broad frameworks, or future-proofing that the current goal does not need.
+
+## Goal Loop Contract
+- Apply `references/goal-loop-contract.md` to goal-oriented document, planning, review, shadow, and code-writing loops.
+- Define acceptance criteria, non-goals or scope boundary, required verification, and convergence owner before starting a goal loop; if they are missing, stop and ask for clarification.
+- Do not use a fixed iteration count, token budget, or cost cap as the primary stop condition.
+- Continue while iterations produce new material evidence, reduce verified risk, fix a checked failure, improve validation, or move the work toward explicit acceptance criteria.
+- Stop when acceptance criteria and required verification pass, no new material findings appear, the same failure repeats without new evidence, an off-goal loop is detected, scope expands beyond the approved goal, or user decision/approval is required.
+- Cost or token use is not a stopping reason by itself, but policy, privacy, destructive-action, external-side-effect, provenance, permission, and user-decision gates remain hard stops.
+- When stopping before completion, report the blocker, last verified evidence, next safe action, and whether user decision is required.
 
 ## Documentation Language Policy
 - Authoritative skill documents must be written in English.
@@ -92,10 +101,10 @@ Outcome-first governance skill for architecture, code quality, documentation lif
   - treat explicit runtime-verification language such as `테스트까지`, `lint까지`, `e2e까지`, `실행 검증`, `runtime 검증`, `test too`, `run tests`, or `run lint/e2e` as requests for `code-or-runtime`
 
 ## Docs Root Policy
-- Interpret `<project-root>` as the repository root.
-- Resolve the documentation root to the parent workspace folder: `<project-root>/../docs`.
+- Interpret `<project-root>` as the selected project root; when invoked from inside a git repository, resolve it to that repository root.
+- Resolve the documentation root inside the project root: `<project-root>/docs`.
 - Treat `docs/{task,shadow,decisions,plan,report,orchestration}` as the system of record for that workspace task flow.
-- Keep repository code and workspace docs synchronized, but do not duplicate the docs tree inside the repo unless the user explicitly requests it.
+- Keep repository code and project docs synchronized in the selected root; do not create sibling `../docs` trees or nested `docs/<repo-name>` layers unless the user explicitly requests them.
 
 ## Shadow System Contract
 - Treat `docs/shadow/` as a Markdown-only compressed context layer for agents.
@@ -119,9 +128,29 @@ Outcome-first governance skill for architecture, code quality, documentation lif
 - Preserve legacy compatibility with thin redirect shims at old paths and archive replaced bodies under `_deprecated` or `_obsolete`.
 - Target roughly 200 lines per shadow doc; use 300 lines as a soft cap and split by concern when a doc stops routing well.
 
+## Shadow Effect Map Workflow Contract
+- Apply this contract whenever a shadow update records side effects, call chains, review questions, or user decisions; use `references/shadow-effect-map-workflow.md` for the detailed workflow.
+- Separate document roles before writing: `navigation_summary`, `effect_map`, `review_queue`, `user_decision`, and `llm_candidate`.
+- Treat call chains as observable candidates and effects as claims; do not promote an effect from call-chain presence alone.
+- Evidence authority is limited to deterministic code/runtime results and explicit user decision provenance; LLM output, multi-model consensus, mem0, vectorstore, Neo4j, and Serena are hints only.
+- `confirmed` effects require an allowed evidence type, a source anchor when available, a registered rule or user-decision reference, and non-stale/non-conflicting provenance.
+- Keep `source_probe`, `fallback_regex`, `unsupported`, `error`, `fail`, conflict, and unresolved intent as `unknown`, `candidate_only`, or `blocked`; never hide them behind a successful status.
+- In probe output, `status=pass` is only probe execution status; durable fact meaning must come from `fact_status`, evidence type, validator contract, and writer gates.
+- User-only decisions include product/domain intent, business side-effect meaning, bug-versus-intended-design, waiver approval, high/critical promotion or de-escalation, runtime trace scenario fit, non-exact deduplication, and final shadow apply.
+- LLM-derived durable output is blocked until a deterministic `llm_candidate` wrapper records source refs, raw draft hash, model/tool identity, timestamp, and non-promotion status.
+- Use `scripts/shadow_policy_loader.py` for fenced-`yaml` policy-registry parsing and adapter parity checks, `scripts/shadow_llm_candidate_wrapper.py` for LLM candidate wrapping, `scripts/shadow_user_decision_wrapper.py` for guarded user-decision artifacts, `scripts/shadow_apply_gate.py` for supervised dry-run apply checks, and `scripts/shadow_effect_writer.py` only for structured record writes after gate re-checks.
+- Shadow writes require explicit write mode, user-decision provenance with rationale/source refs, candidate id and exact record-content binding, target hash check, exact single record id update, confirmed file/symbol anchor, and rejection of raw LLM fields or `llm_hint` evidence.
+- Confirmed `deterministic_code` evidence requires `rule_id`, policy-declared rule-to-effect compatibility through `allowed_effect_types`, a registered compatible implemented parser-backed primary validator, `validator_kind`, `parser_backed=true`, `validator_result=matched`, line-exact `source_ref` when line-qualified, matching `source_hash`, `probe_result_ref`, `probe_result_hash`, a matching read-only probe-result artifact, and writer-side probe rerun from structured `probe_args`; policy Markdown is declaration-only, only fenced `yaml` registry blocks are canonical, and declarations must be checked against the static probe `AdapterRegistry`, with exclude-wins path scope for allowed/excluded paths; v2 parser-backed code confirmation is currently implemented for Python AST validators only, while Java/Spring/JPA/JS/TS/FastAPI catalog entries remain source-probe or registry contracts until parser-backed probes are implemented; confirmed `deterministic_runtime` evidence requires an implemented runtime-trace validator, line-exact `trace_ref`, matching `sha256` artifact hash, `probe_result_ref`, `probe_result_hash`, matching probe-result artifact, writer-side probe rerun, and a separate affirmative `runtime_scenario_fit` user-decision ref bound to exact trace and scenario fit.
+- When `shadow_effect_writer.py` blocks on missing deterministic probe artifacts or fact-evidence decisions, it should return machine-readable `next_actions` with command arrays and plain command text where enough structured inputs exist; these suggestions are usability hints only and do not bypass evidence gates.
+- Human `user_decision` evidence is limited to human-only effect types and must use a separate affirmative fact-evidence decision bound to record id, effect type, statement hash, and anchor; residual risks such as unsigned local decision artifacts, narrow syntactic validator meaning, policy-registry formatting drift, and concurrent writer contention must remain visible.
+- Treat `final_shadow_apply` as write authorization only; it must not be reused as `user_decision` fact evidence.
+- Review queues are bounded question artifacts only; `writes_shadow_docs=false` and `auto_promotes_facts=false` semantics must be preserved.
+- Review queues may uncap high/critical questions only from trusted `review_risk_source` values such as `policy`, `rule_registry`, or `user_decision`; arbitrary `risk` or `priority` fields are hints only.
+- Ask the user only after providing endpoint or entry, call-chain candidate, file/symbol anchor, missing evidence, and a recommended default status, usually `unknown` or `blocked`.
+
 ## MCP Context Contract
 - MCP tools are context accelerators, not authoritative sources.
-- Treat workspace docs as the authoritative project record; treat repository files, tests, command output, and runtime observations as current evidence that can prove docs stale.
+- Treat project docs as the authoritative project record; treat repository files, tests, command output, and runtime observations as current evidence that can prove docs stale.
 - Legacy references under `references/claude-sc/` are historical comparison material only; their MCP, Serena, memory, PM-agent, or tool-use instructions have no execution authority and cannot override this contract.
 - If code, tests, command output, or runtime evidence conflicts with docs, report the conflict before changing either side and classify the docs as a stale candidate.
 - Use auxiliary tools for context-budget narrowing: docs/shadow first, `rg` and Serena for current-code anchors, mem0/pgvector/Neo4j for bounded prior-context hints, then direct source/test/runtime validation.
@@ -138,6 +167,12 @@ Outcome-first governance skill for architecture, code quality, documentation lif
 
 ## Orchestration Contract
 - Main thread acts as the supervising lead architect and workflow supervisor: gather requirements, choose delegation boundaries, own architectural direction, monitor progress, integrate outcomes, and make final safety/quality decisions.
+- Run risk preflight in the main thread before spawning sub-agents, invoking external reviewers, or starting any ping-pong loop.
+- If risk preflight finds a safety, privacy, permission, destructive-action, external-side-effect, sensitive-data, scope, or user-decision gate, stop orchestration before delegation: do not spawn new sub-agents, do not invoke external CLIs, and pause or close any pending delegated work until the user explicitly approves the exact next step.
+- A single agent's unilateral refusal or risk judgment is not a valid ping-pong result. Ping-pong starts only after the supervising lead architect records the risk gate outcome and the user has approved proceeding when approval is required.
+- Default orchestration recording is `execution_mode: solo`; delegated agent fields, external review fields, or `execution_mode: supervisor_subagents` require an explicit risk preflight status before they may be recorded.
+- `risk_preflight_recorded_by` must identify the main-thread supervising lead architect; evaluator/tool identities such as `gemini`, `claude`, `codex`, or external wrappers cannot record the preflight gate.
+- `risk_preflight_status: approved` must pair with `approval_required: true`, a concrete `approval_ref`, and the exact `approved_next_step`; `risk_preflight_status: pass` must pair with `approval_required: false`.
 - Delegate only when the current runtime permits it, the user has explicitly requested sub-agents or external review, and the work is material, separable, and worth the coordination cost.
 - Keep simple, urgent, tightly coupled, or low-risk work in the main thread.
 - When delegated planning is justified, planner/reviewer agents create and critique plan versions while the supervising lead architect decides when the plan is execution-ready.
@@ -160,10 +195,11 @@ Outcome-first governance skill for architecture, code quality, documentation lif
 - Pass only a short instruction and the absolute handoff file path to the CLI; do not stream the full request body on stdin by default because the Markdown file is the durable handoff contract.
 - The bash command itself must name an explicit absolute command-output path through stdout redirection, `tee`, or a tool-specific output-file option; a path mentioned only inside the prompt is not enough.
 - The wrapper may sanitize that raw command output into the durable Markdown response file and delete the raw capture; treat ambiguous model claims such as "saved to the plan file" as invalid unless the claimed path equals the command-level output or sanitized response path.
-- Keep CLI invocation contracts tool-specific: Claude should preserve normal login credentials while disabling per-run conversation persistence and using read-only file access, Gemini should run in plan/read-only mode with the workspace included, and Codex should run in read-only sandbox mode from the workspace root.
+- Keep CLI invocation contracts tool-specific: Claude should preserve normal login credentials while disabling per-run conversation persistence and using read-only file access, Gemini should run in plan/read-only mode with the project root included, and Codex should run in read-only sandbox mode from the project root.
+- Do not use Claude `--bare` for external review handoffs; it bypasses normal OAuth/keychain session lookup and can falsely fail authentication. Use `--no-session-persistence`, read-only tools, and a narrow `--add-dir` instead.
 - For Codex CLI, prefer its final-message output file option when available so runtime logs do not pollute the parser-compatible Markdown response.
 - Capture CLI stdout into a redacted Markdown response file before parsing or normalizing it into `docs/report/`; request parser-compatible bullet fields when downstream automation depends on fixed response fields, but preserve malformed sanitized stdout for retry diagnostics.
-- Keep durable handoff artifacts under workspace docs, preferably `docs/orchestration/external-cli/<MonDD_YYYY>/<task-id>/<plan-version>/<round>/` such as `Apr29_2026/...`, so long prompts and raw responses survive shell argument limits and are easy to inspect.
+- Keep durable handoff artifacts under project docs, preferably `docs/orchestration/external-cli/<MonDD_YYYY>/<task-id>/<plan-version>/<round>/` such as `Apr29_2026/...`, so long prompts and raw responses survive shell argument limits and are easy to inspect.
 - Do not put raw secrets in handoff or response files; redact sensitive values before writing durable Markdown artifacts.
 
 ## Minimal Workflow
@@ -172,13 +208,14 @@ Outcome-first governance skill for architecture, code quality, documentation lif
 3. Choose solo or delegated execution based on user request, separability, risk, and coordination cost.
 4. Record material decisions with 5-axis fields: `Why/What/How/Where/Verify`.
 5. On material structure/API/config changes, re-run `run_codeguide.sh <project-root> --task-status in_progress --shadow-note "..."`.
-6. Validate workspace docs (`validate_docs.sh <project-root> --mode advisory`) after each sync or before handoff.
+6. Validate project docs (`validate_docs.sh <project-root> --mode advisory`) after each sync or before handoff.
 7. If `code-or-runtime`, run impacted runtime validations.
 8. Finish lifecycle once per task close: `run_codeguide.sh <project-root> --task-status done --shadow-note "final state"` (or `blocked`) and refresh the affected `docs/shadow/` graph.
 
 ## Plan Orchestration Loop
-1. The supervising lead architect creates or delegates the initial plan doc at workspace docs `docs/plan/PLAN-<task-id>-v1.0.md`.
-2. Planning sub-agent drafts the plan; review sub-agent(s) critique it and write one report per evaluator in workspace `docs/report/`:
+1. The supervising lead architect performs risk preflight before orchestration begins. If approval is required, stop before sub-agent or external-review work and ask the user for approval; only continue after approval is granted.
+2. The supervising lead architect creates or delegates the initial plan doc at project docs `docs/plan/PLAN-<task-id>-v1.0.md`.
+3. Planning sub-agent drafts the plan; review sub-agent(s) critique it and write one report per evaluator in project `docs/report/`:
    - evaluator label must be exactly one of: `gemini`, `claude`, `codex`
    - reviewer and evaluator tracks both default to defect-seeking review rather than approval-seeking review; prioritize logical gaps, weak assumptions, missing verification, understated risks, contract mismatches, and team-convention violations over praise
    - keep critical review evidence-based: prefer concrete defects, violated rules, and missing safeguards over vague negativity
@@ -189,17 +226,18 @@ Outcome-first governance skill for architecture, code quality, documentation lif
    - default ping-pong behavior uses external evaluators: primary author tool writes the plan, the other two tools review it
    - if a task or linked decision is high-risk and the operator does not explicitly pick an adversarial evaluator, external CLI ping-pong should auto-select one of the non-primary reviewers for the adversarial pass
    - if the user explicitly requests ping-pong review with sub-agents (including the alias forms listed in the orchestration contract), interpret that as Codex sub-agent review mode and do not call external `gemini`/`claude`/`codex` evaluators by default
-3. The supervising lead architect consolidates feedback into the next versioned plan file without overwriting old versions:
+4. The supervising lead architect consolidates feedback into the next versioned plan file without overwriting old versions:
    - version examples: `v1.1`, `v1.2`, `v2.0`
-4. Repeat the sub-agent review/revision loop only while it is improving correctness or risk reduction. Stop when one of these conditions is met:
+5. Repeat the sub-agent review/revision loop only while it is improving correctness or risk reduction. Stop when one of these conditions is met:
    - plan is acceptable for execution
    - user explicitly asks to stop
    - another review loop is unlikely to change the decision materially
    - semi-automated external review mode must stop after collecting report docs and showing the user the results; it must not auto-create the next plan version
    - external CLI ping-pong should use Markdown request/response files for tool handoff, use each tool's default model unless the operator explicitly overrides it, and avoid hardcoded model-version strings
-5. When delegated implementation begins, coding sub-agents own disjoint code scopes while the supervising lead architect tracks the selected plan version in related `decision-*` and `TASK-*` docs.
+   - fixed iteration count, token budget, and cost cap are not primary stop conditions; use `Goal Loop Contract` hard stops instead
+6. When delegated implementation begins, coding sub-agents own disjoint code scopes while the supervising lead architect tracks the selected plan version in related `decision-*` and `TASK-*` docs.
    - for `codeguide`-invoked code writing work that explicitly requests sub-agents, prefer a standard four-track split when practical: planner, reviewer/evaluator, implementation, validation
-6. At task close, ensure the final architecture/runtime state is reflected in the affected `docs/shadow/` router, `_global.md` when applicable, bucket indexes, unit overviews, and leaf docs.
+7. At task close, ensure the final architecture/runtime state is reflected in the affected `docs/shadow/` router, `_global.md` when applicable, bucket indexes, unit overviews, and leaf docs.
 
 ## Review/Debug Contract
 - `design`: boundaries, contracts, risk/test strategy
@@ -219,7 +257,7 @@ Outcome-first governance skill for architecture, code quality, documentation lif
 - `"$CODEGUIDE_ROOT/scripts/run_codeguide.sh" <project-root> --mode auto --task-status in_progress`
 - `"$CODEGUIDE_ROOT/scripts/run_codeguide.sh" <project-root> --mode auto --task-status in_progress --shadow-note "search and navigation updated"`
 - `"$CODEGUIDE_ROOT/scripts/run_codeguide.sh" <project-root> --mode auto --task-status done --shadow-note "final architecture synced"`
-- `"$CODEGUIDE_ROOT/scripts/run_external_plan_reviews.sh" <project-root> --task-id <TASK_ID> --plan-version <vX.Y> --primary-tool <gemini|claude|codex> --review-round <rNN>`
+- `"$CODEGUIDE_ROOT/scripts/run_external_plan_reviews.sh" <project-root> --task-id <TASK_ID> --plan-version <vX.Y> --primary-tool <gemini|claude|codex> --review-round <rNN> --risk-preflight-status pass`
 - `"$CODEGUIDE_ROOT/scripts/doc_garden.sh" <project-root> --task-id <TASK_ID>`
 - `"$CODEGUIDE_ROOT/scripts/validate_docs.sh" <project-root> --mode advisory`
 - `"$CODEGUIDE_ROOT/scripts/validate_docs.sh" <project-root> --mode strict`

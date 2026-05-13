@@ -11,7 +11,7 @@ For repeatable setup, run:
 
 Default assumption:
 - Do not require RAG or embedding for baseline operation.
-- Use workspace docs files (`task`, `shadow`, `decisions`, `plan`, `report`, `orchestration`) as durable memory first.
+- Use project docs files (`task`, `shadow`, `decisions`, `plan`, `report`, `orchestration`) as durable memory first.
 - Default operation is zero-command for the user when docs lifecycle is justified; the agent runs docs lifecycle commands for material architecture, multi-file, cross-service, delegated, or durable planning work.
 - Skip docs lifecycle commands for small direct answers and trivial edits unless the user explicitly requests documentation sync.
 
@@ -34,12 +34,11 @@ Default assumption:
 
 ## Required structure
 
-`<project-root>` is the repository root. Resolve docs to `<project-root>/../docs`.
+`<project-root>` is the selected project root; when invoked from inside a git repository, scripts resolve it to that repository root. Resolve docs to `<project-root>/docs`.
 
 ```text
-workspace-root/
-├── <repo>/
-└── docs/
+project-root/
+├── docs/
     ├── task/
     ├── shadow/
     │   ├── project-shadow.md
@@ -62,24 +61,54 @@ workspace-root/
     └── orchestration/
 ```
 
-Create these workspace-root files if missing:
-- `<workspace-root>/docs/task/project-dictionary.md`
-- `<workspace-root>/docs/task/task-index.md`
-- `<workspace-root>/docs/shadow/project-shadow.md`
-- `<workspace-root>/docs/shadow/_global.md`
-- `<workspace-root>/docs/shadow/apps/_index.md`
-- `<workspace-root>/docs/shadow/services/_index.md`
-- `<workspace-root>/docs/shadow/packages/_index.md`
-- `<workspace-root>/docs/shadow/infra/_index.md`
-- `<workspace-root>/docs/shadow/data/_index.md`
-- `<workspace-root>/docs/decisions/decision-index.md`
-- `<workspace-root>/docs/plan/PLAN-template.md`
-- `<workspace-root>/docs/report/LLM-REVIEW-template.md`
-- `<workspace-root>/docs/orchestration/ORCH-template.md`
+Create these project-root files if missing:
+- `<project-root>/docs/task/project-dictionary.md`
+- `<project-root>/docs/task/task-index.md`
+- `<project-root>/docs/shadow/project-shadow.md`
+- `<project-root>/docs/shadow/_global.md`
+- `<project-root>/docs/shadow/apps/_index.md`
+- `<project-root>/docs/shadow/services/_index.md`
+- `<project-root>/docs/shadow/packages/_index.md`
+- `<project-root>/docs/shadow/infra/_index.md`
+- `<project-root>/docs/shadow/data/_index.md`
+- `<project-root>/docs/decisions/decision-index.md`
+- `<project-root>/docs/plan/PLAN-template.md`
+- `<project-root>/docs/report/LLM-REVIEW-template.md`
+- `<project-root>/docs/orchestration/ORCH-template.md`
+
+## Orchestration Gate Template
+
+Use one file per delegated or externally reviewed task: `docs/orchestration/ORCH-<task-id>.md`.
+
+```markdown
+# ORCH-<task-id>
+
+- task_id:
+- execution_mode: supervisor_subagents | solo
+- primary_author_tool: gemini | claude | codex
+- review_mode: external_cli | codex_subagents
+- supervisor_agent:
+- planner_agents:
+- reviewer_agents:
+- implementation_agents:
+- validation_agents:
+- owned_scopes:
+- delegation_status: planned | active | completed | blocked
+- delegation_note:
+- risk_preflight_status: pass | approved | blocked | approval_required
+- risk_preflight_recorded_by:
+- risk_preflight_summary:
+- approval_required: true | false
+- approval_ref:
+- approved_next_step:
+- last_updated:
+```
+
+Run and record main-thread risk preflight before spawning sub-agents, invoking external reviewers, or starting ping-pong. Default orchestration is `execution_mode: solo`; delegated fields, external review fields, or `execution_mode: supervisor_subagents` require explicit preflight. If preflight is `blocked` or `approval_required`, stop before delegation/external review. Continue only when the status is `pass`, or when the user approves the exact next step and the status is `approved` with `approval_required: true`, a concrete `approval_ref`, and a concrete `approved_next_step`. `risk_preflight_recorded_by` must identify the main-thread supervising lead architect, not an evaluator/tool identity.
 
 ## Project dictionary template
 
-`<workspace-root>/docs/task/project-dictionary.md`
+`<project-root>/docs/task/project-dictionary.md`
 
 ```markdown
 # Project Dictionary
@@ -126,7 +155,7 @@ Use one file per task: `docs/task/TASK-<id>.md`
 - axis_verify: # test strategy (TDD/pyramid/FIRST)
 ```
 
-`<workspace-root>/docs/task/task-index.md` should list task ids organized by status section (Planned/In Progress/Blocked/Done). Rows are automatically moved between sections when task status changes.
+`<project-root>/docs/task/task-index.md` should list task ids organized by status section (Planned/In Progress/Blocked/Done). Rows are automatically moved between sections when task status changes.
 
 ## Anti-dump policy (default recommended, strict in CI)
 - Keep shadow docs close to 200 lines and preferably at or below 300 lines.
@@ -141,7 +170,7 @@ Use:
 
 ## Shadow graph contract
 
-Use `<workspace-root>/docs/shadow/` as the canonical AI-facing routing layer for the project.
+Use `<project-root>/docs/shadow/` as the canonical AI-facing routing layer for the project.
 
 Shadow rules:
 - Keep shadow docs in English.
@@ -162,7 +191,7 @@ Shadow rules:
 
 ### Top Router Template
 
-Use `<workspace-root>/docs/shadow/project-shadow.md` as the top router only.
+Use `<project-root>/docs/shadow/project-shadow.md` as the top router only.
 
 ```markdown
 # Project Shadow
@@ -179,7 +208,7 @@ Use `<workspace-root>/docs/shadow/project-shadow.md` as the top router only.
 
 ### Global Cross-Unit Template
 
-Use `<workspace-root>/docs/shadow/_global.md` for cross-unit invariants only.
+Use `<project-root>/docs/shadow/_global.md` for cross-unit invariants only.
 
 ```markdown
 # Shadow Global
@@ -194,7 +223,7 @@ Use `<workspace-root>/docs/shadow/_global.md` for cross-unit invariants only.
 
 ### Bucket Registry Template
 
-Use `<workspace-root>/docs/shadow/<bucket>/_index.md` for unit membership only.
+Use `<project-root>/docs/shadow/<bucket>/_index.md` for unit membership only.
 
 ```markdown
 # Shadow Bucket Index
@@ -211,7 +240,7 @@ Use `<workspace-root>/docs/shadow/<bucket>/_index.md` for unit membership only.
 
 ### Unit Overview Template
 
-Use `<workspace-root>/docs/shadow/<bucket>/<unit>/overview.md` as the landing doc plus concern router.
+Use `<project-root>/docs/shadow/<bucket>/<unit>/overview.md` as the landing doc plus concern router.
 
 ```markdown
 # Shadow Unit Overview
@@ -244,6 +273,19 @@ Use a concern leaf doc for concrete facts only.
 - next_split_trigger:
 - last_updated:
 ```
+
+### Effect Map Leaf Template
+
+Use `doc_role: effect_map` only for shadow docs that record side-effect entries under the Shadow Effect Map Workflow Contract. Effect maps are concern-leaf style docs with a stricter writer gate; they must not replace routers, bucket indexes, unit overviews, or general navigation summaries.
+
+```markdown
+# Shadow Effects
+
+- doc_role: effect_map
+- generated_by: shadow_effect_writer.py
+```
+
+Confirmed deterministic entries must render only after the writer re-checks registry compatibility, policy-declared rule-to-effect compatibility, current artifact identity, a matching probe-result artifact path/hash, and its own probe rerun from structured `probe_args`. Code evidence records include `evidence_rule_id`, `evidence_ref`, `evidence_source_ref`, `evidence_source_hash`, `evidence_probe_result_ref`, and `evidence_probe_result_hash`; runtime evidence records include `evidence_ref`, `evidence_trace_ref`, `evidence_artifact_hash`, `evidence_probe_result_ref`, and `evidence_probe_result_hash`. User-decision evidence records require a separate affirmative fact-evidence decision bound to the record id, effect type, statement hash, and anchor; write-mode final apply decisions are authorization only and must bind the exact target file plus record content hash fields.
 
 ### Redirect Shim Template
 
@@ -300,7 +342,7 @@ Use one file per decision: `docs/decisions/decision-<id>.md`
 - axis_verify: # verification strategy and test evidence
 ```
 
-`<workspace-root>/docs/decisions/decision-index.md` should organize decisions by status section (Proposed/Accepted/Superseded). Rows are automatically moved between sections when decision status changes. Legacy table format is auto-migrated on first update.
+`<project-root>/docs/decisions/decision-index.md` should organize decisions by status section (Proposed/Accepted/Superseded). Rows are automatically moved between sections when decision status changes. Legacy table format is auto-migrated on first update.
 
 ## Plan and model-review templates
 
@@ -366,10 +408,11 @@ Evaluator label must be one of:
 - Before implementation, create an initial plan file (usually `v1.0`).
 - For each feedback round, write evaluator-specific report files in `docs/report/` with evaluator labels `gemini|claude|codex`.
 - Set `risk_level: high|critical` on the task or a linked decision when the change is high risk.
+- Record `risk_preflight_status`, `risk_preflight_recorded_by`, `risk_preflight_summary`, `approval_required`, `approval_ref`, and `approved_next_step` before delegated or external review work begins; `pass` pairs with `approval_required: false`, and `approved` pairs with `approval_required: true`.
 - In advisory mode, active tasks without `risk_level` should emit a warning so teams can backfill the signal before strict policy tightens.
 - If a task or any linked non-superseded decision has `risk_level: high|critical`, strict validation requires at least one adversarial evaluator report with `review_style: adversarial` plus `objection`, `counterproposal`, `rebuttal`, and `residual_risk`.
 - When improving the plan, create a new versioned plan file (for example `v1.1`) instead of overwriting previous files.
-- Repeat plan -> review -> revision until execution-ready or user stop.
+- Repeat plan -> review -> revision until execution-ready, no new material findings appear, a hard gate blocks progress, or user stop. Do not use fixed iteration count, token budget, or cost cap as the primary stop condition.
 - When user chooses any option, update or create a `decision-*` file immediately.
 - Apply this to all work types: task, hotfix, PR, release, incident, and operations.
 - When plan changes, append revised `implementation_plan` in the same `decision-*`.
