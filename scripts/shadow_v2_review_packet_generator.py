@@ -139,6 +139,7 @@ def review_provenance(
 
 
 def render_markdown(payload: dict[str, Any]) -> str:
+    response_fields = payload["required_response_fields"]
     lines = [
         "# Shadow v2 Review Packet",
         "",
@@ -204,13 +205,12 @@ def render_markdown(payload: dict[str, Any]) -> str:
             "",
             "## Expected Response Fields",
             "",
-            "- verdict: accept | revise | block",
-            "- priority_findings:",
-            "- contract_mismatches:",
-            "- missing_evidence:",
-            "- residual_risks:",
+            "- verdict: accept | revise | blocked",
         ]
     )
+    for field in response_fields:
+        if field != "verdict":
+            lines.append(f"- {field}:")
     return "\n".join(lines) + "\n"
 
 
@@ -273,6 +273,23 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]]:
         "source_refs": source_refs[:20],
         "artifacts": artifacts,
     }
+    if args.review_route == "external_gemini_claude":
+        required_response_fields = [
+            "verdict",
+            "summary",
+            "strengths",
+            "risks",
+            "requested_changes",
+        ]
+    else:
+        required_response_fields = [
+            "verdict",
+            "priority_findings",
+            "contract_mismatches",
+            "missing_evidence",
+            "residual_risks",
+        ]
+
     payload = {
         "status": "blocked" if blockers else "ok",
         "blockers": blockers,
@@ -299,13 +316,7 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]]:
         "source_refs": source_refs[:20],
         "artifacts": artifacts,
         "unsupported_by_packet": unsupported_by_packet,
-        "required_response_fields": [
-            "verdict",
-            "priority_findings",
-            "contract_mismatches",
-            "missing_evidence",
-            "residual_risks",
-        ],
+        "required_response_fields": required_response_fields,
     }
     return payload, blockers
 

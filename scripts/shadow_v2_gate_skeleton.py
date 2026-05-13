@@ -54,12 +54,14 @@ REVIEW_ROUTES = {
     "external_gemini_claude",
 }
 EXTERNAL_REVIEW_ROUTE = "external_gemini_claude"
+INTERNAL_REVIEW_ROUTES = REVIEW_ROUTES - {EXTERNAL_REVIEW_ROUTE}
 EXTERNAL_REVIEW_EVALUATORS = {"gemini", "claude"}
+INTERNAL_ACCEPT_VERDICTS = {"accept", "accepted"}
+STANDARD_INTERNAL_REVIEW_FIELDS = ("priority_findings", "contract_mismatches", "missing_evidence", "residual_risks")
 STANDARD_EXTERNAL_REVIEW_FIELDS = ("summary", "strengths", "risks", "requested_changes")
 ADVERSARIAL_EXTERNAL_REVIEW_FIELDS = ("objection", "counterproposal", "rebuttal", "residual_risk")
 BLOCKED_REVIEW_MARKERS = (
     "status: blocked",
-    "verdict: block",
     "verdict: blocked",
     "no_model_response",
     "policy-blocked",
@@ -285,6 +287,39 @@ def validate_external_response_artifact(summary: dict[str, Any], path: Path, con
     return blockers
 
 
+def validate_internal_response_artifact(summary: dict[str, Any], path: Path, content: str, project_root: Path) -> list[str]:
+    blockers: list[str] = []
+    docs_root = docs_root_for(project_root).resolve(strict=False)
+    allowed_roots = [
+        docs_root / "report",
+        docs_root / "orchestration",
+    ]
+    resolved_path = path.resolve(strict=True)
+    if path.suffix != ".md":
+        blockers.append(f"completed internal review artifact must be a Markdown .md file: {path}")
+    if not any(is_relative_to_path(resolved_path, root.resolve(strict=False)) for root in allowed_roots):
+        blockers.append(
+            f"completed internal review artifact must be under docs/report or docs/orchestration: {path}"
+        )
+        return blockers
+
+    verdict = review_field(content, "verdict")
+    if verdict:
+        summary["verdict"] = verdict
+    if not verdict:
+        blockers.append(f"completed internal review artifact requires verdict: {path}")
+    elif normalized_text(verdict) not in INTERNAL_ACCEPT_VERDICTS:
+        blockers.append(f"completed internal review artifact verdict must be accept: {path}")
+
+    for field in STANDARD_INTERNAL_REVIEW_FIELDS:
+        if not review_field(content, field):
+            blockers.append(f"completed internal review artifact requires parser-compatible field {field}: {path}")
+
+    if any(marker in content.lower() for marker in BLOCKED_REVIEW_MARKERS):
+        blockers.append(f"completed internal review artifact contains blocked/error/no-response marker: {path}")
+    return blockers
+
+
 def contract_payload() -> dict[str, Any]:
     return {
         "phase": "shadow_v2_phase0_gate_skeleton",
@@ -432,6 +467,10 @@ def completed_review_artifacts(entries: list[str], project_root: Path) -> tuple[
             for message in validate_external_response_artifact(summary, path, content, project_root):
                 summary["blockers"].append(message)
                 blockers.append(message)
+        elif route in INTERNAL_REVIEW_ROUTES:
+            for message in validate_internal_response_artifact(summary, path, content, project_root):
+                summary["blockers"].append(message)
+                blockers.append(message)
         else:
             evaluator = review_field(content, "evaluator")
             verdict = review_field(content, "verdict")
@@ -486,6 +525,9 @@ def close_review_blockers(
             )
         if not artifacts.get(EXTERNAL_REVIEW_ROUTE):
             blockers.append("completed external Gemini/Claude review requires a durable response artifact")
+    for route in sorted((completed_set & INTERNAL_REVIEW_ROUTES) - blocked_set):
+        if not artifacts.get(route):
+            blockers.append(f"completed internal review route requires a durable response artifact: {route}")
     if (
         EXTERNAL_REVIEW_ROUTE in required_set
         and EXTERNAL_REVIEW_ROUTE in blocked_set

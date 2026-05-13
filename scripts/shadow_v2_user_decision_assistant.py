@@ -156,8 +156,6 @@ def is_python_executable(value: Any) -> bool:
 
 def is_trusted_wrapper_token(value: Any) -> bool:
     text = str(value)
-    if text == "shadow_user_decision_wrapper.py":
-        return True
     path = Path(text).expanduser()
     if not path.is_absolute():
         return False

@@ -7,7 +7,7 @@ Use this reference when planning or implementing the next automation layer for t
 - plan_id: shadow-v2-automation-01
 - status: phase0-4-implemented-and-tested
 - selected_by_user: 2026-05-13
-- independent_review_gate: default-internal-subagent-accepted-external-cli-user-requested-only
+- independent_review_gate: default-internal-subagent-artifact-required-external-cli-user-requested-only
 
 ## Locked Decisions
 
@@ -19,7 +19,7 @@ Use this reference when planning or implementing the next automation layer for t
 - First parser-backed expansion target: Java family first.
 - Hint-layer mode: automatic hint-only lookup is allowed after project scope is verified.
 - External Gemini/Claude review is user-requested only by default.
-- Normal independent review uses sub-agents with Markdown handoff files in Codex runtimes.
+- Normal independent review uses sub-agents with durable Markdown request/response handoff artifacts in project docs.
 - Separate-session critique is a future/runtime-dependent option; use it only when the active tool supports a true independent non-sub-agent session.
 - Claude-style non-sub-agent critique remains an external/user-requested review route, not the Codex default.
 - Unknown/stale escalation uses the default operating policy in this plan unless the user later overrides it.
@@ -104,10 +104,11 @@ Phase 0 verification:
 - project-scope checking blocks hint activation until `docs/`, `docs/shadow/`, and `docs/policy/` exist
 - external Gemini/Claude review is blocked unless explicitly requested
 - completed external Gemini/Claude review is blocked unless a durable accepted response artifact under `docs/orchestration/external-cli/` is supplied with a matching companion request file, wrapper-generated provenance manifest, evaluator, `verdict: accept`, parser-compatible review fields, command-response path, response path, bytes, and sha256 provenance
+- completed internal Codex sub-agent or runtime-independent-session review is blocked unless a durable accepted `.md` Markdown response artifact under `docs/report/` or `docs/orchestration/` is supplied with `verdict: accept`, `priority_findings`, `contract_mismatches`, `missing_evidence`, `residual_risks`, bytes, and sha256 provenance
 - batch apply is disabled
 - non-confirming evidence types cannot confirm facts
 - generic `user_decision` and `final_shadow_apply` cannot confirm facts; user fact evidence must declare an allowed fact-decision type
-- independent sub-agent review: accepted in r04 with no remaining P0/P1 blockers
+- independent sub-agent review: close acceptance requires the response itself to be captured as a durable accepted artifact
 
 ### Track 1: User-Decision Assistant
 
@@ -127,7 +128,7 @@ Purpose:
 Inputs:
 
 - shadow effect candidate records
-- `shadow_review_queue.py` output
+- JSON/JSONL evidence candidate records using the same record shape consumed by `shadow_review_queue.py`, not that script's Markdown output
 - `shadow_effect_writer.py` blocked `next_actions`
 - source anchors and call-chain candidates
 - policy/rule registry metadata
@@ -170,7 +171,7 @@ Implementation entrypoint:
 
 Purpose:
 
-- Generate bounded internal review packets from the current task, shadow candidate, policy state, and verification output.
+- Generate bounded internal review packets from supplied source refs and candidate/probe/writer/user-decision artifacts.
 - Generate external review packets only when the user explicitly requests external Gemini/Claude review.
 - Include only the minimum required evidence snippets.
 - Preserve privacy boundaries by default.
@@ -178,21 +179,20 @@ Purpose:
 
 Inputs:
 
-- selected task or candidate id
-- policy loader summary
-- probe result summaries
-- writer dry-run output
-- residual-risk report
-- user-decision assistant question state
+- selected task id
+- source refs
+- candidate artifact paths
+- probe result artifact paths
+- writer dry-run artifact paths
+- user-decision packet artifact paths
 
 Outputs:
 
-- Markdown review packet
-- allowed reviewer list
+- Markdown or JSON review packet
 - review route, usually `codex_subagent_md_handoff`
-- privacy/export warning
-- missing evidence section
-- expected response fields
+- privacy boundary
+- unsupported-by-packet context marker
+- route-specific expected response fields: internal packets use `priority_findings`, `contract_mismatches`, `missing_evidence`, and `residual_risks`; external packets use `summary`, `strengths`, `risks`, and `requested_changes`
 
 Implemented v2 behavior:
 
@@ -215,12 +215,12 @@ Must not:
 
 Default review route:
 
-- internal reviewer: Codex sub-agent with a Markdown request/response handoff
+- internal reviewer: Codex sub-agent with durable Markdown request/response handoff artifacts
 - separate session reviewer: only when the active runtime supports a true independent non-sub-agent session
 - handoff medium: Markdown request/response files
 - purpose: reduce shared-memory coupling and prompt anchoring bias
 - external reviewer: Gemini/Claude only on explicit user request
-- combined close gate: when sub-agent and external CLI review are both required, every required route must complete before acceptance
+- combined close gate: when sub-agent and external CLI review are both required, every required route must complete with a valid accepted artifact before acceptance
 - substitution rule: sub-agent acceptance, local tests, or model consensus must not substitute for a policy-blocked, tool-blocked, auth-blocked, missing, or response-less required external CLI route
 
 ### Track 3: Supervised Pipeline Wrapper
@@ -233,7 +233,7 @@ Draft implementation entrypoint:
 
 Purpose:
 
-- Orchestrate existing scripts in a dry-run-first sequence.
+- Plan existing script calls in a dry-run-first sequence without executing them.
 - Make the workflow repeatable without weakening gates.
 - Stop at user-decision, evidence, privacy, or final-apply boundaries.
 
@@ -242,11 +242,11 @@ Initial sequence:
 1. Resolve project scope.
 2. Read shadow navigation context.
 3. Collect hint-only anchors.
-4. Run deterministic probes where structured args exist.
-5. Generate or update review queue.
-6. Run the user-decision assistant.
-7. Generate internal review packet when independent review is useful.
-8. Run writer dry-run.
+4. Prepare deterministic probe command hints where structured args exist.
+5. Surface review queue generation as a planned step.
+6. Prepare the user-decision assistant command hint.
+7. Prepare internal review packet generation when independent review is useful.
+8. Prepare writer dry-run command hint.
 9. Stop before write unless explicit final apply provenance exists.
 
 Must not:
@@ -264,7 +264,7 @@ Draft v2 behavior:
 - emits `status=incomplete` when required probe, writer, or final-apply gates are not satisfied
 - includes writer command hints only with `--mode dry-run`
 - blocks external review routes unless explicit user request, concrete approval ref, approved next step, and main-thread recorder are provided
-- blocks combined close when any required review route is blocked
+- blocks combined close when any required review route is blocked or lacks a valid accepted artifact
 - blocks combined close when a completed external Gemini/Claude route has no durable accepted response artifact under `docs/orchestration/external-cli/` with matching companion request and wrapper-generated provenance manifest
 - ignores blocked external routes that are not part of the required close gate
 - refuses pipeline output under `docs/shadow/`
@@ -332,18 +332,37 @@ The assistant asks one bounded question at a time when user judgment is required
 
 Question packet fields:
 
-- question_id
+Common fields:
+
+- id
+- source_kind
+- source_ref
 - decision_type
-- endpoint_or_entry
+- priority
+- recommended_default_status
+- question
+- options
+- command_ready
+- shadow_write_impact
+
+Evidence-candidate fields when present:
+
+- evidence_queue_ref
+- evidence_ref
+- endpoint or entry_ref
 - call_chain_candidate
 - anchor_file
+- anchor_line
 - anchor_symbol
 - missing_evidence
-- current_default_status
-- recommended_answer
-- choices
-- effect_of_each_choice
-- required_followup_artifact
+
+Writer-next-action fields when present:
+
+- reason
+- command_hint
+- blocked_command_hint
+- missing
+- supported_effect_types
 
 Default stop conditions:
 

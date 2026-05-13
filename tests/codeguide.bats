@@ -143,6 +143,24 @@ exit 99'
   printf "%s/%s.response.md\n" "$handoff_dir" "$reviewer"
 }
 
+create_mock_internal_review_artifact() {
+  local task_id="$1"
+  local route="${2:-codex_subagent_md_handoff}"
+  local artifact="$DOCS_ROOT/report/LLM-REVIEW-${task_id}-${route}-r01.md"
+
+  mkdir -p "$DOCS_ROOT/report"
+  cat > "$artifact" <<EOF
+- evaluator: codex-subagent
+- review_route: ${route}
+- verdict: accept
+- priority_findings: none
+- contract_mismatches: none
+- missing_evidence: none
+- residual_risks: local review artifacts are not tamper-proof
+EOF
+  printf "%s\n" "$artifact"
+}
+
 # ========== P0: Empty value overwrite prevention ==========
 
 @test "upsert_field skips empty values on existing non-empty fields" {
@@ -2865,6 +2883,50 @@ EOF
   [[ "$output" == *"required review route is missing: external_gemini_claude"* ]]
 }
 
+@test "shadow_v2_gate_skeleton requires durable accepted internal review artifact before close completion" {
+  local internal_artifact
+  local non_markdown_artifact="$DOCS_ROOT/report/LLM-REVIEW-shadow-v2-internal-close.txt"
+  internal_artifact="$(create_mock_internal_review_artifact "shadow-v2-internal-close")"
+  cat > "$non_markdown_artifact" <<'EOF'
+- verdict: accept
+- priority_findings: none
+- contract_mismatches: none
+- missing_evidence: none
+- residual_risks: none
+EOF
+
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --close-required-review "codex_subagent_md_handoff" \
+    --completed-review "codex_subagent_md_handoff" \
+    --print-contract
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"completed internal review route requires a durable response artifact: codex_subagent_md_handoff"* ]]
+
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --close-required-review "codex_subagent_md_handoff" \
+    --completed-review "codex_subagent_md_handoff" \
+    --completed-review-artifact "codex_subagent_md_handoff=$non_markdown_artifact" \
+    --print-contract
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"completed internal review artifact must be a Markdown .md file"* ]]
+
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --close-required-review "codex_subagent_md_handoff" \
+    --completed-review "codex_subagent_md_handoff" \
+    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
+    --print-contract
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *'"completed_review_artifacts":'* ]]
+  [[ "$output" == *'"sha256":"sha256:'* ]]
+}
+
 @test "shadow_v2_gate_skeleton requires durable accepted external review artifact before close completion" {
   local stub_artifact="$TEST_WORKSPACE/external-stub-review.md"
   local empty_dir="$DOCS_ROOT/orchestration/external-cli/May13_2026/shadow-v2-close/v1.0/r-empty"
@@ -2875,6 +2937,7 @@ EOF
   local blocked_artifact="$blocked_dir/gemini.response.md"
   local no_manifest_artifact="$no_manifest_dir/gemini.response.md"
   local thin_artifact="$thin_dir/gemini.response.md"
+  local internal_artifact
   local accepted_artifact
   mkdir -p "$empty_dir" "$blocked_dir" "$no_manifest_dir" "$thin_dir"
   cat > "$stub_artifact" <<'EOF'
@@ -2890,7 +2953,7 @@ sanitized_response_file: $empty_artifact
 EOF
   cat > "$blocked_artifact" <<'EOF'
 evaluator: gemini
-verdict: block
+verdict: blocked
 status: blocked
 EOF
   cat > "$blocked_dir/gemini.request.md" <<EOF
@@ -2904,7 +2967,7 @@ EOF
 artifact_kind: external_cli_review_response_provenance
 generated_by: run_external_plan_reviews.sh
 evaluator: gemini
-verdict: block
+verdict: blocked
 request_file: $blocked_dir/gemini.request.md
 response_file: $blocked_artifact
 response_sha256: $blocked_hash
@@ -2947,7 +3010,9 @@ raw_capture_deleted: true
 sanitized_response: true
 EOF
   accepted_artifact="$(create_mock_external_review_artifact "shadow-v2-close-accepted" "gemini")"
+  internal_artifact="$(create_mock_internal_review_artifact "shadow-v2-close-internal")"
   [ -n "$accepted_artifact" ]
+  [ -n "$internal_artifact" ]
   run test -f "$accepted_artifact"
   [ "$status" -eq 0 ]
   run test -f "${accepted_artifact%.md}.provenance.md"
@@ -2962,6 +3027,7 @@ EOF
     --close-required-review "codex_subagent_md_handoff" \
     --close-required-review "external_gemini_claude" \
     --completed-review "codex_subagent_md_handoff" \
+    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
     --completed-review "external_gemini_claude" \
     --print-contract
 
@@ -2977,6 +3043,7 @@ EOF
     --close-required-review "codex_subagent_md_handoff" \
     --close-required-review "external_gemini_claude" \
     --completed-review "codex_subagent_md_handoff" \
+    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
     --completed-review "external_gemini_claude" \
     --completed-review-artifact "external_gemini_claude=$stub_artifact" \
     --print-contract
@@ -2993,6 +3060,7 @@ EOF
     --close-required-review "codex_subagent_md_handoff" \
     --close-required-review "external_gemini_claude" \
     --completed-review "codex_subagent_md_handoff" \
+    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
     --completed-review "external_gemini_claude" \
     --completed-review-artifact "external_gemini_claude=$no_manifest_artifact" \
     --print-contract
@@ -3009,6 +3077,7 @@ EOF
     --close-required-review "codex_subagent_md_handoff" \
     --close-required-review "external_gemini_claude" \
     --completed-review "codex_subagent_md_handoff" \
+    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
     --completed-review "external_gemini_claude" \
     --completed-review-artifact "external_gemini_claude=$thin_artifact" \
     --print-contract
@@ -3026,6 +3095,7 @@ EOF
     --close-required-review "codex_subagent_md_handoff" \
     --close-required-review "external_gemini_claude" \
     --completed-review "codex_subagent_md_handoff" \
+    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
     --completed-review "external_gemini_claude" \
     --completed-review-artifact "external_gemini_claude=$empty_artifact" \
     --print-contract
@@ -3042,6 +3112,7 @@ EOF
     --close-required-review "codex_subagent_md_handoff" \
     --close-required-review "external_gemini_claude" \
     --completed-review "codex_subagent_md_handoff" \
+    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
     --completed-review "external_gemini_claude" \
     --completed-review-artifact "external_gemini_claude=$blocked_artifact" \
     --print-contract
@@ -3059,6 +3130,7 @@ EOF
     --close-required-review "codex_subagent_md_handoff" \
     --close-required-review "external_gemini_claude" \
     --completed-review "codex_subagent_md_handoff" \
+    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
     --completed-review "external_gemini_claude" \
     --completed-review-artifact "external_gemini_claude=$accepted_artifact" \
     --print-contract
@@ -3073,10 +3145,14 @@ EOF
 }
 
 @test "shadow_v2_gate_skeleton ignores optional blocked external close route" {
+  local internal_artifact
+  internal_artifact="$(create_mock_internal_review_artifact "shadow-v2-optional-external")"
+
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
     --close-required-review "codex_subagent_md_handoff" \
     --completed-review "codex_subagent_md_handoff" \
+    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
     --blocked-review "external_gemini_claude" \
     --print-contract
 
@@ -3176,7 +3252,7 @@ EOF
 
 @test "shadow_v2_user_decision_assistant surfaces writer user-decision command hints" {
   local writer_result="$TEST_WORKSPACE/writer-result.json"
-  cat > "$writer_result" <<'EOF'
+  cat > "$writer_result" <<EOF
 {
   "status": "blocked",
   "writes_shadow_docs": false,
@@ -3186,8 +3262,8 @@ EOF
       "action": "create_evidence_decision",
       "requires_user_input": true,
       "reason": "confirmed fact requires a separate user_decision fact-evidence artifact",
-      "command": ["python3", "shadow_user_decision_wrapper.py", "--project-root", "/repo", "--output", "<evidence-decision.json>", "--decision-id", "<decision-id>", "--decision-type", "business_intent", "--answer", "confirmed", "--decided-by", "<reviewer>", "--decided-at", "<YYYY-MM-DD>", "--expires-at", "<YYYY-MM-DD>", "--rationale", "<why this fact is true>", "--source-ref", "TASK-shadow-effect-map-01"],
-      "command_text": "python3 shadow_user_decision_wrapper.py --decision-type business_intent --answer confirmed",
+      "command": ["python3", "$SHADOW_USER_DECISION", "--project-root", "/repo", "--output", "<evidence-decision.json>", "--decision-id", "<decision-id>", "--decision-type", "business_intent", "--answer", "confirmed", "--decided-by", "<reviewer>", "--decided-at", "<YYYY-MM-DD>", "--expires-at", "<YYYY-MM-DD>", "--rationale", "<why this fact is true>", "--source-ref", "TASK-shadow-effect-map-01"],
+      "command_text": "python3 $SHADOW_USER_DECISION --decision-type business_intent --answer confirmed",
       "then": "rerun shadow_effect_writer.py with --evidence-decision <evidence-decision.json>"
     }
   ]
@@ -3207,7 +3283,7 @@ EOF
 
 @test "shadow_v2_user_decision_assistant blocks forged writer command hints" {
   local forged_writer_result="$TEST_WORKSPACE/forged-writer-result.json"
-  cat > "$forged_writer_result" <<'EOF'
+  cat > "$forged_writer_result" <<EOF
 {
   "status": "blocked",
   "writes_shadow_docs": false,
@@ -3225,8 +3301,8 @@ EOF
       "action": "create_evidence_decision",
       "requires_user_input": true,
       "reason": "final apply is not fact evidence",
-      "command": ["python3", "shadow_user_decision_wrapper.py", "--decision-type", "final_shadow_apply"],
-      "command_text": "python3 shadow_user_decision_wrapper.py --decision-type final_shadow_apply"
+      "command": ["python3", "$SHADOW_USER_DECISION", "--decision-type", "final_shadow_apply"],
+      "command_text": "python3 $SHADOW_USER_DECISION --decision-type final_shadow_apply"
     }
   ]
 }
@@ -3246,7 +3322,7 @@ EOF
 
 @test "shadow_v2_user_decision_assistant renders command text only from validated argv" {
   local misleading_writer_result="$TEST_WORKSPACE/misleading-command-text-result.json"
-  cat > "$misleading_writer_result" <<'EOF'
+  cat > "$misleading_writer_result" <<EOF
 {
   "status": "blocked",
   "writes_shadow_docs": false,
@@ -3256,7 +3332,7 @@ EOF
       "action": "create_evidence_decision",
       "requires_user_input": true,
       "reason": "safe argv with hostile command_text",
-      "command": ["python3", "shadow_user_decision_wrapper.py", "--project-root", "/repo", "--output", "<evidence-decision.json>", "--decision-id", "<decision-id>", "--decision-type", "business_intent", "--answer", "confirmed", "--decided-by", "<reviewer>", "--decided-at", "<YYYY-MM-DD>", "--expires-at", "<YYYY-MM-DD>", "--rationale", "<why this fact is true>", "--source-ref", "TASK-shadow-effect-map-01"],
+      "command": ["python3", "$SHADOW_USER_DECISION", "--project-root", "/repo", "--output", "<evidence-decision.json>", "--decision-id", "<decision-id>", "--decision-type", "business_intent", "--answer", "confirmed", "--decided-by", "<reviewer>", "--decided-at", "<YYYY-MM-DD>", "--expires-at", "<YYYY-MM-DD>", "--rationale", "<why this fact is true>", "--source-ref", "TASK-shadow-effect-map-01"],
       "command_text": "python3 shadow_effect_writer.py --mode write"
     }
   ]
@@ -3302,7 +3378,7 @@ EOF
 
 @test "shadow_v2_user_decision_assistant rejects duplicate decision flags" {
   local duplicate_flag_result="$TEST_WORKSPACE/duplicate-flag-command-result.json"
-  cat > "$duplicate_flag_result" <<'EOF'
+  cat > "$duplicate_flag_result" <<EOF
 {
   "status": "blocked",
   "writes_shadow_docs": false,
@@ -3312,7 +3388,7 @@ EOF
       "action": "create_evidence_decision",
       "requires_user_input": true,
       "reason": "duplicate decision type",
-      "command": ["python3", "shadow_user_decision_wrapper.py", "--project-root", "/repo", "--output", "<evidence-decision.json>", "--decision-id", "<decision-id>", "--decision-type", "business_intent", "--answer", "confirmed", "--decided-by", "<reviewer>", "--decided-at", "<YYYY-MM-DD>", "--expires-at", "<YYYY-MM-DD>", "--rationale", "<why this fact is true>", "--source-ref", "TASK-shadow-effect-map-01", "--decision-type", "final_shadow_apply"]
+      "command": ["python3", "$SHADOW_USER_DECISION", "--project-root", "/repo", "--output", "<evidence-decision.json>", "--decision-id", "<decision-id>", "--decision-type", "business_intent", "--answer", "confirmed", "--decided-by", "<reviewer>", "--decided-at", "<YYYY-MM-DD>", "--expires-at", "<YYYY-MM-DD>", "--rationale", "<why this fact is true>", "--source-ref", "TASK-shadow-effect-map-01", "--decision-type", "final_shadow_apply"]
     }
   ]
 }
@@ -3328,6 +3404,7 @@ EOF
 
 @test "shadow_v2_user_decision_assistant rejects spoofed wrapper paths" {
   local spoofed_path_result="$TEST_WORKSPACE/spoofed-wrapper-path-result.json"
+  local relative_path_result="$TEST_WORKSPACE/relative-wrapper-path-result.json"
   cat > "$spoofed_path_result" <<'EOF'
 {
   "status": "blocked",
@@ -3345,6 +3422,29 @@ EOF
 EOF
 
   run python3 "$SHADOW_V2_USER_DECISION" --project-root "$TEST_PROJECT" --writer-result "$spoofed_path_result" --format json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"command_ready": false'* ]]
+  [[ "$output" == *"python command hint must execute shadow_user_decision_wrapper.py directly"* ]]
+  [[ "$output" != *'"command_hint"'* ]]
+
+  cat > "$relative_path_result" <<'EOF'
+{
+  "status": "blocked",
+  "writes_shadow_docs": false,
+  "auto_promotes_facts": false,
+  "next_actions": [
+    {
+      "action": "create_evidence_decision",
+      "requires_user_input": true,
+      "reason": "relative wrapper path",
+      "command": ["python3", "shadow_user_decision_wrapper.py", "--project-root", "/repo", "--output", "<evidence-decision.json>", "--decision-id", "<decision-id>", "--decision-type", "business_intent", "--answer", "confirmed", "--decided-by", "<reviewer>", "--decided-at", "<YYYY-MM-DD>", "--expires-at", "<YYYY-MM-DD>", "--rationale", "<why this fact is true>", "--source-ref", "TASK-shadow-effect-map-01"]
+    }
+  ]
+}
+EOF
+
+  run python3 "$SHADOW_V2_USER_DECISION" --project-root "$TEST_PROJECT" --writer-result "$relative_path_result" --format json
 
   [ "$status" -eq 0 ]
   [[ "$output" == *'"command_ready": false'* ]]
@@ -3404,6 +3504,7 @@ EOF
   [[ "$output" == *"kind: writer_result"* ]]
   [[ "$output" == *"TASK-shadow-effect-map-01"* ]]
   [[ "$output" == *"src/UserService.java:6"* ]]
+  [[ "$output" == *"- verdict: accept | revise | blocked"* ]]
   [[ "$output" == *"- writes_shadow_docs: false"* ]]
 
   find "$DOCS_ROOT/shadow" -type f | sort > "$TEST_WORKSPACE/shadow-v2-review-after.txt"
@@ -3452,6 +3553,12 @@ EOF
   [[ "$output" == *'"status": "ok"'* ]]
   [[ "$output" == *'"review_provenance": "external_user_approved"'* ]]
   [[ "$output" == *'"external_review_approval_ref": "user-approval-001"'* ]]
+  [[ "$output" == *'"required_response_fields": ['* ]]
+  [[ "$output" == *'"summary"'* ]]
+  [[ "$output" == *'"strengths"'* ]]
+  [[ "$output" == *'"risks"'* ]]
+  [[ "$output" == *'"requested_changes"'* ]]
+  [[ "$output" != *'"priority_findings"'* ]]
 }
 
 @test "shadow_v2_review_packet_generator refuses outputs under docs shadow" {
@@ -3559,8 +3666,11 @@ EOF
 
 @test "shadow_v2_pipeline_wrapper requires external close artifact provenance" {
   local accepted_artifact
+  local internal_artifact
   accepted_artifact="$(create_mock_external_review_artifact "shadow-v2-pipeline-accepted" "claude")"
+  internal_artifact="$(create_mock_internal_review_artifact "shadow-v2-pipeline-internal")"
   [ -n "$accepted_artifact" ]
+  [ -n "$internal_artifact" ]
   run test -f "$accepted_artifact"
   [ "$status" -eq 0 ]
   run test -f "${accepted_artifact%.md}.provenance.md"
@@ -3575,6 +3685,7 @@ EOF
     --close-required-review "codex_subagent_md_handoff" \
     --close-required-review "external_gemini_claude" \
     --completed-review "codex_subagent_md_handoff" \
+    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
     --completed-review "external_gemini_claude" \
     --format json
 
@@ -3592,6 +3703,7 @@ EOF
     --close-required-review "codex_subagent_md_handoff" \
     --close-required-review "external_gemini_claude" \
     --completed-review "codex_subagent_md_handoff" \
+    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
     --completed-review "external_gemini_claude" \
     --completed-review-artifact "external_gemini_claude=$accepted_artifact" \
     --format json
