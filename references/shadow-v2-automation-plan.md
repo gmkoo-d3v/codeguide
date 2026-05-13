@@ -5,9 +5,9 @@ Use this reference when planning or implementing the next automation layer for t
 ## Status
 
 - plan_id: shadow-v2-automation-01
-- status: phase0-4-blocked-required-external-cli-policy-blocked
+- status: phase0-4-implemented-and-tested
 - selected_by_user: 2026-05-13
-- independent_review_gate: phase4-blocked-required-external-cli-policy-blocked
+- independent_review_gate: default-internal-subagent-accepted-external-cli-user-requested-only
 
 ## Locked Decisions
 
@@ -103,7 +103,7 @@ Phase 0 verification:
 - contract printing does not require a scoped project
 - project-scope checking blocks hint activation until `docs/`, `docs/shadow/`, and `docs/policy/` exist
 - external Gemini/Claude review is blocked unless explicitly requested
-- completed external Gemini/Claude review is blocked unless a durable accepted response artifact under `docs/orchestration/external-cli/` is supplied with a matching companion request file, wrapper-generated provenance manifest, evaluator, `verdict: accept`, command-response path, response path, bytes, and sha256 provenance
+- completed external Gemini/Claude review is blocked unless a durable accepted response artifact under `docs/orchestration/external-cli/` is supplied with a matching companion request file, wrapper-generated provenance manifest, evaluator, `verdict: accept`, parser-compatible review fields, command-response path, response path, bytes, and sha256 provenance
 - batch apply is disabled
 - non-confirming evidence types cannot confirm facts
 - generic `user_decision` and `final_shadow_apply` cannot confirm facts; user fact evidence must declare an allowed fact-decision type

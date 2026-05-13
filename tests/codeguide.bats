@@ -2870,11 +2870,13 @@ EOF
   local empty_dir="$DOCS_ROOT/orchestration/external-cli/May13_2026/shadow-v2-close/v1.0/r-empty"
   local blocked_dir="$DOCS_ROOT/orchestration/external-cli/May13_2026/shadow-v2-close/v1.0/r-blocked"
   local no_manifest_dir="$DOCS_ROOT/orchestration/external-cli/May13_2026/shadow-v2-close/v1.0/r-no-manifest"
+  local thin_dir="$DOCS_ROOT/orchestration/external-cli/May13_2026/shadow-v2-close/v1.0/r-thin"
   local empty_artifact="$empty_dir/gemini.response.md"
   local blocked_artifact="$blocked_dir/gemini.response.md"
   local no_manifest_artifact="$no_manifest_dir/gemini.response.md"
+  local thin_artifact="$thin_dir/gemini.response.md"
   local accepted_artifact
-  mkdir -p "$empty_dir" "$blocked_dir" "$no_manifest_dir"
+  mkdir -p "$empty_dir" "$blocked_dir" "$no_manifest_dir" "$thin_dir"
   cat > "$stub_artifact" <<'EOF'
 evaluator: gemini
 verdict: accept
@@ -2919,6 +2921,30 @@ EOF
 evaluator: gemini
 command_response_path: $no_manifest_dir/gemini.command-response.raw.md
 sanitized_response_file: $no_manifest_artifact
+EOF
+  cat > "$thin_artifact" <<'EOF'
+evaluator: gemini
+verdict: accept
+EOF
+  cat > "$thin_dir/gemini.request.md" <<EOF
+evaluator: gemini
+command_response_path: $thin_dir/gemini.command-response.raw.md
+sanitized_response_file: $thin_artifact
+EOF
+  local thin_hash
+  thin_hash="$(sha256_file_ref "$thin_artifact")"
+  cat > "$thin_dir/gemini.response.provenance.md" <<EOF
+artifact_kind: external_cli_review_response_provenance
+generated_by: run_external_plan_reviews.sh
+review_style: standard
+evaluator: gemini
+verdict: accept
+request_file: $thin_dir/gemini.request.md
+response_file: $thin_artifact
+response_sha256: $thin_hash
+command_response_path: $thin_dir/gemini.command-response.raw.md
+raw_capture_deleted: true
+sanitized_response: true
 EOF
   accepted_artifact="$(create_mock_external_review_artifact "shadow-v2-close-accepted" "gemini")"
   [ -n "$accepted_artifact" ]
@@ -2973,6 +2999,23 @@ EOF
 
   [ "$status" -eq 1 ]
   [[ "$output" == *"completed external Gemini/Claude review artifact requires provenance manifest"* ]]
+
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --external-review-requested \
+    --external-review-approval-ref "user-approval-001" \
+    --external-review-approved-next-step "close shadow v2 external review gate" \
+    --external-review-recorded-by "main-thread-supervising-lead-architect" \
+    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "external_gemini_claude" \
+    --completed-review "codex_subagent_md_handoff" \
+    --completed-review "external_gemini_claude" \
+    --completed-review-artifact "external_gemini_claude=$thin_artifact" \
+    --print-contract
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"completed external Gemini/Claude review artifact requires parser-compatible field summary"* ]]
+  [[ "$output" == *"completed external Gemini/Claude review artifact requires parser-compatible field requested_changes"* ]]
 
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
