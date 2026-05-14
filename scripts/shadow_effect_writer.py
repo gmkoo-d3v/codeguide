@@ -72,6 +72,17 @@ RECORD_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{3,120}$")
 SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 SOURCE_EVIDENCE_TYPES = {"code_call", "annotation", "code_reference", "config_binding"}
 MARKER_RE = re.compile(r"<!--\s*shadow-effect-record:([^ ]+)\s+(begin|end)\s*-->")
+CALL_MATCH_VALIDATORS = {
+    "py.ast.call_match@v1",
+    "java.ast.call_match@v1",
+    "js.ast.call_match@v1",
+    "ts.ast.call_match@v1",
+    "ts.ast.call_match@v2",
+}
+DECORATOR_MATCH_VALIDATORS = {
+    "py.decorator.match@v1",
+    "fastapi.route@v1",
+}
 
 
 def emit(payload: dict[str, Any]) -> None:
@@ -255,7 +266,7 @@ def anchor_symbol_matches_probe_args(evidence: dict[str, Any], anchor: dict[str,
     if not isinstance(probe_args, dict):
         return True
     ref = evidence.get("ref")
-    if ref in {"py.ast.call_match@v1", "java.ast.call_match@v1"}:
+    if ref in CALL_MATCH_VALIDATORS:
         callee = probe_args.get("callee")
         receiver = probe_args.get("receiver")
         if isinstance(receiver, str) and receiver.strip() and isinstance(callee, str) and callee.strip():
@@ -264,7 +275,7 @@ def anchor_symbol_matches_probe_args(evidence: dict[str, Any], anchor: dict[str,
             return True
         callee = callee.strip()
         return symbol == callee or symbol.endswith("." + callee)
-    if ref == "py.decorator.match@v1":
+    if ref in DECORATOR_MATCH_VALIDATORS:
         decorator = probe_args.get("decorator")
         if not isinstance(decorator, str) or not decorator.strip():
             return True
@@ -394,7 +405,7 @@ def build_probe_command(evidence: dict[str, Any], project_root: Path) -> tuple[l
         if not has_text(source_ref):
             return [], ["deterministic_code evidence.source_ref is required before probe rerun"]
         command.extend(["--source-file", source_path_from_ref(str(source_ref))])
-        if ref in {"py.ast.call_match@v1", "java.ast.call_match@v1"}:
+        if ref in CALL_MATCH_VALIDATORS:
             callee = probe_arg_value(evidence, "callee")
             if callee is None:
                 return [], [f"deterministic_code evidence.probe_args.callee is required for {ref}"]
@@ -406,11 +417,14 @@ def build_probe_command(evidence: dict[str, Any], project_root: Path) -> tuple[l
                 return [], [f"deterministic_code evidence.probe_args.receiver is required for repo.write {ref}"]
             if receiver is not None:
                 command.extend(["--receiver", receiver])
-        elif ref == "py.decorator.match@v1":
+        elif ref in DECORATOR_MATCH_VALIDATORS:
             decorator = probe_arg_value(evidence, "decorator")
             if decorator is None:
-                return [], ["deterministic_code evidence.probe_args.decorator is required for py.decorator.match@v1"]
+                return [], [f"deterministic_code evidence.probe_args.decorator is required for {ref}"]
             command.extend(["--decorator", decorator])
+            route_path = probe_arg_value(evidence, "route_path")
+            if ref == "fastapi.route@v1" and route_path is not None:
+                command.extend(["--route-path", route_path])
         else:
             return [], [f"writer probe rerun is unsupported for confirmed deterministic_code validator {ref}"]
         return command, []
@@ -633,7 +647,12 @@ def rerun_probe_result(evidence: dict[str, Any], project_root: Path) -> tuple[di
     return parsed, []
 
 
-def probe_result_blockers(evidence: dict[str, Any], probe_result: dict[str, Any] | None, project_root: Path) -> list[str]:
+def probe_result_blockers(
+    evidence: dict[str, Any],
+    probe_result: dict[str, Any] | None,
+    project_root: Path,
+    record_anchor: dict[str, Any] | None = None,
+) -> list[str]:
     rerun_result, rerun_blockers = rerun_probe_result(evidence, project_root)
     blockers: list[str] = list(rerun_blockers)
     if probe_result is None:
@@ -641,20 +660,27 @@ def probe_result_blockers(evidence: dict[str, Any], probe_result: dict[str, Any]
     if rerun_result is not None and probe_result is not None:
         compare_fields = [
             "status",
+            "probe_status",
+            "fact_status",
             "validator_id",
             "evidence_type",
+            "evidence_field",
             "validator_result",
+            "promotion_limit",
             "writes_shadow_docs",
         ]
         if evidence.get("type") == "deterministic_code":
             compare_fields.extend(["source_hash", "validator_kind", "parser_backed"])
-            if "matched_symbol" in rerun_result:
-                compare_fields.append("matched_symbol")
         if evidence.get("type") == "deterministic_runtime":
             compare_fields.extend(["trace_ref", "artifact_hash"])
         for field_name in compare_fields:
             if field_name in rerun_result and probe_result.get(field_name) != rerun_result.get(field_name):
                 blockers.append(f"probe_result.{field_name} must match writer probe rerun")
+        if evidence.get("type") == "deterministic_code":
+            for result_field in ("matched_symbol", "http_method", "route_path", "type_arguments"):
+                if result_field in rerun_result or result_field in probe_result:
+                    if probe_result.get(result_field) != rerun_result.get(result_field):
+                        blockers.append(f"probe_result.{result_field} must match writer probe rerun")
         if evidence.get("type") == "deterministic_code" and not same_ref(
             rerun_result.get("source_ref"), probe_result.get("source_ref")
         ):
@@ -662,6 +688,15 @@ def probe_result_blockers(evidence: dict[str, Any], probe_result: dict[str, Any]
     effective_result = rerun_result if rerun_result is not None else probe_result
     if effective_result is None:
         return blockers
+    if (
+        evidence.get("type") == "deterministic_code"
+        and evidence.get("ref") in CALL_MATCH_VALIDATORS.union(DECORATOR_MATCH_VALIDATORS)
+        and isinstance(record_anchor, dict)
+        and has_text(record_anchor.get("symbol"))
+        and has_text(effective_result.get("matched_symbol"))
+        and record_anchor.get("symbol") != effective_result.get("matched_symbol")
+    ):
+        blockers.append("confirmed record.anchor.symbol must match probe_result.matched_symbol")
     evidence_type = evidence.get("type")
     ref = evidence.get("ref")
     if effective_result.get("status") != "pass":
@@ -978,7 +1013,7 @@ def evidence_blockers(
             blockers.append("deterministic_code evidence.source_ref is required")
         if has_text(evidence.get("source_ref")):
             blockers.extend(source_hash_blockers(evidence, project_root))
-        blockers.extend(probe_result_blockers(evidence, probe_result_payload, project_root))
+        blockers.extend(probe_result_blockers(evidence, probe_result_payload, project_root, record_anchor))
         blockers.extend(probe_artifact_blockers(evidence, probe_result_path, project_root))
 
     if evidence_type == "deterministic_runtime":
@@ -1016,7 +1051,7 @@ def evidence_blockers(
             )
             if evidence.get("user_decision_ref") != user_decision_id(evidence_decision_payload or {}):
                 blockers.append("deterministic_runtime evidence.user_decision_ref must match evidence user_decision.id")
-        blockers.extend(probe_result_blockers(evidence, probe_result_payload, project_root))
+        blockers.extend(probe_result_blockers(evidence, probe_result_payload, project_root, record_anchor))
         blockers.extend(probe_artifact_blockers(evidence, probe_result_path, project_root))
 
     if evidence_type == "user_decision":

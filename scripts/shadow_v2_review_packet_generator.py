@@ -48,9 +48,37 @@ def has_text(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def load_json_file(path: str, label: str) -> dict[str, Any]:
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file_handle:
+        for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return "sha256:" + digest.hexdigest()
+
+
+def resolve_artifact_path(project_root: Path, raw_path: str, label: str) -> Path:
+    candidate = Path(raw_path)
+    if ".." in candidate.parts:
+        raise ValueError(f"{label} must not contain traversal segments")
+    if not candidate.is_absolute():
+        candidate = project_root / candidate
+    resolved = candidate.resolve(strict=True)
     try:
-        parsed = json.loads(Path(path).read_text(encoding="utf-8"))
+        resolved.relative_to(project_root)
+    except ValueError as exc:
+        raise ValueError(f"{label} must stay under project root") from exc
+    if not resolved.is_file():
+        raise ValueError(f"{label} must be a file")
+    return resolved
+
+
+def project_relative_path(project_root: Path, path: Path) -> str:
+    return path.relative_to(project_root).as_posix()
+
+
+def load_json_file(path: Path, label: str) -> dict[str, Any]:
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"{label} must be valid JSON: {exc}") from exc
     if not isinstance(parsed, dict):
@@ -103,15 +131,17 @@ def bounded_refs_from_value(value: Any, limit: int = 20) -> list[str]:
     return refs
 
 
-def summarize_json_artifact(kind: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+def summarize_json_artifact(kind: str, path: Path, project_root: Path, payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "kind": kind,
-        "path": path,
+        "path": project_relative_path(project_root, path),
         "status": payload.get("status", "unknown"),
         "writes_shadow_docs": payload.get("writes_shadow_docs", False),
         "auto_promotes_facts": payload.get("auto_promotes_facts", False),
         "source_refs": bounded_refs_from_value(payload),
         "hash": stable_digest(payload),
+        "artifact_hash": sha256_file(path),
+        "artifact_bytes": path.stat().st_size,
     }
 
 
@@ -188,6 +218,8 @@ def render_markdown(payload: dict[str, Any]) -> str:
                 f"  writes_shadow_docs: {str(artifact['writes_shadow_docs']).lower()}",
                 f"  auto_promotes_facts: {str(artifact['auto_promotes_facts']).lower()}",
                 f"  hash: {artifact['hash']}",
+                f"  artifact_hash: {artifact['artifact_hash']}",
+                f"  artifact_bytes: {artifact['artifact_bytes']}",
             ]
         )
         if artifact["source_refs"]:
@@ -241,8 +273,10 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]]:
         ("user_decision_packet", args.user_decision_packets or []),
     ):
         for path in paths:
-            payload = load_json_file(path, f"--{kind.replace('_', '-')}")
-            summary = summarize_json_artifact(kind, path, payload)
+            label = f"--{kind.replace('_', '-')}"
+            artifact_path = resolve_artifact_path(project_root, path, label)
+            payload = load_json_file(artifact_path, label)
+            summary = summarize_json_artifact(kind, artifact_path, project_root, payload)
             artifacts.append(summary)
             for source_ref in summary["source_refs"]:
                 if source_ref not in source_refs:

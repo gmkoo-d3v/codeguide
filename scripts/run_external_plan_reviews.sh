@@ -17,8 +17,11 @@ Options:
   --risk-preflight-summary "<text>" Required gate summary (default: external review cleared by main thread)
   --approval-ref <ref>              Required when risk-preflight-status=approved
   --approved-next-step "<text>"     Exact approved step when approval was required
+  --reviewer <tool>                 Optional reviewer tool to invoke; repeatable, default is all non-primary tools
   --adversarial-evaluator <tool>    Optional reviewer to run in adversarial mode
   --allow-partial-review            Allow success when only one non-required reviewer succeeds
+  --manual-handoff-only             Write request files and manual command files, then stop without invoking external CLIs
+  --ingest-manual-responses         Parse existing manual raw/response files into reports and provenance without invoking external CLIs
   --gemini-model <model>            Optional Gemini model override
   --claude-model <model>            Optional Claude model override
   --codex-model <model>             Optional Codex model override
@@ -51,6 +54,9 @@ APPROVAL_REF=""
 APPROVED_NEXT_STEP=""
 ADVERSARIAL_EVALUATOR=""
 ALLOW_PARTIAL_REVIEW="false"
+MANUAL_HANDOFF_ONLY="false"
+INGEST_MANUAL_RESPONSES="false"
+SELECTED_REVIEWERS=()
 GEMINI_MODEL="${CODEGUIDE_GEMINI_MODEL:-}"
 CLAUDE_MODEL="${CODEGUIDE_CLAUDE_MODEL:-}"
 CODEX_MODEL="${CODEGUIDE_CODEX_MODEL:-}"
@@ -209,6 +215,12 @@ while [[ $# -gt 0 ]]; do
       APPROVED_NEXT_STEP="${2:-}"
       shift 2
       ;;
+    --reviewer)
+      require_option_value "$1" "$#"
+      validate_tool "--reviewer" "${2:-}"
+      SELECTED_REVIEWERS+=("${2:-}")
+      shift 2
+      ;;
     --adversarial-evaluator)
       require_option_value "$1" "$#"
       ADVERSARIAL_EVALUATOR="${2:-}"
@@ -216,6 +228,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --allow-partial-review)
       ALLOW_PARTIAL_REVIEW="true"
+      shift
+      ;;
+    --manual-handoff-only)
+      MANUAL_HANDOFF_ONLY="true"
+      shift
+      ;;
+    --ingest-manual-responses)
+      INGEST_MANUAL_RESPONSES="true"
       shift
       ;;
     --gemini-model)
@@ -289,6 +309,10 @@ fi
 if [[ -n "$ADVERSARIAL_EVALUATOR" ]]; then
   validate_tool "--adversarial-evaluator" "$ADVERSARIAL_EVALUATOR"
 fi
+if [[ "$MANUAL_HANDOFF_ONLY" == "true" && "$INGEST_MANUAL_RESPONSES" == "true" ]]; then
+  echo "[ERROR] --manual-handoff-only and --ingest-manual-responses are mutually exclusive" >&2
+  exit 1
+fi
 
 THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$THIS_DIR/codeguide_paths.sh"
@@ -300,9 +324,9 @@ TASK_DIR="$DOCS_DIR/task"
 DECISIONS_DIR="$DOCS_DIR/decisions"
 PLAN_DIR="$DOCS_DIR/plan"
 REPORT_DIR="$DOCS_DIR/report"
-ORCHESTRATION_DIR="$DOCS_DIR/orchestration"
-HANDOFF_DATE="$(LC_TIME=C date +"%b%d_%Y")"
-HANDOFF_DIR="$ORCHESTRATION_DIR/external-cli/$HANDOFF_DATE/$TASK_ID/$PLAN_VERSION/$REVIEW_ROUND"
+ORCHESTRATION_DIR="$(codeguide_orchestration_root "$PROJECT_ROOT_ABS")"
+ORCHESTRATION_TEMPLATES_DIR="$(codeguide_orchestration_templates_dir "$PROJECT_ROOT_ABS")"
+HANDOFF_DIR="$(codeguide_external_cli_dir "$PROJECT_ROOT_ABS" "$TASK_ID" "$PLAN_VERSION" "$REVIEW_ROUND")"
 
 INIT_SCRIPT="$THIS_DIR/init_docs_scaffold.sh"
 PROMPT_TEMPLATE_FILE="$THIS_DIR/../references/external-plan-review-prompt.md"
@@ -417,11 +441,13 @@ fi
 
 ensure_orchestration_file() {
   local orchestration_file="$1"
-  local template_file="$ORCHESTRATION_DIR/ORCH-template.md"
+  local template_file="$ORCHESTRATION_TEMPLATES_DIR/ORCH.md"
 
   if [[ -f "$orchestration_file" ]]; then
     return
   fi
+
+  mkdir -p "$(dirname "$orchestration_file")"
 
   if [[ -f "$template_file" ]]; then
     cp "$template_file" "$orchestration_file"
@@ -530,7 +556,7 @@ high_risk_source_for_task() {
   done < <(find "$DECISIONS_DIR" -maxdepth 1 -type f -name 'decision-*.md' ! -name 'decision-template.md' ! -name 'decision-index.md' | sort)
 }
 
-ORCHESTRATION_FILE="$ORCHESTRATION_DIR/ORCH-${TASK_ID}.md"
+ORCHESTRATION_FILE="$(codeguide_orchestration_file "$PROJECT_ROOT_ABS" "$TASK_ID")"
 ensure_orchestration_file "$ORCHESTRATION_FILE"
 NOW_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 upsert_field "$ORCHESTRATION_FILE" "task_id" "$TASK_ID"
@@ -552,11 +578,38 @@ upsert_field "$ORCHESTRATION_FILE" "last_updated" "$NOW_UTC"
 
 ALL_TOOLS=(gemini claude codex)
 REVIEWERS=()
-for tool in "${ALL_TOOLS[@]}"; do
-  if [[ "$tool" != "$PRIMARY_TOOL" ]]; then
-    REVIEWERS+=("$tool")
-  fi
-done
+REVIEWER_COUNT=0
+if (( ${#SELECTED_REVIEWERS[@]} > 0 )); then
+  for tool in "${SELECTED_REVIEWERS[@]}"; do
+    if [[ "$tool" == "$PRIMARY_TOOL" ]]; then
+      echo "[ERROR] --reviewer cannot match --primary-tool: ${tool}" >&2
+      exit 1
+    fi
+    already_selected="false"
+    for (( reviewer_index=0; reviewer_index<REVIEWER_COUNT; reviewer_index++ )); do
+      if [[ "${REVIEWERS[$reviewer_index]}" == "$tool" ]]; then
+        already_selected="true"
+        break
+      fi
+    done
+    if [[ "$already_selected" == "false" ]]; then
+      REVIEWERS+=("$tool")
+      REVIEWER_COUNT=$((REVIEWER_COUNT + 1))
+    fi
+  done
+else
+  for tool in "${ALL_TOOLS[@]}"; do
+    if [[ "$tool" != "$PRIMARY_TOOL" ]]; then
+      REVIEWERS+=("$tool")
+      REVIEWER_COUNT=$((REVIEWER_COUNT + 1))
+    fi
+  done
+fi
+
+if (( REVIEWER_COUNT == 0 )); then
+  echo "[ERROR] At least one non-primary reviewer is required" >&2
+  exit 1
+fi
 
 upsert_field_if_blank "$ORCHESTRATION_FILE" "planner_agents" "${PRIMARY_TOOL}-primary-author"
 upsert_field "$ORCHESTRATION_FILE" "reviewer_agents" "$(IFS=,; printf "external-cli:%s" "${REVIEWERS[*]}")"
@@ -726,6 +779,106 @@ tool_bin_for() {
   esac
 }
 
+build_tool_prompt_for() {
+  local tool="$1"
+  local request_file="$2"
+  local output_capture_file="$3"
+  local durable_response_file="$4"
+
+  case "$tool" in
+    gemini)
+      printf "Read the Markdown request file from disk at %s. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields to stdout; do not write files. Command-level response path: %s. Sanitized response file: %s. The bash wrapper redirects stdout to the command-level response path, sanitizes it, and deletes the raw capture. Do not claim the review was saved anywhere else." "$request_file" "$output_capture_file" "$durable_response_file"
+      ;;
+    claude)
+      printf "Use read-only file access to read the Markdown request file at %s. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields to stdout; do not write files. Command-level response path: %s. Sanitized response file: %s. The bash wrapper redirects stdout to the command-level response path, sanitizes it, and deletes the raw capture. Do not claim the review was saved anywhere else." "$request_file" "$output_capture_file" "$durable_response_file"
+      ;;
+    codex)
+      printf "Read the Markdown request file from disk at %s. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields as the final message; do not write files. Command-level response path: %s. Sanitized response file: %s. The bash command uses --output-last-message with the command-level response path, sanitizes it, and deletes the raw capture. Do not claim the review was saved anywhere else." "$request_file" "$output_capture_file" "$durable_response_file"
+      ;;
+  esac
+}
+
+append_quoted_command() {
+  local command_file="$1"
+  shift
+  local arg
+  for arg in "$@"; do
+    printf "%q " "$arg" >> "$command_file"
+  done
+}
+
+write_manual_command_file() {
+  local tool="$1"
+  local request_file="$2"
+  local output_capture_file="$3"
+  local stderr_file="$4"
+  local durable_response_file="$5"
+  local command_file="$6"
+  local binary
+  local model_override
+  local prompt
+  local -a cmd
+
+  binary="$(tool_bin_for "$tool")"
+  model_override="$(tool_model_for "$tool")"
+  prompt="$(build_tool_prompt_for "$tool" "$request_file" "$output_capture_file" "$durable_response_file")"
+
+  case "$tool" in
+    gemini)
+      cmd=("$binary" --approval-mode plan --output-format text --include-directories "$CONTEXT_ROOT")
+      if [[ -n "$model_override" ]]; then
+        cmd+=(-m "$model_override")
+      fi
+      cmd+=(-p "$prompt")
+      ;;
+    claude)
+      cmd=("$binary" -p --permission-mode dontAsk --tools Read --add-dir "$CONTEXT_ROOT" --output-format text --no-session-persistence)
+      if [[ -n "$model_override" ]]; then
+        cmd+=(--model "$model_override")
+      fi
+      cmd+=("$prompt")
+      ;;
+    codex)
+      cmd=("$binary" exec --skip-git-repo-check --sandbox read-only --ephemeral -C "$CONTEXT_ROOT" --add-dir "$PROJECT_ROOT_ABS" --output-last-message "$output_capture_file")
+      if [[ -n "$model_override" ]]; then
+        cmd+=(-m "$model_override")
+      fi
+      cmd+=("$prompt")
+      ;;
+  esac
+
+  cat > "$command_file" <<EOF
+# Manual external review command (${tool})
+
+- task_id: ${TASK_ID}
+- plan_version: ${PLAN_VERSION}
+- review_round: ${REVIEW_ROUND}
+- evaluator: ${tool}
+- request_file: ${request_file}
+- command_response_path: ${output_capture_file}
+- sanitized_response_file: ${durable_response_file}
+- stderr_file: ${stderr_file}
+- follow_up: rerun run_external_plan_reviews.sh with the same options plus --ingest-manual-responses
+
+Run this only as a last-resort fallback when Codex Desktop cannot invoke the external CLI because the escalation layer blocks private workspace egress. This is a user-operated handoff; do not drive Terminal UI from Codex to bypass that gate.
+
+\`\`\`bash
+cd $(printf "%q" "$CONTEXT_ROOT")
+EOF
+
+  append_quoted_command "$command_file" "${cmd[@]}"
+  if [[ "$tool" == "codex" ]]; then
+    printf ">%q 2>%q\n" "${output_capture_file%.md}.cli.log" "$stderr_file" >> "$command_file"
+  else
+    printf ">%q 2>%q\n" "$output_capture_file" "$stderr_file" >> "$command_file"
+  fi
+  cat >> "$command_file" <<EOF
+\`\`\`
+
+After every requested reviewer has produced a raw response, run the wrapper again with \`--ingest-manual-responses\` so it can redact, parse, write reports, and generate provenance.
+EOF
+}
+
 run_tool_prompt() {
   local tool="$1"
   local request_file="$2"
@@ -741,6 +894,7 @@ run_tool_prompt() {
 
   binary="$(tool_bin_for "$tool")"
   model_override="$(tool_model_for "$tool")"
+  prompt="$(build_tool_prompt_for "$tool" "$request_file" "$output_capture_file" "$durable_response_file")"
 
   if ! command -v "$binary" >/dev/null 2>&1; then
     echo "[ERROR] ${tool} binary not found in PATH: ${binary}" > "$stderr_file"
@@ -749,7 +903,6 @@ run_tool_prompt() {
 
   case "$tool" in
     gemini)
-      prompt="Read the Markdown request file from disk at ${request_file}. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields to stdout; do not write files. Command-level response path: ${output_capture_file}. Sanitized response file: ${durable_response_file}. The bash wrapper redirects stdout to the command-level response path, sanitizes it, and deletes the raw capture. Do not claim the review was saved anywhere else."
       cmd=("$binary" --approval-mode plan --output-format text --include-directories "$CONTEXT_ROOT")
       if [[ -n "$model_override" ]]; then
         cmd+=(-m "$model_override")
@@ -757,7 +910,6 @@ run_tool_prompt() {
       cmd+=(-p "$prompt")
       ;;
     claude)
-      prompt="Use read-only file access to read the Markdown request file at ${request_file}. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields to stdout; do not write files. Command-level response path: ${output_capture_file}. Sanitized response file: ${durable_response_file}. The bash wrapper redirects stdout to the command-level response path, sanitizes it, and deletes the raw capture. Do not claim the review was saved anywhere else."
       cmd=("$binary" -p --permission-mode dontAsk --tools Read --add-dir "$CONTEXT_ROOT" --output-format text --no-session-persistence)
       if [[ -n "$model_override" ]]; then
         cmd+=(--model "$model_override")
@@ -765,7 +917,6 @@ run_tool_prompt() {
       cmd+=("$prompt")
       ;;
     codex)
-      prompt="Read the Markdown request file from disk at ${request_file}. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields as the final message; do not write files. Command-level response path: ${output_capture_file}. Sanitized response file: ${durable_response_file}. The bash command uses --output-last-message with the command-level response path, sanitizes it, and deletes the raw capture. Do not claim the review was saved anywhere else."
       cmd=("$binary" exec --skip-git-repo-check --sandbox read-only --ephemeral -C "$CONTEXT_ROOT" --add-dir "$PROJECT_ROOT_ABS" --output-last-message "$output_capture_file")
       if [[ -n "$model_override" ]]; then
         cmd+=(-m "$model_override")
@@ -941,18 +1092,58 @@ for reviewer in "${REVIEWERS[@]}"; do
   response_file="$HANDOFF_DIR/${reviewer}.response.md"
   response_raw_file="$HANDOFF_DIR/${reviewer}.command-response.raw.md"
   stderr_durable_file="$HANDOFF_DIR/${reviewer}.stderr.md"
+  manual_command_file="$HANDOFF_DIR/${reviewer}.manual-command.md"
   active_stderr_durable_file="$stderr_durable_file"
   stderr_file="$(mktemp)"
-  register_tmp_file "$response_raw_file"
   register_tmp_file "$stderr_file"
+  if [[ "$MANUAL_HANDOFF_ONLY" != "true" && "$INGEST_MANUAL_RESPONSES" != "true" ]]; then
+    register_tmp_file "$response_raw_file"
+  fi
 
   ensure_handoff_path "$request_file" "request_file"
   ensure_handoff_path "$response_file" "response_file"
   ensure_handoff_path "$response_raw_file" "command_response_path"
   ensure_handoff_path "$stderr_durable_file" "stderr_file"
 
+  if [[ "$INGEST_MANUAL_RESPONSES" == "true" ]]; then
+    effective_request_file="$request_file"
+    effective_response_raw_file="$response_raw_file"
+    if [[ ! -f "$request_file" ]]; then
+      run_status=64
+      echo "[ERROR] manual ingest requires existing request file: ${request_file}" > "$stderr_file"
+    elif [[ -s "$response_raw_file" ]]; then
+      redact_secrets_to_file "$response_raw_file" "$response_file"
+      rm -f "$response_raw_file" 2>/dev/null || true
+      run_status=0
+    elif [[ -s "$response_file" ]]; then
+      run_status=0
+    else
+      run_status=65
+      echo "[ERROR] manual ingest requires raw response or sanitized response file for ${reviewer}: ${response_raw_file} or ${response_file}" > "$stderr_file"
+    fi
+    preserve_stderr_if_needed "$stderr_file" "$stderr_durable_file" "$run_status"
+    if [[ "$run_status" -eq 0 ]] && parse_review_response "$response_file" "$review_style"; then
+      write_response_provenance_file "$reviewer" "$review_style" "$response_file" "$effective_request_file" "$effective_response_raw_file"
+      write_report_file "$reviewer" "$review_style" "$report_file"
+      SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+      if [[ "$review_style" == "adversarial" ]]; then
+        ADVERSARIAL_SUCCESS="true"
+      fi
+      STATUS_LINES+=("[OK] evaluator=${reviewer} style=${review_style} verdict=${PARSED_VERDICT} file=${report_file} summary=$(normalize_one_line "$PARSED_SUMMARY")")
+    else
+      FAIL_COUNT=$((FAIL_COUNT + 1))
+      failure_reason="$(normalize_one_line "$(cat "$active_stderr_durable_file" 2>/dev/null || cat "$stderr_file" 2>/dev/null || true)")"
+      if [[ -z "$failure_reason" ]]; then
+        failure_reason="manual response missing required fields"
+      fi
+      STATUS_LINES+=("[FAIL] evaluator=${reviewer} style=${review_style} reason=${failure_reason}")
+    fi
+    continue
+  fi
+
   rm -f "$request_file" "$response_file" "$stderr_durable_file" \
     "$response_raw_file" \
+    "$manual_command_file" \
     "$HANDOFF_DIR/${reviewer}.retry-request.md" \
     "$HANDOFF_DIR/${reviewer}.retry-response.md" \
     "$HANDOFF_DIR/${reviewer}.response.provenance.md" \
@@ -963,6 +1154,13 @@ for reviewer in "${REVIEWERS[@]}"; do
   write_handoff_request "$request_file" "$response_file" "$response_raw_file" "$reviewer" "$review_style" "false"
   effective_request_file="$request_file"
   effective_response_raw_file="$response_raw_file"
+
+  if [[ "$MANUAL_HANDOFF_ONLY" == "true" ]]; then
+    write_manual_command_file "$reviewer" "$request_file" "$response_raw_file" "$stderr_durable_file" "$response_file" "$manual_command_file"
+    STATUS_LINES+=("[MANUAL] evaluator=${reviewer} style=${review_style} request=${request_file} command_file=${manual_command_file} raw_response=${response_raw_file}")
+    continue
+  fi
+
   : > "$response_raw_file"
   run_status=0
   if run_tool_prompt "$reviewer" "$request_file" "$response_raw_file" "$stderr_file" "$response_file"; then
@@ -1053,22 +1251,28 @@ printf "%s\n" "${STATUS_LINES[@]}"
 echo "[INFO] review_successes=${SUCCESS_COUNT} review_failures=${FAIL_COUNT}"
 echo "[INFO] Semi-automated stop reached. No new plan version was created automatically."
 
+if [[ "$MANUAL_HANDOFF_ONLY" == "true" ]]; then
+  echo "[INFO] manual_handoff_only=true; no external CLI was invoked."
+  echo "[INFO] Run the generated *.manual-command.md commands yourself, then rerun this wrapper with --ingest-manual-responses."
+  exit 0
+fi
+
 if [[ -n "$ADVERSARIAL_EVALUATOR" && "$ADVERSARIAL_SUCCESS" != "true" ]]; then
   echo "[ERROR] Required adversarial review did not complete successfully for evaluator=${ADVERSARIAL_EVALUATOR}" >&2
   exit 1
 fi
 
-if [[ "$SUCCESS_COUNT" -eq "${#REVIEWERS[@]}" ]]; then
+if [[ "$SUCCESS_COUNT" -eq "$REVIEWER_COUNT" ]]; then
   exit 0
 fi
 
 if [[ "$SUCCESS_COUNT" -gt 0 && "$ALLOW_PARTIAL_REVIEW" == "true" ]]; then
-  echo "[WARN] Partial external review accepted by --allow-partial-review; successful reviewers=${SUCCESS_COUNT}/${#REVIEWERS[@]}." >&2
+  echo "[WARN] Partial external review accepted by --allow-partial-review; successful reviewers=${SUCCESS_COUNT}/${REVIEWER_COUNT}." >&2
   exit 0
 fi
 
 if [[ "$SUCCESS_COUNT" -gt 0 ]]; then
-  echo "[ERROR] External review round incomplete: successful reviewers=${SUCCESS_COUNT}/${#REVIEWERS[@]}. Rerun failed reviewers or pass --allow-partial-review to accept a partial round explicitly." >&2
+  echo "[ERROR] External review round incomplete: successful reviewers=${SUCCESS_COUNT}/${REVIEWER_COUNT}. Rerun failed reviewers or pass --allow-partial-review to accept a partial round explicitly." >&2
 fi
 
 exit 1

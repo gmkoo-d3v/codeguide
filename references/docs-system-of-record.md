@@ -14,6 +14,7 @@ Default assumption:
 - Use project docs files (`task`, `shadow`, `decisions`, `plan`, `report`, `orchestration`) as durable memory first.
 - Default operation is zero-command for the user when docs lifecycle is justified; the agent runs docs lifecycle commands for material architecture, multi-file, cross-service, delegated, or durable planning work.
 - Skip docs lifecycle commands for small direct answers and trivial edits unless the user explicitly requests documentation sync.
+- Reusable skills projects are the only built-in docs-root exception: if a git root is itself a skill package with `SKILL.md` metadata, has no local `docs/`, and its parent has `docs/`, scripts may use the parent as the system-of-record root. Ordinary app/service repositories must keep docs inside their own project root.
 
 ## Data safety rules
 - Empty values never overwrite existing non-empty fields during doc-gardening. Use `--allow-empty-overwrite` to explicitly clear a field.
@@ -35,6 +36,8 @@ Default assumption:
 ## Required structure
 
 `<project-root>` is the selected project root; when invoked from inside a git repository, scripts resolve it to that repository root. Resolve docs to `<project-root>/docs`.
+
+For reusable skills packages, `<project-root>` may be the parent workspace root when the skill package is intentionally shared through symlinks and the parent contains the project-level `docs/`.
 
 ```text
 project-root/
@@ -74,11 +77,11 @@ Create these project-root files if missing:
 - `<project-root>/docs/decisions/decision-index.md`
 - `<project-root>/docs/plan/PLAN-template.md`
 - `<project-root>/docs/report/LLM-REVIEW-template.md`
-- `<project-root>/docs/orchestration/ORCH-template.md`
+- `<project-root>/docs/orchestration/_templates/ORCH.md`
 
 ## Orchestration Gate Template
 
-Use one file per delegated or externally reviewed task: `docs/orchestration/ORCH-<task-id>.md`.
+Use one task capsule per delegated or externally reviewed task: `docs/orchestration/<task-id>/ORCH.md`.
 
 ```markdown
 # ORCH-<task-id>

@@ -47,11 +47,11 @@ external_handoff_dir() {
   local plan_version="$2"
   local review_round="$3"
 
-  find "$DOCS_ROOT/orchestration/external-cli" \
-    -mindepth 4 \
-    -maxdepth 4 \
+  find "$DOCS_ROOT/orchestration/${task_id}/external-cli" \
+    -mindepth 2 \
+    -maxdepth 2 \
     -type d \
-    -path "*/${task_id}/${plan_version}/${review_round}" \
+    -path "*/${plan_version}/${review_round}" \
     | sort \
     | tail -n 1
 }
@@ -330,12 +330,32 @@ EOF
   [ "$status" -eq 0 ]
   run test -d "$DOCS_ROOT/shadow"
   [ "$status" -eq 0 ]
-  run test -d "$DOCS_ROOT/orchestration/external-cli"
+  run test -d "$DOCS_ROOT/orchestration/_templates"
+  [ "$status" -eq 0 ]
+  run test -f "$DOCS_ROOT/orchestration/_templates/ORCH.md"
+  [ "$status" -eq 0 ]
+  run test -f "$DOCS_ROOT/orchestration/_templates/prompt.md"
+  [ "$status" -eq 0 ]
+  run test ! -d "$DOCS_ROOT/orchestration/external-cli"
   [ "$status" -eq 0 ]
   run test ! -d "$DOCS_ROOT/repo"
   [ "$status" -eq 0 ]
   run test ! -d "$DOCS_ROOT/repos"
   [ "$status" -eq 0 ]
+}
+
+@test "validate_docs rejects legacy root orchestration paths" {
+  cat > "$DOCS_ROOT/orchestration/ORCH-legacy-01.md" <<'EOF'
+# ORCH-legacy-01
+
+- task_id: legacy-01
+EOF
+  mkdir -p "$DOCS_ROOT/orchestration/external-cli"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"legacy root orchestration file is not supported"* ]]
+  [[ "$output" == *"legacy external CLI handoff root is not supported"* ]]
 }
 
 @test "init_docs_scaffold resolves git subdir to project docs root" {
@@ -361,6 +381,69 @@ EOF
   [ "$status" -eq 0 ]
   run test ! -e "$workspace/docs"
   [ "$status" -eq 0 ]
+
+  rm -rf "$workspace"
+}
+
+@test "skills package root can resolve to parent project docs root" {
+  local workspace
+  local proj
+  local skill_dir
+  local docs_root
+  local expected_docs_root
+
+  workspace="$(mktemp -d)"
+  proj="$workspace/skills-project"
+  skill_dir="$proj/codeguide"
+  mkdir -p "$skill_dir/scripts" "$skill_dir/references"
+  git -C "$skill_dir" init >/dev/null 2>&1
+  cat > "$skill_dir/SKILL.md" <<'EOF'
+---
+name: sample-skill
+description: Test skill package.
+---
+
+# Sample Skill
+EOF
+
+  "$INIT_SCAFFOLD" "$proj"
+  docs_root="$(docs_root_for_project "$skill_dir")"
+  expected_docs_root="$(cd "$proj" && pwd -P)/docs"
+
+  [ "$docs_root" = "$expected_docs_root" ]
+
+  run env PYTHONPATH="$SCRIPTS_DIR" python3 -c 'from pathlib import Path; import sys; from codeguide_paths import docs_root_for; print(docs_root_for(Path(sys.argv[1])))' "$skill_dir"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$expected_docs_root" ]
+
+  run "$VALIDATE" "$skill_dir" --mode strict
+  [ "$status" -eq 0 ]
+
+  rm -rf "$workspace"
+}
+
+@test "ordinary nested git repo does not borrow parent project docs root" {
+  local workspace
+  local proj
+  local app_dir
+  local docs_root
+  local expected_docs_root
+
+  workspace="$(mktemp -d)"
+  proj="$workspace/project"
+  app_dir="$proj/backend"
+  mkdir -p "$app_dir"
+  git -C "$app_dir" init >/dev/null 2>&1
+
+  "$INIT_SCAFFOLD" "$proj"
+  docs_root="$(docs_root_for_project "$app_dir")"
+  expected_docs_root="$(cd "$app_dir" && pwd -P)/docs"
+
+  [ "$docs_root" = "$expected_docs_root" ]
+
+  run "$VALIDATE" "$app_dir" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"docs directory exists"* ]]
 
   rm -rf "$workspace"
 }
@@ -523,6 +606,81 @@ EOF
   [[ "$output" == *'"parser_backed":true'* ]]
 }
 
+@test "shadow_evidence_probe FastAPI route parser-backed matcher validates decorator and literal route path" {
+  mkdir -p "$TEST_PROJECT/src" "$TEST_PROJECT/tests"
+  cat > "$TEST_PROJECT/src/routes.py" <<'EOF'
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.post("/users")
+async def create_user():
+    return {"ok": True}
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+@app.api_route("/api-route", methods=["POST"])
+def api_route_user():
+    return {"ok": True}
+EOF
+  cat > "$TEST_PROJECT/tests/routes.py" <<'EOF'
+@app.post("/users")
+def test_create_user():
+    return None
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "fastapi.route@v1" \
+    --source-file "src/routes.py" \
+    --decorator "app.post" \
+    --route-path "/users"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"validator_id":"fastapi.route@v1"'* ]]
+  [[ "$output" == *'"validator_kind":"ast"'* ]]
+  [[ "$output" == *'"parser_backed":true'* ]]
+  [[ "$output" == *'"matched_symbol":"app.post"'* ]]
+  [[ "$output" == *'"http_method":"post"'* ]]
+  [[ "$output" == *'"route_path":"/users"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "fastapi.route@v1" \
+    --source-file "src/routes.py" \
+    --decorator "app.post" \
+    --route-path "/missing"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "fastapi.route@v1" \
+    --source-file "tests/routes.py" \
+    --decorator "app.post" \
+    --route-path "/users"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *'"status":"error"'* ]]
+  [[ "$output" == *"primary validator"* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "fastapi.route@v1" \
+    --source-file "src/routes.py" \
+    --decorator "app.api_route" \
+    --route-path "/api-route"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *'"status":"error"'* ]]
+  [[ "$output" == *"FastAPI route method"* ]]
+}
+
 @test "shadow_evidence_probe regex fallback emits fallback_result only" {
   mkdir -p "$TEST_PROJECT/src/main/java/example"
   cat > "$TEST_PROJECT/src/main/java/example/UserService.java" <<'EOF'
@@ -550,6 +708,58 @@ EOF
   [[ "$output" == *'"evidence_field":"fallback_result"'* ]]
   [[ "$output" == *'"source_hash":"sha256:'* ]]
   [[ "$output" != *'"validator_result"'* ]]
+}
+
+@test "shadow_evidence_probe JavaScript regex fallback accepts synced non-src roots" {
+  mkdir -p "$TEST_PROJECT/server" "$TEST_PROJECT/pages" "$TEST_PROJECT/routes"
+  cat > "$TEST_PROJECT/server/routes.js" <<'EOF'
+export function register(apiClient) {
+  apiClient.post("/users");
+}
+EOF
+  cat > "$TEST_PROJECT/pages/api.js" <<'EOF'
+export default function handler(apiClient) {
+  apiClient.post("/users");
+}
+EOF
+  cat > "$TEST_PROJECT/routes/users.js" <<'EOF'
+export function users(apiClient) {
+  apiClient.post("/users");
+}
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --fallback-pattern-id "js.regex.call_named@v1" \
+    --source-file "server/routes.js" \
+    --callee "post"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"fallback_result":"matched"'* ]]
+  [[ "$output" == *'"source_ref":"server/routes.js:2"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --fallback-pattern-id "js.regex.call_named@v1" \
+    --source-file "pages/api.js" \
+    --callee "post"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"fallback_result":"matched"'* ]]
+  [[ "$output" == *'"source_ref":"pages/api.js:2"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --fallback-pattern-id "js.regex.call_named@v1" \
+    --source-file "routes/users.js" \
+    --callee "post"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"fallback_result":"matched"'* ]]
+  [[ "$output" == *'"source_ref":"routes/users.js:2"'* ]]
 }
 
 @test "shadow_evidence_probe Java primary source_probe is scoped and non-parser-backed" {
@@ -708,6 +918,368 @@ EOF
   [ "$status" -eq 64 ]
   [[ "$output" == *'"status":"error"'* ]]
   [[ "$output" == *"outside allowed_paths"* ]]
+}
+
+@test "shadow_evidence_probe Java parser-backed call matcher handles generic-style syntax" {
+  mkdir -p "$TEST_PROJECT/src/main/java/example"
+  cat > "$TEST_PROJECT/src/main/java/example/UserService.java" <<'EOF'
+package example;
+
+import java.util.Optional;
+
+class UserService {
+  Optional<User> update(User user) {
+    Optional<User> saved = Optional.of(userRepository.save(user));
+    return saved;
+  }
+}
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "java.ast.call_match@v1" \
+    --source-file "src/main/java/example/UserService.java" \
+    --callee "save" \
+    --receiver "userRepository"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"matched_symbol":"userRepository.save"'* ]]
+}
+
+@test "shadow_evidence_probe JavaScript parser-backed call matcher ignores comments strings declarations and test paths" {
+  mkdir -p "$TEST_PROJECT/src"
+  cat > "$TEST_PROJECT/src/client.js" <<'EOF'
+// apiClient.delete("/users/1")
+const sample = "apiClient.delete('/users/1')";
+
+function deleteUser(id) {
+  return id;
+}
+
+const routes = {
+  deleteUser(id) {
+    return id;
+  }
+};
+
+async function handler(apiClient) {
+  await apiClient.post("/users");
+  fetch("/health");
+}
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "js.ast.call_match@v1" \
+    --source-file "src/client.js" \
+    --callee "post" \
+    --receiver "apiClient"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"fact_status":"deterministic_evidence"'* ]]
+  [[ "$output" == *'"validator_kind":"js_token_parser"'* ]]
+  [[ "$output" == *'"parser_backed":true'* ]]
+  [[ "$output" == *'"matched_symbol":"apiClient.post"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "js.ast.call_match@v1" \
+    --source-file "src/client.js" \
+    --callee "delete"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "js.ast.call_match@v1" \
+    --source-file "src/client.js" \
+    --callee "fetch"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"matched_symbol":"fetch"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "js.ast.call_match@v1" \
+    --source-file "src/client.js" \
+    --callee "post" \
+    --receiver "missingClient"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+
+  cat > "$TEST_PROJECT/src/client.test.js" <<'EOF'
+apiClient.post("/users");
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "js.ast.call_match@v1" \
+    --source-file "src/client.test.js" \
+    --callee "post" \
+    --receiver "apiClient"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *'"status":"error"'* ]]
+  [[ "$output" == *"primary validator"* ]]
+}
+
+@test "shadow_evidence_probe JavaScript parser-backed call matcher rejects nested excluded paths" {
+  local excluded_dir
+  mkdir -p "$TEST_PROJECT/src"
+
+  for excluded_dir in node_modules dist build coverage test tests __tests__; do
+    mkdir -p "$TEST_PROJECT/src/$excluded_dir"
+    cat > "$TEST_PROJECT/src/$excluded_dir/client.js" <<'EOF'
+apiClient.post("/users");
+EOF
+
+    run python3 "$SHADOW_PROBE" \
+      --project-root "$TEST_PROJECT" \
+      --validator-id "js.ast.call_match@v1" \
+      --source-file "src/$excluded_dir/client.js" \
+      --callee "post" \
+      --receiver "apiClient"
+
+    [ "$status" -eq 64 ]
+    [[ "$output" == *'"status":"error"'* ]]
+    [[ "$output" == *"excluded for primary validator"* ]]
+  done
+}
+
+@test "shadow_evidence_probe JavaScript parser-backed call matcher rejects regex literal only matches" {
+  mkdir -p "$TEST_PROJECT/src"
+  cat > "$TEST_PROJECT/src/client.js" <<'EOF'
+const pattern = /apiClient.post\(/;
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "js.ast.call_match@v1" \
+    --source-file "src/client.js" \
+    --callee "post" \
+    --receiver "apiClient"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+}
+
+@test "shadow_evidence_probe JavaScript parser-backed call matcher supports optional chaining receiver calls" {
+  mkdir -p "$TEST_PROJECT/src"
+  cat > "$TEST_PROJECT/src/client.js" <<'EOF'
+async function createUser(client) {
+  return client?.post("/users");
+}
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "js.ast.call_match@v1" \
+    --source-file "src/client.js" \
+    --callee "post" \
+    --receiver "client"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"matched_symbol":"client.post"'* ]]
+}
+
+@test "shadow_evidence_probe TypeScript parser-backed call matcher rejects signatures and declaration files" {
+  mkdir -p "$TEST_PROJECT/src"
+  cat > "$TEST_PROJECT/src/service.ts" <<'EOF'
+interface Client {
+  post(path: string): Promise<void>;
+}
+
+class Service {
+  post(path: string): void {}
+
+  run(client: Client) {
+    client.post("/users");
+  }
+}
+EOF
+  cat > "$TEST_PROJECT/src/types.d.ts" <<'EOF'
+interface Client {
+  post(path: string): Promise<void>;
+}
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "ts.ast.call_match@v1" \
+    --source-file "src/service.ts" \
+    --callee "post" \
+    --receiver "client"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"validator_kind":"ts_token_parser"'* ]]
+  [[ "$output" == *'"matched_symbol":"client.post"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "ts.ast.call_match@v1" \
+    --source-file "src/types.d.ts" \
+    --callee "post"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *'"status":"error"'* ]]
+  [[ "$output" == *"primary validator"* ]]
+  [[ "$output" == *"extension is rejected"* ]]
+}
+
+@test "shadow_evidence_probe TypeScript parser-backed call matcher rejects nested excluded paths" {
+  local excluded_dir
+  mkdir -p "$TEST_PROJECT/src"
+
+  for excluded_dir in node_modules dist build coverage test tests __tests__; do
+    mkdir -p "$TEST_PROJECT/src/$excluded_dir"
+    cat > "$TEST_PROJECT/src/$excluded_dir/client.ts" <<'EOF'
+client.post("/users");
+EOF
+
+    run python3 "$SHADOW_PROBE" \
+      --project-root "$TEST_PROJECT" \
+      --validator-id "ts.ast.call_match@v1" \
+      --source-file "src/$excluded_dir/client.ts" \
+      --callee "post" \
+      --receiver "client"
+
+    [ "$status" -eq 64 ]
+    [[ "$output" == *'"status":"error"'* ]]
+    [[ "$output" == *"excluded for primary validator"* ]]
+  done
+}
+
+@test "shadow_evidence_probe TypeScript parser-backed v2 matcher supports generic call syntax while v1 stays fail-closed" {
+  mkdir -p "$TEST_PROJECT/src"
+  cat > "$TEST_PROJECT/src/service.ts" <<'EOF'
+async function createUser(client: Client) {
+  return client.post<Result<User>>("/users");
+}
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "ts.ast.call_match@v1" \
+    --source-file "src/service.ts" \
+    --callee "post" \
+    --receiver "client"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "ts.ast.call_match@v2" \
+    --source-file "src/service.ts" \
+    --callee "post" \
+    --receiver "client"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"validator_id":"ts.ast.call_match@v2"'* ]]
+  [[ "$output" == *'"matched_symbol":"client.post"'* ]]
+  [[ "$output" == *'"type_arguments":true'* ]]
+}
+
+@test "shadow_evidence_probe JS and TS parser-backed matchers reject cross-extension files" {
+  mkdir -p "$TEST_PROJECT/src"
+  cat > "$TEST_PROJECT/src/client.ts" <<'EOF'
+client.post("/users");
+EOF
+  cat > "$TEST_PROJECT/src/client.tsx" <<'EOF'
+client.post("/users");
+EOF
+  cat > "$TEST_PROJECT/src/client.js" <<'EOF'
+client.post("/users");
+EOF
+  cat > "$TEST_PROJECT/src/client.jsx" <<'EOF'
+client.post("/users");
+EOF
+  cat > "$TEST_PROJECT/src/types.d.ts" <<'EOF'
+declare const client: { post(path: string): void };
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "js.ast.call_match@v1" \
+    --source-file "src/client.jsx" \
+    --callee "post" \
+    --receiver "client"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"matched_symbol":"client.post"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "ts.ast.call_match@v1" \
+    --source-file "src/client.tsx" \
+    --callee "post" \
+    --receiver "client"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"matched_symbol":"client.post"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "js.ast.call_match@v1" \
+    --source-file "src/client.ts" \
+    --callee "post" \
+    --receiver "client"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *'"status":"error"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "js.ast.call_match@v1" \
+    --source-file "src/client.tsx" \
+    --callee "post" \
+    --receiver "client"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *'"status":"error"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "ts.ast.call_match@v1" \
+    --source-file "src/client.js" \
+    --callee "post" \
+    --receiver "client"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *'"status":"error"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "ts.ast.call_match@v1" \
+    --source-file "src/client.jsx" \
+    --callee "post" \
+    --receiver "client"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *'"status":"error"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "ts.ast.call_match@v1" \
+    --source-file "src/types.d.ts" \
+    --callee "post" \
+    --receiver "client"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *'"status":"error"'* ]]
 }
 
 @test "shadow_evidence_probe regex fallback ignores comments and strings" {
@@ -1520,10 +2092,10 @@ EOF
   source_hash="$(sha256_file_ref "$TEST_PROJECT/src/app.py")"
   runtime_hash="$(sha256_file_ref "$TEST_PROJECT/logs/runtime.trace")"
   cat > "$code_probe_file" <<EOF
-{"status":"pass","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/app.py:6","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
+{"status":"pass","probe_status":"pass","fact_status":"deterministic_evidence","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","evidence_field":"validator_result","validator_result":"matched","source_ref":"src/app.py:6","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
 EOF
   cat > "$runtime_probe_file" <<EOF
-{"status":"pass","validator_id":"any.runtime.trace@v1","evidence_type":"runtime_trace","validator_result":"matched","trace_ref":"logs/runtime.trace:2","artifact_hash":"$runtime_hash","validator_kind":"runtime_trace","parser_backed":false,"promotion_limit":"high","writes_shadow_docs":false}
+{"status":"pass","probe_status":"pass","fact_status":"deterministic_evidence","validator_id":"any.runtime.trace@v1","evidence_type":"runtime_trace","evidence_field":"validator_result","validator_result":"matched","source_ref":"logs/runtime.trace:2","trace_ref":"logs/runtime.trace:2","artifact_hash":"$runtime_hash","validator_kind":"runtime_trace","parser_backed":false,"promotion_limit":"high","writes_shadow_docs":false}
 EOF
   code_probe_hash="$(sha256_file_ref "$code_probe_file")"
   runtime_probe_hash="$(sha256_file_ref "$runtime_probe_file")"
@@ -1776,6 +2348,446 @@ EOF
   [[ "$output" == *"receiver is required for confirmed java.ast.call_match@v1"* ]]
 }
 
+@test "shadow_effect_writer accepts JavaScript parser-backed deterministic code evidence" {
+  local candidate_file="$TEST_WORKSPACE/candidate.json"
+  local decision_file="$TEST_WORKSPACE/decision.json"
+  local record_file="$TEST_WORKSPACE/record.json"
+  local probe_result_file="$TEST_WORKSPACE/js-probe.json"
+  local draft_file="$TEST_WORKSPACE/draft.md"
+  local source_file="$TEST_PROJECT/src/client.js"
+  local source_ref
+  local source_hash
+  local probe_hash
+  local anchor_line
+
+  mkdir -p "$(dirname "$source_file")"
+  cat > "$source_file" <<'EOF'
+export async function handler(httpClient) {
+  return httpClient.get("/users");
+}
+EOF
+
+  python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "js.ast.call_match@v1" \
+    --source-file "src/client.js" \
+    --callee "get" \
+    --receiver "httpClient" > "$probe_result_file"
+  source_ref="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_ref"])' "$probe_result_file")"
+  source_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_hash"])' "$probe_result_file")"
+  probe_hash="$(sha256_file_ref "$probe_result_file")"
+  anchor_line="${source_ref##*:}"
+
+  printf 'Draft for JavaScript parser-backed deterministic evidence\n' > "$draft_file"
+  python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --output "$candidate_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "$source_ref" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  local candidate_id
+  candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
+  cat > "$decision_file" <<EOF
+{"user_decision":{"id":"UD-js-001","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-js-001","SE-js-002","SE-js-003"],"rationale":"Approve evaluating JavaScript parser-backed deterministic evidence.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$record_file" <<EOF
+{"record_id":"SE-js-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"HTTP client get call is backed by parser evidence.","anchor":{"file":"src/client.js","line":$anchor_line,"symbol":"httpClient.get"},"evidence":{"type":"deterministic_code","ref":"js.ast.call_match@v1","rule_id":"external.call","validator_kind":"js_token_parser","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"get","receiver":"httpClient"}}}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$probe_result_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *"evidence_ref: js.ast.call_match@v1"* ]]
+  [[ "$output" == *"evidence_validator_kind: js_token_parser"* ]]
+  [[ "$output" == *"evidence_parser_backed: True"* ]]
+  [[ "$output" == *"evidence_source_hash: $source_hash"* ]]
+
+  cat > "$record_file" <<EOF
+{"record_id":"SE-js-002","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"Mismatched JS anchor must not confirm against a different matched symbol.","anchor":{"file":"src/client.js","line":$anchor_line,"symbol":"otherClient.get"},"evidence":{"type":"deterministic_code","ref":"js.ast.call_match@v1","rule_id":"external.call","validator_kind":"js_token_parser","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"get"}}}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$probe_result_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"matched_symbol"* || "$output" == *"anchor.symbol"* ]]
+
+  python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); data["fact_status"]="candidate_only"; json.dump(data, open(sys.argv[1], "w"), sort_keys=True, separators=(",", ":"))' "$probe_result_file"
+  probe_hash="$(sha256_file_ref "$probe_result_file")"
+  cat > "$record_file" <<EOF
+{"record_id":"SE-js-003","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"JavaScript probe status metadata must match the writer rerun.","anchor":{"file":"src/client.js","line":$anchor_line,"symbol":"httpClient.get"},"evidence":{"type":"deterministic_code","ref":"js.ast.call_match@v1","rule_id":"external.call","validator_kind":"js_token_parser","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"get","receiver":"httpClient"}}}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$probe_result_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"probe_result.fact_status"* ]]
+}
+
+@test "shadow_effect_writer accepts TypeScript generic parser-backed deterministic code evidence" {
+  local candidate_file="$TEST_WORKSPACE/candidate.json"
+  local decision_file="$TEST_WORKSPACE/decision.json"
+  local record_file="$TEST_WORKSPACE/record.json"
+  local probe_result_file="$TEST_WORKSPACE/ts-probe.json"
+  local draft_file="$TEST_WORKSPACE/draft.md"
+  local source_file="$TEST_PROJECT/src/client.ts"
+  local source_ref
+  local source_hash
+  local probe_hash
+  local anchor_line
+
+  mkdir -p "$(dirname "$source_file")"
+  cat > "$source_file" <<'EOF'
+type ApiResult<T> = { value: T };
+
+export async function handler(httpClient: HttpClient) {
+  return httpClient.post<ApiResult<User>>("/users");
+}
+EOF
+
+  python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "ts.ast.call_match@v2" \
+    --source-file "src/client.ts" \
+    --callee "post" \
+    --receiver "httpClient" > "$probe_result_file"
+  source_ref="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_ref"])' "$probe_result_file")"
+  source_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_hash"])' "$probe_result_file")"
+  probe_hash="$(sha256_file_ref "$probe_result_file")"
+  anchor_line="${source_ref##*:}"
+
+  printf 'Draft for TypeScript generic parser-backed deterministic evidence\n' > "$draft_file"
+  python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --output "$candidate_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "$source_ref" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  local candidate_id
+  candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
+  cat > "$decision_file" <<EOF
+{"user_decision":{"id":"UD-ts-001","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-ts-001","SE-ts-002","SE-ts-003"],"rationale":"Approve evaluating TypeScript generic parser-backed deterministic evidence.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$record_file" <<EOF
+{"record_id":"SE-ts-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"TypeScript generic HTTP client call is backed by parser evidence.","anchor":{"file":"src/client.ts","line":$anchor_line,"symbol":"httpClient.post"},"evidence":{"type":"deterministic_code","ref":"ts.ast.call_match@v2","rule_id":"external.call","validator_kind":"ts_token_parser","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"post","receiver":"httpClient"}}}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$probe_result_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *"evidence_ref: ts.ast.call_match@v2"* ]]
+  [[ "$output" == *"evidence_validator_kind: ts_token_parser"* ]]
+  [[ "$output" == *"evidence_parser_backed: True"* ]]
+  [[ "$output" == *"evidence_source_hash: $source_hash"* ]]
+
+  python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); data.pop("type_arguments", None); json.dump(data, open(sys.argv[1], "w"), sort_keys=True, separators=(",", ":"))' "$probe_result_file"
+  probe_hash="$(sha256_file_ref "$probe_result_file")"
+  cat > "$record_file" <<EOF
+{"record_id":"SE-ts-002","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"TypeScript generic probe metadata must match the writer rerun.","anchor":{"file":"src/client.ts","line":$anchor_line,"symbol":"httpClient.post"},"evidence":{"type":"deterministic_code","ref":"ts.ast.call_match@v2","rule_id":"external.call","validator_kind":"ts_token_parser","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"post","receiver":"httpClient"}}}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$probe_result_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"probe_result.type_arguments"* ]]
+
+  cat > "$source_file" <<'EOF'
+type ApiResult<T> = { value: T };
+
+export async function handler(httpClient: HttpClient) {
+  return httpClient.post("/users");
+}
+EOF
+  python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "ts.ast.call_match@v2" \
+    --source-file "src/client.ts" \
+    --callee "post" \
+    --receiver "httpClient" > "$probe_result_file"
+  source_ref="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_ref"])' "$probe_result_file")"
+  source_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_hash"])' "$probe_result_file")"
+  anchor_line="${source_ref##*:}"
+  python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); data["type_arguments"]=True; json.dump(data, open(sys.argv[1], "w"), sort_keys=True, separators=(",", ":"))' "$probe_result_file"
+  probe_hash="$(sha256_file_ref "$probe_result_file")"
+  cat > "$record_file" <<EOF
+{"record_id":"SE-ts-003","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"TypeScript probe metadata must not accept forged generic type-argument evidence.","anchor":{"file":"src/client.ts","line":$anchor_line,"symbol":"httpClient.post"},"evidence":{"type":"deterministic_code","ref":"ts.ast.call_match@v2","rule_id":"external.call","validator_kind":"ts_token_parser","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"post","receiver":"httpClient"}}}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$probe_result_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"probe_result.type_arguments"* ]]
+}
+
+@test "shadow_effect_writer accepts FastAPI parser-backed route decorator evidence" {
+  local candidate_file="$TEST_WORKSPACE/candidate.json"
+  local decision_file="$TEST_WORKSPACE/decision.json"
+  local record_file="$TEST_WORKSPACE/record.json"
+  local probe_result_file="$TEST_WORKSPACE/fastapi-probe.json"
+  local draft_file="$TEST_WORKSPACE/draft.md"
+  local source_file="$TEST_PROJECT/src/routes.py"
+  local source_ref
+  local source_hash
+  local probe_hash
+  local anchor_line
+
+  mkdir -p "$(dirname "$source_file")"
+  cat > "$source_file" <<'EOF'
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.post("/users")
+async def create_user():
+    return {"ok": True}
+EOF
+
+  python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "fastapi.route@v1" \
+    --source-file "src/routes.py" \
+    --decorator "app.post" \
+    --route-path "/users" > "$probe_result_file"
+  source_ref="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_ref"])' "$probe_result_file")"
+  source_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_hash"])' "$probe_result_file")"
+  probe_hash="$(sha256_file_ref "$probe_result_file")"
+  anchor_line="${source_ref##*:}"
+
+  printf 'Draft for FastAPI parser-backed deterministic route evidence\n' > "$draft_file"
+  python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --output "$candidate_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "$source_ref" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  local candidate_id
+  candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
+  cat > "$decision_file" <<EOF
+{"user_decision":{"id":"UD-fastapi-001","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-fastapi-001","SE-fastapi-002","SE-fastapi-003","SE-fastapi-004"],"rationale":"Approve evaluating FastAPI parser-backed deterministic route evidence.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$record_file" <<EOF
+{"record_id":"SE-fastapi-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"api_route","statement":"FastAPI route decorator is backed by parser evidence.","anchor":{"file":"src/routes.py","line":$anchor_line,"symbol":"app.post"},"evidence":{"type":"deterministic_code","ref":"fastapi.route@v1","rule_id":"http.route","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"decorator":"app.post","route_path":"/users"}}}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$probe_result_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *"evidence_ref: fastapi.route@v1"* ]]
+  [[ "$output" == *"evidence_validator_kind: ast"* ]]
+  [[ "$output" == *"evidence_parser_backed: True"* ]]
+  [[ "$output" == *"evidence_source_hash: $source_hash"* ]]
+
+  python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); data.pop("route_path", None); json.dump(data, open(sys.argv[1], "w"), sort_keys=True, separators=(",", ":"))' "$probe_result_file"
+  probe_hash="$(sha256_file_ref "$probe_result_file")"
+  cat > "$record_file" <<EOF
+{"record_id":"SE-fastapi-004","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"api_route","statement":"FastAPI literal route-path probe metadata must match the writer rerun.","anchor":{"file":"src/routes.py","line":$anchor_line,"symbol":"app.post"},"evidence":{"type":"deterministic_code","ref":"fastapi.route@v1","rule_id":"http.route","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"decorator":"app.post","route_path":"/users"}}}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$probe_result_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"probe_result.route_path"* ]]
+
+  python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "fastapi.route@v1" \
+    --source-file "src/routes.py" \
+    --decorator "app.post" \
+    --route-path "/users" > "$probe_result_file"
+  source_ref="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_ref"])' "$probe_result_file")"
+  source_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_hash"])' "$probe_result_file")"
+  probe_hash="$(sha256_file_ref "$probe_result_file")"
+  anchor_line="${source_ref##*:}"
+
+  cat > "$record_file" <<EOF
+{"record_id":"SE-fastapi-002","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"api_route","statement":"Mismatched FastAPI anchor must not confirm against a different matched symbol.","anchor":{"file":"src/routes.py","line":$anchor_line,"symbol":"router.post"},"evidence":{"type":"deterministic_code","ref":"fastapi.route@v1","rule_id":"http.route","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"decorator":"app.post","route_path":"/users"}}}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$probe_result_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"matched_symbol"* || "$output" == *"anchor.symbol"* ]]
+
+  cat > "$source_file" <<'EOF'
+from fastapi import FastAPI
+
+app = FastAPI()
+route_path = "/users"
+
+@app.get(route_path)
+async def list_users():
+    return []
+EOF
+  python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "fastapi.route@v1" \
+    --source-file "src/routes.py" \
+    --decorator "app.get" > "$probe_result_file"
+  source_ref="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_ref"])' "$probe_result_file")"
+  source_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_hash"])' "$probe_result_file")"
+  anchor_line="${source_ref##*:}"
+  python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); data["route_path"]="/users"; json.dump(data, open(sys.argv[1], "w"), sort_keys=True, separators=(",", ":"))' "$probe_result_file"
+  probe_hash="$(sha256_file_ref "$probe_result_file")"
+  cat > "$record_file" <<EOF
+{"record_id":"SE-fastapi-003","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"api_route","statement":"FastAPI probe metadata must not accept forged literal route-path evidence.","anchor":{"file":"src/routes.py","line":$anchor_line,"symbol":"app.get"},"evidence":{"type":"deterministic_code","ref":"fastapi.route@v1","rule_id":"http.route","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"decorator":"app.get"}}}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$probe_result_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"probe_result.route_path"* ]]
+}
+
+@test "shadow_effect_writer rejects Python parser-backed evidence when anchor symbol differs from matched symbol" {
+  local candidate_file="$TEST_WORKSPACE/candidate.json"
+  local decision_file="$TEST_WORKSPACE/decision.json"
+  local record_file="$TEST_WORKSPACE/record.json"
+  local probe_result_file="$TEST_WORKSPACE/py-probe.json"
+  local draft_file="$TEST_WORKSPACE/draft.md"
+  local source_file="$TEST_PROJECT/src/app.py"
+  local source_ref
+  local source_hash
+  local probe_hash
+
+  mkdir -p "$(dirname "$source_file")"
+  cat > "$source_file" <<'EOF'
+def handler(repository, user):
+    repository.save(user)
+EOF
+
+  python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "py.ast.call_match@v1" \
+    --source-file "src/app.py" \
+    --callee "save" > "$probe_result_file"
+  source_ref="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_ref"])' "$probe_result_file")"
+  source_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_hash"])' "$probe_result_file")"
+  probe_hash="$(sha256_file_ref "$probe_result_file")"
+
+  printf 'Draft for Python parser-backed deterministic evidence\n' > "$draft_file"
+  python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --output "$candidate_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "$source_ref" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  local candidate_id
+  candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
+  cat > "$decision_file" <<EOF
+{"user_decision":{"id":"UD-py-001","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-py-001"],"rationale":"Approve evaluating Python parser-backed deterministic evidence.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$record_file" <<EOF
+{"record_id":"SE-py-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Mismatched Python anchor must not confirm against a different matched symbol.","anchor":{"file":"src/app.py","symbol":"otherRepository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"save"}}}
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$probe_result_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"matched_symbol"* || "$output" == *"anchor.symbol"* ]]
+}
+
 @test "shadow_effect_writer binds deterministic evidence to policy registry and source hashes" {
   local candidate_file="$TEST_WORKSPACE/candidate.json"
   local decision_file="$TEST_WORKSPACE/decision.json"
@@ -1843,13 +2855,13 @@ EOF
   java_source_hash="$(sha256_file_ref "$java_source_file")"
   runtime_hash="$(sha256_file_ref "$trace_file")"
   cat > "$code_probe_file" <<EOF
-{"status":"pass","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
+{"status":"pass","probe_status":"pass","fact_status":"deterministic_evidence","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","evidence_field":"validator_result","validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
 EOF
   cat > "$wrong_code_probe_file" <<EOF
-{"status":"pass","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/other.py:1","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
+{"status":"pass","probe_status":"pass","fact_status":"deterministic_evidence","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","evidence_field":"validator_result","validator_result":"matched","source_ref":"src/other.py:1","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
 EOF
   cat > "$runtime_probe_file" <<EOF
-{"status":"pass","validator_id":"any.runtime.trace@v1","evidence_type":"runtime_trace","validator_result":"matched","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","validator_kind":"runtime_trace","parser_backed":false,"promotion_limit":"high","writes_shadow_docs":false}
+{"status":"pass","probe_status":"pass","fact_status":"deterministic_evidence","validator_id":"any.runtime.trace@v1","evidence_type":"runtime_trace","evidence_field":"validator_result","validator_result":"matched","source_ref":"logs/runtime.trace:1","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","validator_kind":"runtime_trace","parser_backed":false,"promotion_limit":"high","writes_shadow_docs":false}
 EOF
   code_probe_hash="$(sha256_file_ref "$code_probe_file")"
   runtime_probe_hash="$(sha256_file_ref "$runtime_probe_file")"
@@ -2516,7 +3528,7 @@ def handler(repository, user):
 EOF
   source_hash="$(sha256_file_ref "$source_file")"
   cat > "$probe_file" <<EOF
-{"status":"pass","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
+{"status":"pass","probe_status":"pass","fact_status":"deterministic_evidence","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","evidence_field":"validator_result","validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
 EOF
   probe_hash="$(sha256_file_ref "$probe_file")"
   cat > "$effect_file" <<EOF
@@ -2703,13 +3715,25 @@ EOF
   run python3 "$SHADOW_POLICY_LOADER" --adapter-module "$SHADOW_PROBE" --print-adapter-ids
   [ "$status" -eq 0 ]
   [[ "$output" == *"py.ast.call_match@v1"* ]]
+  [[ "$output" == *"js.ast.call_match@v1"* ]]
+  [[ "$output" == *"ts.ast.call_match@v1"* ]]
+  [[ "$output" == *"ts.ast.call_match@v2"* ]]
+  [[ "$output" == *"fastapi.route@v1"* ]]
   [[ "$output" == *"any.runtime.trace@v1"* ]]
+
+  run python3 "$SHADOW_POLICY_LOADER" --adapter-module "$SHADOW_PROBE" --print-adapter-json
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"ts.ast.call_match@v2"'* ]]
+  [[ "$output" == *'"allowed_extensions":[".ts",".tsx",".mts",".cts"]'* ]]
+  [[ "$output" == *'"rejected_extensions":[".d.ts"]'* ]]
+  [[ "$output" == *'"allowed_paths":["src/**","app/**","lib/**","server/**","pages/**","routes/**"]'* ]]
 
   run python3 "$SHADOW_POLICY_LOADER" --policy-dir "$DOCS_ROOT/policy" --adapter-module "$SHADOW_PROBE" --check-parity
   [ "$status" -eq 0 ]
   [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *'"adapter_specs"'* ]]
 
-  perl -0pi -e 's/(implemented_primary_v1: \[[^\]]*any\.runtime\.trace\@v1)/$1, js.ast.call_match\@v1/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
+  perl -0pi -e 's/(implemented_primary_v1: \[[^\]]*any\.runtime\.trace\@v1)/$1, express.route\@v1/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
   run python3 "$SHADOW_POLICY_LOADER" --policy-dir "$DOCS_ROOT/policy" --adapter-module "$SHADOW_PROBE" --check-parity
   [ "$status" -ne 0 ]
   [[ "$output" == *"implemented_primary_v1 id must be implemented by shadow_evidence_probe.py"* ]]
@@ -2740,7 +3764,7 @@ EOF
 }
 
 @test "validate_docs strict fails when catalog claims unimplemented probe primary" {
-  perl -0pi -e 's/(implemented_primary_v1: \[[^\]]*any\.runtime\.trace\@v1)/$1, js.ast.call_match\@v1/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
+  perl -0pi -e 's/(implemented_primary_v1: \[[^\]]*any\.runtime\.trace\@v1)/$1, express.route\@v1/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
@@ -2877,6 +3901,19 @@ EOF
     --close-required-review "codex_subagent_md_handoff" \
     --close-required-review "external_gemini_claude" \
     --completed-review "codex_subagent_md_handoff" \
+    --blocked-review "external_gemini_claude=platform_permission_blocked" \
+    --print-contract
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"required review route is blocked: external_gemini_claude (platform_permission_blocked)"* ]]
+  [[ "$output" == *"switch permission mode"* ]]
+  [[ "$output" == *'"blocked_review_reasons":{"external_gemini_claude":"platform_permission_blocked"}'* ]]
+
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "external_gemini_claude" \
+    --completed-review "codex_subagent_md_handoff" \
     --print-contract
 
   [ "$status" -eq 1 ]
@@ -2929,10 +3966,10 @@ EOF
 
 @test "shadow_v2_gate_skeleton requires durable accepted external review artifact before close completion" {
   local stub_artifact="$TEST_WORKSPACE/external-stub-review.md"
-  local empty_dir="$DOCS_ROOT/orchestration/external-cli/May13_2026/shadow-v2-close/v1.0/r-empty"
-  local blocked_dir="$DOCS_ROOT/orchestration/external-cli/May13_2026/shadow-v2-close/v1.0/r-blocked"
-  local no_manifest_dir="$DOCS_ROOT/orchestration/external-cli/May13_2026/shadow-v2-close/v1.0/r-no-manifest"
-  local thin_dir="$DOCS_ROOT/orchestration/external-cli/May13_2026/shadow-v2-close/v1.0/r-thin"
+  local empty_dir="$DOCS_ROOT/orchestration/shadow-v2-close/external-cli/v1.0/r-empty"
+  local blocked_dir="$DOCS_ROOT/orchestration/shadow-v2-close/external-cli/v1.0/r-blocked"
+  local no_manifest_dir="$DOCS_ROOT/orchestration/shadow-v2-close/external-cli/v1.0/r-no-manifest"
+  local thin_dir="$DOCS_ROOT/orchestration/shadow-v2-close/external-cli/v1.0/r-thin"
   local empty_artifact="$empty_dir/gemini.response.md"
   local blocked_artifact="$blocked_dir/gemini.response.md"
   local no_manifest_artifact="$no_manifest_dir/gemini.response.md"
@@ -3049,7 +4086,7 @@ EOF
     --print-contract
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"completed external Gemini/Claude review artifact must be under docs/orchestration/external-cli"* ]]
+  [[ "$output" == *"completed external Gemini/Claude review artifact must be under docs/orchestration/<task-id>/external-cli"* ]]
 
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
@@ -3220,6 +4257,8 @@ EOF
   [[ "$output" == *"- writes_shadow_docs: false"* ]]
   [[ "$output" == *"- auto_promotes_facts: false"* ]]
   [[ "$output" == *"- question_count: 1"* ]]
+  [[ "$output" == *"- question_group_count: 1"* ]]
+  [[ "$output" == *"## Question Groups"* ]]
   [[ "$output" == *"source_kind: evidence_candidate"* ]]
   [[ "$output" == *"decision_type: classification_or_evidence_gap"* ]]
   [[ "$output" == *"recommended_default_status: unknown"* ]]
@@ -3229,6 +4268,25 @@ EOF
   find "$DOCS_ROOT/shadow" -type f | sort > "$TEST_WORKSPACE/shadow-v2-decision-after.txt"
   run cmp "$TEST_WORKSPACE/shadow-v2-decision-before.txt" "$TEST_WORKSPACE/shadow-v2-decision-after.txt"
   [ "$status" -eq 0 ]
+}
+
+@test "shadow_v2_user_decision_assistant groups bounded questions without answering them" {
+  local probe_file="$TEST_WORKSPACE/source-probes.jsonl"
+  cat > "$probe_file" <<'EOF'
+{"status":"pass","validator_id":"jpa.repository.save@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/UserService.java:6","validator_kind":"source_probe","parser_backed":false,"promotion_limit":"medium","entry_ref":"UserController.update","anchor_file":"src/UserService.java","anchor_symbol":"userRepository.save","missing_evidence":"parser-backed Java validator","recommended_default_status":"unknown","writes_shadow_docs":false}
+{"status":"pass","validator_id":"jpa.repository.save@v1","evidence_type":"code_call","validator_result":"matched","source_ref":"src/OrderService.java:9","validator_kind":"source_probe","parser_backed":false,"promotion_limit":"medium","entry_ref":"OrderController.update","anchor_file":"src/OrderService.java","anchor_symbol":"orderRepository.save","missing_evidence":"parser-backed Java validator","recommended_default_status":"unknown","writes_shadow_docs":false}
+EOF
+
+  run python3 "$SHADOW_V2_USER_DECISION" --project-root "$TEST_PROJECT" --input "$probe_file" --task-id "shadow-effect-map-01" --format json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"question_count": 2'* ]]
+  [[ "$output" == *'"question_group_count": 1'* ]]
+  [[ "$output" == *'"id": "UDG-001"'* ]]
+  [[ "$output" == *'"question_ids": ['* ]]
+  [[ "$output" == *'"UDQ-001"'* ]]
+  [[ "$output" == *'"UDQ-002"'* ]]
+  [[ "$output" == *'"auto_promotes_facts": false'* ]]
 }
 
 @test "shadow_v2_user_decision_assistant enforces project-scope hint activation" {
@@ -3470,7 +4528,7 @@ EOF
 }
 
 @test "shadow_v2_review_packet_generator emits bounded internal review packets" {
-  local writer_result="$TEST_WORKSPACE/review-writer-result.json"
+  local writer_result="$DOCS_ROOT/report/review-writer-result.json"
   cat > "$writer_result" <<'EOF'
 {
   "status": "blocked",
@@ -3502,6 +4560,9 @@ EOF
   [[ "$output" == *"review_provenance: internal_md_handoff"* ]]
   [[ "$output" == *"unsupported_by_packet: none"* ]]
   [[ "$output" == *"kind: writer_result"* ]]
+  [[ "$output" == *"path: docs/report/review-writer-result.json"* ]]
+  [[ "$output" == *"artifact_hash: sha256:"* ]]
+  [[ "$output" == *"artifact_bytes:"* ]]
   [[ "$output" == *"TASK-shadow-effect-map-01"* ]]
   [[ "$output" == *"src/UserService.java:6"* ]]
   [[ "$output" == *"- verdict: accept | revise | blocked"* ]]
@@ -3510,6 +4571,24 @@ EOF
   find "$DOCS_ROOT/shadow" -type f | sort > "$TEST_WORKSPACE/shadow-v2-review-after.txt"
   run cmp "$TEST_WORKSPACE/shadow-v2-review-before.txt" "$TEST_WORKSPACE/shadow-v2-review-after.txt"
   [ "$status" -eq 0 ]
+}
+
+@test "shadow_v2_review_packet_generator refuses artifact inputs outside project root" {
+  local writer_result="$TEST_WORKSPACE/review-writer-result.json"
+  cat > "$writer_result" <<'EOF'
+{"status":"blocked","writes_shadow_docs":false,"auto_promotes_facts":false,"source_refs":["src/UserService.java:6"]}
+EOF
+
+  run python3 "$SHADOW_V2_REVIEW_PACKET" \
+    --project-root "$TEST_PROJECT" \
+    --task-id "shadow-effect-map-01" \
+    --writer-result "$writer_result" \
+    --source-ref "TASK-shadow-effect-map-01" \
+    --format json
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"--writer-result must stay under project root"* ]]
+  [[ "$output" == *'"writes_shadow_docs":false'* ]]
 }
 
 @test "shadow_v2_review_packet_generator blocks external route unless requested" {
@@ -3662,6 +4741,20 @@ EOF
   [[ "$output" == *"required review route is blocked: external_gemini_claude"* ]]
   [[ "$output" == *"sub-agent acceptance cannot substitute for blocked external Gemini/Claude review"* ]]
   [[ "$output" == *'"executes_commands": false'* ]]
+
+  run python3 "$SHADOW_V2_PIPELINE" \
+    --project-root "$TEST_PROJECT" \
+    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "external_gemini_claude" \
+    --completed-review "codex_subagent_md_handoff" \
+    --blocked-review "external_gemini_claude=platform_permission_blocked" \
+    --format json
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"required review route is blocked: external_gemini_claude (platform_permission_blocked)"* ]]
+  [[ "$output" == *"switch permission mode"* ]]
+  [[ "$output" == *'"blocked_review_reasons"'* ]]
+  [[ "$output" == *'"platform_permission_blocked"'* ]]
 }
 
 @test "shadow_v2_pipeline_wrapper requires external close artifact provenance" {
@@ -3737,7 +4830,7 @@ EOF
   run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "orch-01" --mode advisory
   [ "$status" -eq 0 ]
 
-  local orch_file="$DOCS_ROOT/orchestration/ORCH-orch-01.md"
+  local orch_file="$DOCS_ROOT/orchestration/orch-01/ORCH.md"
   run test -f "$orch_file"
   [ "$status" -eq 0 ]
   run grep "^- execution_mode: solo" "$orch_file"
@@ -3814,7 +4907,7 @@ EOF
 - last_updated: 2026-01-01T00:00:00Z
 EOF
 
-  local orch_file="$DOCS_ROOT/orchestration/ORCH-orch-preflight-01.md"
+  local orch_file="$DOCS_ROOT/orchestration/orch-preflight-01/ORCH.md"
   perl -0pi -e 's/^- risk_preflight_status: pass$/- risk_preflight_status: approval_required/m; s/^- approval_required: false$/- approval_required: true/m; s/^- approval_ref:.*$/- approval_ref: user-approval-pending-001/m; s/^- approved_next_step:.*$/- approved_next_step: await user approval/m' "$orch_file"
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
@@ -3838,7 +4931,7 @@ EOF
     --no-init
 
   [ "$status" -eq 0 ]
-  local orch_file="$DOCS_ROOT/orchestration/ORCH-orch-approval-stop-01.md"
+  local orch_file="$DOCS_ROOT/orchestration/orch-approval-stop-01/ORCH.md"
   run grep "^- delegation_status: blocked" "$orch_file"
   [ "$status" -eq 0 ]
   run grep "^- approval_required: true" "$orch_file"
@@ -3882,7 +4975,7 @@ EOF
 - last_updated: 2026-01-01T00:00:00Z
 EOF
 
-  local orch_file="$DOCS_ROOT/orchestration/ORCH-orch-approved-01.md"
+  local orch_file="$DOCS_ROOT/orchestration/orch-approved-01/ORCH.md"
   perl -0pi -e 's/^- approval_required: true$/- approval_required: false/m' "$orch_file"
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
@@ -3904,7 +4997,7 @@ EOF
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"Concrete --approval-ref"* ]]
-  run test ! -f "$DOCS_ROOT/orchestration/ORCH-orch-approved-placeholder-01.md"
+  run test ! -f "$DOCS_ROOT/orchestration/orch-approved-placeholder-01/ORCH.md"
   [ "$status" -eq 0 ]
 
   run "$RUN_CODEGUIDE" "$TEST_PROJECT" \
@@ -3917,7 +5010,7 @@ EOF
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"Concrete --approval-ref"* ]]
-  run test ! -f "$DOCS_ROOT/orchestration/ORCH-run-approved-placeholder-01.md"
+  run test ! -f "$DOCS_ROOT/orchestration/run-approved-placeholder-01/ORCH.md"
   [ "$status" -eq 0 ]
 
   local plan_file="$DOCS_ROOT/plan/PLAN-ext-approved-placeholder-v1.0.md"
@@ -3977,7 +5070,7 @@ exit 99'
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"External CLI review requires --risk-preflight-status approved"* ]]
-  run test ! -f "$DOCS_ROOT/orchestration/ORCH-orch-external-pass-01.md"
+  run test ! -f "$DOCS_ROOT/orchestration/orch-external-pass-01/ORCH.md"
   [ "$status" -eq 0 ]
 }
 
@@ -4014,7 +5107,7 @@ exit 99'
 - last_updated: 2026-01-01T00:00:00Z
 EOF
 
-  local orch_file="$DOCS_ROOT/orchestration/ORCH-orch-recorder-01.md"
+  local orch_file="$DOCS_ROOT/orchestration/orch-recorder-01/ORCH.md"
   perl -0pi -e 's/^- risk_preflight_recorded_by: .+$/- risk_preflight_recorded_by: Gemini/m' "$orch_file"
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
@@ -4955,7 +6048,7 @@ EOF
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"--risk-preflight-status is required before delegated orchestration"* ]]
-  run test ! -f "$DOCS_ROOT/orchestration/ORCH-run-preflight-gate-01.md"
+  run test ! -f "$DOCS_ROOT/orchestration/run-preflight-gate-01/ORCH.md"
   [ "$status" -eq 0 ]
 }
 
@@ -4967,7 +6060,7 @@ EOF
     --risk-preflight-status "approval_required"
 
   [ "$status" -eq 0 ]
-  local orch_file="$DOCS_ROOT/orchestration/ORCH-run-approval-stop-01.md"
+  local orch_file="$DOCS_ROOT/orchestration/run-approval-stop-01/ORCH.md"
   run grep "^- delegation_status: blocked" "$orch_file"
   [ "$status" -eq 0 ]
   run grep "Delegation stopped before agent or external work" "$orch_file"
@@ -5218,7 +6311,7 @@ EOF
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"requires --risk-preflight-status"* ]]
-  run test ! -f "$DOCS_ROOT/orchestration/ORCH-doc-preflight-gate-01.md"
+  run test ! -f "$DOCS_ROOT/orchestration/doc-preflight-gate-01/ORCH.md"
   [ "$status" -eq 0 ]
 }
 
@@ -5829,17 +6922,17 @@ exit 99'
   [ "$status" -eq 0 ]
   run grep "^- review_style: standard" "$DOCS_ROOT/report/PLAN-ext-review-01-v1.0-review-gemini-r01.md"
   [ "$status" -eq 0 ]
-  run grep "^- primary_author_tool: codex" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
+  run grep "^- primary_author_tool: codex" "$DOCS_ROOT/orchestration/ext-review-01/ORCH.md"
   [ "$status" -eq 0 ]
-  run grep "^- review_mode: external_cli" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
+  run grep "^- review_mode: external_cli" "$DOCS_ROOT/orchestration/ext-review-01/ORCH.md"
   [ "$status" -eq 0 ]
-  run grep "^- risk_preflight_status: approved" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
+  run grep "^- risk_preflight_status: approved" "$DOCS_ROOT/orchestration/ext-review-01/ORCH.md"
   [ "$status" -eq 0 ]
-  run grep "^- approval_required: true" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
+  run grep "^- approval_required: true" "$DOCS_ROOT/orchestration/ext-review-01/ORCH.md"
   [ "$status" -eq 0 ]
-  run grep "^- approval_ref: user-approval-ext-review-01" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
+  run grep "^- approval_ref: user-approval-ext-review-01" "$DOCS_ROOT/orchestration/ext-review-01/ORCH.md"
   [ "$status" -eq 0 ]
-  run grep "^- reviewer_agents: external-cli:gemini,claude" "$DOCS_ROOT/orchestration/ORCH-ext-review-01.md"
+  run grep "^- reviewer_agents: external-cli:gemini,claude" "$DOCS_ROOT/orchestration/ext-review-01/ORCH.md"
   [ "$status" -eq 0 ]
 
   local after_plan
@@ -5950,6 +7043,206 @@ exit 99'
   run test ! -f "$handoff_dir/claude.command-response.raw.md"
   [ "$status" -eq 0 ]
   run test -f "$handoff_dir/claude.response.provenance.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews can target a selected reviewer only" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-review-07-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-review-07-v1.0
+
+- task_id: ext-review-07
+- plan_version: v1.0
+- objective: validate selected reviewer routing
+- scope: external review runner options
+- assumptions: operator may need to rerun only one failed reviewer
+- risks: reruns could resend context to unrelated external tools
+- acceptance_signals: only the requested reviewer is invoked
+- stop_conditions: targeted review report is written
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Select one reviewer.
+2. Run the wrapper.
+3. Confirm unrelated reviewers were not invoked.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/gemini-called"
+echo "gemini should not be called for selected reviewer claude" >&2
+exit 99'
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
+cat <<EOF
+- verdict: accept
+- summary: The selected reviewer path invokes only Claude and still writes the standard report artifacts.
+- strengths: It preserves the normal request, response, report, and provenance flow.
+- risks: Reviewer selection could hide missing multi-review coverage if operators use it for initial review rounds.
+- requested_changes: Use targeted reviewer selection only for focused reruns or explicitly scoped review rounds.
+EOF'
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/codex-called"
+echo "codex should not be called for primary=codex" >&2
+exit 99'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-review-07" \
+    --plan-version "v1.0" \
+    --primary-tool "codex" \
+    --review-round "r07" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-review-07" \
+    --approved-next-step "run targeted external review ext-review-07 v1.0 r07" \
+    --reviewer "claude"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[OK] evaluator=claude"* ]]
+  [[ "$output" != *"evaluator=gemini"* ]]
+  [[ "$output" != *"evaluator=codex"* ]]
+
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-07-v1.0-review-claude-r07.md"
+  [ "$status" -eq 0 ]
+  run test ! -e "$TEST_WORKSPACE/gemini-called"
+  [ "$status" -eq 0 ]
+  run test ! -e "$TEST_WORKSPACE/codex-called"
+  [ "$status" -eq 0 ]
+  run grep "^- reviewer_agents: external-cli:claude" "$DOCS_ROOT/orchestration/ext-review-07/ORCH.md"
+  [ "$status" -eq 0 ]
+
+  local handoff_dir
+  handoff_dir="$(external_handoff_dir "ext-review-07" "v1.0" "r07")"
+  [ -n "$handoff_dir" ]
+  run test -f "$handoff_dir/claude.request.md"
+  [ "$status" -eq 0 ]
+  run test -f "$handoff_dir/claude.response.md"
+  [ "$status" -eq 0 ]
+  run test -f "$handoff_dir/claude.response.provenance.md"
+  [ "$status" -eq 0 ]
+  run grep "$handoff_dir/claude.command-response.raw.md" "$TEST_WORKSPACE/claude-args.log"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews supports last-resort manual handoff and response ingest without invoking CLIs" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-review-manual-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-review-manual-v1.0
+
+- task_id: ext-review-manual
+- plan_version: v1.0
+- objective: validate manual fallback for platform-blocked external review
+- scope: external review wrapper fallback
+- assumptions: direct external CLI invocation remains the primary path
+- risks: manual fallback could accidentally become the default path
+- acceptance_signals: manual mode writes handoff commands without invoking external CLIs; ingest mode writes reports from existing raw responses
+- stop_conditions: reports and provenance are generated without CLI calls
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Prepare manual handoff files only.
+2. Simulate user-run raw responses.
+3. Ingest responses into reports and provenance.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/gemini-called"
+exit 99'
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/claude-called"
+exit 99'
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/codex-called"
+exit 99'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-review-manual" \
+    --plan-version "v1.0" \
+    --primary-tool "codex" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-review-manual" \
+    --approved-next-step "run external review ext-review-manual v1.0 r01" \
+    --manual-handoff-only
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[MANUAL] evaluator=gemini"* ]]
+  [[ "$output" == *"[MANUAL] evaluator=claude"* ]]
+  [[ "$output" == *"manual_handoff_only=true"* ]]
+  [[ "$output" == *"--ingest-manual-responses"* ]]
+  run test ! -e "$TEST_WORKSPACE/gemini-called"
+  [ "$status" -eq 0 ]
+  run test ! -e "$TEST_WORKSPACE/claude-called"
+  [ "$status" -eq 0 ]
+  run test ! -e "$TEST_WORKSPACE/codex-called"
+  [ "$status" -eq 0 ]
+
+  local handoff_dir
+  handoff_dir="$(external_handoff_dir "ext-review-manual" "v1.0" "r01")"
+  [ -n "$handoff_dir" ]
+  run test -f "$handoff_dir/gemini.request.md"
+  [ "$status" -eq 0 ]
+  run test -f "$handoff_dir/claude.request.md"
+  [ "$status" -eq 0 ]
+  run test -f "$handoff_dir/gemini.manual-command.md"
+  [ "$status" -eq 0 ]
+  run test -f "$handoff_dir/claude.manual-command.md"
+  [ "$status" -eq 0 ]
+  run grep "last-resort fallback" "$handoff_dir/gemini.manual-command.md"
+  [ "$status" -eq 0 ]
+  run grep "do not drive Terminal UI" "$handoff_dir/claude.manual-command.md"
+  [ "$status" -eq 0 ]
+
+  cat > "$handoff_dir/gemini.command-response.raw.md" <<'EOF'
+- verdict: accept
+- summary: Gemini manual raw response accepts the bounded external review fallback contract.
+- strengths: It preserves direct invocation as primary while keeping a recoverable user-operated fallback.
+- risks: Operators could still overuse manual mode if platform permission settings are not fixed.
+- requested_changes: Keep manual handoff documented as last-resort only.
+EOF
+  cat > "$handoff_dir/claude.command-response.raw.md" <<'EOF'
+- verdict: revise
+- summary: Claude manual raw response confirms ingest can normalize existing responses without invoking the CLI.
+- strengths: It produces the same report and provenance artifacts after user-operated execution.
+- risks: Manual responses still rely on local file integrity and operator discipline.
+- requested_changes: Prefer permission-mode repair before falling back to manual execution.
+EOF
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-review-manual" \
+    --plan-version "v1.0" \
+    --primary-tool "codex" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-review-manual" \
+    --approved-next-step "run external review ext-review-manual v1.0 r01" \
+    --ingest-manual-responses
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[OK] evaluator=gemini"* ]]
+  [[ "$output" == *"[OK] evaluator=claude"* ]]
+  run test ! -e "$TEST_WORKSPACE/gemini-called"
+  [ "$status" -eq 0 ]
+  run test ! -e "$TEST_WORKSPACE/claude-called"
+  [ "$status" -eq 0 ]
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-manual-v1.0-review-gemini-r01.md"
+  [ "$status" -eq 0 ]
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-manual-v1.0-review-claude-r01.md"
+  [ "$status" -eq 0 ]
+  run test ! -f "$handoff_dir/gemini.command-response.raw.md"
+  [ "$status" -eq 0 ]
+  run test ! -f "$handoff_dir/claude.command-response.raw.md"
+  [ "$status" -eq 0 ]
+  run test -f "$handoff_dir/gemini.response.provenance.md"
+  [ "$status" -eq 0 ]
+  run grep "raw_capture_deleted: true" "$handoff_dir/gemini.response.provenance.md"
   [ "$status" -eq 0 ]
 }
 

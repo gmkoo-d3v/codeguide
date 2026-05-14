@@ -56,7 +56,7 @@ SECRET_SCAN_EXCLUDE_GLOBS=(
   "**/decision-template.md"
   "**/PLAN-template.md"
   "**/LLM-REVIEW-template.md"
-  "**/ORCH-template.md"
+  "**/orchestration/_templates/*.md"
 )
 
 require_option_value() {
@@ -182,7 +182,8 @@ SHADOW_BUCKETS=(apps services packages infra data)
 DECISIONS_DIR="$DOCS_DIR/decisions"
 PLAN_DIR="$DOCS_DIR/plan"
 REPORT_DIR="$DOCS_DIR/report"
-ORCHESTRATION_DIR="$DOCS_DIR/orchestration"
+ORCHESTRATION_DIR="$(codeguide_orchestration_root "$PROJECT_ROOT_ABS")"
+ORCHESTRATION_TEMPLATES_DIR="$(codeguide_orchestration_templates_dir "$PROJECT_ROOT_ABS")"
 POLICY_DIR="$DOCS_DIR/policy"
 
 ISSUE_COUNT=0
@@ -424,6 +425,8 @@ check_effect_map_file() {
 
   check_field_value_equals "$file_path" "doc_role" "effect_map" "shadow effect_map"
   issue_output="$(python3 - "$file_path" "$POLICY_DIR" "$PROJECT_ROOT_ABS" "$SCRIPT_DIR" <<'PY'
+from __future__ import annotations
+
 import hashlib
 import re
 import sys
@@ -1591,7 +1594,7 @@ adversarial_requirement_source_for_task() {
 check_orchestration_file_for_task() {
   local task_id="$1"
   local task_ref="$2"
-  local orchestration_file="$ORCHESTRATION_DIR/ORCH-${task_id}.md"
+  local orchestration_file
   local execution_mode
   local delegation_status
   local doc_task_id
@@ -1603,6 +1606,8 @@ check_orchestration_file_for_task() {
   local approval_ref
   local approved_next_step
   local risk_preflight_recorded_by_normalized
+
+  orchestration_file="$(codeguide_orchestration_file "$PROJECT_ROOT_ABS" "$task_id")"
 
   if [[ ! -f "$orchestration_file" ]]; then
     fail "missing orchestration file for active task ${task_ref}: expected ${orchestration_file}"
@@ -1733,7 +1738,9 @@ check_orchestration_file_for_task() {
 
 orchestration_execution_mode_for_task() {
   local task_id="$1"
-  local orchestration_file="$ORCHESTRATION_DIR/ORCH-${task_id}.md"
+  local orchestration_file
+
+  orchestration_file="$(codeguide_orchestration_file "$PROJECT_ROOT_ABS" "$task_id")"
 
   if [[ ! -f "$orchestration_file" ]]; then
     return
@@ -1890,7 +1897,17 @@ done
 check_file_exists "$DECISIONS_DIR/decision-index.md" "decision index"
 check_file_exists "$PLAN_DIR/PLAN-template.md" "plan template"
 check_file_exists "$REPORT_DIR/LLM-REVIEW-template.md" "report template"
-check_file_exists "$ORCHESTRATION_DIR/ORCH-template.md" "orchestration template"
+check_file_exists "$ORCHESTRATION_TEMPLATES_DIR/ORCH.md" "orchestration template"
+check_file_exists "$ORCHESTRATION_TEMPLATES_DIR/prompt.md" "orchestration prompt template"
+
+if [[ -d "$ORCHESTRATION_DIR" ]]; then
+  while IFS= read -r legacy_orchestration_file; do
+    fail "legacy root orchestration file is not supported; move it to docs/orchestration/<task-id>/ORCH.md: ${legacy_orchestration_file}"
+  done < <(find "$ORCHESTRATION_DIR" -maxdepth 1 -type f -name 'ORCH-*.md' | sort)
+  if [[ -d "$ORCHESTRATION_DIR/external-cli" ]]; then
+    fail "legacy external CLI handoff root is not supported; use docs/orchestration/<task-id>/external-cli/<plan-version>/<round>"
+  fi
+fi
 
 # --- Shadow policy checks ---
 if [[ -d "$POLICY_DIR" ]]; then

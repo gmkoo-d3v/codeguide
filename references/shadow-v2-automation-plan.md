@@ -36,6 +36,12 @@ Already selected defaults:
 - activate automatic hint lookup only after project scope is verified
 - use Codex sub-agent Markdown review as the default independent review route
 - use Gemini/Claude external review only when the user explicitly requests it
+- keep external review provenance at local request/response/provenance hash consistency; do not require stronger tamper resistance in v2
+- keep supervised apply as one record per explicit final-apply decision; do not enable batch apply by default
+- use runtime evidence proactively by surfacing and preparing deterministic trace artifacts, while still requiring explicit `runtime_scenario_fit` for confirmed runtime facts
+- future Express validator scope is route registration syntax only; do not claim middleware order, app mounting, or runtime reachability
+- future React validator scope is `useEffect` and event handler binding syntax only; do not claim render lifecycle timing, effect execution, or product intent
+- group bounded user-decision questions when deterministic grouping is possible, without answering them or collapsing distinct record bindings
 
 Deferred user choices during real shadow authoring:
 
@@ -103,7 +109,7 @@ Phase 0 verification:
 - contract printing does not require a scoped project
 - project-scope checking blocks hint activation until `docs/`, `docs/shadow/`, and `docs/policy/` exist
 - external Gemini/Claude review is blocked unless explicitly requested
-- completed external Gemini/Claude review is blocked unless a durable accepted response artifact under `docs/orchestration/external-cli/` is supplied with a matching companion request file, wrapper-generated provenance manifest, evaluator, `verdict: accept`, parser-compatible review fields, command-response path, response path, bytes, and sha256 provenance
+- completed external Gemini/Claude review is blocked unless a durable accepted response artifact under `docs/orchestration/<task-id>/external-cli/<plan-version>/<round>/` is supplied with a matching companion request file, wrapper-generated provenance manifest, evaluator, `verdict: accept`, parser-compatible review fields, command-response path, response path, bytes, and sha256 provenance
 - completed internal Codex sub-agent or runtime-independent-session review is blocked unless a durable accepted `.md` Markdown response artifact under `docs/report/` or `docs/orchestration/` is supplied with `verdict: accept`, `priority_findings`, `contract_mismatches`, `missing_evidence`, `residual_risks`, bytes, and sha256 provenance
 - batch apply is disabled
 - non-confirming evidence types cannot confirm facts
@@ -198,9 +204,12 @@ Implemented v2 behavior:
 
 - creates packet-only Markdown or JSON handoffs
 - summarizes candidate, probe, writer, and user-decision packet artifacts without broad workspace dumps
+- bounds supplied artifact inputs to the resolved project root and records raw artifact sha256 and byte size in packet summaries
 - preserves `writes_shadow_docs=false`
 - preserves `auto_promotes_facts=false`
 - blocks `external_gemini_claude` unless explicit user request, concrete approval ref, approved next step, and main-thread recorder are provided
+- treats Codex CLI review artifacts as advisory plan-review outputs only; they do not satisfy the Gemini/Claude close route unless the close gate is explicitly expanded
+- treats direct Gemini/Claude CLI invocation through `require_escalated` and user approval as the primary path; if a guardian reviewer blocks after explicit approval, records `platform_permission_blocked` and asks for permission-mode change before considering the last-resort manual handoff route
 - marks blocked external packets as `external_review_missing_user_request`, not `external_user_requested`
 - marks missing packet context in `unsupported_by_packet`
 - refuses packet output under `docs/shadow/`
@@ -265,7 +274,7 @@ Draft v2 behavior:
 - includes writer command hints only with `--mode dry-run`
 - blocks external review routes unless explicit user request, concrete approval ref, approved next step, and main-thread recorder are provided
 - blocks combined close when any required review route is blocked or lacks a valid accepted artifact
-- blocks combined close when a completed external Gemini/Claude route has no durable accepted response artifact under `docs/orchestration/external-cli/` with matching companion request and wrapper-generated provenance manifest
+- blocks combined close when a completed external Gemini/Claude route has no durable accepted response artifact under `docs/orchestration/<task-id>/external-cli/<plan-version>/<round>/` with matching companion request and wrapper-generated provenance manifest
 - ignores blocked external routes that are not part of the required close gate
 - refuses pipeline output under `docs/shadow/`
 - independent sub-agent review: accepted in r04 as a dry-run draft only
@@ -391,11 +400,34 @@ These are not chosen yet and should be asked later only when needed:
 - Java parser-backed expansion currently starts with the narrow `java.ast.call_match@v1` token matcher only; annotation and JPA repository-save semantics remain source-probe-only until separate parser-backed adapters are implemented.
 - Supervised apply starts as one record per explicit final-apply decision; batch apply remains a later option.
 
+### JavaScript And TypeScript Parser-Backed Expansion
+
+Phase 5 current state:
+
+- `js.ast.call_match@v1`, `ts.ast.call_match@v1`, and `ts.ast.call_match@v2` are narrow parser-backed token adapters implemented in `shadow_evidence_probe.py`.
+- `js.ast.call_match@v1` accepts `.js`, `.jsx`, `.mjs`, and `.cjs`; it rejects TypeScript extensions.
+- `ts.ast.call_match@v1` accepts `.ts`, `.tsx`, `.mts`, and `.cts`; it rejects JavaScript extensions and `.d.ts` declaration files.
+- Both adapters use exclude-wins path scope. Dependency, build, coverage, and test directories are excluded at the repository root and when nested under allowed roots such as `src/`.
+- The adapters ignore comments, string literals, and regex literals through masked JavaScript-like token scanning.
+- The adapters support exact `callee` matching, optional probe-time `receiver` binding, and optional chaining receiver syntax such as `client?.post(...)`.
+- TypeScript generic call syntax such as `client.post<string>(...)` remains unsupported in `ts.ast.call_match@v1`.
+- `ts.ast.call_match@v2` supports syntactic TypeScript generic call type arguments such as `client.post<Result<User>>(...)`; it does not prove type checking, overload resolution, runtime execution, module resolution, async completion, or framework middleware order.
+- The adapters filter obvious function, method, and TypeScript signature declarations, but they do not prove runtime execution, module resolution, async completion, dynamic dispatch targets, or framework middleware order.
+- `shadow_effect_writer.py` can rerun JS/TS parser-backed probes from structured `probe_args`.
+- `shadow_effect_writer.py` must reject deterministic call evidence when `anchor.symbol` conflicts with the probe rerun `matched_symbol`.
+- `external.call` maps Node JavaScript to `js.ast.call_match@v1` and TypeScript to `ts.ast.call_match@v2`; regex fallback remains capped as candidate-only evidence.
+- `fastapi.route@v1` is a narrow parser-backed decorator adapter for FastAPI route declarations. It confirms decorator syntax, route method, and optional literal route path only; it does not prove app mounting, dependency success, middleware order, runtime reachability, or OpenAPI exposure.
+- `shadow_policy_loader.py` exposes primary adapter path and extension scope metadata through adapter JSON and parity output so downstream review and automation consume the same executable contract.
+- Future Express parser-backed work is limited to route registration syntax such as `app.get(...)`, `app.post(...)`, and router variants; it must not claim middleware order, app mounting, or runtime reachability.
+- Future React parser-backed work is limited to `useEffect(...)` and event handler binding syntax; it must not claim lifecycle timing, effect completion, render behavior, or product intent.
+- Other framework-specific JS/TS validators remain registry contracts until separate parser-backed adapters are implemented.
+
 ## Acceptance Criteria
 
 - User-decision assistant never writes shadow docs.
 - User-decision assistant never answers human judgment questions itself.
 - Generated questions are bounded, anchored, and include default status.
+- Generated question groups preserve each question id and source binding; grouping is presentation metadata only.
 - Generated command hints use `shadow_user_decision_wrapper.py` only for supported decision types.
 - Java parser-backed expansion cannot promote source probes until adapter, policy, and writer checks agree.
 - Hint-layer output remains non-authoritative.

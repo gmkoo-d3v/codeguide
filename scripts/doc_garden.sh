@@ -644,7 +644,8 @@ DOCS_DIR="$(codeguide_docs_root "$PROJECT_ROOT_ABS")"
 TASK_DIR="$DOCS_DIR/task"
 SHADOW_DIR="$DOCS_DIR/shadow"
 DECISIONS_DIR="$DOCS_DIR/decisions"
-ORCHESTRATION_DIR="$DOCS_DIR/orchestration"
+ORCHESTRATION_DIR="$(codeguide_orchestration_root "$PROJECT_ROOT_ABS")"
+ORCHESTRATION_TEMPLATES_DIR="$(codeguide_orchestration_templates_dir "$PROJECT_ROOT_ABS")"
 SHADOW_BUCKETS=(apps services packages infra data)
 
 if [[ "$RUN_INIT" == "true" ]]; then
@@ -863,7 +864,9 @@ EOF
 
 ensure_orchestration_file() {
   local orchestration_file="$1"
-  local template="$ORCHESTRATION_DIR/ORCH-template.md"
+  local template="$ORCHESTRATION_TEMPLATES_DIR/ORCH.md"
+
+  mkdir -p "$(dirname "$orchestration_file")"
 
   if [[ ! -f "$orchestration_file" ]]; then
     if [[ -f "$template" ]]; then
@@ -1176,7 +1179,7 @@ RESOLVED_SHADOW_CHANGE_NOTE="$(resolve_shadow_change_note)"
 
 if [[ -n "$TASK_ID" ]]; then
   TASK_FILE="$TASK_DIR/TASK-${TASK_ID}.md"
-  ORCHESTRATION_FILE="$ORCHESTRATION_DIR/ORCH-${TASK_ID}.md"
+  ORCHESTRATION_FILE="$(codeguide_orchestration_file "$PROJECT_ROOT_ABS" "$TASK_ID")"
   ensure_task_file "$TASK_FILE"
   ensure_orchestration_file "$ORCHESTRATION_FILE"
   upsert_field "$TASK_FILE" "title" "${TASK_TITLE:-Task ${TASK_ID}}"

@@ -373,6 +373,50 @@ def questions_from_writer_results(writer_results: list[dict[str, Any]], start_in
     return questions
 
 
+def priority_rank(priority: str) -> int:
+    return {"critical": 4, "high": 3, "medium": 2, "low": 1}.get(priority, 0)
+
+
+def grouped_questions(questions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for question in questions:
+        key = (
+            str(question.get("decision_type") or "unknown"),
+            str(question.get("source_kind") or "unknown"),
+            str(question.get("recommended_default_status") or "unknown"),
+        )
+        group = groups.setdefault(
+            key,
+            {
+                "id": f"UDG-{len(groups) + 1:03d}",
+                "decision_type": key[0],
+                "source_kind": key[1],
+                "recommended_default_status": key[2],
+                "question_ids": [],
+                "source_refs": [],
+                "highest_priority": "low",
+                "command_ready_count": 0,
+            },
+        )
+        question_id = question.get("id")
+        if has_text(question_id):
+            group["question_ids"].append(str(question_id))
+        source_ref = question.get("source_ref")
+        if has_text(source_ref) and source_ref not in group["source_refs"]:
+            group["source_refs"].append(str(source_ref))
+        priority = str(question.get("priority") or "low")
+        if priority_rank(priority) > priority_rank(str(group["highest_priority"])):
+            group["highest_priority"] = priority
+        if question.get("command_ready") is True:
+            group["command_ready_count"] += 1
+
+    rendered_groups: list[dict[str, Any]] = []
+    for group in groups.values():
+        group["question_count"] = len(group["question_ids"])
+        rendered_groups.append(group)
+    return rendered_groups
+
+
 def writer_action_question(action: dict[str, Any], decision_type: str) -> str:
     action_name = str(action.get("action") or "user_decision")
     if action_name == "create_evidence_decision":
@@ -396,6 +440,7 @@ def render_markdown(payload: dict[str, Any]) -> str:
         "- writes_shadow_docs: false",
         "- auto_promotes_facts: false",
         f"- question_count: {payload['question_count']}",
+        f"- question_group_count: {payload['question_group_count']}",
         f"- default_review_route: {payload['default_review_route']}",
         "",
         "## Scope",
@@ -413,6 +458,23 @@ def render_markdown(payload: dict[str, Any]) -> str:
         lines.extend(["## Blockers", ""])
         for blocker in payload["blockers"]:
             lines.append(f"- {single_line(blocker)}")
+        lines.append("")
+    if payload["question_groups"]:
+        lines.extend(["## Question Groups", ""])
+        for group in payload["question_groups"]:
+            lines.extend(
+                [
+                    f"- id: {group['id']}",
+                    f"  decision_type: {single_line(group['decision_type'])}",
+                    f"  source_kind: {single_line(group['source_kind'])}",
+                    f"  recommended_default_status: {single_line(group['recommended_default_status'])}",
+                    f"  highest_priority: {single_line(group['highest_priority'])}",
+                    f"  question_count: {group['question_count']}",
+                    "  question_ids: " + ", ".join(single_line(item) for item in group["question_ids"]),
+                ]
+            )
+            if group["source_refs"]:
+                lines.append("  source_refs: " + ", ".join(single_line(item) for item in group["source_refs"]))
         lines.append("")
     if not payload["questions"]:
         lines.append("- no user decisions required")
@@ -484,6 +546,7 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]]:
     writer_results = normalize_writer_results(writer_raw)
     writer_questions = questions_from_writer_results(writer_results, len(record_questions))
     questions = record_questions + writer_questions
+    question_groups = grouped_questions(questions)
 
     payload = {
         "status": "blocked" if blockers else "ok",
@@ -502,6 +565,8 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]]:
             "question_count_from_writer_results": len(writer_questions),
         },
         "question_count": len(questions),
+        "question_group_count": len(question_groups),
+        "question_groups": question_groups,
         "questions": questions,
     }
     return payload, blockers

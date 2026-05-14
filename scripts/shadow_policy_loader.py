@@ -337,6 +337,8 @@ def primary_spec_payload(spec: Any) -> dict[str, Any]:
         "language": getattr(spec, "language", None),
         "allowed_paths": list(getattr(spec, "allowed_paths", ()) or ()),
         "excluded_paths": list(getattr(spec, "excluded_paths", ()) or ()),
+        "allowed_extensions": list(getattr(spec, "allowed_extensions", ()) or ()),
+        "rejected_extensions": list(getattr(spec, "rejected_extensions", ()) or ()),
     }
 
 
@@ -423,6 +425,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--adapter-module", help="Probe module that exposes ADAPTER_REGISTRY or PRIMARY_ADAPTERS.")
     parser.add_argument("--print-policy-json", action="store_true", help="Print normalized policy registry JSON.")
     parser.add_argument("--print-adapter-ids", action="store_true", help="Print one primary adapter id per line.")
+    parser.add_argument("--print-adapter-json", action="store_true", help="Print normalized primary adapter metadata JSON.")
     parser.add_argument("--check-parity", action="store_true", help="Validate catalog implemented ids against probe adapters.")
     return parser.parse_args(argv)
 
@@ -447,11 +450,21 @@ def main(argv: list[str]) -> int:
             for validator_id in sorted(adapter_ids):
                 print(validator_id)
             return PASS
+        if args.print_adapter_json:
+            emit({"status": "ok", "adapter_specs": dict(sorted(adapter_specs.items()))})
+            return PASS
         policy_dir = resolve_policy_dir(args)
         registry = load_policy_registry_from_dir(policy_dir)
         if args.check_parity:
             issues = parity_diagnostics(registry, adapter_ids, adapter_specs)
-            emit({"status": "ok" if not issues else "fail", "errors": issues, "adapter_ids": sorted(adapter_ids)})
+            emit(
+                {
+                    "status": "ok" if not issues else "fail",
+                    "errors": issues,
+                    "adapter_ids": sorted(adapter_ids),
+                    "adapter_specs": dict(sorted(adapter_specs.items())),
+                }
+            )
             return PASS if not issues else FAIL
         if args.print_policy_json:
             emit(registry_summary(registry))

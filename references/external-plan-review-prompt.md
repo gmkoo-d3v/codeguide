@@ -10,6 +10,14 @@ The short CLI command must also include an explicit absolute command-output path
 The prompt text alone is not a sufficient output-location contract.
 When a CLI emits runtime logs on stdout, wrappers should capture the final model message through a dedicated response-file option if the CLI supports one.
 Claude CLI handoffs must not use `--bare`; preserve the normal logged-in session while disabling conversation persistence and limiting tools/directories for read-only review.
+Codex Desktop operators should treat direct external CLI invocation as the primary path: request `require_escalated` for the Gemini/Claude wrapper command and let the user approve the external-service step.
+If the user approved the exact external CLI step but an automatic guardian reviewer still blocks private workspace egress, classify the result as `platform_permission_blocked`, stop retrying, and ask the user to switch the thread/workspace permission mode so escalation prompts go to the user approval path.
+For Shadow v2 close tracking, record that blocker as `--blocked-review external_gemini_claude=platform_permission_blocked` so the gate reports the permission-mode remediation instead of a generic blocked route.
+Only as a last-resort fallback, after the user explicitly accepts user-operated CLI execution, use `run_external_plan_reviews.sh --manual-handoff-only` to write request files and manual command files. After the user runs those commands in their own terminal, use `run_external_plan_reviews.sh --ingest-manual-responses` with the same review options to normalize raw responses into sanitized reports and provenance.
+For implementation-review packets that include diffs or source excerpts, use an inline-only packet unless the external CLI is intentionally allowed to inspect files. If file inspection is allowed, run from the project root or include the project root so every referenced docs/code path is inside the CLI workspace.
+Claude ad-hoc implementation reviews should use stdin-only mode with tools disabled: `claude -p --model <model> --tools "" < request.md > response.raw.md`.
+Gemini current CLI versions may reject `--allowed-tools ""`; do not use it as a no-tools mode. Prefer project-root execution plus an inline-only instruction, or wrapper-generated handoff files inside the included project root.
+Codex CLI can participate in advisory external plan review wrappers, but Codex artifacts do not satisfy the Shadow v2 `external_gemini_claude` close gate; only Gemini/Claude accepted artifacts close that route until the gate contract is explicitly expanded.
 Request handoff files should use metadata plus `Why`, `What`, `How`, `Where`, `Verify`, then payload.
 Valid response handoff files should use the parser-compatible bullet fields below; malformed sanitized stdout may be preserved for retry diagnostics.
 

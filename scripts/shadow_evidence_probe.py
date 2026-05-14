@@ -37,6 +37,8 @@ class PrimarySpec:
     language: str = ""
     allowed_paths: tuple[str, ...] = ()
     excluded_paths: tuple[str, ...] = ()
+    allowed_extensions: tuple[str, ...] = ()
+    rejected_extensions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -54,6 +56,26 @@ class FallbackSpec:
 class ValidatorAdapter:
     validator_id: str
     spec: PrimarySpec
+
+
+JS_EXTENSIONS = (".js", ".jsx", ".mjs", ".cjs")
+TS_EXTENSIONS = (".ts", ".tsx", ".mts", ".cts")
+TS_REJECTED_EXTENSIONS = (".d.ts",)
+JS_TS_ALLOWED_PATHS = ("src/**", "app/**", "lib/**", "server/**", "pages/**", "routes/**")
+JS_TS_EXCLUDED_PATHS = (
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/coverage/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/__tests__/**",
+    "**/*.test.*",
+    "**/*.spec.*",
+)
+PY_SOURCE_ALLOWED_PATHS = ("**/*.py",)
+PY_SOURCE_EXCLUDED_PATHS = ("tests/**", ".venv/**", "venv/**", "build/**", "dist/**")
+FASTAPI_ROUTE_METHODS = {"get", "post", "put", "patch", "delete", "options", "head"}
 
 
 class AdapterRegistry:
@@ -140,6 +162,47 @@ PRIMARY_ADAPTERS: tuple[ValidatorAdapter, ...] = (
         ),
     ),
     ValidatorAdapter(
+        "js.ast.call_match@v1",
+        PrimarySpec(
+            "code_call",
+            "js_token_parser",
+            True,
+            "high",
+            "javascript",
+            JS_TS_ALLOWED_PATHS,
+            JS_TS_EXCLUDED_PATHS,
+            JS_EXTENSIONS,
+        ),
+    ),
+    ValidatorAdapter(
+        "ts.ast.call_match@v1",
+        PrimarySpec(
+            "code_call",
+            "ts_token_parser",
+            True,
+            "high",
+            "typescript",
+            JS_TS_ALLOWED_PATHS,
+            JS_TS_EXCLUDED_PATHS + ("**/*.d.ts",),
+            TS_EXTENSIONS,
+            TS_REJECTED_EXTENSIONS,
+        ),
+    ),
+    ValidatorAdapter(
+        "ts.ast.call_match@v2",
+        PrimarySpec(
+            "code_call",
+            "ts_token_parser",
+            True,
+            "high",
+            "typescript",
+            JS_TS_ALLOWED_PATHS,
+            JS_TS_EXCLUDED_PATHS + ("**/*.d.ts",),
+            TS_EXTENSIONS,
+            TS_REJECTED_EXTENSIONS,
+        ),
+    ),
+    ValidatorAdapter(
         "py.ast.call_match@v1",
         PrimarySpec(
             "code_call",
@@ -147,8 +210,8 @@ PRIMARY_ADAPTERS: tuple[ValidatorAdapter, ...] = (
             True,
             "high",
             "python",
-            ("**/*.py",),
-            ("tests/**", ".venv/**", "venv/**", "build/**", "dist/**"),
+            PY_SOURCE_ALLOWED_PATHS,
+            PY_SOURCE_EXCLUDED_PATHS,
         ),
     ),
     ValidatorAdapter(
@@ -159,8 +222,20 @@ PRIMARY_ADAPTERS: tuple[ValidatorAdapter, ...] = (
             True,
             "high",
             "python",
-            ("**/*.py",),
-            ("tests/**", ".venv/**", "venv/**", "build/**", "dist/**"),
+            PY_SOURCE_ALLOWED_PATHS,
+            PY_SOURCE_EXCLUDED_PATHS,
+        ),
+    ),
+    ValidatorAdapter(
+        "fastapi.route@v1",
+        PrimarySpec(
+            "annotation",
+            "ast",
+            True,
+            "high",
+            "python",
+            PY_SOURCE_ALLOWED_PATHS,
+            PY_SOURCE_EXCLUDED_PATHS,
         ),
     ),
 )
@@ -206,8 +281,8 @@ FALLBACK_PATTERNS: dict[str, FallbackSpec] = {
         language="javascript",
         pattern=r"\b{{callee}}\s*\(",
         required_params=("callee",),
-        allowed_paths=("src/**", "app/**", "lib/**"),
-        excluded_paths=("node_modules/**", "dist/**", "build/**", "**/*.test.*", "**/*.spec.*"),
+        allowed_paths=JS_TS_ALLOWED_PATHS,
+        excluded_paths=JS_TS_EXCLUDED_PATHS,
     ),
     "ts.regex.decorator_named@v1": FallbackSpec(
         evidence_type="annotation",
@@ -215,23 +290,31 @@ FALLBACK_PATTERNS: dict[str, FallbackSpec] = {
         pattern=r"@{{decorator}}\b",
         required_params=("decorator",),
         allowed_paths=("src/**", "app/**", "lib/**"),
-        excluded_paths=("node_modules/**", "dist/**", "build/**", "**/*.test.*", "**/*.spec.*"),
+        excluded_paths=JS_TS_EXCLUDED_PATHS + ("**/*.d.ts",),
+    ),
+    "ts.regex.call_named@v1": FallbackSpec(
+        evidence_type="code_call",
+        language="typescript",
+        pattern=r"\b{{callee}}\s*\(",
+        required_params=("callee",),
+        allowed_paths=JS_TS_ALLOWED_PATHS,
+        excluded_paths=JS_TS_EXCLUDED_PATHS + ("**/*.d.ts",),
     ),
     "py.regex.call_named@v1": FallbackSpec(
         evidence_type="code_call",
         language="python",
         pattern=r"\b{{callee}}\s*\(",
         required_params=("callee",),
-        allowed_paths=("**/*.py",),
-        excluded_paths=("tests/**", ".venv/**", "venv/**", "build/**", "dist/**"),
+        allowed_paths=PY_SOURCE_ALLOWED_PATHS,
+        excluded_paths=PY_SOURCE_EXCLUDED_PATHS,
     ),
     "py.regex.decorator_named@v1": FallbackSpec(
         evidence_type="annotation",
         language="python",
         pattern=r"@{{decorator}}\b",
         required_params=("decorator",),
-        allowed_paths=("**/*.py",),
-        excluded_paths=("tests/**", ".venv/**", "venv/**", "build/**", "dist/**"),
+        allowed_paths=PY_SOURCE_ALLOWED_PATHS,
+        excluded_paths=PY_SOURCE_EXCLUDED_PATHS,
     ),
 }
 
@@ -302,8 +385,14 @@ def enforce_path_scope(rel_path: str, spec: FallbackSpec) -> None:
 def enforce_primary_path_scope(rel_path: str, spec: PrimarySpec) -> None:
     if spec.allowed_paths and not any(path_matches(rel_path, pattern) for pattern in spec.allowed_paths):
         raise ProbeError(f"source file is outside allowed_paths for primary validator: {rel_path}")
+    if spec.rejected_extensions and rel_path.endswith(spec.rejected_extensions):
+        extensions = ", ".join(spec.rejected_extensions)
+        raise ProbeError(f"source file extension is rejected for primary validator: {rel_path} ({extensions})")
     if any(path_matches(rel_path, pattern) for pattern in spec.excluded_paths):
         raise ProbeError(f"source file is excluded for primary validator: {rel_path}")
+    if spec.allowed_extensions and not rel_path.endswith(spec.allowed_extensions):
+        extensions = ", ".join(spec.allowed_extensions)
+        raise ProbeError(f"source file extension is not allowed for primary validator: {rel_path} ({extensions})")
 
 
 def read_text(path: Path) -> str:
@@ -390,6 +479,105 @@ def mask_c_like_code(text: str) -> str:
     return "".join(chars)
 
 
+JS_REGEX_PREFIX_TOKENS = {
+    "",
+    "(",
+    "[",
+    "{",
+    "=",
+    ":",
+    ",",
+    ";",
+    "!",
+    "?",
+    "&",
+    "|",
+    "+",
+    "-",
+    "*",
+    "%",
+    "^",
+    "~",
+    "<",
+    ">",
+}
+JS_REGEX_PREFIX_KEYWORDS = {
+    "await",
+    "case",
+    "delete",
+    "do",
+    "else",
+    "in",
+    "instanceof",
+    "of",
+    "return",
+    "throw",
+    "typeof",
+    "void",
+    "yield",
+}
+
+
+def previous_js_token(chars: list[str], slash_index: int) -> str:
+    index = slash_index - 1
+    while index >= 0 and chars[index].isspace():
+        index -= 1
+    if index < 0:
+        return ""
+    if re.match(r"[A-Za-z0-9_$]", chars[index]):
+        end = index + 1
+        while index >= 0 and re.match(r"[A-Za-z0-9_$]", chars[index]):
+            index -= 1
+        return "".join(chars[index + 1 : end])
+    return chars[index]
+
+
+def is_probable_js_regex_start(chars: list[str], slash_index: int) -> bool:
+    previous = previous_js_token(chars, slash_index)
+    return previous in JS_REGEX_PREFIX_TOKENS or previous in JS_REGEX_PREFIX_KEYWORDS
+
+
+def mask_js_regex_literal(chars: list[str], start: int) -> int:
+    index = start
+    in_class = False
+    while index < len(chars):
+        c = chars[index]
+        if c == "\n":
+            return index
+        chars[index] = " "
+        if c == "\\":
+            index += 1
+            if index < len(chars) and chars[index] != "\n":
+                chars[index] = " "
+            index += 1
+            continue
+        if c == "[":
+            in_class = True
+        elif c == "]":
+            in_class = False
+        elif c == "/" and index != start and not in_class:
+            index += 1
+            while index < len(chars) and re.match(r"[A-Za-z0-9_$]", chars[index]):
+                chars[index] = " "
+                index += 1
+            return index
+        index += 1
+    return index
+
+
+def mask_js_ts_code(text: str) -> str:
+    chars = list(mask_c_like_code(text))
+    index = 0
+    while index < len(chars):
+        c = chars[index]
+        nxt = chars[index + 1] if index + 1 < len(chars) else ""
+        if c == "/" and nxt not in {"/", "*"} and is_probable_js_regex_start(chars, index):
+            index = mask_js_regex_literal(chars, index)
+            continue
+        index += 1
+    return "".join(chars)
+
+
 def mask_python_code(text: str) -> str:
     lines = [list(line) for line in text.splitlines(keepends=True)]
     try:
@@ -413,8 +601,10 @@ def mask_python_code(text: str) -> str:
 def mask_for_language(text: str, language: str) -> str:
     if language == "python":
         return mask_python_code(text)
-    if language in {"java", "javascript", "typescript"}:
+    if language == "java":
         return mask_c_like_code(text)
+    if language in {"javascript", "typescript"}:
+        return mask_js_ts_code(text)
     return text
 
 
@@ -518,20 +708,85 @@ def match_python_decorator(args: argparse.Namespace, root: Path, spec: PrimarySp
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             for deco in node.decorator_list:
                 target = deco.func if isinstance(deco, ast.Call) else deco
-                if name_matches(ast_call_name(target), decorator):
-                    return True, primary_payload(
+                actual_name = ast_call_name(target)
+                if name_matches(actual_name, decorator):
+                    payload = primary_payload(
                         "pass", "py.decorator.match@v1", spec, f"{rel_path}:{deco.lineno}", "matched", source_hash
                     )
+                    payload["matched_symbol"] = actual_name or decorator
+                    return True, payload
     return False, primary_payload("fail", "py.decorator.match@v1", spec, rel_path, "not_found", source_hash)
 
 
-def java_tokens(text: str) -> list[tuple[str, str, int]]:
+def literal_string_arg(call: ast.Call) -> str | None:
+    if not call.args:
+        return None
+    first_arg = call.args[0]
+    if isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str):
+        return first_arg.value
+    return None
+
+
+def fastapi_route_method(decorator_name: str | None) -> str | None:
+    if decorator_name is None:
+        return None
+    method = decorator_name.split(".")[-1]
+    return method if method in FASTAPI_ROUTE_METHODS else None
+
+
+def match_fastapi_route(args: argparse.Namespace, root: Path, spec: PrimarySpec) -> tuple[bool, dict[str, object]]:
+    decorator = param(args, "decorator")
+    if not decorator:
+        raise ProbeError("--decorator is required for fastapi.route@v1")
+    if fastapi_route_method(decorator) is None:
+        raise ProbeError("--decorator must end with a FastAPI route method for fastapi.route@v1")
+    route_path = getattr(args, "route_path", None)
+
+    source = resolve_inside(root, args.source_file, "source file")
+    rel_path = normalize_rel_path(source, root)
+    enforce_primary_path_scope(rel_path, spec)
+    source_hash = sha256_file(source)
+    tree = ast.parse(read_text(source), filename=rel_path)
+
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for deco in node.decorator_list:
+            if not isinstance(deco, ast.Call):
+                continue
+            actual_name = ast_call_name(deco.func)
+            actual_method = fastapi_route_method(actual_name)
+            if actual_method is None or not name_matches(actual_name, decorator):
+                continue
+            actual_route_path = literal_string_arg(deco)
+            if route_path and actual_route_path != route_path:
+                continue
+            payload = primary_payload(
+                "pass", "fastapi.route@v1", spec, f"{rel_path}:{deco.lineno}", "matched", source_hash
+            )
+            payload["matched_symbol"] = actual_name or decorator
+            payload["http_method"] = actual_method
+            if actual_route_path is not None:
+                payload["route_path"] = actual_route_path
+            return True, payload
+    return False, primary_payload("fail", "fastapi.route@v1", spec, rel_path, "not_found", source_hash)
+
+
+def c_like_tokens_from_masked(text: str, masked: str) -> list[tuple[str, str, int]]:
     tokens: list[tuple[str, str, int]] = []
-    token_re = re.compile(r"(?P<identifier>[A-Za-z_$][A-Za-z0-9_$]*)|(?P<symbol>[(){};=.,@])")
-    for match in token_re.finditer(mask_c_like_code(text)):
+    token_re = re.compile(r"(?P<identifier>[A-Za-z_$][A-Za-z0-9_$]*)|(?P<arrow>=>)|(?P<symbol>[(){};=.,@:\[\]<>?])")
+    for match in token_re.finditer(masked):
         kind = "identifier" if match.group("identifier") else "symbol"
         tokens.append((kind, match.group(0), line_for_offset(text, match.start())))
     return tokens
+
+
+def java_tokens(text: str) -> list[tuple[str, str, int]]:
+    return c_like_tokens_from_masked(text, mask_c_like_code(text))
+
+
+def js_ts_tokens(text: str) -> list[tuple[str, str, int]]:
+    return c_like_tokens_from_masked(text, mask_js_ts_code(text))
 
 
 def matching_java_paren(tokens: list[tuple[str, str, int]], open_index: int) -> int | None:
@@ -638,6 +893,111 @@ def match_java_call(args: argparse.Namespace, root: Path, spec: PrimarySpec) -> 
     return False, primary_payload("fail", "java.ast.call_match@v1", spec, rel_path, "not_found", source_hash)
 
 
+JS_DECLARATION_PREFIXES = {"async", "declare", "function", "get", "interface", "set"}
+JS_DECLARATION_FOLLOWERS = {"{", "=>", ":"}
+
+
+def is_probable_js_declaration(tokens: list[tuple[str, str, int]], callee_index: int, close_index: int) -> bool:
+    next_value = tokens[close_index + 1][1] if close_index + 1 < len(tokens) else None
+    prev_value = tokens[callee_index - 1][1] if callee_index > 0 else None
+    if prev_value in JS_DECLARATION_PREFIXES:
+        return True
+    if next_value in JS_DECLARATION_FOLLOWERS and prev_value != ".":
+        return True
+    return False
+
+
+def receiver_before_call(tokens: list[tuple[str, str, int]], callee_index: int) -> str | None:
+    if callee_index >= 2 and tokens[callee_index - 1][1] == "." and tokens[callee_index - 2][0] == "identifier":
+        return tokens[callee_index - 2][1]
+    if (
+        callee_index >= 3
+        and tokens[callee_index - 1][1] == "."
+        and tokens[callee_index - 2][1] == "?"
+        and tokens[callee_index - 3][0] == "identifier"
+    ):
+        return tokens[callee_index - 3][1]
+    return None
+
+
+def call_open_paren_index(
+    tokens: list[tuple[str, str, int]],
+    callee_index: int,
+    allow_type_arguments: bool,
+) -> tuple[int | None, bool]:
+    next_index = callee_index + 1
+    if next_index >= len(tokens):
+        return None, False
+    if tokens[next_index][1] == "(":
+        return next_index, False
+    if not allow_type_arguments or tokens[next_index][1] != "<":
+        return None, False
+
+    depth = 0
+    saw_type_token = False
+    for index in range(next_index, len(tokens)):
+        value = tokens[index][1]
+        if value in {";", "{", "}"}:
+            return None, False
+        if value == "<":
+            depth += 1
+        elif value == ">":
+            depth -= 1
+            if depth < 0:
+                return None, False
+            if depth == 0:
+                if not saw_type_token:
+                    return None, False
+                open_index = index + 1
+                if open_index < len(tokens) and tokens[open_index][1] == "(":
+                    return open_index, True
+                return None, False
+        elif depth > 0:
+            saw_type_token = True
+    return None, False
+
+
+def match_js_ts_call(
+    args: argparse.Namespace,
+    root: Path,
+    spec: PrimarySpec,
+    validator_id: str,
+) -> tuple[bool, dict[str, object]]:
+    callee = param(args, "callee") or param(args, "method")
+    if not callee:
+        raise ProbeError(f"--callee is required for {validator_id}")
+    receiver = param(args, "receiver")
+
+    source = resolve_inside(root, args.source_file, "source file")
+    rel_path = normalize_rel_path(source, root)
+    enforce_primary_path_scope(rel_path, spec)
+    source_hash = sha256_file(source)
+    tokens = js_ts_tokens(read_text(source))
+    allow_type_arguments = validator_id == "ts.ast.call_match@v2"
+
+    for index, (kind, value, line_no) in enumerate(tokens):
+        if kind != "identifier" or value != callee:
+            continue
+        open_index, matched_type_arguments = call_open_paren_index(tokens, index, allow_type_arguments)
+        if open_index is None:
+            continue
+        close_index = matching_java_paren(tokens, open_index)
+        if close_index is None:
+            continue
+        actual_receiver = receiver_before_call(tokens, index)
+        if receiver and actual_receiver != receiver:
+            continue
+        if actual_receiver is None and is_probable_js_declaration(tokens, index, close_index):
+            continue
+        matched_symbol = f"{actual_receiver}.{callee}" if actual_receiver else callee
+        payload = primary_payload("pass", validator_id, spec, f"{rel_path}:{line_no}", "matched", source_hash)
+        payload["matched_symbol"] = matched_symbol
+        if matched_type_arguments:
+            payload["type_arguments"] = True
+        return True, payload
+    return False, primary_payload("fail", validator_id, spec, rel_path, "not_found", source_hash)
+
+
 def primary_payload(
     status: str,
     validator_id: str,
@@ -724,8 +1084,12 @@ def run_primary_adapter(args: argparse.Namespace, root: Path, adapter: Validator
         matched, payload = match_python_call(args, root, spec)
     elif validator_id == "py.decorator.match@v1":
         matched, payload = match_python_decorator(args, root, spec)
+    elif validator_id == "fastapi.route@v1":
+        matched, payload = match_fastapi_route(args, root, spec)
     elif validator_id == "java.ast.call_match@v1":
         matched, payload = match_java_call(args, root, spec)
+    elif validator_id in {"js.ast.call_match@v1", "ts.ast.call_match@v1", "ts.ast.call_match@v2"}:
+        matched, payload = match_js_ts_call(args, root, spec, validator_id)
     elif validator_id == "any.runtime.trace@v1":
         matched, payload = match_runtime_trace(args, root, spec)
     else:
@@ -742,6 +1106,7 @@ def primary_probe_args(args: argparse.Namespace) -> dict[str, str | None]:
         "symbol": args.symbol,
         "annotation": args.annotation,
         "decorator": args.decorator,
+        "route_path": args.route_path,
         "callee": args.callee,
         "receiver": args.receiver,
         "method": args.method,
@@ -785,6 +1150,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--symbol", help="Generic symbol parameter alias.")
     parser.add_argument("--annotation", help="Annotation name without @.")
     parser.add_argument("--decorator", help="Python/TypeScript decorator name without @.")
+    parser.add_argument("--route-path", help="Expected literal route path for route validators.")
     parser.add_argument("--callee", help="Function or method callee name.")
     parser.add_argument("--receiver", help="Receiver symbol for receiver.method fallback patterns.")
     parser.add_argument("--method", help="Method symbol for receiver.method fallback patterns.")

@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from codeguide_paths import docs_root_for, resolve_project_root
+from codeguide_paths import docs_root_for, orchestration_root_for, resolve_project_root
 
 
 PASS = 0
@@ -119,6 +119,22 @@ def is_tool_identity(value: str | None) -> bool:
     return normalized in EVALUATOR_IDENTITIES or normalized.startswith("external-cli")
 
 
+def parse_blocked_review(entry: str) -> tuple[str, str]:
+    if "=" not in entry:
+        return entry.strip(), "blocked"
+    route, reason = entry.split("=", 1)
+    return route.strip(), reason.strip() or "blocked"
+
+
+def blocked_review_reasons(entries: list[str]) -> dict[str, str]:
+    reasons: dict[str, str] = {}
+    for entry in entries:
+        route, reason = parse_blocked_review(entry)
+        if route:
+            reasons[route] = reason
+    return reasons
+
+
 def is_relative_to_path(path: Path, base: Path) -> bool:
     try:
         path.relative_to(base)
@@ -139,13 +155,22 @@ def provenance_file_for_response(path: Path) -> Path:
 
 def validate_external_response_artifact(summary: dict[str, Any], path: Path, content: str, project_root: Path) -> list[str]:
     blockers: list[str] = []
-    docs_external_root = (docs_root_for(project_root) / "orchestration" / "external-cli").resolve(strict=False)
+    docs_orchestration_root = orchestration_root_for(project_root).resolve(strict=False)
     resolved_path = path.resolve(strict=True)
-    if not is_relative_to_path(resolved_path, docs_external_root):
+    try:
+        relative_path = resolved_path.relative_to(docs_orchestration_root)
+    except ValueError:
         blockers.append(
-            f"completed external Gemini/Claude review artifact must be under docs/orchestration/external-cli: {path}"
+            f"completed external Gemini/Claude review artifact must be under docs/orchestration/<task-id>/external-cli: {path}"
         )
         return blockers
+    relative_parts = relative_path.parts
+    if len(relative_parts) < 5 or relative_parts[0].startswith("_") or relative_parts[1] != "external-cli":
+        blockers.append(
+            f"completed external Gemini/Claude review artifact must be under docs/orchestration/<task-id>/external-cli/<plan-version>/<round>: {path}"
+        )
+        return blockers
+    docs_external_root = (docs_orchestration_root / relative_parts[0] / "external-cli").resolve(strict=False)
 
     evaluator = review_field(content, "evaluator")
     verdict = review_field(content, "verdict")
@@ -211,7 +236,7 @@ def validate_external_response_artifact(summary: dict[str, Any], path: Path, con
         summary["command_response_path"] = str(raw_path)
         if not is_relative_to_path(raw_path, docs_external_root):
             blockers.append(
-                f"completed external Gemini/Claude review command_response_path must be under docs/orchestration/external-cli: {request_file}"
+                f"completed external Gemini/Claude review command_response_path must be under docs/orchestration/<task-id>/external-cli: {request_file}"
             )
         if raw_path.parent != resolved_path.parent:
             blockers.append(
@@ -500,14 +525,31 @@ def close_review_blockers(
     artifacts = artifacts or {}
     required_set = set(required)
     completed_set = set(completed)
-    blocked_set = set(blocked)
+    blocked_reasons = blocked_review_reasons(blocked)
+    blocked_set = set(blocked_reasons)
+    for entry in blocked:
+        route, reason = parse_blocked_review(entry)
+        if not route:
+            blockers.append("--blocked-review route must be non-empty")
+        if not re.match(r"^[A-Za-z0-9._-]+$", reason):
+            blockers.append(f"--blocked-review reason must be an identifier: {entry}")
     unknown_routes = (required_set | completed_set | blocked_set) - REVIEW_ROUTES
     for route in sorted(unknown_routes):
         blockers.append(f"close review route is not supported: {route}")
     for route in sorted(required_set & blocked_set):
-        blockers.append(
-            f"required review route is blocked: {route}; stop without substituting another reviewer route"
-        )
+        reason = blocked_reasons.get(route, "blocked")
+        if reason == "platform_permission_blocked":
+            blockers.append(
+                f"required review route is blocked: {route} ({reason}); switch permission mode so external CLI escalations go to the user approval path"
+            )
+        elif reason == "blocked":
+            blockers.append(
+                f"required review route is blocked: {route}; stop without substituting another reviewer route"
+            )
+        else:
+            blockers.append(
+                f"required review route is blocked: {route} ({reason}); stop without substituting another reviewer route"
+            )
     for route in sorted(required_set - completed_set - blocked_set):
         blockers.append(f"required review route is missing: {route}")
     if EXTERNAL_REVIEW_ROUTE in completed_set:
@@ -640,6 +682,7 @@ def main(argv: list[str]) -> int:
         "completed_reviews": args.completed_review,
         "completed_review_artifacts": review_artifacts,
         "blocked_reviews": args.blocked_review,
+        "blocked_review_reasons": blocked_review_reasons(args.blocked_review),
         "review_provenance_required": True,
         "decision_types": args.decision_type,
         "writes_shadow_docs": False,

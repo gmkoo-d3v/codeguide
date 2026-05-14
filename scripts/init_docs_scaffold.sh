@@ -49,14 +49,14 @@ SHADOW_DIR="${DOCS_DIR}/shadow"
 DECISIONS_DIR="${DOCS_DIR}/decisions"
 PLAN_DIR="${DOCS_DIR}/plan"
 REPORT_DIR="${DOCS_DIR}/report"
-ORCHESTRATION_DIR="${DOCS_DIR}/orchestration"
-EXTERNAL_CLI_DIR="${ORCHESTRATION_DIR}/external-cli"
+ORCHESTRATION_DIR="$(codeguide_orchestration_root "$PROJECT_ROOT_ABS")"
+ORCHESTRATION_TEMPLATES_DIR="$(codeguide_orchestration_templates_dir "$PROJECT_ROOT_ABS")"
 POLICY_DIR="${DOCS_DIR}/policy"
 SHADOW_BUCKETS=(apps services packages infra data)
 SHADOW_ARCHIVE_DIRS=(_deprecated _obsolete)
 NOW_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
-mkdir -p "${TASK_DIR}" "${SHADOW_DIR}" "${DECISIONS_DIR}" "${PLAN_DIR}" "${REPORT_DIR}" "${ORCHESTRATION_DIR}" "${EXTERNAL_CLI_DIR}" "${POLICY_DIR}"
+mkdir -p "${TASK_DIR}" "${SHADOW_DIR}" "${DECISIONS_DIR}" "${PLAN_DIR}" "${REPORT_DIR}" "${ORCHESTRATION_DIR}" "${ORCHESTRATION_TEMPLATES_DIR}" "${POLICY_DIR}"
 
 for bucket in "${SHADOW_BUCKETS[@]}"; do
   mkdir -p "${SHADOW_DIR}/${bucket}"
@@ -110,12 +110,16 @@ validators:
     limitations: [does_not_prove_proxy_activation]
   js.ast.call_match@v1:
     evidence_type: code_call
-    validates: JavaScript call exists
-    limitations: [dynamic_dispatch_can_hide_target]
+    validates: JavaScript call syntax exists in .js, .jsx, .mjs, or .cjs source files
+    limitations: [does_not_prove_runtime_execution, dynamic_dispatch_can_hide_target, excludes_dependency_build_coverage_and_test_paths]
   ts.ast.call_match@v1:
     evidence_type: code_call
-    validates: TypeScript call exists
-    limitations: [does_not_prove_runtime_execution]
+    validates: TypeScript call syntax exists in .ts, .tsx, .mts, or .cts source files
+    limitations: [does_not_prove_runtime_execution, type_declaration_only_rejected, typescript_generic_call_syntax_unsupported_v1, excludes_dependency_build_coverage_and_test_paths]
+  ts.ast.call_match@v2:
+    evidence_type: code_call
+    validates: TypeScript call syntax exists in .ts, .tsx, .mts, or .cts source files, including generic call type arguments
+    limitations: [does_not_prove_runtime_execution, type_declaration_only_rejected, type_argument_syntax_only, excludes_dependency_build_coverage_and_test_paths]
   py.ast.call_match@v1:
     evidence_type: code_call
     validates: Python call exists
@@ -143,7 +147,7 @@ validators:
   fastapi.route@v1:
     evidence_type: annotation
     validates: FastAPI route decorator exists
-    limitations: [does_not_prove_app_mount]
+    limitations: [does_not_prove_app_mount, does_not_prove_dependency_success, decorator_syntax_only]
   fastapi.dependency@v1:
     evidence_type: code_reference
     validates: FastAPI dependency declaration exists
@@ -163,8 +167,8 @@ validators:
 ```yaml
 probe_coverage:
   probe_script: scripts/shadow_evidence_probe.py
-  implemented_primary_v1: [py.ast.call_match@v1, py.decorator.match@v1, java.ast.call_match@v1, java.annotation.match@v1, spring_boot.request_mapping@v1, spring_boot.cache_evict.annotation@v1, jpa.repository.save@v1, any.runtime.trace@v1]
-  parser_backed_now: [py.ast.call_match@v1, py.decorator.match@v1, java.ast.call_match@v1]
+  implemented_primary_v1: [py.ast.call_match@v1, py.decorator.match@v1, java.ast.call_match@v1, js.ast.call_match@v1, ts.ast.call_match@v1, ts.ast.call_match@v2, fastapi.route@v1, java.annotation.match@v1, spring_boot.request_mapping@v1, spring_boot.cache_evict.annotation@v1, jpa.repository.save@v1, any.runtime.trace@v1]
+  parser_backed_now: [py.ast.call_match@v1, py.decorator.match@v1, java.ast.call_match@v1, js.ast.call_match@v1, ts.ast.call_match@v1, ts.ast.call_match@v2, fastapi.route@v1]
   source_probe_only: [java.annotation.match@v1, spring_boot.request_mapping@v1, spring_boot.cache_evict.annotation@v1, jpa.repository.save@v1]
   unsupported_behavior: unsupported_no_infer_no_write_no_promote
 ```
@@ -223,10 +227,18 @@ regex_patterns:
   js.regex.call_named@v1:
     pattern: js-call-pattern
     target: code_call
-    allowed_paths: ["src/**", "app/**", "lib/**"]
-    excluded_paths: ["node_modules/**", "dist/**", "build/**"]
+    allowed_paths: ["src/**", "app/**", "lib/**", "server/**", "pages/**", "routes/**"]
+    excluded_paths: ["node_modules/**", "**/node_modules/**", "dist/**", "**/dist/**", "build/**", "**/build/**", "coverage/**", "**/coverage/**", "test/**", "**/test/**", "tests/**", "**/tests/**", "__tests__/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*"]
     validates: named JavaScript call syntax appears
     cannot_validate: [runtime_execution, async_completion]
+    max_promotion_risk: medium
+  ts.regex.call_named@v1:
+    pattern: ts-call-pattern
+    target: code_call
+    allowed_paths: ["src/**", "app/**", "lib/**", "server/**", "pages/**", "routes/**"]
+    excluded_paths: ["node_modules/**", "**/node_modules/**", "dist/**", "**/dist/**", "build/**", "**/build/**", "coverage/**", "**/coverage/**", "test/**", "**/test/**", "tests/**", "**/tests/**", "__tests__/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/*.d.ts"]
+    validates: named TypeScript call syntax appears
+    cannot_validate: [runtime_execution, async_completion, type_declaration_only]
     max_promotion_risk: medium
   py.regex.call_named@v1:
     pattern: py-call-pattern
@@ -302,6 +314,11 @@ rules:
         code_call:
           primary: js.ast.call_match@v1
           fallback: js.regex.call_named@v1
+          fallback_max_risk: medium
+      typescript:
+        code_call:
+          primary: ts.ast.call_match@v2
+          fallback: ts.regex.call_named@v1
           fallback_max_risk: medium
   security.auth:
     allowed_effect_types: [auth, auth_boundary, security_boundary]
@@ -511,7 +528,7 @@ write_if_missing "${REPORT_DIR}/LLM-REVIEW-template.md" '# PLAN-<task-id>-v1.0 r
 - last_updated:
 '
 
-write_if_missing "${ORCHESTRATION_DIR}/ORCH-template.md" '# ORCH-<task-id>
+write_if_missing "${ORCHESTRATION_TEMPLATES_DIR}/ORCH.md" '# ORCH-<task-id>
 
 - task_id:
 - execution_mode: supervisor_subagents | solo
@@ -532,6 +549,24 @@ write_if_missing "${ORCHESTRATION_DIR}/ORCH-template.md" '# ORCH-<task-id>
 - approval_ref:
 - approved_next_step:
 - last_updated:
+'
+
+write_if_missing "${ORCHESTRATION_TEMPLATES_DIR}/prompt.md" '# Orchestration Prompt
+
+- task_id:
+- purpose:
+- audience:
+- expected_output:
+
+## Why
+
+## What
+
+## How
+
+## Where
+
+## Verify
 '
 
 write_if_missing "${DOCS_DIR}/SECURITY-NOTES.md" '# Documentation Security Notes
@@ -569,6 +604,7 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 
 - Docs live under the project root `docs/...`.
 - The project root is the selected root; when invoked inside a git repository, scripts resolve it to the git root.
+- Reusable skills projects are the narrow exception: if the resolved git root is a skill package with `SKILL.md` metadata, has no local `docs/`, and its parent already has `docs/`, scripts may use the parent as the system-of-record root.
 - Do not create sibling `../docs`, `docs/<repo-name>`, or `docs/repos/<repo-name>` layers unless the user explicitly requests it.
 
 ## Shadow graph contract
@@ -601,9 +637,9 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 - Main thread is the supervising lead architect, not the primary implementer.
 - Run main-thread risk preflight before sub-agents, external reviewers, or ping-pong loops.
 - If preflight finds a safety, privacy, permission, destructive-action, external-side-effect, sensitive-data, scope, or user-decision gate, stop before delegation/external review until the user approves the exact next step.
-- Record `risk_preflight_status`, `risk_preflight_recorded_by`, `risk_preflight_summary`, `approval_required`, `approval_ref`, and `approved_next_step` in `orchestration/ORCH-<task-id>.md`.
+- Record `risk_preflight_status`, `risk_preflight_recorded_by`, `risk_preflight_summary`, `approval_required`, `approval_ref`, and `approved_next_step` in `orchestration/<task-id>/ORCH.md`.
 - `risk_preflight_recorded_by` must identify the main-thread supervising lead architect, not evaluator/tool identity; `approved` requires `approval_required: true`, a concrete `approval_ref`, and a concrete `approved_next_step`.
-- Active tasks require `orchestration/ORCH-<task-id>.md`.
+- Active tasks require `orchestration/<task-id>/ORCH.md`.
 - Default orchestration is `execution_mode: solo`; `execution_mode: supervisor_subagents` or delegated/external review fields are available only after the preflight gate allows delegation.
 - Orchestration rules still apply in `docs-only` work.
 - Record `primary_author_tool` and `review_mode` for plan review routing.
@@ -621,7 +657,7 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 
 - Create plan file first: project docs `plan/PLAN-<task-id>-v1.0.md`.
 - Write evaluator report files in project docs `report/` with evaluator labels: gemini | claude | codex.
-- External CLI handoff files live under `orchestration/external-cli/<MonDD_YYYY>/<task-id>/<plan-version>/<round>/`, for example `Apr29_2026/...`.
+- External CLI handoff files live under `orchestration/<task-id>/external-cli/<plan-version>/<round>/`.
 - External CLI requests use metadata plus `Why`, `What`, `How`, `Where`, `Verify`, then payload; the command itself must name an explicit command-output path before the wrapper captures sanitized Markdown and parser-compatible bullet fields.
 - Pass only a short instruction plus the request file path and command-output path to the CLI; do not rely on output paths mentioned only inside the prompt.
 - External CLI ping-pong runs only when explicitly approved with concrete approval provenance; if the user explicitly asks for sub-agent ping-pong review, interpret it as Codex sub-agent mode instead.
@@ -640,7 +676,7 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 - If a shadow doc exceeds 300 lines or stops narrowing the read path quickly, split it by concern instead of mirroring the underlying source file.
 - docs/task/TASK-*.md <= 220 lines
 - docs/decisions/decision-*.md <= 180 lines
-- docs/orchestration/ORCH-*.md <= 180 lines
+- docs/orchestration/<task-id>/ORCH.md <= 180 lines
 
 ## Freshness SLA
 
@@ -669,5 +705,4 @@ echo "  - ${DECISIONS_DIR}"
 echo "  - ${PLAN_DIR}"
 echo "  - ${REPORT_DIR}"
 echo "  - ${ORCHESTRATION_DIR}"
-echo "  - ${EXTERNAL_CLI_DIR}"
 echo "Template files are created only when missing."

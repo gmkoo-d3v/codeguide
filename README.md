@@ -24,6 +24,7 @@ LLM을 활용한 개발은 보통 다음 지점에서 쉽게 흔들립니다.
 - Change Scope Policy로 `docs-only`와 `code-or-runtime` 작업을 구분합니다
 - 위임이 실제로 발생한 경우 오케스트레이션 문서로 supervising agent, delegated sub-agents, owned scopes를 기록합니다
 - 프로젝트 문서는 선택한 프로젝트 루트 안의 `docs/`에 두어 backend/frontend/app 같은 하위 단위와 같은 루트에서 추적합니다
+- 단, 여러 CLI가 symlink로 공유하는 reusable skills project는 예외적으로 skill package root와 project-level `docs/` root가 분리될 수 있습니다
 
 ## 이 스킬이 하는 일
 
@@ -71,7 +72,7 @@ LLM을 활용한 개발은 보통 다음 지점에서 쉽게 흔들립니다.
 - validation agent: 테스트, 검증, handoff 확인
 - evaluator는 report 문서에서 `accept | revise | blocked` 판단을 남기는 평가 주체이지만, reviewer와 마찬가지로 승인형보다 결함 탐지형 태도를 기본으로 둡니다
 
-실제로 위임이 발생한 경우 이 역할 분리는 `docs/orchestration/ORCH-<task-id>.md`에 기록되며, `execution_mode`, `supervisor_agent`, `planner_agents`, `reviewer_agents`, `implementation_agents`, `validation_agents`, `owned_scopes`, `risk_preflight_status`, `approval_ref` 같은 필드를 통해 추적됩니다.
+실제로 위임이 발생한 경우 이 역할 분리는 `docs/orchestration/<task-id>/ORCH.md`에 기록되며, `execution_mode`, `supervisor_agent`, `planner_agents`, `reviewer_agents`, `implementation_agents`, `validation_agents`, `owned_scopes`, `risk_preflight_status`, `approval_ref` 같은 필드를 통해 추적됩니다.
 
 서브에이전트나 외부 evaluator를 시작하기 전에는 메인 supervising lead architect가 risk preflight를 먼저 수행해야 합니다. safety, privacy, permission, destructive action, external side effect, sensitive data, scope, user-decision gate가 있으면 delegation/external review를 시작하지 않고, 사용자가 승인한 정확한 다음 단계가 있어야 ping-pong을 시작합니다.
 
@@ -124,7 +125,7 @@ python3 "$CODEGUIDE_ROOT/scripts/shadow_user_decision_wrapper.py" --project-root
 bats "$CODEGUIDE_ROOT/tests/codeguide.bats"
 ```
 
-`run_external_plan_reviews.sh`는 기본적으로 CLI의 기본 모델을 사용하며, 사용자가 override를 주지 않으면 버전명 하드코딩을 피합니다. 긴 프롬프트는 shell 인자로 직접 넘기지 않고 `docs/orchestration/external-cli/<MonDD_YYYY>/<task-id>/<plan-version>/<round>/` (예: `Apr29_2026/...`) 아래의 Markdown request/response 파일로 왕복합니다. 외부 CLI에 넘기는 짧은 bash 명령은 stdout redirection, `tee`, 또는 `--output-last-message` 같은 도구별 옵션으로 절대 command-output 경로를 명시해야 하며, 프롬프트 안의 경로 언급만으로는 부족합니다. wrapper는 raw command output을 redaction한 뒤 durable response 파일로 저장하고 raw capture를 삭제합니다. request는 `Why/What/How/Where/Verify` 축을 포함하고, 유효한 response는 parser-friendly bullet field를 따르며, 보존 파일은 저장 전 민감값을 redaction합니다. 이 명령은 review report를 만든 뒤 멈추며, 다음 `PLAN-v1.1`을 자동 생성하지 않습니다.
+`run_external_plan_reviews.sh`는 기본적으로 CLI의 기본 모델을 사용하며, 사용자가 override를 주지 않으면 버전명 하드코딩을 피합니다. 긴 프롬프트는 shell 인자로 직접 넘기지 않고 `docs/orchestration/<task-id>/external-cli/<plan-version>/<round>/` 아래의 Markdown request/response 파일로 왕복합니다. 외부 CLI에 넘기는 짧은 bash 명령은 stdout redirection, `tee`, 또는 `--output-last-message` 같은 도구별 옵션으로 절대 command-output 경로를 명시해야 하며, 프롬프트 안의 경로 언급만으로는 부족합니다. wrapper는 raw command output을 redaction한 뒤 durable response 파일로 저장하고 raw capture를 삭제합니다. request는 `Why/What/How/Where/Verify` 축을 포함하고, 유효한 response는 parser-friendly bullet field를 따르며, 보존 파일은 저장 전 민감값을 redaction합니다. 이 명령은 review report를 만든 뒤 멈추며, 다음 `PLAN-v1.1`을 자동 생성하지 않습니다.
 
 이 명령들은 스킬 사용의 본질이라기보다, 스킬의 운영 상태를 재현하거나 검증하기 위한 보조 인터페이스입니다.
 

@@ -19,6 +19,7 @@ from typing import Any
 from codeguide_paths import docs_root_for, resolve_project_root
 from shadow_v2_gate_skeleton import (
     REVIEW_ROUTES,
+    blocked_review_reasons,
     close_review_blockers,
     completed_review_artifacts,
     review_route_blockers,
@@ -341,6 +342,7 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]]:
         "completed_reviews": args.completed_review,
         "completed_review_artifacts": review_artifacts,
         "blocked_reviews": args.blocked_review,
+        "blocked_review_reasons": blocked_review_reasons(args.blocked_review),
         "external_review_approval": {
             "requested": args.external_review_requested,
             "approval_ref": args.external_review_approval_ref or "",

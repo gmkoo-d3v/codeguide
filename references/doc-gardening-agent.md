@@ -51,7 +51,7 @@ Recommended command flow:
   - supervising lead architect delegates implementation to coding sub-agents with disjoint ownership only when explicitly requested and practical
   - supervising lead architect runs finish sync automatically with `--task-status done` (or `blocked`)
   - bootstrap `docs/plan/PLAN-<task-id>-v1.0.md` automatically when planning artifacts are needed
-  - maintain `orchestration/ORCH-<task-id>.md` for delegated or externally reviewed active tasks
+  - maintain `orchestration/<task-id>/ORCH.md` for delegated or externally reviewed active tasks
 - Ask user only when path/scope cannot be inferred with reasonable confidence.
 
 5-axis capture guidance:
