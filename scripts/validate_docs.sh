@@ -460,7 +460,6 @@ runtime_envelope_canonicalizations = {"none", "rfc8785", "custom-declared"}
 runtime_envelope_hash_input_scopes = {"whole_artifact", "selected_fields", "line_range"}
 runtime_envelope_canonical_output_types = {"text", "binary"}
 expiry_or_invalidation_rules = {"timestamp", "binding_change", "manual_revocation"}
-runtime_trace_hash_scope_support_message = "deterministic_runtime any.runtime.trace@v1 currently supports only whole_artifact artifact_hash verification"
 runtime_envelope_v1_matrix = {
     ("utf-8", "rfc8785", None, "whole_artifact"),
     ("utf-8", "rfc8785", None, "selected_fields"),
@@ -506,6 +505,10 @@ def sha256_file(value: Path) -> str:
     return "sha256:" + digest.hexdigest()
 
 
+def sha256_bytes(value: bytes) -> str:
+    return "sha256:" + hashlib.sha256(value).hexdigest()
+
+
 def source_path_from_ref(ref: str) -> str:
     head, sep, tail = ref.rpartition(":")
     if sep and tail.isdigit() and head and ("/" in head or "\\" in head or Path(head).suffix):
@@ -518,6 +521,26 @@ def line_from_ref(ref: str) -> str | None:
     if sep and tail.isdigit() and head and ("/" in head or "\\" in head or Path(head).suffix):
         return tail
     return None
+
+
+def is_json_media_type(value: str) -> bool:
+    media_type = value.split(";", 1)[0].strip().lower()
+    return media_type == "application/json" or media_type.endswith("+json")
+
+
+def parse_top_level_json_object_without_duplicates(text: str) -> dict:
+    def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict:
+        result = {}
+        for key, item in pairs:
+            if key in result:
+                raise ValueError("no duplicate top-level field names")
+            result[key] = item
+        return result
+
+    parsed = json.loads(text, object_pairs_hook=reject_duplicate_keys)
+    if not isinstance(parsed, dict):
+        raise ValueError("a JSON object")
+    return parsed
 
 
 def normalized_path(ref: str) -> Path:
@@ -579,6 +602,103 @@ def is_rendered_list(value: str) -> bool:
     return isinstance(parsed, list)
 
 
+def parsed_json_field(record_id: str, key: str, expected_type: type):
+    raw = fields.get(key, "")
+    if not raw:
+        issues.append(f"record {record_id}: deterministic_runtime record requires {key}")
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        issues.append(f"record {record_id}: deterministic_runtime {key} must be valid JSON")
+        return None
+    if not isinstance(parsed, expected_type):
+        issues.append(f"record {record_id}: deterministic_runtime {key} has the wrong JSON type")
+        return None
+    return parsed
+
+
+def runtime_trace_hash(record_id: str) -> str | None:
+    trace_ref = fields.get("evidence_trace_ref", "")
+    if not trace_ref:
+        return None
+    trace_path = Path(source_path_from_ref(trace_ref))
+    if not trace_path.is_absolute():
+        trace_path = project_root / trace_path
+    try:
+        raw_bytes = trace_path.resolve(strict=True).read_bytes()
+    except OSError as exc:
+        issues.append(f"record {record_id}: deterministic_runtime trace artifact could not be read: {exc}")
+        return None
+
+    hash_input_scope = fields.get("evidence_hash_input_scope", "")
+    if hash_input_scope == "whole_artifact":
+        return sha256_bytes(raw_bytes)
+
+    if hash_input_scope == "line_range":
+        line_range = parsed_json_field(record_id, "evidence_line_range", dict)
+        if line_range is None:
+            return None
+        start = line_range.get("start")
+        end = line_range.get("end")
+        if type(start) is not int or type(end) is not int or start < 1 or end < start:
+            issues.append(f"record {record_id}: deterministic_runtime evidence_line_range must satisfy integer start >= 1 and end >= start")
+            return None
+        matched_line = line_from_ref(trace_ref)
+        if matched_line is None:
+            issues.append(f"record {record_id}: deterministic_runtime evidence_trace_ref must be line-qualified for line_range scope")
+            return None
+        if not (start <= int(matched_line) <= end):
+            issues.append(f"record {record_id}: deterministic_runtime evidence_trace_ref line must be inside evidence_line_range")
+            return None
+        lines = raw_bytes.splitlines(keepends=True)
+        if end > len(lines):
+            issues.append(f"record {record_id}: deterministic_runtime evidence_line_range must be within trace artifact line count")
+            return None
+        return sha256_bytes(b"".join(lines[start - 1 : end]))
+
+    if hash_input_scope == "selected_fields":
+        selected_fields = parsed_json_field(record_id, "evidence_selected_fields", list)
+        if selected_fields is None:
+            return None
+        if not selected_fields or not all(isinstance(item, str) for item in selected_fields):
+            issues.append(f"record {record_id}: deterministic_runtime evidence_selected_fields must be a non-empty JSON list of strings")
+            return None
+        if len(set(selected_fields)) != len(selected_fields):
+            issues.append(f"record {record_id}: deterministic_runtime evidence_selected_fields must not contain duplicate field names")
+            return None
+        if any(not item or "." in item for item in selected_fields):
+            issues.append(f"record {record_id}: deterministic_runtime evidence_selected_fields supports only top-level field names")
+            return None
+        if line_from_ref(trace_ref) != "1":
+            issues.append(f"record {record_id}: deterministic_runtime evidence_trace_ref must point at the single JSON trace line for selected_fields scope")
+            return None
+        try:
+            text = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            issues.append(f"record {record_id}: deterministic_runtime selected_fields trace artifact must be utf-8: {exc}")
+            return None
+        lines = text.splitlines()
+        if len(lines) != 1:
+            issues.append(f"record {record_id}: deterministic_runtime selected_fields trace artifact must be a single JSON line")
+            return None
+        try:
+            parsed = parse_top_level_json_object_without_duplicates(text)
+        except json.JSONDecodeError as exc:
+            issues.append(f"record {record_id}: deterministic_runtime selected_fields trace artifact must be valid JSON: {exc}")
+            return None
+        except ValueError as exc:
+            issues.append(f"record {record_id}: deterministic_runtime selected_fields trace artifact must be {exc}")
+            return None
+        if any(field not in parsed for field in selected_fields):
+            issues.append(f"record {record_id}: deterministic_runtime selected_fields must exist in trace artifact")
+            return None
+        selected = {field: parsed[field] for field in selected_fields}
+        return sha256_bytes(json.dumps(selected, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+
+    return None
+
+
 def check_runtime_envelope(record_id: str) -> None:
     for key in (
         "evidence_artifact_media_type",
@@ -628,6 +748,26 @@ def check_runtime_envelope(record_id: str) -> None:
         issues.append(
             f"record {record_id}: deterministic_runtime evidence_ignored_nondeterministic_fields must be [] for whole_artifact unless canonicalization is custom-declared"
         )
+
+    if hash_input_scope == "selected_fields":
+        selected_fields = fields.get("evidence_selected_fields", "")
+        if not selected_fields:
+            issues.append(f"record {record_id}: deterministic_runtime record requires evidence_selected_fields")
+        elif not is_rendered_list(selected_fields):
+            issues.append(f"record {record_id}: deterministic_runtime evidence_selected_fields must be a JSON list")
+        if (
+            fields.get("evidence_ref") == "any.runtime.trace@v1"
+            and (encoding != "utf-8" or canonicalization != "rfc8785" or not is_json_media_type(fields.get("evidence_artifact_media_type", "")))
+        ):
+            issues.append(
+                f"record {record_id}: deterministic_runtime any.runtime.trace@v1 selected_fields requires JSON artifact_media_type, encoding utf-8, and canonicalization rfc8785"
+            )
+
+    if hash_input_scope == "line_range":
+        if not fields.get("evidence_line_range", ""):
+            issues.append(f"record {record_id}: deterministic_runtime record requires evidence_line_range")
+        if fields.get("evidence_ref") == "any.runtime.trace@v1" and not line_from_ref(fields.get("evidence_trace_ref", "")):
+            issues.append(f"record {record_id}: deterministic_runtime evidence_trace_ref must be line-qualified for line_range scope")
 
     canonical_output = canonical_output_type if canonicalization == "custom-declared" else None
     if (
@@ -754,8 +894,10 @@ def finish(line_no: int, end_id: str) -> None:
                 issues.append(f"record {open_id}: deterministic_runtime evidence_ref must reference runtime_trace")
             if fields.get("evidence_ref") not in implemented_validators:
                 issues.append(f"record {open_id}: deterministic_runtime evidence_ref must be implemented")
-            if fields.get("evidence_ref") == "any.runtime.trace@v1" and fields.get("evidence_hash_input_scope") != "whole_artifact":
-                issues.append(f"record {open_id}: {runtime_trace_hash_scope_support_message}")
+            if fields.get("evidence_ref") == "any.runtime.trace@v1" and sha_re.match(fields.get("evidence_artifact_hash", "")):
+                current_artifact_hash = runtime_trace_hash(open_id)
+                if current_artifact_hash and current_artifact_hash != fields["evidence_artifact_hash"]:
+                    issues.append(f"record {open_id}: deterministic_runtime evidence_artifact_hash must match scoped trace artifact")
             check_path_binding(open_id, "deterministic_runtime", fields.get("anchor_file", ""), fields.get("evidence_trace_ref", ""), fields.get("anchor_line"))
             check_probe_artifact(open_id, fields.get("evidence_probe_result_ref", ""), fields.get("evidence_probe_result_hash", ""), "deterministic_runtime")
         elif evidence_type == "user_decision":

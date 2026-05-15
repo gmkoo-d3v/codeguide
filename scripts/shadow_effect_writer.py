@@ -90,9 +90,6 @@ RUNTIME_ENVELOPE_CANONICALIZATIONS = {"none", "rfc8785", "custom-declared"}
 RUNTIME_ENVELOPE_HASH_INPUT_SCOPES = {"whole_artifact", "selected_fields", "line_range"}
 RUNTIME_ENVELOPE_CANONICAL_OUTPUT_TYPES = {"text", "binary"}
 EXPIRY_OR_INVALIDATION_RULES = {"timestamp", "binding_change", "manual_revocation"}
-RUNTIME_TRACE_HASH_SCOPE_SUPPORT_MESSAGE = (
-    "deterministic_runtime any.runtime.trace@v1 currently supports only whole_artifact artifact_hash verification"
-)
 RUNTIME_ENVELOPE_V1_MATRIX = {
     ("utf-8", "rfc8785", None, "whole_artifact"),
     ("utf-8", "rfc8785", None, "selected_fields"),
@@ -129,6 +126,10 @@ def current_hash(path: Path) -> str:
 
 def sha256_text(text: str) -> str:
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def sha256_bytes(value: bytes) -> str:
+    return "sha256:" + hashlib.sha256(value).hexdigest()
 
 
 def sha256_json(value: Any) -> str:
@@ -392,6 +393,99 @@ def resolve_trace_ref(project_root: Path, trace_ref: str) -> Path:
     return resolved
 
 
+def is_json_media_type(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    media_type = value.split(";", 1)[0].strip().lower()
+    return media_type == "application/json" or media_type.endswith("+json")
+
+
+def parse_top_level_json_object_without_duplicates(text: str) -> dict[str, Any]:
+    def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("no duplicate top-level field names")
+            result[key] = value
+        return result
+
+    parsed = json.loads(text, object_pairs_hook=reject_duplicate_keys)
+    if not isinstance(parsed, dict):
+        raise ValueError("a JSON object")
+    return parsed
+
+
+def runtime_trace_hash_bytes(evidence: dict[str, Any], trace_path: Path) -> bytes:
+    """Return bytes hashed for any.runtime.trace@v1.
+
+    Contract:
+    - whole_artifact hashes the exact file bytes.
+    - line_range hashes 1-based inclusive selected physical lines after
+      bytes.splitlines(keepends=True), preserving original line terminators.
+    - selected_fields hashes UTF-8 JSON from a single-line top-level object
+      containing exactly the requested top-level fields, encoded with
+      json.dumps(sort_keys=True, separators=(",", ":")).
+    """
+    hash_input_scope = evidence.get("hash_input_scope", "whole_artifact")
+    raw_bytes = trace_path.read_bytes()
+
+    if hash_input_scope == "whole_artifact":
+        return raw_bytes
+
+    if hash_input_scope == "line_range":
+        line_range = evidence.get("line_range")
+        if not isinstance(line_range, dict):
+            raise ValueError("deterministic_runtime evidence.line_range must contain integer start and end for line_range scope")
+        start = line_range.get("start")
+        end = line_range.get("end")
+        if type(start) is not int or type(end) is not int or start < 1 or end < start:
+            raise ValueError("deterministic_runtime evidence.line_range must satisfy integer start >= 1 and end >= start")
+        matched_line = line_from_ref(evidence.get("trace_ref"))
+        if matched_line is None:
+            raise ValueError("deterministic_runtime evidence.trace_ref must be line-qualified for line_range scope")
+        if not (start <= int(matched_line) <= end):
+            raise ValueError("deterministic_runtime evidence.trace_ref line must be inside evidence.line_range")
+        lines = raw_bytes.splitlines(keepends=True)
+        if end > len(lines):
+            raise ValueError("deterministic_runtime evidence.line_range must be within trace_ref file line count")
+        return b"".join(lines[start - 1 : end])
+
+    if hash_input_scope == "selected_fields":
+        if evidence.get("encoding") != "utf-8" or evidence.get("canonicalization") != "rfc8785":
+            raise ValueError("deterministic_runtime evidence.hash_input_scope selected_fields requires encoding utf-8 and canonicalization rfc8785")
+        if not is_json_media_type(evidence.get("artifact_media_type")):
+            raise ValueError("deterministic_runtime evidence.hash_input_scope selected_fields requires a JSON artifact_media_type")
+        if line_from_ref(evidence.get("trace_ref")) != "1":
+            raise ValueError("deterministic_runtime evidence.trace_ref must point at the single JSON trace line for selected_fields scope")
+        selected_fields = evidence.get("selected_fields")
+        if not isinstance(selected_fields, list) or not selected_fields or not all(isinstance(item, str) for item in selected_fields):
+            raise ValueError("deterministic_runtime evidence.selected_fields must be a non-empty list of strings for selected_fields scope")
+        if len(set(selected_fields)) != len(selected_fields):
+            raise ValueError("deterministic_runtime evidence.selected_fields must not contain duplicate field names")
+        if any(not item or "." in item for item in selected_fields):
+            raise ValueError("deterministic_runtime evidence.selected_fields supports only top-level field names")
+        text = raw_bytes.decode("utf-8")
+        lines = text.splitlines()
+        if len(lines) != 1:
+            raise ValueError("deterministic_runtime selected_fields trace artifact must be a single JSON line")
+        trace_event = evidence.get("probe_args", {}).get("trace_event") if isinstance(evidence.get("probe_args"), dict) else None
+        if not isinstance(trace_event, str) or trace_event != lines[0]:
+            raise ValueError("deterministic_runtime selected_fields trace_event must match the single JSON trace line")
+        try:
+            parsed = parse_top_level_json_object_without_duplicates(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"deterministic_runtime selected_fields trace artifact must be valid JSON: {exc}") from exc
+        except ValueError as exc:
+            raise ValueError(f"deterministic_runtime selected_fields trace artifact must be {exc}") from exc
+        missing = [field for field in selected_fields if field not in parsed]
+        if missing:
+            raise ValueError("deterministic_runtime selected_fields must exist in trace artifact")
+        selected = {field: parsed[field] for field in selected_fields}
+        return json.dumps(selected, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    raise ValueError("deterministic_runtime evidence.hash_input_scope must be whole_artifact, selected_fields, or line_range")
+
+
 def source_hash_blockers(evidence: dict[str, Any], project_root: Path) -> list[str]:
     blockers: list[str] = []
     source_hash = evidence.get("source_hash")
@@ -428,9 +522,9 @@ def trace_hash_blockers(evidence: dict[str, Any], project_root: Path) -> list[st
     except (OSError, ValueError) as exc:
         return [str(exc)]
     try:
-        if sha256_file(trace_path) != artifact_hash:
-            return ["deterministic_runtime evidence.artifact_hash must match current trace_ref file"]
-    except OSError as exc:
+        if sha256_bytes(runtime_trace_hash_bytes(evidence, trace_path)) != artifact_hash:
+            return ["deterministic_runtime evidence.artifact_hash must match current trace_ref scoped hash"]
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
         return [f"deterministic_runtime evidence.artifact_hash could not be verified: {exc}"]
     return []
 
@@ -452,8 +546,6 @@ def runtime_evidence_envelope_blockers(evidence: dict[str, Any]) -> list[str]:
         blockers.append("deterministic_runtime evidence.canonicalization must be none, rfc8785, or custom-declared")
     if hash_input_scope not in RUNTIME_ENVELOPE_HASH_INPUT_SCOPES:
         blockers.append("deterministic_runtime evidence.hash_input_scope must be whole_artifact, selected_fields, or line_range")
-    if evidence.get("ref") == "any.runtime.trace@v1" and hash_input_scope != "whole_artifact":
-        blockers.append(RUNTIME_TRACE_HASH_SCOPE_SUPPORT_MESSAGE)
     if not isinstance(ignored_fields, list) or not all(isinstance(item, str) for item in ignored_fields):
         blockers.append("deterministic_runtime evidence.ignored_nondeterministic_fields must be a list of strings")
 
@@ -467,6 +559,17 @@ def runtime_evidence_envelope_blockers(evidence: dict[str, Any]) -> list[str]:
         selected_fields = evidence.get("selected_fields")
         if not isinstance(selected_fields, list) or not selected_fields or not all(isinstance(item, str) for item in selected_fields):
             blockers.append("deterministic_runtime evidence.selected_fields must be a non-empty list of strings for selected_fields scope")
+        elif len(set(selected_fields)) != len(selected_fields):
+            blockers.append("deterministic_runtime evidence.selected_fields must not contain duplicate field names")
+        elif any(not item or "." in item for item in selected_fields):
+            blockers.append("deterministic_runtime evidence.selected_fields supports only top-level field names")
+        if evidence.get("ref") == "any.runtime.trace@v1":
+            if encoding != "utf-8" or canonicalization != "rfc8785" or not is_json_media_type(artifact_media_type):
+                blockers.append(
+                    "deterministic_runtime any.runtime.trace@v1 selected_fields requires JSON artifact_media_type, encoding utf-8, and canonicalization rfc8785"
+                )
+            if line_from_ref(evidence.get("trace_ref")) != "1":
+                blockers.append("deterministic_runtime evidence.trace_ref must point at the single JSON trace line for selected_fields scope")
 
     if hash_input_scope == "line_range":
         line_range = evidence.get("line_range")
@@ -482,6 +585,13 @@ def runtime_evidence_envelope_blockers(evidence: dict[str, Any]) -> list[str]:
             and (canonicalization == "none" or (canonicalization == "custom-declared" and canonical_output_type == "text"))
         ):
             blockers.append("deterministic_runtime evidence.hash_input_scope line_range requires textual output")
+        if evidence.get("ref") == "any.runtime.trace@v1":
+            matched_line = line_from_ref(evidence.get("trace_ref"))
+            if matched_line is None:
+                blockers.append("deterministic_runtime evidence.trace_ref must be line-qualified for line_range scope")
+            elif isinstance(line_range, dict) and type(line_range.get("start")) is int and type(line_range.get("end")) is int:
+                if not (line_range["start"] <= int(matched_line) <= line_range["end"]):
+                    blockers.append("deterministic_runtime evidence.trace_ref line must be inside evidence.line_range")
 
     if (
         hash_input_scope == "whole_artifact"
@@ -593,6 +703,15 @@ def build_probe_command(evidence: dict[str, Any], project_root: Path) -> tuple[l
         if trace_event is None:
             return [], ["deterministic_runtime evidence.probe_args.trace_event is required for any.runtime.trace@v1"]
         command.extend(["--trace-file", source_path_from_ref(str(trace_ref)), "--trace-event", trace_event])
+        hash_input_scope = evidence.get("hash_input_scope")
+        if isinstance(hash_input_scope, str) and hash_input_scope:
+            command.extend(["--hash-input-scope", hash_input_scope])
+        if hash_input_scope == "line_range" and isinstance(evidence.get("line_range"), dict):
+            line_range = evidence["line_range"]
+            command.extend(["--line-range-start", str(line_range.get("start")), "--line-range-end", str(line_range.get("end"))])
+        if hash_input_scope == "selected_fields" and isinstance(evidence.get("selected_fields"), list):
+            for field_name in evidence["selected_fields"]:
+                command.extend(["--selected-field", str(field_name)])
         return command, []
 
     return [], ["probe rerun is only supported for deterministic evidence"]
@@ -846,7 +965,7 @@ def probe_result_blockers(
                 ["source_hash", "validator_kind", "parser_backed", "parser_identity", "parser_content_hash"]
             )
         if evidence.get("type") == "deterministic_runtime":
-            compare_fields.extend(["trace_ref", "artifact_hash"])
+            compare_fields.extend(["trace_ref", "artifact_hash", "hash_input_scope", "line_range", "selected_fields"])
         for field_name in compare_fields:
             if field_name in rerun_result and probe_result.get(field_name) != rerun_result.get(field_name):
                 blockers.append(f"probe_result.{field_name} must match writer probe rerun")

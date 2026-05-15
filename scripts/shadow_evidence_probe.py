@@ -95,7 +95,7 @@ class AdapterRegistry:
             return None
         return self._adapters.get(validator_id)
 
-    def validate(self, probe_args: dict[str, str | None], root: Path) -> tuple[bool, dict[str, object]] | None:
+    def validate(self, probe_args: dict[str, object], root: Path) -> tuple[bool, dict[str, object]] | None:
         adapter = self.get(probe_args.get("validator_id"))
         if adapter is None:
             return None
@@ -436,6 +436,10 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return f"sha256:{digest.hexdigest()}"
+
+
+def sha256_bytes(value: bytes) -> str:
+    return f"sha256:{hashlib.sha256(value).hexdigest()}"
 
 
 def line_for_offset(text: str, offset: int) -> int:
@@ -1299,18 +1303,110 @@ def match_runtime_trace(args: argparse.Namespace, root: Path, spec: PrimarySpec)
         raise ProbeError("--trace-event is required for any.runtime.trace@v1")
     trace = resolve_inside(root, args.trace_file, "trace file")
     rel_path = normalize_rel_path(trace, root)
-    artifact_hash = sha256_file(trace)
+    raw_bytes = trace.read_bytes()
+    text = raw_bytes.decode("utf-8", errors="replace")
+    lines = text.splitlines()
 
-    for line_no, line in enumerate(read_text(trace).splitlines(), start=1):
+    matched_line_no = None
+    for line_no, line in enumerate(lines, start=1):
         if line == args.trace_event:
-            payload = primary_payload("pass", "any.runtime.trace@v1", spec, f"{rel_path}:{line_no}", "matched")
-            payload["trace_ref"] = f"{rel_path}:{line_no}"
-            payload["artifact_hash"] = artifact_hash
-            return True, payload
+            matched_line_no = line_no
+            break
+
+    artifact_hash = runtime_trace_artifact_hash(args, raw_bytes, lines, matched_line_no)
+    if matched_line_no is not None:
+        trace_ref = f"{rel_path}:{matched_line_no}"
+        payload = primary_payload("pass", "any.runtime.trace@v1", spec, trace_ref, "matched")
+        payload["trace_ref"] = trace_ref
+        payload["artifact_hash"] = artifact_hash
+        payload["hash_input_scope"] = args.hash_input_scope
+        add_runtime_scope_payload(args, payload)
+        return True, payload
     payload = primary_payload("fail", "any.runtime.trace@v1", spec, rel_path, "not_found")
     payload["trace_ref"] = rel_path
     payload["artifact_hash"] = artifact_hash
+    payload["hash_input_scope"] = args.hash_input_scope
+    add_runtime_scope_payload(args, payload)
     return False, payload
+
+
+def runtime_trace_artifact_hash(
+    args: argparse.Namespace,
+    raw_bytes: bytes,
+    lines: list[str],
+    matched_line_no: int | None,
+) -> str:
+    """Return scoped any.runtime.trace@v1 artifact hash.
+
+    Contract matches shadow_effect_writer.py: whole_artifact hashes exact file
+    bytes; line_range hashes 1-based inclusive physical lines with original
+    terminators preserved; selected_fields hashes a single-line top-level JSON
+    object with json.dumps(sort_keys=True, separators=(",", ":")).
+    """
+    if args.hash_input_scope == "whole_artifact":
+        return sha256_bytes(raw_bytes)
+
+    if args.hash_input_scope == "line_range":
+        start = args.line_range_start
+        end = args.line_range_end
+        if start is None or end is None or start < 1 or end < start:
+            raise ProbeError("--line-range-start and --line-range-end must satisfy start >= 1 and end >= start")
+        if matched_line_no is not None and not (start <= matched_line_no <= end):
+            raise ProbeError("matched trace line must be inside the declared line_range")
+        byte_lines = raw_bytes.splitlines(keepends=True)
+        if end > len(byte_lines):
+            raise ProbeError("line_range must be within trace file line count")
+        return sha256_bytes(b"".join(byte_lines[start - 1 : end]))
+
+    if args.hash_input_scope == "selected_fields":
+        selected_fields = args.selected_field or []
+        if not selected_fields:
+            raise ProbeError("--selected-field is required for selected_fields scope")
+        if len(set(selected_fields)) != len(selected_fields):
+            raise ProbeError("--selected-field must not contain duplicates")
+        if any(not field or "." in field for field in selected_fields):
+            raise ProbeError("selected_fields scope supports only top-level field names")
+        if matched_line_no != 1 or len(lines) != 1 or lines[0] != args.trace_event:
+            raise ProbeError("selected_fields scope requires the matched trace line to be the single JSON artifact line")
+        try:
+            text = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ProbeError(f"selected_fields scope requires UTF-8 JSON: {exc}") from exc
+        try:
+            parsed = parse_top_level_json_object_without_duplicates(text)
+        except json.JSONDecodeError as exc:
+            raise ProbeError(f"selected_fields scope requires valid JSON: {exc}") from exc
+        except ValueError as exc:
+            raise ProbeError(f"selected_fields scope requires {exc}") from exc
+        missing = [field for field in selected_fields if field not in parsed]
+        if missing:
+            raise ProbeError("selected_fields scope requires every selected field to exist")
+        selected = {field: parsed[field] for field in selected_fields}
+        return sha256_bytes(json.dumps(selected, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+
+    raise ProbeError("--hash-input-scope must be whole_artifact, line_range, or selected_fields")
+
+
+def parse_top_level_json_object_without_duplicates(text: str) -> dict[str, object]:
+    def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("no duplicate top-level field names")
+            result[key] = value
+        return result
+
+    parsed = json.loads(text, object_pairs_hook=reject_duplicate_keys)
+    if not isinstance(parsed, dict):
+        raise ValueError("a JSON object")
+    return parsed
+
+
+def add_runtime_scope_payload(args: argparse.Namespace, payload: dict[str, object]) -> None:
+    if args.hash_input_scope == "line_range":
+        payload["line_range"] = {"start": args.line_range_start, "end": args.line_range_end}
+    if args.hash_input_scope == "selected_fields":
+        payload["selected_fields"] = args.selected_field or []
 
 
 def run_primary_adapter(args: argparse.Namespace, root: Path, adapter: ValidatorAdapter) -> tuple[bool, dict[str, object]]:
@@ -1337,12 +1433,16 @@ def run_primary_adapter(args: argparse.Namespace, root: Path, adapter: Validator
     return matched, payload
 
 
-def primary_probe_args(args: argparse.Namespace) -> dict[str, str | None]:
+def primary_probe_args(args: argparse.Namespace) -> dict[str, object]:
     return {
         "validator_id": args.validator_id,
         "source_file": args.source_file,
         "trace_file": args.trace_file,
         "trace_event": args.trace_event,
+        "hash_input_scope": args.hash_input_scope,
+        "line_range_start": args.line_range_start,
+        "line_range_end": args.line_range_end,
+        "selected_field": args.selected_field,
         "symbol": args.symbol,
         "annotation": args.annotation,
         "decorator": args.decorator,
@@ -1387,6 +1487,19 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--source-file", help="Source file relative to project root, or absolute under it.")
     parser.add_argument("--trace-file", help="Trace/log file relative to project root, or absolute under it.")
     parser.add_argument("--trace-event", help="Exact trace/log line to match.")
+    parser.add_argument(
+        "--hash-input-scope",
+        choices=("whole_artifact", "line_range", "selected_fields"),
+        default="whole_artifact",
+        help="Trace artifact bytes to hash for any.runtime.trace@v1.",
+    )
+    parser.add_argument("--line-range-start", type=int, help="1-based inclusive start line for line_range hashing.")
+    parser.add_argument("--line-range-end", type=int, help="1-based inclusive end line for line_range hashing.")
+    parser.add_argument(
+        "--selected-field",
+        action="append",
+        help="Top-level JSON field to include for selected_fields hashing. Repeat for multiple fields.",
+    )
     parser.add_argument("--symbol", help="Generic symbol parameter alias.")
     parser.add_argument("--annotation", help="Annotation name without @.")
     parser.add_argument("--decorator", help="Python/TypeScript decorator name without @.")
