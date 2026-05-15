@@ -691,6 +691,178 @@ EOF
   [[ "$output" == *"FastAPI route method"* ]]
 }
 
+@test "shadow_evidence_probe fastapi.dependency@v1 parser-backed matcher validates explicit route dependencies" {
+  mkdir -p "$TEST_PROJECT/src" "$TEST_PROJECT/tests"
+  cat > "$TEST_PROJECT/src/routes.py" <<'EOF'
+from typing import Annotated
+from fastapi import Depends, FastAPI
+
+app = FastAPI()
+
+def get_current_user():
+    return "user"
+
+def audit_dependency():
+    return None
+
+@app.get("/default")
+def default_dependency(user = Depends(get_current_user)):
+    return {"user": user}
+
+@app.post("/annotated")
+def annotated_dependency(user: Annotated[str, Depends(get_current_user)]):
+    return {"user": user}
+
+@app.delete("/decorator", dependencies=[Depends(audit_dependency)])
+def decorator_dependency():
+    return {"ok": True}
+EOF
+  cat > "$TEST_PROJECT/src/plain_depends.py" <<'EOF'
+from fastapi import Depends
+
+def get_current_user():
+    return "user"
+
+def helper(user = Depends(get_current_user)):
+    return user
+EOF
+  cat > "$TEST_PROJECT/src/non_fastapi_route.py" <<'EOF'
+from fastapi import Depends
+
+class Client:
+    def get(self, path):
+        return lambda fn: fn
+
+client = Client()
+
+def get_current_user():
+    return "user"
+
+@client.get("/not-fastapi")
+def helper(user = Depends(get_current_user)):
+    return user
+EOF
+  cat > "$TEST_PROJECT/src/local_fastapi_names.py" <<'EOF'
+class FastAPI:
+    def get(self, path):
+        return lambda fn: fn
+
+def Depends(dependency):
+    return dependency
+
+app = FastAPI()
+
+def get_current_user():
+    return "user"
+
+@app.get("/local")
+def helper(user = Depends(get_current_user)):
+    return user
+EOF
+  cat > "$TEST_PROJECT/tests/routes.py" <<'EOF'
+from fastapi import Depends
+
+@app.get("/test-only")
+def test_dependency(user = Depends(get_current_user)):
+    return user
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "fastapi.dependency@v1" \
+    --source-file "src/routes.py"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"validator_id":"fastapi.dependency@v1"'* ]]
+  [[ "$output" == *'"evidence_type":"code_reference"'* ]]
+  [[ "$output" == *'"validator_kind":"ast"'* ]]
+  [[ "$output" == *'"parser_backed":true'* ]]
+  [[ "$output" == *'"matched_symbol":"get_current_user"'* ]]
+  [[ "$output" == *'"parser_identity":"shadow_evidence_probe.py:fastapi.dependency@v1:ast"'* ]]
+
+  cat > "$TEST_PROJECT/src/routes.py" <<'EOF'
+from typing import Annotated
+from fastapi import Depends, FastAPI
+
+app = FastAPI()
+
+def get_current_user():
+    return "user"
+
+@app.post("/annotated")
+def annotated_dependency(user: Annotated[str, Depends(get_current_user)]):
+    return {"user": user}
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "fastapi.dependency@v1" \
+    --source-file "src/routes.py"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"matched_symbol":"get_current_user"'* ]]
+
+  cat > "$TEST_PROJECT/src/routes.py" <<'EOF'
+from fastapi import Depends, FastAPI
+
+app = FastAPI()
+
+def audit_dependency():
+    return None
+
+@app.delete("/decorator", dependencies=[Depends(audit_dependency)])
+def decorator_dependency():
+    return {"ok": True}
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "fastapi.dependency@v1" \
+    --source-file "src/routes.py"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"matched_symbol":"audit_dependency"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "fastapi.dependency@v1" \
+    --source-file "src/plain_depends.py"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "fastapi.dependency@v1" \
+    --source-file "src/local_fastapi_names.py"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "fastapi.dependency@v1" \
+    --source-file "src/non_fastapi_route.py"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "fastapi.dependency@v1" \
+    --source-file "tests/routes.py"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *'"status":"error"'* ]]
+  [[ "$output" == *"primary validator"* ]]
+}
+
 @test "shadow_evidence_probe express.route@v1 tier1 parser-backed route matcher validates literal routes and rejects non-routes" {
   mkdir -p "$TEST_PROJECT/src" "$TEST_PROJECT/tests"
   cat > "$TEST_PROJECT/src/routes.js" <<'EOF'
@@ -5145,7 +5317,7 @@ EOF
   [[ "$output" == *'"status":"ok"'* ]]
   [[ "$output" == *'"adapter_specs"'* ]]
 
-  perl -0pi -e 's/(implemented_primary_v1: \[[^\]]*any\.runtime\.trace\@v1)/$1, fastapi.dependency\@v1/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
+  perl -0pi -e 's/(implemented_primary_v1: \[[^\]]*any\.runtime\.trace\@v1)/$1, sql.write_call\@v1/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
   run python3 "$SHADOW_POLICY_LOADER" --policy-dir "$DOCS_ROOT/policy" --adapter-module "$SHADOW_PROBE" --check-parity
   [ "$status" -ne 0 ]
   [[ "$output" == *"implemented_primary_v1 id must be implemented by shadow_evidence_probe.py"* ]]
@@ -5176,7 +5348,7 @@ EOF
 }
 
 @test "validate_docs strict fails when catalog claims unimplemented probe primary" {
-  perl -0pi -e 's/(implemented_primary_v1: \[[^\]]*any\.runtime\.trace\@v1)/$1, fastapi.dependency\@v1/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
+  perl -0pi -e 's/(implemented_primary_v1: \[[^\]]*any\.runtime\.trace\@v1)/$1, sql.write_call\@v1/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]

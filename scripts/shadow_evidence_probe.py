@@ -58,6 +58,13 @@ class ValidatorAdapter:
     spec: PrimarySpec
 
 
+@dataclass(frozen=True)
+class FastApiBindings:
+    constructor_names: frozenset[str]
+    depends_names: frozenset[str]
+    module_names: frozenset[str]
+
+
 JS_EXTENSIONS = (".js", ".jsx", ".mjs", ".cjs")
 TS_EXTENSIONS = (".ts", ".tsx", ".mts", ".cts")
 TS_REJECTED_EXTENSIONS = (".d.ts",)
@@ -261,6 +268,18 @@ PRIMARY_ADAPTERS: tuple[ValidatorAdapter, ...] = (
         "fastapi.route@v1",
         PrimarySpec(
             "annotation",
+            "ast",
+            True,
+            "high",
+            "python",
+            PY_SOURCE_ALLOWED_PATHS,
+            PY_SOURCE_EXCLUDED_PATHS,
+        ),
+    ),
+    ValidatorAdapter(
+        "fastapi.dependency@v1",
+        PrimarySpec(
+            "code_reference",
             "ast",
             True,
             "high",
@@ -769,6 +788,86 @@ def fastapi_route_method(decorator_name: str | None) -> str | None:
     return method if method in FASTAPI_ROUTE_METHODS else None
 
 
+def fastapi_route_receiver_name(decorator_name: str | None) -> str | None:
+    if decorator_name is None or "." not in decorator_name:
+        return None
+    return decorator_name.rsplit(".", 1)[0]
+
+
+def fastapi_import_bindings(tree: ast.AST) -> FastApiBindings:
+    constructor_names: set[str] = set()
+    depends_names: set[str] = set()
+    module_names: set[str] = set()
+
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "fastapi":
+                    module_names.add(alias.asname or alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module == "fastapi":
+            for alias in node.names:
+                local_name = alias.asname or alias.name
+                if alias.name in {"FastAPI", "APIRouter"}:
+                    constructor_names.add(local_name)
+                elif alias.name == "Depends":
+                    depends_names.add(local_name)
+
+    return FastApiBindings(
+        frozenset(constructor_names),
+        frozenset(depends_names),
+        frozenset(module_names),
+    )
+
+
+def is_fastapi_constructor_name(name: str | None, bindings: FastApiBindings) -> bool:
+    if name is None:
+        return False
+    if name in bindings.constructor_names:
+        return True
+    if "." not in name:
+        return False
+    module_name, constructor = name.rsplit(".", 1)
+    return module_name in bindings.module_names and constructor in {"FastAPI", "APIRouter"}
+
+
+def is_fastapi_depends_name(name: str | None, bindings: FastApiBindings) -> bool:
+    if name is None:
+        return False
+    if name in bindings.depends_names:
+        return True
+    if "." not in name:
+        return False
+    module_name, dependency = name.rsplit(".", 1)
+    return module_name in bindings.module_names and dependency == "Depends"
+
+
+def fastapi_route_receivers(tree: ast.AST, bindings: FastApiBindings) -> set[str]:
+    receivers: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+            constructor = ast_call_name(node.value.func)
+            if is_fastapi_constructor_name(constructor, bindings):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        receivers.add(target.id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and isinstance(node.value, ast.Call):
+            constructor = ast_call_name(node.value.func)
+            if is_fastapi_constructor_name(constructor, bindings):
+                receivers.add(node.target.id)
+    return receivers
+
+
+def fastapi_route_decorator_name(decorator: ast.AST, route_receivers: set[str] | None = None) -> str | None:
+    if not isinstance(decorator, ast.Call):
+        return None
+    actual_name = ast_call_name(decorator.func)
+    if fastapi_route_method(actual_name) is None:
+        return None
+    if route_receivers is not None and fastapi_route_receiver_name(actual_name) not in route_receivers:
+        return None
+    return actual_name
+
+
 def match_fastapi_route(args: argparse.Namespace, root: Path, spec: PrimarySpec) -> tuple[bool, dict[str, object]]:
     decorator = param(args, "decorator")
     if not decorator:
@@ -805,6 +904,101 @@ def match_fastapi_route(args: argparse.Namespace, root: Path, spec: PrimarySpec)
                 payload["route_path"] = actual_route_path
             return True, payload
     return False, primary_payload("fail", "fastapi.route@v1", spec, rel_path, "not_found", source_hash)
+
+
+def is_depends_call(node: ast.AST | None, bindings: FastApiBindings) -> bool:
+    return isinstance(node, ast.Call) and is_fastapi_depends_name(ast_call_name(node.func), bindings)
+
+
+def simple_depends_target(depends_call: ast.Call) -> str:
+    if depends_call.args:
+        target = ast_call_name(depends_call.args[0])
+        if target:
+            return target
+    dependency = next((kw.value for kw in depends_call.keywords if kw.arg == "dependency"), None)
+    if dependency is not None:
+        target = ast_call_name(dependency)
+        if target:
+            return target
+    return ast_call_name(depends_call.func) or "Depends"
+
+
+def annotated_depends_call(annotation: ast.AST | None, bindings: FastApiBindings) -> ast.Call | None:
+    if not isinstance(annotation, ast.Subscript):
+        return None
+    if not name_matches(ast_call_name(annotation.value), "Annotated"):
+        return None
+
+    slice_value = annotation.slice
+    candidates = slice_value.elts if isinstance(slice_value, ast.Tuple) else [slice_value]
+    for candidate in candidates[1:]:
+        if is_depends_call(candidate, bindings):
+            return candidate
+    return None
+
+
+def decorator_dependency_call(decorator: ast.Call, bindings: FastApiBindings) -> ast.Call | None:
+    for keyword in decorator.keywords:
+        if keyword.arg != "dependencies":
+            continue
+        values = keyword.value.elts if isinstance(keyword.value, (ast.List, ast.Tuple)) else [keyword.value]
+        for value in values:
+            if is_depends_call(value, bindings):
+                return value
+    return None
+
+
+def route_function_dependency_call(
+    node: ast.FunctionDef | ast.AsyncFunctionDef, route_receivers: set[str], bindings: FastApiBindings
+) -> ast.Call | None:
+    route_decorators = [deco for deco in node.decorator_list if fastapi_route_decorator_name(deco, route_receivers)]
+    if not route_decorators:
+        return None
+
+    for decorator in route_decorators:
+        dependency = decorator_dependency_call(decorator, bindings)
+        if dependency is not None:
+            return dependency
+
+    positional_defaults = [None] * (len(node.args.args) - len(node.args.defaults)) + list(node.args.defaults)
+    for arg, default in zip(node.args.args, positional_defaults):
+        if is_depends_call(default, bindings):
+            return default
+        annotated_dependency = annotated_depends_call(arg.annotation, bindings)
+        if annotated_dependency is not None:
+            return annotated_dependency
+
+    for arg, default in zip(node.args.kwonlyargs, node.args.kw_defaults):
+        if is_depends_call(default, bindings):
+            return default
+        annotated_dependency = annotated_depends_call(arg.annotation, bindings)
+        if annotated_dependency is not None:
+            return annotated_dependency
+
+    return None
+
+
+def match_fastapi_dependency(args: argparse.Namespace, root: Path, spec: PrimarySpec) -> tuple[bool, dict[str, object]]:
+    source = resolve_inside(root, args.source_file, "source file")
+    rel_path = normalize_rel_path(source, root)
+    enforce_primary_path_scope(rel_path, spec)
+    source_hash = sha256_file(source)
+    tree = ast.parse(read_text(source), filename=rel_path)
+    bindings = fastapi_import_bindings(tree)
+    route_receivers = fastapi_route_receivers(tree, bindings)
+
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        dependency = route_function_dependency_call(node, route_receivers, bindings)
+        if dependency is None:
+            continue
+        payload = primary_payload(
+            "pass", "fastapi.dependency@v1", spec, f"{rel_path}:{dependency.lineno}", "matched", source_hash
+        )
+        payload["matched_symbol"] = simple_depends_target(dependency)
+        return True, payload
+    return False, primary_payload("fail", "fastapi.dependency@v1", spec, rel_path, "not_found", source_hash)
 
 
 def c_like_tokens_from_masked(text: str, masked: str) -> list[tuple[str, str, int]]:
@@ -1418,6 +1612,8 @@ def run_primary_adapter(args: argparse.Namespace, root: Path, adapter: Validator
         matched, payload = match_python_decorator(args, root, spec)
     elif validator_id == "fastapi.route@v1":
         matched, payload = match_fastapi_route(args, root, spec)
+    elif validator_id == "fastapi.dependency@v1":
+        matched, payload = match_fastapi_dependency(args, root, spec)
     elif validator_id == "java.ast.call_match@v1":
         matched, payload = match_java_call(args, root, spec)
     elif validator_id in {"js.ast.call_match@v1", "ts.ast.call_match@v1", "ts.ast.call_match@v2"}:
