@@ -1003,9 +1003,16 @@ def match_fastapi_dependency(args: argparse.Namespace, root: Path, spec: Primary
 
 def c_like_tokens_from_masked(text: str, masked: str) -> list[tuple[str, str, int]]:
     tokens: list[tuple[str, str, int]] = []
-    token_re = re.compile(r"(?P<identifier>[A-Za-z_$][A-Za-z0-9_$]*)|(?P<arrow>=>)|(?P<symbol>[(){};=.,@:\[\]<>?])")
+    token_re = re.compile(
+        r"(?P<identifier>[A-Za-z_$][A-Za-z0-9_$]*)|(?P<number>\d+(?:\.\d+)?)|(?P<arrow>=>)|(?P<symbol>[(){};=.,@:\[\]<>?])"
+    )
     for match in token_re.finditer(masked):
-        kind = "identifier" if match.group("identifier") else "symbol"
+        if match.group("identifier"):
+            kind = "identifier"
+        elif match.group("number"):
+            kind = "number"
+        else:
+            kind = "symbol"
         tokens.append((kind, match.group(0), line_for_offset(text, match.start())))
     return tokens
 
@@ -1378,6 +1385,143 @@ def direct_receiver_before_call(tokens: list[tuple[str, str, int]], callee_index
     return None
 
 
+def split_top_level_token_args(
+    tokens: list[tuple[str, str, int]], open_index: int, close_index: int
+) -> list[list[tuple[str, str, int]]]:
+    args: list[list[tuple[str, str, int]]] = []
+    current: list[tuple[str, str, int]] = []
+    paren_depth = 0
+    bracket_depth = 0
+    brace_depth = 0
+
+    for token in tokens[open_index + 1 : close_index]:
+        value = token[1]
+        if value == "," and paren_depth == 0 and bracket_depth == 0 and brace_depth == 0:
+            args.append(current)
+            current = []
+            continue
+
+        current.append(token)
+        if value == "(":
+            paren_depth += 1
+        elif value == ")" and paren_depth > 0:
+            paren_depth -= 1
+        elif value == "[":
+            bracket_depth += 1
+        elif value == "]" and bracket_depth > 0:
+            bracket_depth -= 1
+        elif value == "{":
+            brace_depth += 1
+        elif value == "}" and brace_depth > 0:
+            brace_depth -= 1
+
+    if current or args:
+        args.append(current)
+    return args
+
+
+def split_top_level_array_elements(tokens: list[tuple[str, str, int]]) -> list[list[tuple[str, str, int]]]:
+    elements: list[list[tuple[str, str, int]]] = []
+    current: list[tuple[str, str, int]] = []
+    paren_depth = 0
+    bracket_depth = 0
+    brace_depth = 0
+
+    for token in tokens:
+        value = token[1]
+        if value == "," and paren_depth == 0 and bracket_depth == 0 and brace_depth == 0:
+            elements.append(current)
+            current = []
+            continue
+
+        current.append(token)
+        if value == "(":
+            paren_depth += 1
+        elif value == ")" and paren_depth > 0:
+            paren_depth -= 1
+        elif value == "[":
+            bracket_depth += 1
+        elif value == "]" and bracket_depth > 0:
+            bracket_depth -= 1
+        elif value == "{":
+            brace_depth += 1
+        elif value == "}" and brace_depth > 0:
+            brace_depth -= 1
+
+    if current or elements:
+        elements.append(current)
+    return elements
+
+
+def is_identifier_token(token: tuple[str, str, int]) -> bool:
+    return token[0] == "identifier"
+
+
+def is_simple_member_expression(tokens: list[tuple[str, str, int]]) -> bool:
+    if len(tokens) < 3 or len(tokens) % 2 == 0:
+        return False
+    for index, token in enumerate(tokens):
+        if index % 2 == 0 and not is_identifier_token(token):
+            return False
+        if index % 2 == 1 and token[1] != ".":
+            return False
+    return True
+
+
+def has_spread_tokens(tokens: list[tuple[str, str, int]]) -> bool:
+    values = [token[1] for token in tokens]
+    return any(values[index : index + 3] == [".", ".", "."] for index in range(max(0, len(values) - 2)))
+
+
+def classify_react_effect_dependency_status(tokens: list[tuple[str, str, int]], open_index: int, close_index: int) -> str:
+    call_args = split_top_level_token_args(tokens, open_index, close_index)
+    if not call_args:
+        return "missing_or_non_array_unknown"
+    if len(call_args) < 2:
+        return "absent_argument"
+
+    dependency_arg = call_args[1]
+    if not dependency_arg:
+        return "missing_or_non_array_unknown"
+
+    if len(dependency_arg) == 1 and dependency_arg[0][0] == "number":
+        return "non_array_literal"
+
+    if len(dependency_arg) == 1 and dependency_arg[0][0] == "identifier":
+        if dependency_arg[0][1] in {"false", "null", "true", "undefined"}:
+            return "non_array_literal"
+        return "destructured_or_alias_unknown"
+
+    if dependency_arg[0][1] != "[" or dependency_arg[-1][1] != "]":
+        if (
+            dependency_arg[0][1] == "{"
+            or any(token[0] == "number" for token in dependency_arg)
+            or any(token[1] in {"false", "null", "true"} for token in dependency_arg)
+        ):
+            return "non_array_literal"
+        return "missing_or_non_array_unknown"
+
+    inner_tokens = dependency_arg[1:-1]
+    if not inner_tokens:
+        return "empty_array"
+    if has_spread_tokens(inner_tokens) or any(token[1] in {"[", "]"} for token in inner_tokens):
+        return "spread_or_computed_unsupported"
+
+    elements = split_top_level_array_elements(inner_tokens)
+    if any(not element for element in elements):
+        return "missing_or_non_array_unknown"
+    if any(element[0][1] in {"{", "["} for element in elements):
+        return "destructured_or_alias_unknown"
+    if all(len(element) == 1 and is_identifier_token(element[0]) for element in elements):
+        return "literal_identifier"
+    if all(
+        (len(element) == 1 and is_identifier_token(element[0])) or is_simple_member_expression(element)
+        for element in elements
+    ):
+        return "member_expression"
+    return "missing_or_non_array_unknown"
+
+
 def match_react_effect_hook(args: argparse.Namespace, root: Path, spec: PrimarySpec) -> tuple[bool, dict[str, object]]:
     source = resolve_inside(root, args.source_file, "source file")
     rel_path = normalize_rel_path(source, root)
@@ -1416,6 +1560,7 @@ def match_react_effect_hook(args: argparse.Namespace, root: Path, spec: PrimaryS
         payload["validator_kind"] = js_ts_primary_kind(rel_path)
         refresh_parser_provenance(payload, "react.effect_hook@v1")
         payload["matched_symbol"] = matched_symbol
+        payload["dependency_status"] = classify_react_effect_dependency_status(tokens, open_index, close_index)
         return True, payload
 
     payload = primary_payload("fail", "react.effect_hook@v1", spec, rel_path, "not_found", source_hash)

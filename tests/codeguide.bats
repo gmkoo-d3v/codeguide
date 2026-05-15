@@ -1055,6 +1055,7 @@ EOF
   [[ "$output" == *'"validator_id":"react.effect_hook@v1"'* ]]
   [[ "$output" == *'"validator_result":"matched"'* ]]
   [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
+  [[ "$output" == *'"dependency_status":"absent_argument"'* ]]
   [[ "$output" == *'"parser_backed":true'* ]]
 
   run python3 "$SHADOW_PROBE" \
@@ -1119,6 +1120,197 @@ EOF
   [ "$status" -eq 64 ]
   [[ "$output" == *'"status":"error"'* ]]
   [[ "$output" == *"primary validator"* ]]
+}
+
+@test "shadow_evidence_probe react.effect_hook@v1 reports dependency_status syntax metadata" {
+  mkdir -p "$TEST_PROJECT/src"
+  cat > "$TEST_PROJECT/src/deps-absent.jsx" <<'EOF'
+import { useEffect } from 'react';
+
+export function EffectDeps() {
+  useEffect(() => {});
+  return null;
+}
+EOF
+  cat > "$TEST_PROJECT/src/deps-zero-args.jsx" <<'EOF'
+import { useEffect } from 'react';
+
+export function EffectDeps() {
+  useEffect();
+  return null;
+}
+EOF
+  cat > "$TEST_PROJECT/src/deps-empty.jsx" <<'EOF'
+import { useEffect } from 'react';
+
+export function EffectDeps() {
+  useEffect(() => {}, []);
+  return null;
+}
+EOF
+  cat > "$TEST_PROJECT/src/deps-identifiers.jsx" <<'EOF'
+import { useEffect } from 'react';
+
+export function EffectDeps({ userId, ready }) {
+  useEffect(() => {}, [userId, ready]);
+  return null;
+}
+EOF
+  cat > "$TEST_PROJECT/src/deps-members.jsx" <<'EOF'
+import { useEffect } from 'react';
+
+export function EffectDeps({ props, state }) {
+  useEffect(() => {}, [props.user, state.value]);
+  return null;
+}
+EOF
+  cat > "$TEST_PROJECT/src/deps-non-array-literal.jsx" <<'EOF'
+import { useEffect } from 'react';
+
+export function EffectDeps() {
+  useEffect(() => {}, true);
+  return null;
+}
+EOF
+  cat > "$TEST_PROJECT/src/deps-numeric-literal.jsx" <<'EOF'
+import { useEffect } from 'react';
+
+export function EffectDeps() {
+  useEffect(() => {}, 1);
+  return null;
+}
+EOF
+  cat > "$TEST_PROJECT/src/deps-spread.jsx" <<'EOF'
+import { useEffect } from 'react';
+
+export function EffectDeps({ deps }) {
+  useEffect(() => {}, [...deps]);
+  return null;
+}
+EOF
+  cat > "$TEST_PROJECT/src/deps-computed.jsx" <<'EOF'
+import { useEffect } from 'react';
+
+export function EffectDeps({ items, index }) {
+  useEffect(() => {}, [items[index]]);
+  return null;
+}
+EOF
+  cat > "$TEST_PROJECT/src/deps-alias.jsx" <<'EOF'
+import { useEffect } from 'react';
+
+export function EffectDeps({ deps }) {
+  useEffect(() => {}, deps);
+  return null;
+}
+EOF
+  cat > "$TEST_PROJECT/src/deps-unknown.jsx" <<'EOF'
+import { useEffect } from 'react';
+
+export function EffectDeps() {
+  useEffect(() => {}, computeDeps());
+  return null;
+}
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.effect_hook@v1" \
+    --source-file "src/deps-absent.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
+  [[ "$output" == *'"dependency_status":"absent_argument"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.effect_hook@v1" \
+    --source-file "src/deps-zero-args.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
+  [[ "$output" == *'"dependency_status":"missing_or_non_array_unknown"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.effect_hook@v1" \
+    --source-file "src/deps-empty.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
+  [[ "$output" == *'"dependency_status":"empty_array"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.effect_hook@v1" \
+    --source-file "src/deps-identifiers.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
+  [[ "$output" == *'"dependency_status":"literal_identifier"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.effect_hook@v1" \
+    --source-file "src/deps-members.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
+  [[ "$output" == *'"dependency_status":"member_expression"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.effect_hook@v1" \
+    --source-file "src/deps-non-array-literal.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
+  [[ "$output" == *'"dependency_status":"non_array_literal"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.effect_hook@v1" \
+    --source-file "src/deps-numeric-literal.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
+  [[ "$output" == *'"dependency_status":"non_array_literal"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.effect_hook@v1" \
+    --source-file "src/deps-spread.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
+  [[ "$output" == *'"dependency_status":"spread_or_computed_unsupported"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.effect_hook@v1" \
+    --source-file "src/deps-computed.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
+  [[ "$output" == *'"dependency_status":"spread_or_computed_unsupported"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.effect_hook@v1" \
+    --source-file "src/deps-alias.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
+  [[ "$output" == *'"dependency_status":"destructured_or_alias_unknown"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.effect_hook@v1" \
+    --source-file "src/deps-unknown.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
+  [[ "$output" == *'"dependency_status":"missing_or_non_array_unknown"'* ]]
 }
 
 @test "shadow_evidence_probe regex fallback emits fallback_result only" {
