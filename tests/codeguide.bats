@@ -2391,11 +2391,13 @@ EOF
   local non_json_selected_fields_record_file="$TEST_WORKSPACE/runtime-non-json-selected-fields-record.json"
   local invalid_line_range_record_file="$TEST_WORKSPACE/runtime-invalid-line-range-record.json"
   local valid_custom_line_range_record_file="$TEST_WORKSPACE/runtime-valid-custom-line-range-record.json"
+  local missing_line_range_probe_record_file="$TEST_WORKSPACE/runtime-missing-line-range-probe-record.json"
   local out_of_range_line_range_record_file="$TEST_WORKSPACE/runtime-out-of-range-line-range-record.json"
   local code_probe_file="$TEST_WORKSPACE/code-probe.json"
   local runtime_probe_file="$TEST_WORKSPACE/runtime-probe.json"
   local runtime_line_probe_file="$TEST_WORKSPACE/runtime-line-probe.json"
   local runtime_selected_probe_file="$TEST_WORKSPACE/runtime-selected-probe.json"
+  local missing_selected_probe_record_file="$TEST_WORKSPACE/runtime-missing-selected-probe-record.json"
   local runtime_decision_file="$TEST_WORKSPACE/runtime-decision.json"
   local runtime_json_decision_file="$TEST_WORKSPACE/runtime-json-decision.json"
   local runtime_mismatch_decision_file="$TEST_WORKSPACE/runtime-mismatch-decision.json"
@@ -2542,11 +2544,17 @@ EOF
   cat > "$valid_custom_line_range_record_file" <<EOF
 {"record_id":"SE-user-008","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_statement","anchor":{"file":"logs/runtime.trace","line":2,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:2","artifact_hash":"$runtime_line_hash","artifact_media_type":"text/plain","encoding":"utf-8","canonicalization":"custom-declared","canonical_output_type":"text","hash_input_scope":"line_range","line_range":{"start":2,"end":2},"ignored_nondeterministic_fields":[],"scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","user_decision_ref":"UD-runtime-013","probe_result_ref":"$runtime_line_probe_file","probe_result_hash":"$runtime_line_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
 EOF
+  cat > "$missing_line_range_probe_record_file" <<EOF
+{"record_id":"SE-user-008","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_statement","anchor":{"file":"logs/runtime.trace","line":2,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:2","artifact_hash":"$runtime_line_hash","artifact_media_type":"text/plain","encoding":"utf-8","canonicalization":"custom-declared","canonical_output_type":"text","hash_input_scope":"line_range","line_range":{"start":2,"end":2},"ignored_nondeterministic_fields":[],"scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","user_decision_ref":"UD-runtime-013","probe_result_ref":"$TEST_WORKSPACE/missing-runtime-line-probe.json","probe_result_hash":"$runtime_line_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+EOF
   cat > "$out_of_range_line_range_record_file" <<EOF
 {"record_id":"SE-user-008","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_statement","anchor":{"file":"logs/runtime.trace","line":2,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:2","artifact_hash":"$runtime_line_hash","artifact_media_type":"text/plain","encoding":"utf-8","canonicalization":"none","hash_input_scope":"line_range","line_range":{"start":1,"end":1},"ignored_nondeterministic_fields":[],"scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","user_decision_ref":"UD-runtime-013","probe_result_ref":"$runtime_line_probe_file","probe_result_hash":"$runtime_line_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
 EOF
   cat > "$selected_fields_record_file" <<EOF
 {"record_id":"SE-user-008","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_json_statement","anchor":{"file":"logs/runtime-json.trace","line":1,"symbol":"$runtime_json_event_json"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime-json.trace:1","artifact_hash":"$runtime_selected_hash","artifact_media_type":"application/json","encoding":"utf-8","canonicalization":"rfc8785","hash_input_scope":"selected_fields","selected_fields":["event","userId"],"ignored_nondeterministic_fields":[],"scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","user_decision_ref":"UD-runtime-013","probe_result_ref":"$runtime_selected_probe_file","probe_result_hash":"$runtime_selected_probe_hash","probe_args":{"trace_event":"$runtime_json_event_json"}}}
+EOF
+  cat > "$missing_selected_probe_record_file" <<EOF
+{"record_id":"SE-user-008","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_json_statement","anchor":{"file":"logs/runtime-json.trace","line":1,"symbol":"$runtime_json_event_json"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime-json.trace:1","artifact_hash":"$runtime_selected_hash","artifact_media_type":"application/json","encoding":"utf-8","canonicalization":"rfc8785","hash_input_scope":"selected_fields","selected_fields":["event","userId"],"ignored_nondeterministic_fields":[],"scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","user_decision_ref":"UD-runtime-013","probe_result_ref":"$TEST_WORKSPACE/missing-runtime-selected-probe.json","probe_result_hash":"$runtime_selected_probe_hash","probe_args":{"trace_event":"$runtime_json_event_json"}}}
 EOF
   cat > "$missing_selected_field_record_file" <<EOF
 {"record_id":"SE-user-008","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_json_statement","anchor":{"file":"logs/runtime-json.trace","line":1,"symbol":"$runtime_json_event_json"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime-json.trace:1","artifact_hash":"$runtime_selected_hash","artifact_media_type":"application/json","encoding":"utf-8","canonicalization":"rfc8785","hash_input_scope":"selected_fields","selected_fields":["event","missing"],"ignored_nondeterministic_fields":[],"scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","user_decision_ref":"UD-runtime-013","probe_result_ref":"$runtime_selected_probe_file","probe_result_hash":"$runtime_selected_probe_hash","probe_args":{"trace_event":"$runtime_json_event_json"}}}
@@ -2851,6 +2859,23 @@ EOF
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
+    --record "$missing_line_range_probe_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --evidence-decision "$runtime_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"next_actions"'* ]]
+  [[ "$output" == *'"action":"run_probe"'* ]]
+  [[ "$output" == *"--hash-input-scope line_range"* ]]
+  [[ "$output" == *"--line-range-start 2"* ]]
+  [[ "$output" == *"--line-range-end 2"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
     --record "$out_of_range_line_range_record_file" \
     --candidate "$candidate_file" \
     --user-decision "$decision_file" \
@@ -2879,6 +2904,23 @@ EOF
   [[ "$output" == *"evidence_hash_input_scope: selected_fields"* ]]
   [[ "$output" == *"evidence_selected_fields: [\"event\",\"userId\"]"* ]]
   [[ "$output" == *"evidence_artifact_hash: $runtime_selected_hash"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$missing_selected_probe_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --evidence-decision "$runtime_json_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"next_actions"'* ]]
+  [[ "$output" == *'"action":"run_probe"'* ]]
+  [[ "$output" == *"--hash-input-scope selected_fields"* ]]
+  [[ "$output" == *"--selected-field event"* ]]
+  [[ "$output" == *"--selected-field userId"* ]]
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
