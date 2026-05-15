@@ -42,6 +42,10 @@ sha256_json_file_ref() {
   python3 -c 'import hashlib,json,sys; value=json.load(open(sys.argv[1])); encoded=json.dumps(value,sort_keys=True,separators=(",",":")); print("sha256:"+hashlib.sha256(encoded.encode("utf-8")).hexdigest())' "$1"
 }
 
+parser_identity_ref() {
+  printf 'shadow_evidence_probe.py:%s:%s' "$1" "$2"
+}
+
 external_handoff_dir() {
   local task_id="$1"
   local plan_version="$2"
@@ -528,6 +532,9 @@ EOF
 }
 
 @test "shadow_evidence_probe uses Python AST for real calls and ignores comments or strings" {
+  local parser_content_hash
+  parser_content_hash="$(sha256_file_ref "$SHADOW_PROBE")"
+
   mkdir -p "$TEST_PROJECT/src"
   cat > "$TEST_PROJECT/src/app.py" <<'EOF'
 # delete_user()
@@ -548,6 +555,8 @@ EOF
   [[ "$output" == *'"parser_backed":true'* ]]
   [[ "$output" == *'"validator_result":"matched"'* ]]
   [[ "$output" == *'"source_hash":"sha256:'* ]]
+  [[ "$output" == *'"parser_identity":"shadow_evidence_probe.py:py.ast.call_match@v1:ast"'* ]]
+  [[ "$output" == *'"parser_content_hash":"'"$parser_content_hash"'"'* ]]
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -558,6 +567,7 @@ EOF
   [ "$status" -eq 1 ]
   [[ "$output" == *'"status":"fail"'* ]]
   [[ "$output" == *'"validator_result":"not_found"'* ]]
+  [[ "$output" == *'"parser_identity":"shadow_evidence_probe.py:py.ast.call_match@v1:ast"'* ]]
 }
 
 @test "shadow_evidence_probe rejects Python AST primary evidence from test paths" {
@@ -681,6 +691,264 @@ EOF
   [[ "$output" == *"FastAPI route method"* ]]
 }
 
+@test "shadow_evidence_probe express.route@v1 tier1 parser-backed route matcher validates literal routes and rejects non-routes" {
+  mkdir -p "$TEST_PROJECT/src" "$TEST_PROJECT/tests"
+  cat > "$TEST_PROJECT/src/routes.js" <<'EOF'
+const express = require("express");
+const app = express();
+
+app.get('/users', handler);
+
+function handler(req, res) {
+  res.json({ok: true});
+}
+EOF
+  cat > "$TEST_PROJECT/src/routes.ts" <<'EOF'
+import express from "express";
+const router = express.Router();
+
+router.post('/users', handler);
+
+function handler(req, res) {
+  res.json({ok: true});
+}
+EOF
+  cat > "$TEST_PROJECT/src/use-only.js" <<'EOF'
+function handler(req, res, next) {
+  next();
+}
+
+app.use(handler);
+EOF
+  cat > "$TEST_PROJECT/src/dynamic-route.js" <<'EOF'
+const routePath = '/users';
+
+router.post(routePath, handler);
+EOF
+  cat > "$TEST_PROJECT/src/masked-route-text.js" <<'EOF'
+// app.get('/users', handler)
+const sample = "router.post('/users', handler)";
+const pattern = /app.get\('\/users'/;
+EOF
+  cat > "$TEST_PROJECT/tests/routes.js" <<'EOF'
+app.get('/users', handler);
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "express.route@v1" \
+    --source-file "src/routes.js" \
+    --route-path "/users"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"validator_id":"express.route@v1"'* ]]
+  [[ "$output" == *'"validator_result":"matched"'* ]]
+  [[ "$output" == *'"matched_symbol":"app.get"'* ]]
+  [[ "$output" == *'"http_method":"get"'* ]]
+  [[ "$output" == *'"route_path":"/users"'* ]]
+  [[ "$output" == *'"parser_backed":true'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "express.route@v1" \
+    --source-file "src/routes.ts" \
+    --route-path "/users"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"validator_kind":"ts_token_parser"'* ]]
+  [[ "$output" == *'"parser_identity":"shadow_evidence_probe.py:express.route@v1:ts_token_parser"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "express.route@v1" \
+    --source-file "src/routes.js" \
+    --route-path "/missing"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "express.route@v1" \
+    --source-file "src/use-only.js"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "express.route@v1" \
+    --source-file "src/dynamic-route.js" \
+    --route-path "/users"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "express.route@v1" \
+    --source-file "src/masked-route-text.js" \
+    --route-path "/users"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "express.route@v1" \
+    --source-file "tests/routes.js" \
+    --route-path "/users"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *'"status":"error"'* ]]
+  [[ "$output" == *"primary validator"* ]]
+}
+
+@test "shadow_evidence_probe react.effect_hook@v1 tier1 parser-backed matcher validates React imports and rejects non-hooks" {
+  mkdir -p "$TEST_PROJECT/src" "$TEST_PROJECT/tests"
+  cat > "$TEST_PROJECT/src/named.jsx" <<'EOF'
+import { useEffect } from 'react';
+
+export function NamedEffect() {
+  useEffect(() => {});
+  return null;
+}
+EOF
+  cat > "$TEST_PROJECT/src/namespace.jsx" <<'EOF'
+import * as R from 'react';
+
+export function NamespaceEffect() {
+  R.useEffect(() => {});
+  return null;
+}
+EOF
+  cat > "$TEST_PROJECT/src/default.jsx" <<'EOF'
+import R from 'react';
+
+export function DefaultEffect() {
+  R.useEffect(() => {});
+  return null;
+}
+EOF
+  cat > "$TEST_PROJECT/src/aliased.jsx" <<'EOF'
+import { useEffect as fx } from 'react';
+
+export function AliasedEffect() {
+  fx(() => {});
+  return null;
+}
+EOF
+  cat > "$TEST_PROJECT/src/rebound.jsx" <<'EOF'
+const e = React.useEffect;
+
+export function ReboundEffect() {
+  e(() => {});
+  return null;
+}
+EOF
+  cat > "$TEST_PROJECT/src/non-react.jsx" <<'EOF'
+import { useEffect } from 'preact/hooks';
+import R from 'preact/compat';
+
+export function NonReactEffect() {
+  useEffect(() => {});
+  R.useEffect(() => {});
+  return null;
+}
+EOF
+  cat > "$TEST_PROJECT/src/masked.jsx" <<'EOF'
+// import { useEffect } from 'react'; useEffect(() => {});
+const sample = "import { useEffect } from 'react'; useEffect(() => {})";
+const pattern = /useEffect\(/;
+EOF
+  cat > "$TEST_PROJECT/tests/effect.spec.jsx" <<'EOF'
+import { useEffect } from 'react';
+
+useEffect(() => {});
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.effect_hook@v1" \
+    --source-file "src/named.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"validator_id":"react.effect_hook@v1"'* ]]
+  [[ "$output" == *'"validator_result":"matched"'* ]]
+  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
+  [[ "$output" == *'"parser_backed":true'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.effect_hook@v1" \
+    --source-file "src/namespace.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"matched_symbol":"R.useEffect"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.effect_hook@v1" \
+    --source-file "src/default.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"matched_symbol":"R.useEffect"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.effect_hook@v1" \
+    --source-file "src/aliased.jsx"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.effect_hook@v1" \
+    --source-file "src/rebound.jsx"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.effect_hook@v1" \
+    --source-file "src/non-react.jsx"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.effect_hook@v1" \
+    --source-file "src/masked.jsx"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.effect_hook@v1" \
+    --source-file "tests/effect.spec.jsx"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *'"status":"error"'* ]]
+  [[ "$output" == *"primary validator"* ]]
+}
+
 @test "shadow_evidence_probe regex fallback emits fallback_result only" {
   mkdir -p "$TEST_PROJECT/src/main/java/example"
   cat > "$TEST_PROJECT/src/main/java/example/UserService.java" <<'EOF'
@@ -787,6 +1055,8 @@ EOF
   [[ "$output" == *'"parser_backed":false'* ]]
   [[ "$output" == *'"promotion_limit":"medium"'* ]]
   [[ "$output" == *'"source_hash":"sha256:'* ]]
+  [[ "$output" != *'"parser_identity"'* ]]
+  [[ "$output" != *'"parser_content_hash"'* ]]
 }
 
 @test "shadow_evidence_probe Java parser-backed call matcher ignores comments and strings" {
@@ -1366,6 +1636,8 @@ EOF
   [[ "$output" == *'"evidence_type":"runtime_trace"'* ]]
   [[ "$output" == *'"artifact_hash":"sha256:'* ]]
   [[ "$output" == *'"trace_ref":"logs/runtime.trace:2"'* ]]
+  [[ "$output" != *'"parser_identity"'* ]]
+  [[ "$output" != *'"parser_content_hash"'* ]]
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -2064,12 +2336,16 @@ EOF
   local runtime_record_file="$TEST_WORKSPACE/runtime-record.json"
   local bad_runtime_record_file="$TEST_WORKSPACE/bad-runtime-record.json"
   local good_code_record_file="$TEST_WORKSPACE/good-code-record.json"
+  local missing_parser_record_file="$TEST_WORKSPACE/missing-parser-record.json"
+  local mismatch_parser_record_file="$TEST_WORKSPACE/mismatch-parser-record.json"
   local good_runtime_record_file="$TEST_WORKSPACE/good-runtime-record.json"
   local code_probe_file="$TEST_WORKSPACE/code-probe.json"
   local runtime_probe_file="$TEST_WORKSPACE/runtime-probe.json"
   local runtime_decision_file="$TEST_WORKSPACE/runtime-decision.json"
   local draft_file="$TEST_WORKSPACE/draft.md"
   local source_hash
+  local parser_identity
+  local parser_content_hash
   local runtime_hash
   local code_probe_hash
   local runtime_probe_hash
@@ -2090,9 +2366,11 @@ event=user.update started
 event=user.cache.evict userId=42
 EOF
   source_hash="$(sha256_file_ref "$TEST_PROJECT/src/app.py")"
+  parser_identity="$(parser_identity_ref "py.ast.call_match@v1" "ast")"
+  parser_content_hash="$(sha256_file_ref "$SHADOW_PROBE")"
   runtime_hash="$(sha256_file_ref "$TEST_PROJECT/logs/runtime.trace")"
   cat > "$code_probe_file" <<EOF
-{"status":"pass","probe_status":"pass","fact_status":"deterministic_evidence","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","evidence_field":"validator_result","validator_result":"matched","source_ref":"src/app.py:6","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
+{"status":"pass","probe_status":"pass","fact_status":"deterministic_evidence","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","evidence_field":"validator_result","validator_result":"matched","source_ref":"src/app.py:6","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
 EOF
   cat > "$runtime_probe_file" <<EOF
 {"status":"pass","probe_status":"pass","fact_status":"deterministic_evidence","validator_id":"any.runtime.trace@v1","evidence_type":"runtime_trace","evidence_field":"validator_result","validator_result":"matched","source_ref":"logs/runtime.trace:2","trace_ref":"logs/runtime.trace:2","artifact_hash":"$runtime_hash","validator_kind":"runtime_trace","parser_backed":false,"promotion_limit":"high","writes_shadow_docs":false}
@@ -2130,7 +2408,13 @@ EOF
 {"record_id":"SE-user-007","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Cache eviction has malformed runtime hash evidence.","anchor":{"file":"src/UserService.java","symbol":"UserCache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","trace_ref":"logs/runtime.trace:2","artifact_hash":"sha256:x","scenario_ref":"scenario:user-update-cache"}}
 EOF
   cat > "$good_code_record_file" <<EOF
-{"record_id":"SE-user-006","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Repository save is backed by parser evidence.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:6","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
+{"record_id":"SE-user-006","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Repository save is backed by parser evidence.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"src/app.py:6","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
+EOF
+  cat > "$missing_parser_record_file" <<EOF
+{"record_id":"SE-user-006","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Repository save is backed by parser evidence but lacks parser provenance.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:6","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
+EOF
+  cat > "$mismatch_parser_record_file" <<EOF
+{"record_id":"SE-user-006","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Repository save is backed by mismatched parser provenance.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"parser_identity":"shadow_evidence_probe.py:wrong:ast","parser_content_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","validator_result":"matched","source_ref":"src/app.py:6","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
 EOF
   cat > "$good_runtime_record_file" <<EOF
 {"record_id":"SE-user-008","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_statement","anchor":{"file":"logs/runtime.trace","line":2,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:2","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","user_decision_ref":"UD-runtime-013","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
@@ -2195,6 +2479,34 @@ EOF
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
+    --record "$missing_parser_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$code_probe_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"deterministic_code evidence.parser_identity is required"* ]]
+  [[ "$output" == *"deterministic_code evidence.parser_content_hash must be a sha256 reference"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$mismatch_parser_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$code_probe_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"probe_result.parser_identity must match evidence.parser_identity"* ]]
+  [[ "$output" == *"probe_result.parser_content_hash must match evidence.parser_content_hash"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
     --record "$good_code_record_file" \
     --candidate "$candidate_file" \
     --user-decision "$decision_file" \
@@ -2207,6 +2519,8 @@ EOF
   [[ "$output" == *'"status":"ok"'* ]]
   [[ "$output" == *"evidence_rule_id: repo.write"* ]]
   [[ "$output" == *"evidence_parser_backed: True"* ]]
+  [[ "$output" == *"evidence_parser_identity: $parser_identity"* ]]
+  [[ "$output" == *"evidence_parser_content_hash: $parser_content_hash"* ]]
   [[ "$output" == *"evidence_source_hash: $source_hash"* ]]
 
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -2251,6 +2565,8 @@ EOF
   local source_file="$TEST_PROJECT/src/main/java/example/UserService.java"
   local source_ref
   local source_hash
+  local parser_identity
+  local parser_content_hash
   local probe_hash
   local anchor_line
 
@@ -2273,6 +2589,8 @@ EOF
     --receiver "userRepository" > "$probe_result_file"
   source_ref="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_ref"])' "$probe_result_file")"
   source_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_hash"])' "$probe_result_file")"
+  parser_identity="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["parser_identity"])' "$probe_result_file")"
+  parser_content_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["parser_content_hash"])' "$probe_result_file")"
   probe_hash="$(sha256_file_ref "$probe_result_file")"
   anchor_line="${source_ref##*:}"
 
@@ -2292,7 +2610,7 @@ EOF
 {"user_decision":{"id":"UD-java-001","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-java-001","SE-java-002"],"rationale":"Approve evaluating Java parser-backed deterministic evidence.","source_refs":["TASK-shadow-effect-map-01"]}}
 EOF
   cat > "$record_file" <<EOF
-{"record_id":"SE-java-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Java repository save is backed by parser evidence.","anchor":{"file":"src/main/java/example/UserService.java","line":$anchor_line,"symbol":"userRepository.save"},"evidence":{"type":"deterministic_code","ref":"java.ast.call_match@v1","rule_id":"repo.write","validator_kind":"java_token_parser","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"save","receiver":"userRepository"}}}
+{"record_id":"SE-java-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Java repository save is backed by parser evidence.","anchor":{"file":"src/main/java/example/UserService.java","line":$anchor_line,"symbol":"userRepository.save"},"evidence":{"type":"deterministic_code","ref":"java.ast.call_match@v1","rule_id":"repo.write","validator_kind":"java_token_parser","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"save","receiver":"userRepository"}}}
 EOF
 
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -2310,10 +2628,12 @@ EOF
   [[ "$output" == *"evidence_ref: java.ast.call_match@v1"* ]]
   [[ "$output" == *"evidence_validator_kind: java_token_parser"* ]]
   [[ "$output" == *"evidence_parser_backed: True"* ]]
+  [[ "$output" == *"evidence_parser_identity: $parser_identity"* ]]
+  [[ "$output" == *"evidence_parser_content_hash: $parser_content_hash"* ]]
   [[ "$output" == *"evidence_source_hash: $source_hash"* ]]
 
   cat > "$record_file" <<EOF
-{"record_id":"SE-java-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Bare Java parser evidence must not confirm without receiver binding.","anchor":{"file":"src/main/java/example/UserService.java","line":$anchor_line,"symbol":"save"},"evidence":{"type":"deterministic_code","ref":"java.ast.call_match@v1","rule_id":"repo.write","validator_kind":"java_token_parser","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"save"}}}
+{"record_id":"SE-java-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Bare Java parser evidence must not confirm without receiver binding.","anchor":{"file":"src/main/java/example/UserService.java","line":$anchor_line,"symbol":"save"},"evidence":{"type":"deterministic_code","ref":"java.ast.call_match@v1","rule_id":"repo.write","validator_kind":"java_token_parser","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"save"}}}
 EOF
 
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -2331,7 +2651,7 @@ EOF
 
   perl -0pi -e 's/```yaml\nrules:\n/```yaml\nrules:\n  java.bare_call:\n    allowed_effect_types: [external_call]\n    validators_by_stack:\n      java_generic:\n        code_call:\n          primary: java.ast.call_match\@v1\n          fallback: java.regex.method_call_named\@v1\n          fallback_max_risk: medium\n/' "$DOCS_ROOT/policy/shadow-rule-registry.md"
   cat > "$record_file" <<EOF
-{"record_id":"SE-java-002","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"Java confirmed evidence requires receiver even outside repo.write.","anchor":{"file":"src/main/java/example/UserService.java","line":$anchor_line,"symbol":"save"},"evidence":{"type":"deterministic_code","ref":"java.ast.call_match@v1","rule_id":"java.bare_call","validator_kind":"java_token_parser","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"save"}}}
+{"record_id":"SE-java-002","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"Java confirmed evidence requires receiver even outside repo.write.","anchor":{"file":"src/main/java/example/UserService.java","line":$anchor_line,"symbol":"save"},"evidence":{"type":"deterministic_code","ref":"java.ast.call_match@v1","rule_id":"java.bare_call","validator_kind":"java_token_parser","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"save"}}}
 EOF
 
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -2357,6 +2677,8 @@ EOF
   local source_file="$TEST_PROJECT/src/client.js"
   local source_ref
   local source_hash
+  local parser_identity
+  local parser_content_hash
   local probe_hash
   local anchor_line
 
@@ -2375,6 +2697,8 @@ EOF
     --receiver "httpClient" > "$probe_result_file"
   source_ref="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_ref"])' "$probe_result_file")"
   source_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_hash"])' "$probe_result_file")"
+  parser_identity="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["parser_identity"])' "$probe_result_file")"
+  parser_content_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["parser_content_hash"])' "$probe_result_file")"
   probe_hash="$(sha256_file_ref "$probe_result_file")"
   anchor_line="${source_ref##*:}"
 
@@ -2394,7 +2718,7 @@ EOF
 {"user_decision":{"id":"UD-js-001","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-js-001","SE-js-002","SE-js-003"],"rationale":"Approve evaluating JavaScript parser-backed deterministic evidence.","source_refs":["TASK-shadow-effect-map-01"]}}
 EOF
   cat > "$record_file" <<EOF
-{"record_id":"SE-js-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"HTTP client get call is backed by parser evidence.","anchor":{"file":"src/client.js","line":$anchor_line,"symbol":"httpClient.get"},"evidence":{"type":"deterministic_code","ref":"js.ast.call_match@v1","rule_id":"external.call","validator_kind":"js_token_parser","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"get","receiver":"httpClient"}}}
+{"record_id":"SE-js-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"HTTP client get call is backed by parser evidence.","anchor":{"file":"src/client.js","line":$anchor_line,"symbol":"httpClient.get"},"evidence":{"type":"deterministic_code","ref":"js.ast.call_match@v1","rule_id":"external.call","validator_kind":"js_token_parser","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"get","receiver":"httpClient"}}}
 EOF
 
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -2412,10 +2736,12 @@ EOF
   [[ "$output" == *"evidence_ref: js.ast.call_match@v1"* ]]
   [[ "$output" == *"evidence_validator_kind: js_token_parser"* ]]
   [[ "$output" == *"evidence_parser_backed: True"* ]]
+  [[ "$output" == *"evidence_parser_identity: $parser_identity"* ]]
+  [[ "$output" == *"evidence_parser_content_hash: $parser_content_hash"* ]]
   [[ "$output" == *"evidence_source_hash: $source_hash"* ]]
 
   cat > "$record_file" <<EOF
-{"record_id":"SE-js-002","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"Mismatched JS anchor must not confirm against a different matched symbol.","anchor":{"file":"src/client.js","line":$anchor_line,"symbol":"otherClient.get"},"evidence":{"type":"deterministic_code","ref":"js.ast.call_match@v1","rule_id":"external.call","validator_kind":"js_token_parser","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"get"}}}
+{"record_id":"SE-js-002","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"Mismatched JS anchor must not confirm against a different matched symbol.","anchor":{"file":"src/client.js","line":$anchor_line,"symbol":"otherClient.get"},"evidence":{"type":"deterministic_code","ref":"js.ast.call_match@v1","rule_id":"external.call","validator_kind":"js_token_parser","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"get"}}}
 EOF
 
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -2434,7 +2760,7 @@ EOF
   python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); data["fact_status"]="candidate_only"; json.dump(data, open(sys.argv[1], "w"), sort_keys=True, separators=(",", ":"))' "$probe_result_file"
   probe_hash="$(sha256_file_ref "$probe_result_file")"
   cat > "$record_file" <<EOF
-{"record_id":"SE-js-003","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"JavaScript probe status metadata must match the writer rerun.","anchor":{"file":"src/client.js","line":$anchor_line,"symbol":"httpClient.get"},"evidence":{"type":"deterministic_code","ref":"js.ast.call_match@v1","rule_id":"external.call","validator_kind":"js_token_parser","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"get","receiver":"httpClient"}}}
+{"record_id":"SE-js-003","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"JavaScript probe status metadata must match the writer rerun.","anchor":{"file":"src/client.js","line":$anchor_line,"symbol":"httpClient.get"},"evidence":{"type":"deterministic_code","ref":"js.ast.call_match@v1","rule_id":"external.call","validator_kind":"js_token_parser","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"get","receiver":"httpClient"}}}
 EOF
 
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -2460,6 +2786,8 @@ EOF
   local source_file="$TEST_PROJECT/src/client.ts"
   local source_ref
   local source_hash
+  local parser_identity
+  local parser_content_hash
   local probe_hash
   local anchor_line
 
@@ -2480,6 +2808,8 @@ EOF
     --receiver "httpClient" > "$probe_result_file"
   source_ref="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_ref"])' "$probe_result_file")"
   source_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_hash"])' "$probe_result_file")"
+  parser_identity="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["parser_identity"])' "$probe_result_file")"
+  parser_content_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["parser_content_hash"])' "$probe_result_file")"
   probe_hash="$(sha256_file_ref "$probe_result_file")"
   anchor_line="${source_ref##*:}"
 
@@ -2499,7 +2829,7 @@ EOF
 {"user_decision":{"id":"UD-ts-001","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-ts-001","SE-ts-002","SE-ts-003"],"rationale":"Approve evaluating TypeScript generic parser-backed deterministic evidence.","source_refs":["TASK-shadow-effect-map-01"]}}
 EOF
   cat > "$record_file" <<EOF
-{"record_id":"SE-ts-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"TypeScript generic HTTP client call is backed by parser evidence.","anchor":{"file":"src/client.ts","line":$anchor_line,"symbol":"httpClient.post"},"evidence":{"type":"deterministic_code","ref":"ts.ast.call_match@v2","rule_id":"external.call","validator_kind":"ts_token_parser","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"post","receiver":"httpClient"}}}
+{"record_id":"SE-ts-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"TypeScript generic HTTP client call is backed by parser evidence.","anchor":{"file":"src/client.ts","line":$anchor_line,"symbol":"httpClient.post"},"evidence":{"type":"deterministic_code","ref":"ts.ast.call_match@v2","rule_id":"external.call","validator_kind":"ts_token_parser","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"post","receiver":"httpClient"}}}
 EOF
 
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -2517,12 +2847,14 @@ EOF
   [[ "$output" == *"evidence_ref: ts.ast.call_match@v2"* ]]
   [[ "$output" == *"evidence_validator_kind: ts_token_parser"* ]]
   [[ "$output" == *"evidence_parser_backed: True"* ]]
+  [[ "$output" == *"evidence_parser_identity: $parser_identity"* ]]
+  [[ "$output" == *"evidence_parser_content_hash: $parser_content_hash"* ]]
   [[ "$output" == *"evidence_source_hash: $source_hash"* ]]
 
   python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); data.pop("type_arguments", None); json.dump(data, open(sys.argv[1], "w"), sort_keys=True, separators=(",", ":"))' "$probe_result_file"
   probe_hash="$(sha256_file_ref "$probe_result_file")"
   cat > "$record_file" <<EOF
-{"record_id":"SE-ts-002","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"TypeScript generic probe metadata must match the writer rerun.","anchor":{"file":"src/client.ts","line":$anchor_line,"symbol":"httpClient.post"},"evidence":{"type":"deterministic_code","ref":"ts.ast.call_match@v2","rule_id":"external.call","validator_kind":"ts_token_parser","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"post","receiver":"httpClient"}}}
+{"record_id":"SE-ts-002","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"TypeScript generic probe metadata must match the writer rerun.","anchor":{"file":"src/client.ts","line":$anchor_line,"symbol":"httpClient.post"},"evidence":{"type":"deterministic_code","ref":"ts.ast.call_match@v2","rule_id":"external.call","validator_kind":"ts_token_parser","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"post","receiver":"httpClient"}}}
 EOF
 
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -2557,7 +2889,7 @@ EOF
   python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); data["type_arguments"]=True; json.dump(data, open(sys.argv[1], "w"), sort_keys=True, separators=(",", ":"))' "$probe_result_file"
   probe_hash="$(sha256_file_ref "$probe_result_file")"
   cat > "$record_file" <<EOF
-{"record_id":"SE-ts-003","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"TypeScript probe metadata must not accept forged generic type-argument evidence.","anchor":{"file":"src/client.ts","line":$anchor_line,"symbol":"httpClient.post"},"evidence":{"type":"deterministic_code","ref":"ts.ast.call_match@v2","rule_id":"external.call","validator_kind":"ts_token_parser","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"post","receiver":"httpClient"}}}
+{"record_id":"SE-ts-003","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"TypeScript probe metadata must not accept forged generic type-argument evidence.","anchor":{"file":"src/client.ts","line":$anchor_line,"symbol":"httpClient.post"},"evidence":{"type":"deterministic_code","ref":"ts.ast.call_match@v2","rule_id":"external.call","validator_kind":"ts_token_parser","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"post","receiver":"httpClient"}}}
 EOF
 
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -2583,6 +2915,8 @@ EOF
   local source_file="$TEST_PROJECT/src/routes.py"
   local source_ref
   local source_hash
+  local parser_identity
+  local parser_content_hash
   local probe_hash
   local anchor_line
 
@@ -2605,6 +2939,8 @@ EOF
     --route-path "/users" > "$probe_result_file"
   source_ref="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_ref"])' "$probe_result_file")"
   source_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_hash"])' "$probe_result_file")"
+  parser_identity="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["parser_identity"])' "$probe_result_file")"
+  parser_content_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["parser_content_hash"])' "$probe_result_file")"
   probe_hash="$(sha256_file_ref "$probe_result_file")"
   anchor_line="${source_ref##*:}"
 
@@ -2624,7 +2960,7 @@ EOF
 {"user_decision":{"id":"UD-fastapi-001","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-fastapi-001","SE-fastapi-002","SE-fastapi-003","SE-fastapi-004"],"rationale":"Approve evaluating FastAPI parser-backed deterministic route evidence.","source_refs":["TASK-shadow-effect-map-01"]}}
 EOF
   cat > "$record_file" <<EOF
-{"record_id":"SE-fastapi-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"api_route","statement":"FastAPI route decorator is backed by parser evidence.","anchor":{"file":"src/routes.py","line":$anchor_line,"symbol":"app.post"},"evidence":{"type":"deterministic_code","ref":"fastapi.route@v1","rule_id":"http.route","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"decorator":"app.post","route_path":"/users"}}}
+{"record_id":"SE-fastapi-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"api_route","statement":"FastAPI route decorator is backed by parser evidence.","anchor":{"file":"src/routes.py","line":$anchor_line,"symbol":"app.post"},"evidence":{"type":"deterministic_code","ref":"fastapi.route@v1","rule_id":"http.route","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"decorator":"app.post","route_path":"/users"}}}
 EOF
 
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -2642,12 +2978,14 @@ EOF
   [[ "$output" == *"evidence_ref: fastapi.route@v1"* ]]
   [[ "$output" == *"evidence_validator_kind: ast"* ]]
   [[ "$output" == *"evidence_parser_backed: True"* ]]
+  [[ "$output" == *"evidence_parser_identity: $parser_identity"* ]]
+  [[ "$output" == *"evidence_parser_content_hash: $parser_content_hash"* ]]
   [[ "$output" == *"evidence_source_hash: $source_hash"* ]]
 
   python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); data.pop("route_path", None); json.dump(data, open(sys.argv[1], "w"), sort_keys=True, separators=(",", ":"))' "$probe_result_file"
   probe_hash="$(sha256_file_ref "$probe_result_file")"
   cat > "$record_file" <<EOF
-{"record_id":"SE-fastapi-004","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"api_route","statement":"FastAPI literal route-path probe metadata must match the writer rerun.","anchor":{"file":"src/routes.py","line":$anchor_line,"symbol":"app.post"},"evidence":{"type":"deterministic_code","ref":"fastapi.route@v1","rule_id":"http.route","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"decorator":"app.post","route_path":"/users"}}}
+{"record_id":"SE-fastapi-004","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"api_route","statement":"FastAPI literal route-path probe metadata must match the writer rerun.","anchor":{"file":"src/routes.py","line":$anchor_line,"symbol":"app.post"},"evidence":{"type":"deterministic_code","ref":"fastapi.route@v1","rule_id":"http.route","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"decorator":"app.post","route_path":"/users"}}}
 EOF
 
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -2671,11 +3009,13 @@ EOF
     --route-path "/users" > "$probe_result_file"
   source_ref="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_ref"])' "$probe_result_file")"
   source_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_hash"])' "$probe_result_file")"
+  parser_identity="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["parser_identity"])' "$probe_result_file")"
+  parser_content_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["parser_content_hash"])' "$probe_result_file")"
   probe_hash="$(sha256_file_ref "$probe_result_file")"
   anchor_line="${source_ref##*:}"
 
   cat > "$record_file" <<EOF
-{"record_id":"SE-fastapi-002","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"api_route","statement":"Mismatched FastAPI anchor must not confirm against a different matched symbol.","anchor":{"file":"src/routes.py","line":$anchor_line,"symbol":"router.post"},"evidence":{"type":"deterministic_code","ref":"fastapi.route@v1","rule_id":"http.route","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"decorator":"app.post","route_path":"/users"}}}
+{"record_id":"SE-fastapi-002","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"api_route","statement":"Mismatched FastAPI anchor must not confirm against a different matched symbol.","anchor":{"file":"src/routes.py","line":$anchor_line,"symbol":"router.post"},"evidence":{"type":"deterministic_code","ref":"fastapi.route@v1","rule_id":"http.route","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"decorator":"app.post","route_path":"/users"}}}
 EOF
 
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -2708,11 +3048,13 @@ EOF
     --decorator "app.get" > "$probe_result_file"
   source_ref="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_ref"])' "$probe_result_file")"
   source_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_hash"])' "$probe_result_file")"
+  parser_identity="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["parser_identity"])' "$probe_result_file")"
+  parser_content_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["parser_content_hash"])' "$probe_result_file")"
   anchor_line="${source_ref##*:}"
   python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); data["route_path"]="/users"; json.dump(data, open(sys.argv[1], "w"), sort_keys=True, separators=(",", ":"))' "$probe_result_file"
   probe_hash="$(sha256_file_ref "$probe_result_file")"
   cat > "$record_file" <<EOF
-{"record_id":"SE-fastapi-003","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"api_route","statement":"FastAPI probe metadata must not accept forged literal route-path evidence.","anchor":{"file":"src/routes.py","line":$anchor_line,"symbol":"app.get"},"evidence":{"type":"deterministic_code","ref":"fastapi.route@v1","rule_id":"http.route","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"decorator":"app.get"}}}
+{"record_id":"SE-fastapi-003","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"api_route","statement":"FastAPI probe metadata must not accept forged literal route-path evidence.","anchor":{"file":"src/routes.py","line":$anchor_line,"symbol":"app.get"},"evidence":{"type":"deterministic_code","ref":"fastapi.route@v1","rule_id":"http.route","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"decorator":"app.get"}}}
 EOF
 
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -2738,6 +3080,8 @@ EOF
   local source_file="$TEST_PROJECT/src/app.py"
   local source_ref
   local source_hash
+  local parser_identity
+  local parser_content_hash
   local probe_hash
 
   mkdir -p "$(dirname "$source_file")"
@@ -2753,6 +3097,8 @@ EOF
     --callee "save" > "$probe_result_file"
   source_ref="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_ref"])' "$probe_result_file")"
   source_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_hash"])' "$probe_result_file")"
+  parser_identity="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["parser_identity"])' "$probe_result_file")"
+  parser_content_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["parser_content_hash"])' "$probe_result_file")"
   probe_hash="$(sha256_file_ref "$probe_result_file")"
 
   printf 'Draft for Python parser-backed deterministic evidence\n' > "$draft_file"
@@ -2771,7 +3117,7 @@ EOF
 {"user_decision":{"id":"UD-py-001","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-py-001"],"rationale":"Approve evaluating Python parser-backed deterministic evidence.","source_refs":["TASK-shadow-effect-map-01"]}}
 EOF
   cat > "$record_file" <<EOF
-{"record_id":"SE-py-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Mismatched Python anchor must not confirm against a different matched symbol.","anchor":{"file":"src/app.py","symbol":"otherRepository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"save"}}}
+{"record_id":"SE-py-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Mismatched Python anchor must not confirm against a different matched symbol.","anchor":{"file":"src/app.py","symbol":"otherRepository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"save"}}}
 EOF
 
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -2810,6 +3156,8 @@ EOF
   local runtime_probe_file="$TEST_WORKSPACE/runtime-probe.json"
   local source_hash
   local java_source_hash
+  local parser_identity
+  local parser_content_hash
   local runtime_hash
   local code_probe_file="$TEST_WORKSPACE/code-probe.json"
   local code_probe_hash
@@ -2853,12 +3201,14 @@ event=user.cache.evict userId=42
 EOF
   source_hash="$(sha256_file_ref "$source_file")"
   java_source_hash="$(sha256_file_ref "$java_source_file")"
+  parser_identity="$(parser_identity_ref "py.ast.call_match@v1" "ast")"
+  parser_content_hash="$(sha256_file_ref "$SHADOW_PROBE")"
   runtime_hash="$(sha256_file_ref "$trace_file")"
   cat > "$code_probe_file" <<EOF
-{"status":"pass","probe_status":"pass","fact_status":"deterministic_evidence","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","evidence_field":"validator_result","validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
+{"status":"pass","probe_status":"pass","fact_status":"deterministic_evidence","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","evidence_field":"validator_result","validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
 EOF
   cat > "$wrong_code_probe_file" <<EOF
-{"status":"pass","probe_status":"pass","fact_status":"deterministic_evidence","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","evidence_field":"validator_result","validator_result":"matched","source_ref":"src/other.py:1","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
+{"status":"pass","probe_status":"pass","fact_status":"deterministic_evidence","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","evidence_field":"validator_result","validator_result":"matched","source_ref":"src/other.py:1","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
 EOF
   cat > "$runtime_probe_file" <<EOF
 {"status":"pass","probe_status":"pass","fact_status":"deterministic_evidence","validator_id":"any.runtime.trace@v1","evidence_type":"runtime_trace","evidence_field":"validator_result","validator_result":"matched","source_ref":"logs/runtime.trace:1","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","validator_kind":"runtime_trace","parser_backed":false,"promotion_limit":"high","writes_shadow_docs":false}
@@ -2922,13 +3272,13 @@ EOF
 {"record_id":"SE-user-024","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Current source hash is not enough without matching probe result.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","probe_args":{"callee":"save","receiver":"repository"}}}
 EOF
   cat > "$wrong_effect_record" <<EOF
-{"record_id":"SE-user-027","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Repo write rule must not confirm cache eviction.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
+{"record_id":"SE-user-027","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Repo write rule must not confirm cache eviction.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
 EOF
   cat > "$wrong_symbol_record" <<EOF
-{"record_id":"SE-user-028","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Anchor symbol must match deterministic probe args.","anchor":{"file":"src/app.py","symbol":"repository.delete"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
+{"record_id":"SE-user-028","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Anchor symbol must match deterministic probe args.","anchor":{"file":"src/app.py","symbol":"repository.delete"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
 EOF
   cat > "$path_only_source_record" <<EOF
-{"record_id":"SE-user-029","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Path-only source refs are accepted when the probe rerun binds the same file.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
+{"record_id":"SE-user-029","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Path-only source refs are accepted when the probe rerun binds the same file.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"src/app.py","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
 EOF
   cat > "$runtime_scenario_record" <<EOF
 {"record_id":"SE-user-025","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Scenario ref alone is not fact evidence.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
@@ -2952,10 +3302,10 @@ EOF
 {"record_id":"SE-user-036","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"effect_intent","statement":"$human_mismatch_statement","anchor":{"file":"docs/task/TASK-shadow-effect-map-01.md","symbol":"user decision"},"evidence":{"type":"user_decision","ref":"UD-human-mismatch"},"source_refs":["TASK-shadow-effect-map-01"]}
 EOF
   cat > "$same_file_wrong_line_record" <<EOF
-{"record_id":"SE-user-032","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Line-qualified source refs must bind the exact matched node.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:999","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
+{"record_id":"SE-user-032","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Line-qualified source refs must bind the exact matched node.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"src/app.py:999","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
 EOF
   cat > "$custom_rule_record" <<EOF
-{"record_id":"SE-user-033","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Registered rules without effect type mapping fail closed.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"custom.missing_effect","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
+{"record_id":"SE-user-033","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Registered rules without effect type mapping fail closed.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"custom.missing_effect","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
 EOF
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$bad_rule_record" --candidate "$candidate_file" --user-decision "$decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
@@ -3498,6 +3848,8 @@ EOF
 - evidence_rule_id: repo.write
 - evidence_validator_kind: ast
 - evidence_parser_backed: true
+- evidence_parser_identity: shadow_evidence_probe.py:py.ast.call_match@v1:ast
+- evidence_parser_content_hash: sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 - evidence_validator_result: matched
 - evidence_source_ref: src/OtherService.java:9
 - evidence_source_hash: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -3519,6 +3871,8 @@ EOF
   local source_file="$TEST_PROJECT/src/app.py"
   local probe_file="$TEST_PROJECT/probe-results/code-probe.json"
   local source_hash
+  local parser_identity
+  local parser_content_hash
   local probe_hash
 
   mkdir -p "$(dirname "$effect_file")" "$(dirname "$source_file")" "$(dirname "$probe_file")"
@@ -3527,8 +3881,10 @@ def handler(repository, user):
     repository.save(user)
 EOF
   source_hash="$(sha256_file_ref "$source_file")"
+  parser_identity="$(parser_identity_ref "py.ast.call_match@v1" "ast")"
+  parser_content_hash="$(sha256_file_ref "$SHADOW_PROBE")"
   cat > "$probe_file" <<EOF
-{"status":"pass","probe_status":"pass","fact_status":"deterministic_evidence","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","evidence_field":"validator_result","validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
+{"status":"pass","probe_status":"pass","fact_status":"deterministic_evidence","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","evidence_field":"validator_result","validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
 EOF
   probe_hash="$(sha256_file_ref "$probe_file")"
   cat > "$effect_file" <<EOF
@@ -3551,6 +3907,8 @@ EOF
 - evidence_rule_id: repo.write
 - evidence_validator_kind: ast
 - evidence_parser_backed: true
+- evidence_parser_identity: $parser_identity
+- evidence_parser_content_hash: $parser_content_hash
 - evidence_validator_result: matched
 - evidence_source_ref: src/app.py:2
 - evidence_source_hash: $source_hash
@@ -3719,11 +4077,15 @@ EOF
   [[ "$output" == *"ts.ast.call_match@v1"* ]]
   [[ "$output" == *"ts.ast.call_match@v2"* ]]
   [[ "$output" == *"fastapi.route@v1"* ]]
+  [[ "$output" == *"express.route@v1"* ]]
+  [[ "$output" == *"react.effect_hook@v1"* ]]
   [[ "$output" == *"any.runtime.trace@v1"* ]]
 
   run python3 "$SHADOW_POLICY_LOADER" --adapter-module "$SHADOW_PROBE" --print-adapter-json
   [ "$status" -eq 0 ]
   [[ "$output" == *'"ts.ast.call_match@v2"'* ]]
+  [[ "$output" == *'"express.route@v1"'* ]]
+  [[ "$output" == *'"react.effect_hook@v1"'* ]]
   [[ "$output" == *'"allowed_extensions":[".ts",".tsx",".mts",".cts"]'* ]]
   [[ "$output" == *'"rejected_extensions":[".d.ts"]'* ]]
   [[ "$output" == *'"allowed_paths":["src/**","app/**","lib/**","server/**","pages/**","routes/**"]'* ]]
@@ -3733,7 +4095,7 @@ EOF
   [[ "$output" == *'"status":"ok"'* ]]
   [[ "$output" == *'"adapter_specs"'* ]]
 
-  perl -0pi -e 's/(implemented_primary_v1: \[[^\]]*any\.runtime\.trace\@v1)/$1, express.route\@v1/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
+  perl -0pi -e 's/(implemented_primary_v1: \[[^\]]*any\.runtime\.trace\@v1)/$1, fastapi.dependency\@v1/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
   run python3 "$SHADOW_POLICY_LOADER" --policy-dir "$DOCS_ROOT/policy" --adapter-module "$SHADOW_PROBE" --check-parity
   [ "$status" -ne 0 ]
   [[ "$output" == *"implemented_primary_v1 id must be implemented by shadow_evidence_probe.py"* ]]
@@ -3764,7 +4126,7 @@ EOF
 }
 
 @test "validate_docs strict fails when catalog claims unimplemented probe primary" {
-  perl -0pi -e 's/(implemented_primary_v1: \[[^\]]*any\.runtime\.trace\@v1)/$1, express.route\@v1/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
+  perl -0pi -e 's/(implemented_primary_v1: \[[^\]]*any\.runtime\.trace\@v1)/$1, fastapi.dependency\@v1/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]

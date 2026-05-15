@@ -61,6 +61,7 @@ class ValidatorAdapter:
 JS_EXTENSIONS = (".js", ".jsx", ".mjs", ".cjs")
 TS_EXTENSIONS = (".ts", ".tsx", ".mts", ".cts")
 TS_REJECTED_EXTENSIONS = (".d.ts",)
+JS_TS_EXTENSIONS = JS_EXTENSIONS + TS_EXTENSIONS
 JS_TS_ALLOWED_PATHS = ("src/**", "app/**", "lib/**", "server/**", "pages/**", "routes/**")
 JS_TS_EXCLUDED_PATHS = (
     "**/node_modules/**",
@@ -76,6 +77,8 @@ JS_TS_EXCLUDED_PATHS = (
 PY_SOURCE_ALLOWED_PATHS = ("**/*.py",)
 PY_SOURCE_EXCLUDED_PATHS = ("tests/**", ".venv/**", "venv/**", "build/**", "dist/**")
 FASTAPI_ROUTE_METHODS = {"get", "post", "put", "patch", "delete", "options", "head"}
+EXPRESS_ROUTE_METHODS = {"get", "post", "put", "patch", "delete", "options", "head", "all"}
+PROBE_SCRIPT_NAME = "shadow_evidence_probe.py"
 
 
 class AdapterRegistry:
@@ -199,6 +202,34 @@ PRIMARY_ADAPTERS: tuple[ValidatorAdapter, ...] = (
             JS_TS_ALLOWED_PATHS,
             JS_TS_EXCLUDED_PATHS + ("**/*.d.ts",),
             TS_EXTENSIONS,
+            TS_REJECTED_EXTENSIONS,
+        ),
+    ),
+    ValidatorAdapter(
+        "express.route@v1",
+        PrimarySpec(
+            "code_call",
+            "js_ts_token_parser",
+            True,
+            "high",
+            "javascript",
+            JS_TS_ALLOWED_PATHS,
+            JS_TS_EXCLUDED_PATHS + ("**/*.d.ts",),
+            JS_TS_EXTENSIONS,
+            TS_REJECTED_EXTENSIONS,
+        ),
+    ),
+    ValidatorAdapter(
+        "react.effect_hook@v1",
+        PrimarySpec(
+            "code_call",
+            "js_ts_token_parser",
+            True,
+            "high",
+            "javascript",
+            JS_TS_ALLOWED_PATHS,
+            JS_TS_EXCLUDED_PATHS + ("**/*.d.ts",),
+            JS_TS_EXTENSIONS,
             TS_REJECTED_EXTENSIONS,
         ),
     ),
@@ -789,6 +820,10 @@ def js_ts_tokens(text: str) -> list[tuple[str, str, int]]:
     return c_like_tokens_from_masked(text, mask_js_ts_code(text))
 
 
+def js_ts_primary_kind(rel_path: str) -> str:
+    return "ts_token_parser" if rel_path.endswith(TS_EXTENSIONS) else "js_token_parser"
+
+
 def matching_java_paren(tokens: list[tuple[str, str, int]], open_index: int) -> int | None:
     depth = 0
     for index in range(open_index, len(tokens)):
@@ -998,6 +1033,205 @@ def match_js_ts_call(
     return False, primary_payload("fail", validator_id, spec, rel_path, "not_found", source_hash)
 
 
+def skip_js_whitespace_and_comments(text: str, index: int) -> int:
+    while index < len(text):
+        if text[index].isspace():
+            index += 1
+            continue
+        if text.startswith("//", index):
+            newline = text.find("\n", index + 2)
+            return len(text) if newline == -1 else skip_js_whitespace_and_comments(text, newline + 1)
+        if text.startswith("/*", index):
+            end = text.find("*/", index + 2)
+            return len(text) if end == -1 else skip_js_whitespace_and_comments(text, end + 2)
+        return index
+    return index
+
+
+def literal_js_string_at(text: str, index: int) -> tuple[str, int] | None:
+    index = skip_js_whitespace_and_comments(text, index)
+    if index >= len(text) or text[index] not in {"'", '"', "`"}:
+        return None
+
+    quote = text[index]
+    cursor = index + 1
+    value_chars: list[str] = []
+    while cursor < len(text):
+        char = text[cursor]
+        if char == "\\":
+            return None
+        if quote == "`" and char == "$" and cursor + 1 < len(text) and text[cursor + 1] == "{":
+            return None
+        if char == quote:
+            return "".join(value_chars), cursor + 1
+        if char in {"\n", "\r"} and quote != "`":
+            return None
+        value_chars.append(char)
+        cursor += 1
+    return None
+
+
+def first_arg_is_complete_literal(text: str, index: int) -> tuple[str, int] | None:
+    literal = literal_js_string_at(text, index)
+    if literal is None:
+        return None
+    value, end_index = literal
+    next_index = skip_js_whitespace_and_comments(text, end_index)
+    if next_index >= len(text) or text[next_index] in {",", ")"}:
+        return value, end_index
+    return None
+
+
+EXPRESS_ROUTE_CALL_RE = re.compile(
+    r"(?<![A-Za-z0-9_$.?])(?P<receiver>app|router)\s*\.\s*"
+    r"(?P<method>get|post|put|patch|delete|options|head|all)\s*\(",
+    re.MULTILINE,
+)
+
+
+def match_express_route(args: argparse.Namespace, root: Path, spec: PrimarySpec) -> tuple[bool, dict[str, object]]:
+    route_path = getattr(args, "route_path", None)
+
+    source = resolve_inside(root, args.source_file, "source file")
+    rel_path = normalize_rel_path(source, root)
+    enforce_primary_path_scope(rel_path, spec)
+    source_hash = sha256_file(source)
+    text = read_text(source)
+    masked = mask_js_ts_code(text)
+
+    for match in EXPRESS_ROUTE_CALL_RE.finditer(masked):
+        method = match.group("method")
+        if method not in EXPRESS_ROUTE_METHODS:
+            continue
+        literal = first_arg_is_complete_literal(text, match.end())
+        if literal is None:
+            continue
+        actual_route_path, _ = literal
+        if route_path and actual_route_path != route_path:
+            continue
+        matched_symbol = f"{match.group('receiver')}.{method}"
+        payload = primary_payload(
+            "pass", "express.route@v1", spec, f"{rel_path}:{line_for_offset(masked, match.start())}", "matched", source_hash
+        )
+        payload["validator_kind"] = js_ts_primary_kind(rel_path)
+        refresh_parser_provenance(payload, "express.route@v1")
+        payload["matched_symbol"] = matched_symbol
+        payload["http_method"] = method
+        payload["route_path"] = actual_route_path
+        return True, payload
+
+    payload = primary_payload("fail", "express.route@v1", spec, rel_path, "not_found", source_hash)
+    payload["validator_kind"] = js_ts_primary_kind(rel_path)
+    refresh_parser_provenance(payload, "express.route@v1")
+    return False, payload
+
+
+IMPORT_FROM_RE = re.compile(r"(?<![A-Za-z0-9_$])import\s+(?P<body>.*?)\s+from\b", re.DOTALL)
+
+
+@dataclass(frozen=True)
+class ReactImportBindings:
+    named_use_effect: bool
+    member_receivers: frozenset[str]
+
+
+def split_import_specifiers(specifiers: str) -> list[str]:
+    return [item.strip() for item in specifiers.split(",") if item.strip()]
+
+
+def react_import_bindings(text: str, masked: str) -> ReactImportBindings:
+    named_use_effect = False
+    member_receivers: set[str] = set()
+
+    for match in IMPORT_FROM_RE.finditer(masked):
+        literal = literal_js_string_at(text, match.end())
+        if literal is None:
+            continue
+        module_name, _ = literal
+        if module_name != "react":
+            continue
+
+        body = match.group("body").strip()
+        if body.startswith("type "):
+            continue
+
+        named_block = re.search(r"\{(?P<specifiers>[^{}]*)\}", body, re.DOTALL)
+        if named_block:
+            for specifier in split_import_specifiers(named_block.group("specifiers")):
+                if specifier == "useEffect":
+                    named_use_effect = True
+
+        body_without_named = re.sub(r"\{[^{}]*\}", "", body).strip()
+        namespace_match = re.match(r"^\*\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)(?:\s*,\s*)?$", body_without_named)
+        if namespace_match:
+            member_receivers.add(namespace_match.group(1))
+            continue
+
+        default_match = re.match(r"^([A-Za-z_$][A-Za-z0-9_$]*)(?:\s*,\s*)?$", body_without_named)
+        if default_match:
+            member_receivers.add(default_match.group(1))
+
+    return ReactImportBindings(named_use_effect=named_use_effect, member_receivers=frozenset(member_receivers))
+
+
+def direct_receiver_before_call(tokens: list[tuple[str, str, int]], callee_index: int) -> str | None:
+    if callee_index >= 2 and tokens[callee_index - 1][1] == "." and tokens[callee_index - 2][0] == "identifier":
+        return tokens[callee_index - 2][1]
+    return None
+
+
+def match_react_effect_hook(args: argparse.Namespace, root: Path, spec: PrimarySpec) -> tuple[bool, dict[str, object]]:
+    source = resolve_inside(root, args.source_file, "source file")
+    rel_path = normalize_rel_path(source, root)
+    enforce_primary_path_scope(rel_path, spec)
+    source_hash = sha256_file(source)
+    text = read_text(source)
+    masked = mask_js_ts_code(text)
+    bindings = react_import_bindings(text, masked)
+    tokens = js_ts_tokens(text)
+
+    for index, (kind, value, line_no) in enumerate(tokens):
+        if kind != "identifier" or value != "useEffect":
+            continue
+        open_index, _ = call_open_paren_index(tokens, index, False)
+        if open_index is None:
+            continue
+        close_index = matching_java_paren(tokens, open_index)
+        if close_index is None:
+            continue
+
+        actual_receiver = direct_receiver_before_call(tokens, index)
+        if actual_receiver is None:
+            if not bindings.named_use_effect or is_probable_js_declaration(tokens, index, close_index):
+                continue
+            matched_symbol = "useEffect"
+        elif actual_receiver in bindings.member_receivers:
+            if not bindings.member_receivers:
+                continue
+            matched_symbol = f"{actual_receiver}.useEffect"
+        else:
+            continue
+
+        payload = primary_payload(
+            "pass", "react.effect_hook@v1", spec, f"{rel_path}:{line_no}", "matched", source_hash
+        )
+        payload["validator_kind"] = js_ts_primary_kind(rel_path)
+        refresh_parser_provenance(payload, "react.effect_hook@v1")
+        payload["matched_symbol"] = matched_symbol
+        return True, payload
+
+    payload = primary_payload("fail", "react.effect_hook@v1", spec, rel_path, "not_found", source_hash)
+    payload["validator_kind"] = js_ts_primary_kind(rel_path)
+    refresh_parser_provenance(payload, "react.effect_hook@v1")
+    return False, payload
+
+
+def refresh_parser_provenance(payload: dict[str, object], validator_id: str) -> None:
+    if payload.get("parser_backed") is True and isinstance(payload.get("validator_kind"), str):
+        payload["parser_identity"] = f"{PROBE_SCRIPT_NAME}:{validator_id}:{payload['validator_kind']}"
+        payload["parser_content_hash"] = sha256_file(Path(__file__).resolve())
+
+
 def primary_payload(
     status: str,
     validator_id: str,
@@ -1022,6 +1256,8 @@ def primary_payload(
     }
     if source_hash is not None:
         payload["source_hash"] = source_hash
+    if spec.parser_backed:
+        refresh_parser_provenance(payload, validator_id)
     return payload
 
 
@@ -1090,6 +1326,10 @@ def run_primary_adapter(args: argparse.Namespace, root: Path, adapter: Validator
         matched, payload = match_java_call(args, root, spec)
     elif validator_id in {"js.ast.call_match@v1", "ts.ast.call_match@v1", "ts.ast.call_match@v2"}:
         matched, payload = match_js_ts_call(args, root, spec, validator_id)
+    elif validator_id == "express.route@v1":
+        matched, payload = match_express_route(args, root, spec)
+    elif validator_id == "react.effect_hook@v1":
+        matched, payload = match_react_effect_hook(args, root, spec)
     elif validator_id == "any.runtime.trace@v1":
         matched, payload = match_runtime_trace(args, root, spec)
     else:

@@ -579,6 +579,8 @@ def finish(line_no: int, end_id: str) -> None:
                 "evidence_rule_id",
                 "evidence_validator_kind",
                 "evidence_parser_backed",
+                "evidence_parser_identity",
+                "evidence_parser_content_hash",
                 "evidence_validator_result",
                 "evidence_source_ref",
                 "evidence_source_hash",
@@ -589,6 +591,8 @@ def finish(line_no: int, end_id: str) -> None:
                     issues.append(f"record {open_id}: deterministic_code record requires {key}")
             if fields.get("evidence_parser_backed", "").lower() != "true":
                 issues.append(f"record {open_id}: deterministic_code evidence_parser_backed must be true")
+            if fields.get("evidence_parser_content_hash") and not sha_re.match(fields["evidence_parser_content_hash"]):
+                issues.append(f"record {open_id}: deterministic_code evidence_parser_content_hash must be sha256")
             if fields.get("evidence_validator_result") != "matched":
                 issues.append(f"record {open_id}: deterministic_code evidence_validator_result must be matched")
             if fields.get("evidence_source_hash") and not sha_re.match(fields["evidence_source_hash"]):

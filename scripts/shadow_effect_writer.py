@@ -366,6 +366,16 @@ def source_hash_blockers(evidence: dict[str, Any], project_root: Path) -> list[s
     return blockers
 
 
+def parser_provenance_blockers(evidence: dict[str, Any]) -> list[str]:
+    blockers: list[str] = []
+    if not has_text(evidence.get("parser_identity")):
+        blockers.append("deterministic_code evidence.parser_identity is required")
+    parser_content_hash = evidence.get("parser_content_hash")
+    if not isinstance(parser_content_hash, str) or not SHA256_RE.match(parser_content_hash):
+        blockers.append("deterministic_code evidence.parser_content_hash must be a sha256 reference")
+    return blockers
+
+
 def trace_hash_blockers(evidence: dict[str, Any], project_root: Path) -> list[str]:
     artifact_hash = evidence.get("artifact_hash")
     if not isinstance(artifact_hash, str) or not SHA256_RE.match(artifact_hash):
@@ -670,7 +680,9 @@ def probe_result_blockers(
             "writes_shadow_docs",
         ]
         if evidence.get("type") == "deterministic_code":
-            compare_fields.extend(["source_hash", "validator_kind", "parser_backed"])
+            compare_fields.extend(
+                ["source_hash", "validator_kind", "parser_backed", "parser_identity", "parser_content_hash"]
+            )
         if evidence.get("type") == "deterministic_runtime":
             compare_fields.extend(["trace_ref", "artifact_hash"])
         for field_name in compare_fields:
@@ -711,7 +723,7 @@ def probe_result_blockers(
         blockers.append("probe_result must not be fallback regex evidence for confirmed deterministic evidence")
 
     if evidence_type == "deterministic_code":
-        for field_name in ("validator_kind", "parser_backed", "source_hash"):
+        for field_name in ("validator_kind", "parser_backed", "source_hash", "parser_identity", "parser_content_hash"):
             if effective_result.get(field_name) != evidence.get(field_name):
                 blockers.append(f"probe_result.{field_name} must match evidence.{field_name}")
         if not same_ref(evidence.get("source_ref"), effective_result.get("source_ref")):
@@ -1007,6 +1019,7 @@ def evidence_blockers(
             blockers.append("deterministic_code evidence.validator_kind is required")
         if evidence.get("parser_backed") is not True:
             blockers.append("deterministic_code evidence.parser_backed must be true")
+        blockers.extend(parser_provenance_blockers(evidence))
         if evidence.get("validator_result") != "matched":
             blockers.append("deterministic_code evidence.validator_result must be matched")
         if not has_text(evidence.get("source_ref")):
@@ -1240,6 +1253,8 @@ def render_record(record: dict[str, Any], user_decision_id: str) -> str:
             "rule_id",
             "validator_kind",
             "parser_backed",
+            "parser_identity",
+            "parser_content_hash",
             "validator_result",
             "source_ref",
             "source_hash",
