@@ -241,6 +241,20 @@ PRIMARY_ADAPTERS: tuple[ValidatorAdapter, ...] = (
         ),
     ),
     ValidatorAdapter(
+        "react.jsx_event_binding@v1",
+        PrimarySpec(
+            "code_reference",
+            "js_ts_token_parser",
+            True,
+            "none",
+            "javascript",
+            JS_TS_ALLOWED_PATHS,
+            JS_TS_EXCLUDED_PATHS + ("**/*.d.ts",),
+            JS_TS_EXTENSIONS,
+            TS_REJECTED_EXTENSIONS,
+        ),
+    ),
+    ValidatorAdapter(
         "py.ast.call_match@v1",
         PrimarySpec(
             "code_call",
@@ -625,6 +639,9 @@ def mask_js_ts_code(text: str) -> str:
     while index < len(chars):
         c = chars[index]
         nxt = chars[index + 1] if index + 1 < len(chars) else ""
+        if c == "/" and nxt == ">":
+            index += 1
+            continue
         if c == "/" and nxt not in {"/", "*"} and is_probable_js_regex_start(chars, index):
             index = mask_js_regex_literal(chars, index)
             continue
@@ -1569,6 +1586,264 @@ def match_react_effect_hook(args: argparse.Namespace, root: Path, spec: PrimaryS
     return False, payload
 
 
+ASCII_EVENT_PROP_RE = re.compile(r"^on[A-Z][A-Za-z0-9_]*$")
+EVENT_LIKE_PROP_RE = re.compile(r"^on", re.IGNORECASE)
+IDENTIFIER_EXPR_RE = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*$")
+MEMBER_EXPR_RE = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)+$")
+
+
+@dataclass(frozen=True)
+class JsxAttribute:
+    name: str
+    value: str | None
+    line_no: int
+    is_spread: bool = False
+
+
+@dataclass(frozen=True)
+class JsxElement:
+    tag_name: str
+    attributes: tuple[JsxAttribute, ...]
+    line_no: int
+
+
+def matching_jsx_brace(masked: str, open_index: int, limit: int) -> int | None:
+    depth = 0
+    for index in range(open_index, limit):
+        char = masked[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+def jsx_tag_end(masked: str, start: int) -> int | None:
+    brace_depth = 0
+    index = start
+    while index < len(masked):
+        char = masked[index]
+        if char == "{":
+            brace_depth += 1
+        elif char == "}" and brace_depth > 0:
+            brace_depth -= 1
+        elif char == ">" and brace_depth == 0:
+            return index
+        index += 1
+    return None
+
+
+def read_jsx_name(masked: str, index: int, limit: int) -> tuple[str, int]:
+    start = index
+    while index < limit and re.match(r"[^\s={}/<>]+", masked[index]):
+        index += 1
+    return masked[start:index], index
+
+
+def jsx_attributes(text: str, masked: str, start: int, name_end: int, tag_end: int) -> tuple[JsxAttribute, ...]:
+    attributes: list[JsxAttribute] = []
+    index = name_end
+    while index < tag_end:
+        char = masked[index]
+        if char.isspace() or char == "/":
+            index += 1
+            continue
+
+        line_no = line_for_offset(text, index)
+        if char == "{":
+            close_index = matching_jsx_brace(masked, index, tag_end)
+            if close_index is None:
+                break
+            expression = masked[index + 1 : close_index].strip()
+            if expression.startswith("..."):
+                attributes.append(JsxAttribute(name="{...}", value=expression, line_no=line_no, is_spread=True))
+            index = close_index + 1
+            continue
+
+        name, index = read_jsx_name(masked, index, tag_end)
+        if not name:
+            index += 1
+            continue
+
+        while index < tag_end and masked[index].isspace():
+            index += 1
+
+        value: str | None = None
+        if index < tag_end and masked[index] == "=":
+            index += 1
+            while index < tag_end and masked[index].isspace():
+                index += 1
+            if index < tag_end and masked[index] == "{":
+                close_index = matching_jsx_brace(masked, index, tag_end)
+                if close_index is None:
+                    value = masked[index + 1 : tag_end].strip()
+                    index = tag_end
+                else:
+                    value = masked[index + 1 : close_index].strip()
+                    index = close_index + 1
+            else:
+                value_start = index
+                while index < tag_end and not masked[index].isspace() and masked[index] not in {"/", "{", "}"}:
+                    index += 1
+                value = masked[value_start:index].strip()
+
+        attributes.append(JsxAttribute(name=name, value=value, line_no=line_no))
+    return tuple(attributes)
+
+
+def jsx_elements(text: str, masked: str) -> list[JsxElement]:
+    elements: list[JsxElement] = []
+    index = 0
+    while index < len(masked):
+        if masked[index] != "<":
+            index += 1
+            continue
+        if index + 1 >= len(masked) or masked[index + 1] in {"/", "!", "?", "=", ">"}:
+            index += 1
+            continue
+        name_match = re.match(r"[A-Za-z][A-Za-z0-9_.:-]*", masked[index + 1 :])
+        if not name_match:
+            index += 1
+            continue
+        tag_name = name_match.group(0)
+        name_end = index + 1 + len(tag_name)
+        if name_end < len(masked) and not (masked[name_end].isspace() or masked[name_end] in {"/", ">"}):
+            index += 1
+            continue
+        tag_end = jsx_tag_end(masked, name_end)
+        if tag_end is None:
+            index += 1
+            continue
+        next_index = tag_end + 1
+        while next_index < len(masked) and masked[next_index].isspace():
+            next_index += 1
+        if next_index < len(masked) and masked[next_index] == "(":
+            index += 1
+            continue
+        elements.append(
+            JsxElement(
+                tag_name=tag_name,
+                attributes=jsx_attributes(text, masked, index, name_end, tag_end),
+                line_no=line_for_offset(text, index),
+            )
+        )
+        index = tag_end + 1
+    return elements
+
+
+def is_non_allowlisted_event_like_prop(name: str) -> bool:
+    if ASCII_EVENT_PROP_RE.match(name):
+        return False
+    if EVENT_LIKE_PROP_RE.match(name):
+        return True
+    return name.startswith("on") and any(ord(char) > 127 for char in name)
+
+
+def classify_jsx_event_handler_binding(value: str | None) -> str:
+    expression = (value or "").strip()
+    if not expression:
+        return "inline_function_unknown"
+    if expression.startswith("...") or "[" in expression or "]" in expression:
+        return "computed_or_spread_unsupported"
+    if "?" in expression or "&&" in expression or "||" in expression:
+        return "conditional_unknown"
+    if "=>" in expression or expression.startswith("function"):
+        return "inline_function_unknown"
+    if IDENTIFIER_EXPR_RE.match(expression):
+        return "direct_identifier"
+    if MEMBER_EXPR_RE.match(expression):
+        return "direct_member_expression"
+    return "inline_function_unknown"
+
+
+def react_jsx_event_payload(
+    status: str,
+    spec: PrimarySpec,
+    source_ref: str,
+    validator_result: str,
+    source_hash: str,
+    event_handler_binding_status: str,
+    event_prop: str | None = None,
+) -> dict[str, object]:
+    payload = primary_payload(status, "react.jsx_event_binding@v1", spec, source_ref, validator_result, source_hash)
+    payload["validator_kind"] = js_ts_primary_kind(source_ref.split(":", 1)[0])
+    refresh_parser_provenance(payload, "react.jsx_event_binding@v1")
+    payload["event_handler_binding_status"] = event_handler_binding_status
+    payload["syntax_scope"] = "jsx_event_attribute_only"
+    if event_prop is not None:
+        payload["event_prop"] = event_prop
+    if status == "unsupported":
+        payload["fact_status"] = "candidate_only"
+    return payload
+
+
+def match_react_jsx_event_binding(args: argparse.Namespace, root: Path, spec: PrimarySpec) -> tuple[bool, dict[str, object]]:
+    source = resolve_inside(root, args.source_file, "source file")
+    rel_path = normalize_rel_path(source, root)
+    enforce_primary_path_scope(rel_path, spec)
+    source_hash = sha256_file(source)
+    text = read_text(source)
+    masked = mask_js_ts_code(text)
+    elements = jsx_elements(text, masked)
+
+    if not elements:
+        payload = react_jsx_event_payload("fail", spec, rel_path, "not_found", source_hash, "not_found")
+        return False, payload
+
+    for element in elements:
+        for attribute in element.attributes:
+            source_ref = f"{rel_path}:{attribute.line_no}"
+            if attribute.is_spread:
+                payload = react_jsx_event_payload(
+                    "unsupported",
+                    spec,
+                    source_ref,
+                    "unsupported",
+                    source_hash,
+                    "computed_or_spread_unsupported",
+                )
+                return False, payload
+            if is_non_allowlisted_event_like_prop(attribute.name):
+                payload = react_jsx_event_payload(
+                    "pass",
+                    spec,
+                    source_ref,
+                    "non_allowlisted_event_like_prop",
+                    source_hash,
+                    "non_allowlisted_event_like_prop",
+                    attribute.name,
+                )
+                return True, payload
+            if not ASCII_EVENT_PROP_RE.match(attribute.name):
+                continue
+            event_status = classify_jsx_event_handler_binding(attribute.value)
+            source_status = "unsupported" if event_status == "computed_or_spread_unsupported" else "pass"
+            validator_result = "unsupported" if source_status == "unsupported" else "matched"
+            payload = react_jsx_event_payload(
+                source_status,
+                spec,
+                source_ref,
+                validator_result,
+                source_hash,
+                event_status,
+                attribute.name,
+            )
+            return source_status != "unsupported", payload
+
+    first_element = elements[0]
+    payload = react_jsx_event_payload(
+        "pass",
+        spec,
+        f"{rel_path}:{first_element.line_no}",
+        "absent",
+        source_hash,
+        "absent",
+    )
+    return True, payload
+
+
 def refresh_parser_provenance(payload: dict[str, object], validator_id: str) -> None:
     if payload.get("parser_backed") is True and isinstance(payload.get("validator_kind"), str):
         payload["parser_identity"] = f"{PROBE_SCRIPT_NAME}:{validator_id}:{payload['validator_kind']}"
@@ -1767,6 +2042,8 @@ def run_primary_adapter(args: argparse.Namespace, root: Path, adapter: Validator
         matched, payload = match_express_route(args, root, spec)
     elif validator_id == "react.effect_hook@v1":
         matched, payload = match_react_effect_hook(args, root, spec)
+    elif validator_id == "react.jsx_event_binding@v1":
+        matched, payload = match_react_jsx_event_binding(args, root, spec)
     elif validator_id == "any.runtime.trace@v1":
         matched, payload = match_runtime_trace(args, root, spec)
     else:
@@ -1804,6 +2081,8 @@ def run_primary(args: argparse.Namespace, root: Path) -> int:
     matched, payload = result
 
     emit(payload)
+    if payload.get("status") == "unsupported":
+        return UNSUPPORTED
     return PASS if matched else FAIL
 
 

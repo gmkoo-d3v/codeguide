@@ -144,6 +144,10 @@ validators:
     evidence_type: code_call
     validates: React effect hook call exists
     limitations: [does_not_prove_effect_execution_timing]
+  react.jsx_event_binding@v1:
+    evidence_type: code_reference
+    validates: JSX event binding syntax metadata exists or is absent on a JSX element
+    limitations: [syntax_only, no_react_import_binding_required, no_type_checking, no_semantic_event_handler_claim, writer_confirmed_promotion_unsupported]
   fastapi.route@v1:
     evidence_type: annotation
     validates: FastAPI route decorator exists
@@ -167,8 +171,8 @@ validators:
 ```yaml
 probe_coverage:
   probe_script: scripts/shadow_evidence_probe.py
-  implemented_primary_v1: [py.ast.call_match@v1, py.decorator.match@v1, java.ast.call_match@v1, js.ast.call_match@v1, ts.ast.call_match@v1, ts.ast.call_match@v2, fastapi.route@v1, fastapi.dependency@v1, express.route@v1, react.effect_hook@v1, java.annotation.match@v1, spring_boot.request_mapping@v1, spring_boot.cache_evict.annotation@v1, jpa.repository.save@v1, any.runtime.trace@v1]
-  parser_backed_now: [py.ast.call_match@v1, py.decorator.match@v1, java.ast.call_match@v1, js.ast.call_match@v1, ts.ast.call_match@v1, ts.ast.call_match@v2, fastapi.route@v1, fastapi.dependency@v1, express.route@v1, react.effect_hook@v1]
+  implemented_primary_v1: [py.ast.call_match@v1, py.decorator.match@v1, java.ast.call_match@v1, js.ast.call_match@v1, ts.ast.call_match@v1, ts.ast.call_match@v2, fastapi.route@v1, fastapi.dependency@v1, express.route@v1, react.effect_hook@v1, react.jsx_event_binding@v1, java.annotation.match@v1, spring_boot.request_mapping@v1, spring_boot.cache_evict.annotation@v1, jpa.repository.save@v1, any.runtime.trace@v1]
+  parser_backed_now: [py.ast.call_match@v1, py.decorator.match@v1, java.ast.call_match@v1, js.ast.call_match@v1, ts.ast.call_match@v1, ts.ast.call_match@v2, fastapi.route@v1, fastapi.dependency@v1, express.route@v1, react.effect_hook@v1, react.jsx_event_binding@v1]
   source_probe_only: [java.annotation.match@v1, spring_boot.request_mapping@v1, spring_boot.cache_evict.annotation@v1, jpa.repository.save@v1]
   unsupported_behavior: unsupported_no_infer_no_write_no_promote
 ```

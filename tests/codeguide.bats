@@ -1313,6 +1313,169 @@ EOF
   [[ "$output" == *'"dependency_status":"missing_or_non_array_unknown"'* ]]
 }
 
+@test "shadow_evidence_probe react.jsx_event_binding@v1 reports syntax-only event binding metadata" {
+  mkdir -p "$TEST_PROJECT/src"
+  cat > "$TEST_PROJECT/src/direct-identifier.jsx" <<'EOF'
+export function Button({ handleClick }) {
+  return <button onClick={handleClick} data-id="save" />;
+}
+EOF
+  cat > "$TEST_PROJECT/src/direct-member.jsx" <<'EOF'
+export function Button({ props }) {
+  return <button onClick={props.handleClick} />;
+}
+EOF
+  cat > "$TEST_PROJECT/src/inline-function.jsx" <<'EOF'
+export function Button({ save }) {
+  return <button onClick={() => save()} />;
+}
+EOF
+  cat > "$TEST_PROJECT/src/conditional.jsx" <<'EOF'
+export function Button({ enabled, save, noop }) {
+  return <button onClick={enabled ? save : noop} />;
+}
+EOF
+  cat > "$TEST_PROJECT/src/computed.jsx" <<'EOF'
+export function Button({ handlers, name }) {
+  return <button onClick={handlers[name]} />;
+}
+EOF
+  cat > "$TEST_PROJECT/src/spread.jsx" <<'EOF'
+export function Button({ props }) {
+  return <button {...props} />;
+}
+EOF
+  cat > "$TEST_PROJECT/src/nonallowlisted.jsx" <<'EOF'
+export function Button({ handleClick, handleHover }) {
+  return <button onclick={handleClick} onÅction={handleHover} />;
+}
+EOF
+  cat > "$TEST_PROJECT/src/no-events.jsx" <<'EOF'
+export function Label() {
+  return <section className="panel"><span data-id="label" /></section>;
+}
+EOF
+  cat > "$TEST_PROJECT/src/no-jsx.js" <<'EOF'
+export function add(a, b) {
+  return a + b;
+}
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.jsx_event_binding@v1" \
+    --source-file "src/direct-identifier.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"pass"'* ]]
+  [[ "$output" == *'"validator_id":"react.jsx_event_binding@v1"'* ]]
+  [[ "$output" == *'"validator_result":"matched"'* ]]
+  [[ "$output" == *'"event_prop":"onClick"'* ]]
+  [[ "$output" == *'"event_handler_binding_status":"direct_identifier"'* ]]
+  [[ "$output" == *'"promotion_limit":"none"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.jsx_event_binding@v1" \
+    --source-file "src/direct-member.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"event_handler_binding_status":"direct_member_expression"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.jsx_event_binding@v1" \
+    --source-file "src/inline-function.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"event_handler_binding_status":"inline_function_unknown"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.jsx_event_binding@v1" \
+    --source-file "src/conditional.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"event_handler_binding_status":"conditional_unknown"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.jsx_event_binding@v1" \
+    --source-file "src/computed.jsx"
+
+  [ "$status" -eq 2 ]
+  [[ "$output" == *'"status":"unsupported"'* ]]
+  [[ "$output" == *'"event_handler_binding_status":"computed_or_spread_unsupported"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.jsx_event_binding@v1" \
+    --source-file "src/spread.jsx"
+
+  [ "$status" -eq 2 ]
+  [[ "$output" == *'"status":"unsupported"'* ]]
+  [[ "$output" == *'"event_handler_binding_status":"computed_or_spread_unsupported"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.jsx_event_binding@v1" \
+    --source-file "src/nonallowlisted.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"validator_result":"non_allowlisted_event_like_prop"'* ]]
+  [[ "$output" == *'"event_handler_binding_status":"non_allowlisted_event_like_prop"'* ]]
+  [[ "$output" == *'"event_prop":"onclick"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.jsx_event_binding@v1" \
+    --source-file "src/no-events.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"validator_result":"absent"'* ]]
+  [[ "$output" == *'"event_handler_binding_status":"absent"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.jsx_event_binding@v1" \
+    --source-file "src/no-jsx.js"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'"status":"fail"'* ]]
+  [[ "$output" == *'"validator_result":"not_found"'* ]]
+}
+
+@test "shadow_evidence_probe react.jsx_event_binding@v1 ignores non-event props and rejects excluded test paths" {
+  mkdir -p "$TEST_PROJECT/src" "$TEST_PROJECT/tests"
+  cat > "$TEST_PROJECT/src/props-only.jsx" <<'EOF'
+export function Input() {
+  return <input className="field" data-testid="name" aria-label="Name" />;
+}
+EOF
+  cat > "$TEST_PROJECT/tests/click.spec.jsx" <<'EOF'
+export function TestButton({ click }) {
+  return <button onClick={click} />;
+}
+EOF
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.jsx_event_binding@v1" \
+    --source-file "src/props-only.jsx"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"validator_result":"absent"'* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "react.jsx_event_binding@v1" \
+    --source-file "tests/click.spec.jsx"
+
+  [ "$status" -eq 64 ]
+  [[ "$output" == *'"status":"error"'* ]]
+  [[ "$output" == *"primary validator"* ]]
+}
+
 @test "shadow_evidence_probe regex fallback emits fallback_result only" {
   mkdir -p "$TEST_PROJECT/src/main/java/example"
   cat > "$TEST_PROJECT/src/main/java/example/UserService.java" <<'EOF'
@@ -5493,6 +5656,7 @@ EOF
   [[ "$output" == *"fastapi.route@v1"* ]]
   [[ "$output" == *"express.route@v1"* ]]
   [[ "$output" == *"react.effect_hook@v1"* ]]
+  [[ "$output" == *"react.jsx_event_binding@v1"* ]]
   [[ "$output" == *"any.runtime.trace@v1"* ]]
 
   run python3 "$SHADOW_POLICY_LOADER" --adapter-module "$SHADOW_PROBE" --print-adapter-json
@@ -5500,6 +5664,7 @@ EOF
   [[ "$output" == *'"ts.ast.call_match@v2"'* ]]
   [[ "$output" == *'"express.route@v1"'* ]]
   [[ "$output" == *'"react.effect_hook@v1"'* ]]
+  [[ "$output" == *'"react.jsx_event_binding@v1"'* ]]
   [[ "$output" == *'"allowed_extensions":[".ts",".tsx",".mts",".cts"]'* ]]
   [[ "$output" == *'"rejected_extensions":[".d.ts"]'* ]]
   [[ "$output" == *'"allowed_paths":["src/**","app/**","lib/**","server/**","pages/**","routes/**"]'* ]]
