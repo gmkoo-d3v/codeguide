@@ -1649,6 +1649,40 @@ EOF
   [[ "$output" == *'"status":"fail"'* ]]
 }
 
+@test "shadow_evidence_probe runtime trace rejects duplicate and dotted selected fields" {
+  local runtime_json_event='{"event":"user.cache.evict","userId":42,"timestamp":"2026-05-02T00:00:00Z"}'
+
+  mkdir -p "$TEST_PROJECT/logs"
+  printf '%s\n' "$runtime_json_event" > "$TEST_PROJECT/logs/runtime-json.trace"
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "any.runtime.trace@v1" \
+    --trace-file "logs/runtime-json.trace" \
+    --trace-event "$runtime_json_event" \
+    --hash-input-scope "selected_fields" \
+    --selected-field "event" \
+    --selected-field "event"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'"status":"error"'* ]]
+  [[ "$output" == *'"validator_id":"any.runtime.trace@v1"'* ]]
+  [[ "$output" == *"--selected-field must not contain duplicates"* ]]
+
+  run python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "any.runtime.trace@v1" \
+    --trace-file "logs/runtime-json.trace" \
+    --trace-event "$runtime_json_event" \
+    --hash-input-scope "selected_fields" \
+    --selected-field "payload.event"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'"status":"error"'* ]]
+  [[ "$output" == *'"validator_id":"any.runtime.trace@v1"'* ]]
+  [[ "$output" == *"selected_fields scope supports only top-level field names"* ]]
+}
+
 @test "shadow_evidence_probe rejects traversal and does not write shadow docs" {
   mkdir -p "$TEST_PROJECT/src"
   cat > "$TEST_PROJECT/src/app.py" <<'EOF'
@@ -4581,6 +4615,92 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -eq 0 ]
+
+  cat > "$effect_file" <<EOF
+# Effects
+
+- doc_role: effect_map
+
+<!-- shadow-effect-record:SE-runtime-108 begin -->
+## SE-runtime-108
+
+- record_id: SE-runtime-108
+- record_type: effect_map_entry
+- lifecycle: confirmed
+- effect_type: cache_evict
+- statement: Rendered runtime selected-fields evidence must reject duplicate field names.
+- anchor_file: logs/runtime-json.trace
+- anchor_line: 1
+- anchor_symbol: $runtime_json_event
+- evidence_type: deterministic_runtime
+- evidence_ref: any.runtime.trace@v1
+- evidence_rule_id: cache.evict
+- evidence_trace_ref: logs/runtime-json.trace:1
+- evidence_artifact_hash: $runtime_selected_hash
+- evidence_artifact_media_type: application/json
+- evidence_encoding: utf-8
+- evidence_canonicalization: rfc8785
+- evidence_hash_input_scope: selected_fields
+- evidence_selected_fields: ["event","event"]
+- evidence_ignored_nondeterministic_fields: []
+- evidence_scenario_ref: scenario:user-update-cache
+- evidence_scenario_scope: runtime.scopes.user_update_cache
+- evidence_setter_symbol_path: RuntimeScenarioRegistry.userUpdateCacheEvict
+- evidence_setter_module_hash: $setter_module_hash
+- evidence_expiry_or_invalidation_rule: binding_change
+- evidence_user_decision_ref: UD-runtime-013
+- evidence_probe_result_ref: probe-results/runtime-selected-probe.json
+- evidence_probe_result_hash: $runtime_selected_probe_hash
+
+<!-- shadow-effect-record:SE-runtime-108 end -->
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"deterministic_runtime evidence_selected_fields must not contain duplicate field names"* ]]
+
+  cat > "$effect_file" <<EOF
+# Effects
+
+- doc_role: effect_map
+
+<!-- shadow-effect-record:SE-runtime-109 begin -->
+## SE-runtime-109
+
+- record_id: SE-runtime-109
+- record_type: effect_map_entry
+- lifecycle: confirmed
+- effect_type: cache_evict
+- statement: Rendered runtime selected-fields evidence must reject nested field names.
+- anchor_file: logs/runtime-json.trace
+- anchor_line: 1
+- anchor_symbol: $runtime_json_event
+- evidence_type: deterministic_runtime
+- evidence_ref: any.runtime.trace@v1
+- evidence_rule_id: cache.evict
+- evidence_trace_ref: logs/runtime-json.trace:1
+- evidence_artifact_hash: $runtime_selected_hash
+- evidence_artifact_media_type: application/json
+- evidence_encoding: utf-8
+- evidence_canonicalization: rfc8785
+- evidence_hash_input_scope: selected_fields
+- evidence_selected_fields: ["payload.event"]
+- evidence_ignored_nondeterministic_fields: []
+- evidence_scenario_ref: scenario:user-update-cache
+- evidence_scenario_scope: runtime.scopes.user_update_cache
+- evidence_setter_symbol_path: RuntimeScenarioRegistry.userUpdateCacheEvict
+- evidence_setter_module_hash: $setter_module_hash
+- evidence_expiry_or_invalidation_rule: binding_change
+- evidence_user_decision_ref: UD-runtime-013
+- evidence_probe_result_ref: probe-results/runtime-selected-probe.json
+- evidence_probe_result_hash: $runtime_selected_probe_hash
+
+<!-- shadow-effect-record:SE-runtime-109 end -->
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"deterministic_runtime evidence_selected_fields supports only top-level field names"* ]]
 
   cat > "$effect_file" <<EOF
 # Effects
