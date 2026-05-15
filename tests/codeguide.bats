@@ -4380,13 +4380,41 @@ EOF
 @test "validate_docs strict audits deterministic_runtime envelope metadata" {
   local effect_file="$DOCS_ROOT/shadow/packages/codeguide/effects.md"
   local runtime_probe_file="$TEST_PROJECT/probe-results/runtime-probe.json"
+  local runtime_line_probe_file="$TEST_PROJECT/probe-results/runtime-line-probe.json"
+  local runtime_selected_probe_file="$TEST_PROJECT/probe-results/runtime-selected-probe.json"
+  local runtime_json_event='{"event":"user.cache.evict","userId":42,"timestamp":"2026-05-02T00:00:00Z"}'
   local runtime_probe_hash
+  local runtime_line_probe_hash
+  local runtime_selected_probe_hash
+  local runtime_line_hash
+  local runtime_selected_hash
   local setter_module_hash
 
   mkdir -p "$(dirname "$effect_file")" "$(dirname "$runtime_probe_file")" "$TEST_PROJECT/logs"
   printf '%s\n' "event=user.cache.evict" > "$TEST_PROJECT/logs/runtime.trace"
+  printf '%s\n' "$runtime_json_event" > "$TEST_PROJECT/logs/runtime-json.trace"
   printf '{"status":"pass"}\n' > "$runtime_probe_file"
+  python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "any.runtime.trace@v1" \
+    --trace-file "logs/runtime.trace" \
+    --trace-event "event=user.cache.evict" \
+    --hash-input-scope "line_range" \
+    --line-range-start 1 \
+    --line-range-end 1 > "$runtime_line_probe_file"
+  python3 "$SHADOW_PROBE" \
+    --project-root "$TEST_PROJECT" \
+    --validator-id "any.runtime.trace@v1" \
+    --trace-file "logs/runtime-json.trace" \
+    --trace-event "$runtime_json_event" \
+    --hash-input-scope "selected_fields" \
+    --selected-field "event" \
+    --selected-field "userId" > "$runtime_selected_probe_file"
   runtime_probe_hash="$(sha256_file_ref "$runtime_probe_file")"
+  runtime_line_probe_hash="$(sha256_file_ref "$runtime_line_probe_file")"
+  runtime_selected_probe_hash="$(sha256_file_ref "$runtime_selected_probe_file")"
+  runtime_line_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["artifact_hash"])' "$runtime_line_probe_file")"
+  runtime_selected_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["artifact_hash"])' "$runtime_selected_probe_file")"
   setter_module_hash="$(sha256_file_ref "$SHADOW_USER_DECISION")"
 
   cat > "$effect_file" <<EOF
@@ -4468,6 +4496,91 @@ EOF
   [[ "$output" == *"deterministic_runtime evidence_setter_symbol_path must match"* ]]
   [[ "$output" == *"deterministic_runtime evidence_setter_module_hash must be sha256"* ]]
   [[ "$output" == *"deterministic_runtime evidence_expiry_or_invalidation_rule must be timestamp, binding_change, or manual_revocation"* ]]
+
+  cat > "$effect_file" <<EOF
+# Effects
+
+- doc_role: effect_map
+
+<!-- shadow-effect-record:SE-runtime-106 begin -->
+## SE-runtime-106
+
+- record_id: SE-runtime-106
+- record_type: effect_map_entry
+- lifecycle: confirmed
+- effect_type: cache_evict
+- statement: Rendered runtime line-range evidence should validate with scoped artifact hashing.
+- anchor_file: logs/runtime.trace
+- anchor_line: 1
+- anchor_symbol: event=user.cache.evict
+- evidence_type: deterministic_runtime
+- evidence_ref: any.runtime.trace@v1
+- evidence_rule_id: cache.evict
+- evidence_trace_ref: logs/runtime.trace:1
+- evidence_artifact_hash: $runtime_line_hash
+- evidence_artifact_media_type: text/plain
+- evidence_encoding: utf-8
+- evidence_canonicalization: custom-declared
+- evidence_canonical_output_type: text
+- evidence_hash_input_scope: line_range
+- evidence_line_range: {"end":1,"start":1}
+- evidence_ignored_nondeterministic_fields: []
+- evidence_scenario_ref: scenario:user-update-cache
+- evidence_scenario_scope: runtime.scopes.user_update_cache
+- evidence_setter_symbol_path: RuntimeScenarioRegistry.userUpdateCacheEvict
+- evidence_setter_module_hash: $setter_module_hash
+- evidence_expiry_or_invalidation_rule: binding_change
+- evidence_user_decision_ref: UD-runtime-013
+- evidence_probe_result_ref: probe-results/runtime-line-probe.json
+- evidence_probe_result_hash: $runtime_line_probe_hash
+
+<!-- shadow-effect-record:SE-runtime-106 end -->
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -eq 0 ]
+
+  cat > "$effect_file" <<EOF
+# Effects
+
+- doc_role: effect_map
+
+<!-- shadow-effect-record:SE-runtime-107 begin -->
+## SE-runtime-107
+
+- record_id: SE-runtime-107
+- record_type: effect_map_entry
+- lifecycle: confirmed
+- effect_type: cache_evict
+- statement: Rendered runtime selected-fields evidence should validate with scoped artifact hashing.
+- anchor_file: logs/runtime-json.trace
+- anchor_line: 1
+- anchor_symbol: $runtime_json_event
+- evidence_type: deterministic_runtime
+- evidence_ref: any.runtime.trace@v1
+- evidence_rule_id: cache.evict
+- evidence_trace_ref: logs/runtime-json.trace:1
+- evidence_artifact_hash: $runtime_selected_hash
+- evidence_artifact_media_type: application/json
+- evidence_encoding: utf-8
+- evidence_canonicalization: rfc8785
+- evidence_hash_input_scope: selected_fields
+- evidence_selected_fields: ["event","userId"]
+- evidence_ignored_nondeterministic_fields: []
+- evidence_scenario_ref: scenario:user-update-cache
+- evidence_scenario_scope: runtime.scopes.user_update_cache
+- evidence_setter_symbol_path: RuntimeScenarioRegistry.userUpdateCacheEvict
+- evidence_setter_module_hash: $setter_module_hash
+- evidence_expiry_or_invalidation_rule: binding_change
+- evidence_user_decision_ref: UD-runtime-013
+- evidence_probe_result_ref: probe-results/runtime-selected-probe.json
+- evidence_probe_result_hash: $runtime_selected_probe_hash
+
+<!-- shadow-effect-record:SE-runtime-107 end -->
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -eq 0 ]
 
   cat > "$effect_file" <<EOF
 # Effects
