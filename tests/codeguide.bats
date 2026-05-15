@@ -2162,6 +2162,46 @@ EOF
   [[ "$output" == *"human-only record.effect_type"* ]]
 }
 
+@test "shadow_user_decision_wrapper derives runtime_scenario_fit binding metadata from record evidence" {
+  local decision_file="$TEST_WORKSPACE/runtime-fit-decision.json"
+  local record_file="$TEST_WORKSPACE/runtime-record.json"
+  local setter_module_hash
+
+  setter_module_hash="$(sha256_file_ref "$SHADOW_USER_DECISION")"
+  cat > "$record_file" <<EOF
+{"record_id":"SE-runtime-wrap","record_type":"effect_map_entry","candidate_id":"LC-test","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Runtime fit wrapper should bind invalidation metadata.","anchor":{"file":"logs/runtime.trace","line":2,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:2","artifact_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifact_media_type":"text/plain","encoding":"utf-8","canonicalization":"none","hash_input_scope":"whole_artifact","ignored_nondeterministic_fields":[],"scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+EOF
+
+  run python3 "$SHADOW_USER_DECISION" \
+    --project-root "$TEST_PROJECT" \
+    --output "$decision_file" \
+    --decision-id "UD-runtime-wrap" \
+    --decision-type "runtime_scenario_fit" \
+    --answer "confirmed" \
+    --decided-by "gm" \
+    --decided-at "2026-05-02" \
+    --expires-at "2026-05-09" \
+    --record "$record_file" \
+    --rationale "Confirm this runtime trace fits the bounded cache eviction scenario." \
+    --source-ref "TASK-shadow-effect-map-01" \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  run grep '"scenario_scope": "runtime.scopes.user_update_cache"' "$decision_file"
+  [ "$status" -eq 0 ]
+  run grep '"setter_symbol_path": "RuntimeScenarioRegistry.userUpdateCacheEvict"' "$decision_file"
+  [ "$status" -eq 0 ]
+  run grep "\"setter_module_hash\": \"$setter_module_hash\"" "$decision_file"
+  [ "$status" -eq 0 ]
+  run grep '"expiry_or_invalidation_rule": "binding_change"' "$decision_file"
+  [ "$status" -eq 0 ]
+  run grep '"trace_ref": "logs/runtime.trace:2"' "$decision_file"
+  [ "$status" -eq 0 ]
+  run grep '"scenario_ref": "scenario:user-update-cache"' "$decision_file"
+  [ "$status" -eq 0 ]
+}
+
 @test "shadow_effect_writer dry-run previews without writing shadow docs" {
   local candidate_file="$TEST_WORKSPACE/candidate.json"
   local decision_file="$TEST_WORKSPACE/decision.json"
@@ -2339,9 +2379,17 @@ EOF
   local missing_parser_record_file="$TEST_WORKSPACE/missing-parser-record.json"
   local mismatch_parser_record_file="$TEST_WORKSPACE/mismatch-parser-record.json"
   local good_runtime_record_file="$TEST_WORKSPACE/good-runtime-record.json"
+  local missing_binding_metadata_record_file="$TEST_WORKSPACE/runtime-missing-binding-metadata-record.json"
+  local binary_rfc8785_record_file="$TEST_WORKSPACE/runtime-binary-rfc8785-record.json"
+  local ignored_fields_record_file="$TEST_WORKSPACE/runtime-ignored-fields-record.json"
+  local missing_selected_fields_record_file="$TEST_WORKSPACE/runtime-missing-selected-fields-record.json"
+  local malformed_selected_fields_record_file="$TEST_WORKSPACE/runtime-malformed-selected-fields-record.json"
+  local invalid_line_range_record_file="$TEST_WORKSPACE/runtime-invalid-line-range-record.json"
+  local valid_custom_line_range_record_file="$TEST_WORKSPACE/runtime-valid-custom-line-range-record.json"
   local code_probe_file="$TEST_WORKSPACE/code-probe.json"
   local runtime_probe_file="$TEST_WORKSPACE/runtime-probe.json"
   local runtime_decision_file="$TEST_WORKSPACE/runtime-decision.json"
+  local runtime_mismatch_decision_file="$TEST_WORKSPACE/runtime-mismatch-decision.json"
   local draft_file="$TEST_WORKSPACE/draft.md"
   local source_hash
   local parser_identity
@@ -2349,6 +2397,7 @@ EOF
   local runtime_hash
   local code_probe_hash
   local runtime_probe_hash
+  local setter_module_hash
   local runtime_statement="Cache eviction is backed by a runtime trace artifact."
   local runtime_statement_hash
 
@@ -2369,6 +2418,7 @@ EOF
   parser_identity="$(parser_identity_ref "py.ast.call_match@v1" "ast")"
   parser_content_hash="$(sha256_file_ref "$SHADOW_PROBE")"
   runtime_hash="$(sha256_file_ref "$TEST_PROJECT/logs/runtime.trace")"
+  setter_module_hash="$(sha256_file_ref "$SHADOW_USER_DECISION")"
   cat > "$code_probe_file" <<EOF
 {"status":"pass","probe_status":"pass","fact_status":"deterministic_evidence","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","evidence_field":"validator_result","validator_result":"matched","source_ref":"src/app.py:6","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
 EOF
@@ -2393,19 +2443,22 @@ EOF
   candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
 
   cat > "$decision_file" <<EOF
-{"user_decision":{"id":"UD-013","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-user-004","SE-user-005","SE-user-006","SE-user-007","SE-user-008"],"rationale":"Approve evaluating deterministic evidence metadata.","source_refs":["TASK-shadow-effect-map-01"]}}
+{"user_decision":{"id":"UD-013","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-user-004","SE-user-005","SE-user-006","SE-user-007","SE-user-008","SE-user-009"],"rationale":"Approve evaluating deterministic evidence metadata.","source_refs":["TASK-shadow-effect-map-01"]}}
 EOF
   cat > "$runtime_decision_file" <<EOF
-{"user_decision":{"id":"UD-runtime-013","decision_type":"runtime_scenario_fit","answer":"confirmed","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":[{"record_id":"SE-user-008","effect_type":"cache_evict","statement_hash":"$runtime_statement_hash","anchor_file":"logs/runtime.trace","anchor_line":"2","anchor_symbol":"event=user.cache.evict","trace_ref":"logs/runtime.trace:2","scenario_ref":"scenario:user-update-cache"}],"rationale":"The trace scenario matches the user update cache-evict scenario.","source_refs":["logs/runtime.trace:2","scenario:user-update-cache"]}}
+{"user_decision":{"id":"UD-runtime-013","decision_type":"runtime_scenario_fit","answer":"confirmed","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":[{"record_id":"SE-user-008","effect_type":"cache_evict","statement_hash":"$runtime_statement_hash","anchor_file":"logs/runtime.trace","anchor_line":"2","anchor_symbol":"event=user.cache.evict","trace_ref":"logs/runtime.trace:2","scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change"}],"rationale":"The trace scenario matches the user update cache-evict scenario.","source_refs":["logs/runtime.trace:2","scenario:user-update-cache"]}}
+EOF
+  cat > "$runtime_mismatch_decision_file" <<EOF
+{"user_decision":{"id":"UD-runtime-013","decision_type":"runtime_scenario_fit","answer":"confirmed","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":[{"record_id":"SE-user-008","effect_type":"cache_evict","statement_hash":"$runtime_statement_hash","anchor_file":"logs/runtime.trace","anchor_line":"2","anchor_symbol":"event=user.cache.evict","trace_ref":"logs/runtime.trace:2","scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"sha256:0000000000000000000000000000000000000000000000000000000000000000","expiry_or_invalidation_rule":"binding_change"}],"rationale":"The trace scenario binding intentionally uses a stale setter module hash.","source_refs":["logs/runtime.trace:2","scenario:user-update-cache"]}}
 EOF
   cat > "$code_record_file" <<EOF
 {"record_id":"SE-user-004","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Repository save is claimed by deterministic code evidence.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:6","source_hash":"$source_hash"}}
 EOF
   cat > "$runtime_record_file" <<EOF
-{"record_id":"SE-user-005","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Cache eviction is claimed by deterministic runtime evidence.","anchor":{"file":"src/UserService.java","symbol":"UserCache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","scenario_ref":"scenario:user-update-cache"}}
+{"record_id":"SE-user-005","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Cache eviction is claimed by deterministic runtime evidence.","anchor":{"file":"src/UserService.java","symbol":"UserCache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change"}}
 EOF
   cat > "$bad_runtime_record_file" <<EOF
-{"record_id":"SE-user-007","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Cache eviction has malformed runtime hash evidence.","anchor":{"file":"src/UserService.java","symbol":"UserCache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","trace_ref":"logs/runtime.trace:2","artifact_hash":"sha256:x","scenario_ref":"scenario:user-update-cache"}}
+{"record_id":"SE-user-007","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Cache eviction has malformed runtime hash evidence.","anchor":{"file":"src/UserService.java","symbol":"UserCache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","trace_ref":"logs/runtime.trace:2","artifact_hash":"sha256:x","scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change"}}
 EOF
   cat > "$good_code_record_file" <<EOF
 {"record_id":"SE-user-006","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Repository save is backed by parser evidence.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"src/app.py:6","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
@@ -2417,7 +2470,28 @@ EOF
 {"record_id":"SE-user-006","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Repository save is backed by mismatched parser provenance.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"parser_identity":"shadow_evidence_probe.py:wrong:ast","parser_content_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","validator_result":"matched","source_ref":"src/app.py:6","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
 EOF
   cat > "$good_runtime_record_file" <<EOF
-{"record_id":"SE-user-008","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_statement","anchor":{"file":"logs/runtime.trace","line":2,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:2","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","user_decision_ref":"UD-runtime-013","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+{"record_id":"SE-user-008","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_statement","anchor":{"file":"logs/runtime.trace","line":2,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:2","artifact_hash":"$runtime_hash","artifact_media_type":"text/plain","encoding":"utf-8","canonicalization":"none","hash_input_scope":"whole_artifact","ignored_nondeterministic_fields":[],"scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","user_decision_ref":"UD-runtime-013","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+EOF
+  cat > "$missing_binding_metadata_record_file" <<EOF
+{"record_id":"SE-user-009","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Runtime scenario fit binding metadata is required.","anchor":{"file":"logs/runtime.trace","line":2,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:2","artifact_hash":"$runtime_hash","artifact_media_type":"text/plain","encoding":"utf-8","canonicalization":"none","hash_input_scope":"whole_artifact","ignored_nondeterministic_fields":[],"scenario_ref":"scenario:user-update-cache","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+EOF
+  cat > "$binary_rfc8785_record_file" <<EOF
+{"record_id":"SE-user-008","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_statement","anchor":{"file":"logs/runtime.trace","line":2,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:2","artifact_hash":"$runtime_hash","artifact_media_type":"application/octet-stream","encoding":"binary","canonicalization":"rfc8785","hash_input_scope":"whole_artifact","ignored_nondeterministic_fields":[],"scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","user_decision_ref":"UD-runtime-013","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+EOF
+  cat > "$ignored_fields_record_file" <<EOF
+{"record_id":"SE-user-008","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_statement","anchor":{"file":"logs/runtime.trace","line":2,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:2","artifact_hash":"$runtime_hash","artifact_media_type":"text/plain","encoding":"utf-8","canonicalization":"none","hash_input_scope":"whole_artifact","ignored_nondeterministic_fields":["timestamp"],"scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","user_decision_ref":"UD-runtime-013","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+EOF
+  cat > "$missing_selected_fields_record_file" <<EOF
+{"record_id":"SE-user-008","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_statement","anchor":{"file":"logs/runtime.trace","line":2,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:2","artifact_hash":"$runtime_hash","artifact_media_type":"application/json","encoding":"utf-8","canonicalization":"rfc8785","hash_input_scope":"selected_fields","ignored_nondeterministic_fields":[],"scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","user_decision_ref":"UD-runtime-013","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+EOF
+  cat > "$malformed_selected_fields_record_file" <<EOF
+{"record_id":"SE-user-008","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_statement","anchor":{"file":"logs/runtime.trace","line":2,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:2","artifact_hash":"$runtime_hash","artifact_media_type":"application/json","encoding":"utf-8","canonicalization":"rfc8785","hash_input_scope":"selected_fields","selected_fields":"event","ignored_nondeterministic_fields":[],"scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","user_decision_ref":"UD-runtime-013","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+EOF
+  cat > "$invalid_line_range_record_file" <<EOF
+{"record_id":"SE-user-008","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_statement","anchor":{"file":"logs/runtime.trace","line":2,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:2","artifact_hash":"$runtime_hash","artifact_media_type":"text/plain","encoding":"utf-8","canonicalization":"none","hash_input_scope":"line_range","line_range":{"start":3,"end":2},"ignored_nondeterministic_fields":[],"scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","user_decision_ref":"UD-runtime-013","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+EOF
+  cat > "$valid_custom_line_range_record_file" <<EOF
+{"record_id":"SE-user-008","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_statement","anchor":{"file":"logs/runtime.trace","line":2,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:2","artifact_hash":"$runtime_hash","artifact_media_type":"text/plain","encoding":"utf-8","canonicalization":"custom-declared","canonical_output_type":"text","hash_input_scope":"line_range","line_range":{"start":2,"end":2},"ignored_nondeterministic_fields":[],"scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","user_decision_ref":"UD-runtime-013","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
 EOF
 
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -2447,8 +2521,29 @@ EOF
   [ "$status" -eq 1 ]
   [[ "$output" == *"deterministic_runtime evidence.trace_ref is required"* ]]
   [[ "$output" == *"deterministic_runtime evidence.artifact_hash must be a sha256 reference"* ]]
+  [[ "$output" == *"deterministic_runtime evidence.artifact_media_type is required"* ]]
+  [[ "$output" == *"deterministic_runtime evidence.ignored_nondeterministic_fields must be a list of strings"* ]]
   [[ "$output" == *'"action":"complete_runtime_scenario_fit_args"'* ]]
   [[ "$output" != *"--decision-type runtime_scenario_fit"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$missing_binding_metadata_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$runtime_probe_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"deterministic_runtime evidence.scenario_scope is required"* ]]
+  [[ "$output" == *"deterministic_runtime evidence.setter_symbol_path is required"* ]]
+  [[ "$output" == *"deterministic_runtime evidence.setter_module_hash must be a sha256 reference"* ]]
+  [[ "$output" == *"deterministic_runtime evidence.expiry_or_invalidation_rule must be timestamp, binding_change, or manual_revocation"* ]]
+  [[ "$output" == *'"action":"complete_runtime_scenario_fit_args"'* ]]
+  [[ "$output" == *"deterministic_runtime evidence.scenario_scope"* ]]
+  [[ "$output" == *"deterministic_runtime evidence.setter_module_hash"* ]]
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -2538,7 +2633,25 @@ EOF
   [[ "$output" == *"--decision-type runtime_scenario_fit"* ]]
   [[ "$output" == *"--trace-ref logs/runtime.trace:2"* ]]
   [[ "$output" == *"--scenario-ref scenario:user-update-cache"* ]]
+  [[ "$output" == *"--scenario-scope runtime.scopes.user_update_cache"* ]]
+  [[ "$output" == *"--setter-symbol-path RuntimeScenarioRegistry.userUpdateCacheEvict"* ]]
+  [[ "$output" == *"--setter-module-hash $setter_module_hash"* ]]
+  [[ "$output" == *"--expiry-or-invalidation-rule binding_change"* ]]
   [[ "$output" != *"choose_supported_fact_decision_type"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$good_runtime_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$runtime_probe_file" \
+    --evidence-decision "$runtime_mismatch_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"applies_to must bind record_id, effect_type, statement_hash, anchor, trace_ref, scenario_ref, scenario_scope, setter_symbol_path, setter_module_hash, and expiry_or_invalidation_rule"* ]]
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -2554,6 +2667,95 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *'"status":"ok"'* ]]
   [[ "$output" == *"evidence_artifact_hash: $runtime_hash"* ]]
+  [[ "$output" == *"evidence_artifact_media_type: text/plain"* ]]
+  [[ "$output" == *"evidence_encoding: utf-8"* ]]
+  [[ "$output" == *"evidence_canonicalization: none"* ]]
+  [[ "$output" == *"evidence_hash_input_scope: whole_artifact"* ]]
+  [[ "$output" == *"evidence_ignored_nondeterministic_fields: []"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$binary_rfc8785_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$runtime_probe_file" \
+    --evidence-decision "$runtime_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"deterministic_runtime evidence envelope is not supported by the v1 validity matrix"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$ignored_fields_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$runtime_probe_file" \
+    --evidence-decision "$runtime_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"ignored_nondeterministic_fields must be empty for whole_artifact unless canonicalization is custom-declared"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$missing_selected_fields_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$runtime_probe_file" \
+    --evidence-decision "$runtime_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"deterministic_runtime evidence.selected_fields must be a non-empty list of strings for selected_fields scope"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$malformed_selected_fields_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$runtime_probe_file" \
+    --evidence-decision "$runtime_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"deterministic_runtime evidence.selected_fields must be a non-empty list of strings for selected_fields scope"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$invalid_line_range_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$runtime_probe_file" \
+    --evidence-decision "$runtime_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"deterministic_runtime evidence.line_range must satisfy integer start >= 1 and end >= start"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$valid_custom_line_range_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$runtime_probe_file" \
+    --evidence-decision "$runtime_decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"deterministic_runtime any.runtime.trace@v1 currently supports only whole_artifact artifact_hash verification"* ]]
 }
 
 @test "shadow_effect_writer accepts Java parser-backed deterministic code evidence" {
@@ -3162,6 +3364,7 @@ EOF
   local code_probe_file="$TEST_WORKSPACE/code-probe.json"
   local code_probe_hash
   local runtime_probe_hash
+  local setter_module_hash
   local wrong_effect_record="$TEST_WORKSPACE/wrong-effect-record.json"
   local wrong_symbol_record="$TEST_WORKSPACE/wrong-symbol-record.json"
   local path_only_source_record="$TEST_WORKSPACE/path-only-source-record.json"
@@ -3204,6 +3407,7 @@ EOF
   parser_identity="$(parser_identity_ref "py.ast.call_match@v1" "ast")"
   parser_content_hash="$(sha256_file_ref "$SHADOW_PROBE")"
   runtime_hash="$(sha256_file_ref "$trace_file")"
+  setter_module_hash="$(sha256_file_ref "$SHADOW_USER_DECISION")"
   cat > "$code_probe_file" <<EOF
 {"status":"pass","probe_status":"pass","fact_status":"deterministic_evidence","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","evidence_field":"validator_result","validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
 EOF
@@ -3239,10 +3443,10 @@ EOF
 {"user_decision":{"id":"UD-runtime-bad","decision_type":"business_intent","answer":"no","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["SE-user-026"],"rationale":"This does not confirm runtime scenario fit.","source_refs":["TASK-shadow-effect-map-01"]}}
 EOF
   cat > "$runtime_one_sided_decision_file" <<EOF
-{"user_decision":{"id":"UD-runtime-one-sided","decision_type":"runtime_scenario_fit","answer":"confirmed","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":[{"record_id":"SE-user-030","effect_type":"cache_evict","statement_hash":"$runtime_statement_hash","anchor_file":"logs/runtime.trace","anchor_line":"1","anchor_symbol":"event=user.cache.evict","trace_ref":"logs/runtime.trace:1","scenario_ref":"scenario:user-update-cache"}],"rationale":"This cites only the trace, not the scenario.","source_refs":["logs/runtime.trace:1"]}}
+{"user_decision":{"id":"UD-runtime-one-sided","decision_type":"runtime_scenario_fit","answer":"confirmed","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":[{"record_id":"SE-user-030","effect_type":"cache_evict","statement_hash":"$runtime_statement_hash","anchor_file":"logs/runtime.trace","anchor_line":"1","anchor_symbol":"event=user.cache.evict","trace_ref":"logs/runtime.trace:1","scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change"}],"rationale":"This cites only the trace, not the scenario.","source_refs":["logs/runtime.trace:1"]}}
 EOF
   cat > "$runtime_mismatch_decision_file" <<EOF
-{"user_decision":{"id":"UD-runtime-mismatch","decision_type":"runtime_scenario_fit","answer":"confirmed","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":[{"record_id":"SE-user-031","effect_type":"cache_evict","statement_hash":"$runtime_mismatch_statement_hash","anchor_file":"logs/runtime.trace","anchor_line":"1","anchor_symbol":"event=user.cache.evict","trace_ref":"logs/runtime.trace:2","scenario_ref":"scenario:user-update-cache"}],"rationale":"This binds the right record but a different trace line.","source_refs":["logs/runtime.trace:1","scenario:user-update-cache"]}}
+{"user_decision":{"id":"UD-runtime-mismatch","decision_type":"runtime_scenario_fit","answer":"confirmed","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":[{"record_id":"SE-user-031","effect_type":"cache_evict","statement_hash":"$runtime_mismatch_statement_hash","anchor_file":"logs/runtime.trace","anchor_line":"1","anchor_symbol":"event=user.cache.evict","trace_ref":"logs/runtime.trace:2","scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change"}],"rationale":"This binds the right record but a different trace line.","source_refs":["logs/runtime.trace:1","scenario:user-update-cache"]}}
 EOF
   cat > "$human_mismatch_decision_file" <<EOF
 {"user_decision":{"id":"UD-human-mismatch","decision_type":"business_risk","answer":"confirmed","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":[{"record_id":"SE-user-036","effect_type":"effect_intent","statement_hash":"$human_mismatch_statement_hash","anchor_file":"docs/task/TASK-shadow-effect-map-01.md","anchor_symbol":"user decision"}],"rationale":"This decision type does not match effect intent.","source_refs":["TASK-shadow-effect-map-01"]}}
@@ -3260,13 +3464,13 @@ EOF
 {"record_id":"SE-user-018","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Stale source hash must not validate.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:2","source_hash":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","probe_args":{"callee":"save","receiver":"repository"}}}
 EOF
   cat > "$runtime_ref_record" <<EOF
-{"record_id":"SE-user-019","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Runtime evidence must use a runtime trace validator.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.command.output@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+{"record_id":"SE-user-019","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Runtime evidence must use a runtime trace validator.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.command.output@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
 EOF
   cat > "$unimplemented_record" <<EOF
 {"record_id":"SE-user-020","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"api_route","statement":"Documented-only Express route validator cannot be forged as implemented.","anchor":{"file":"src/main/java/example/UserService.java","symbol":"app.get"},"evidence":{"type":"deterministic_code","ref":"express.route@v1","rule_id":"http.route","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/main/java/example/UserService.java:5","source_hash":"$java_source_hash","probe_args":{"callee":"get","receiver":"app"}}}
 EOF
   cat > "$stale_runtime_record" <<EOF
-{"record_id":"SE-user-023","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Stale runtime hash must not validate.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","scenario_ref":"scenario:user-update-cache","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+{"record_id":"SE-user-023","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Stale runtime hash must not validate.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
 EOF
   cat > "$forged_code_record" <<EOF
 {"record_id":"SE-user-024","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Current source hash is not enough without matching probe result.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:2","source_hash":"$source_hash","probe_args":{"callee":"save","receiver":"repository"}}}
@@ -3281,22 +3485,22 @@ EOF
 {"record_id":"SE-user-029","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Path-only source refs are accepted when the probe rerun binds the same file.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"src/app.py","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
 EOF
   cat > "$runtime_scenario_record" <<EOF
-{"record_id":"SE-user-025","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Scenario ref alone is not fact evidence.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+{"record_id":"SE-user-025","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Scenario ref alone is not fact evidence.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
 EOF
   cat > "$runtime_bad_decision_record" <<EOF
-{"record_id":"SE-user-026","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Negative or unrelated decisions cannot confirm runtime scenario fit.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","user_decision_ref":"UD-runtime-bad","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+{"record_id":"SE-user-026","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Negative or unrelated decisions cannot confirm runtime scenario fit.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","user_decision_ref":"UD-runtime-bad","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
 EOF
   cat > "$runtime_one_sided_record" <<EOF
-{"record_id":"SE-user-030","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_statement","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","user_decision_ref":"UD-runtime-one-sided","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+{"record_id":"SE-user-030","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_statement","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","user_decision_ref":"UD-runtime-one-sided","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
 EOF
   cat > "$runtime_mismatch_record" <<EOF
-{"record_id":"SE-user-031","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_mismatch_statement","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","user_decision_ref":"UD-runtime-mismatch","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+{"record_id":"SE-user-031","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_mismatch_statement","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","user_decision_ref":"UD-runtime-mismatch","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
 EOF
   cat > "$runtime_wrong_effect_record" <<EOF
-{"record_id":"SE-user-034","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"Runtime cache trace must not confirm arbitrary external call.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","user_decision_ref":"UD-runtime-one-sided","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+{"record_id":"SE-user-034","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"Runtime cache trace must not confirm arbitrary external call.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","user_decision_ref":"UD-runtime-one-sided","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
 EOF
   cat > "$runtime_wrong_anchor_record" <<EOF
-{"record_id":"SE-user-035","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Runtime trace must not confirm unrelated anchor file.","anchor":{"file":"src/app.py","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","user_decision_ref":"UD-runtime-one-sided","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+{"record_id":"SE-user-035","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Runtime trace must not confirm unrelated anchor file.","anchor":{"file":"src/app.py","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","user_decision_ref":"UD-runtime-one-sided","probe_result_ref":"$runtime_probe_file","probe_result_hash":"$runtime_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
 EOF
   cat > "$human_mismatch_record" <<EOF
 {"record_id":"SE-user-036","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"effect_intent","statement":"$human_mismatch_statement","anchor":{"file":"docs/task/TASK-shadow-effect-map-01.md","symbol":"user decision"},"evidence":{"type":"user_decision","ref":"UD-human-mismatch"},"source_refs":["TASK-shadow-effect-map-01"]}
@@ -3506,6 +3710,162 @@ EOF
   [ "$status" -eq 1 ]
   [[ "$output" == *"exactly one begin and end marker"* ]]
 
+}
+
+@test "shadow_effect_writer enforces lifecycle transitions for existing record ids" {
+  local candidate_file="$TEST_WORKSPACE/candidate.json"
+  local decision_file="$TEST_WORKSPACE/decision.json"
+  local unknown_record_file="$TEST_WORKSPACE/unknown-record.json"
+  local blocked_record_file="$TEST_WORKSPACE/blocked-record.json"
+  local stale_record_file="$TEST_WORKSPACE/stale-record.json"
+  local confirmed_record_file="$TEST_WORKSPACE/confirmed-record.json"
+  local code_probe_file="$TEST_WORKSPACE/code-probe.json"
+  local draft_file="$TEST_WORKSPACE/draft.md"
+  local target_file="$DOCS_ROOT/shadow/packages/codeguide/effects.md"
+  local source_hash
+  local parser_identity
+  local parser_content_hash
+  local code_probe_hash
+
+  mkdir -p "$(dirname "$target_file")" "$TEST_PROJECT/src"
+  cat > "$TEST_PROJECT/src/app.py" <<'EOF'
+class Repository:
+    def save(self, user):
+        return user
+
+def handler(repository, user):
+    repository.save(user)
+EOF
+  source_hash="$(sha256_file_ref "$TEST_PROJECT/src/app.py")"
+  parser_identity="$(parser_identity_ref "py.ast.call_match@v1" "ast")"
+  parser_content_hash="$(sha256_file_ref "$SHADOW_PROBE")"
+  cat > "$code_probe_file" <<EOF
+{"status":"pass","probe_status":"pass","fact_status":"deterministic_evidence","validator_id":"py.ast.call_match@v1","evidence_type":"code_call","evidence_field":"validator_result","validator_result":"matched","source_ref":"src/app.py:6","source_hash":"$source_hash","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","promotion_limit":"high","writes_shadow_docs":false,"matched_symbol":"repository.save"}
+EOF
+  code_probe_hash="$(sha256_file_ref "$code_probe_file")"
+
+  printf 'Draft for lifecycle transition checks\n' > "$draft_file"
+  python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --output "$candidate_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "src/app.py:6" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  local candidate_id
+  candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
+  cat > "$decision_file" <<EOF
+{"user_decision":{"id":"UD-lifecycle","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-life-001"],"rationale":"Approve evaluating lifecycle transition gates.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$unknown_record_file" <<EOF
+{"record_id":"SE-life-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"unknown","effect_type":"db_write","statement":"Repository save still needs confirmation.","reason":"Evidence is not attached yet.","anchor":{"file":"src/app.py","symbol":"repository.save"},"source_refs":["src/app.py:6"]}
+EOF
+  cat > "$blocked_record_file" <<EOF
+{"record_id":"SE-life-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"blocked","effect_type":"db_write","statement":"Repository save is blocked.","reason":"Blocked transition should require an explicit workflow outside this writer slice.","anchor":{"file":"src/app.py","symbol":"repository.save"},"source_refs":["src/app.py:6"]}
+EOF
+  cat > "$stale_record_file" <<EOF
+{"record_id":"SE-life-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"stale","effect_type":"db_write","statement":"Repository save is stale.","reason":"Stale transition should require an explicit workflow outside this writer slice.","anchor":{"file":"src/app.py","symbol":"repository.save"},"source_refs":["src/app.py:6"]}
+EOF
+  cat > "$confirmed_record_file" <<EOF
+{"record_id":"SE-life-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Repository save is backed by parser evidence.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"src/app.py:6","source_hash":"$source_hash","probe_result_ref":"$code_probe_file","probe_result_hash":"$code_probe_hash","probe_args":{"callee":"save","receiver":"repository"}}}
+EOF
+  cat > "$target_file" <<'EOF'
+# Effects
+
+- doc_role: effect_map
+- generated_by: test
+
+<!-- shadow-effect-record:SE-life-001 begin -->
+## SE-life-001
+
+- record_id: SE-life-001
+- record_type: effect_map_entry
+- lifecycle: unknown
+- effect_type: db_write
+- statement: Existing unknown record.
+- candidate_id: previous-candidate
+- reason: Existing reason.
+
+<!-- shadow-effect-record:SE-life-001 end -->
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$unknown_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"operation":"update"'* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$blocked_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"lifecycle transition blocked: unknown -> blocked"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$stale_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"lifecycle transition blocked: unknown -> stale"* ]]
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$confirmed_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$code_probe_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"operation":"update"'* ]]
+  [[ "$output" == *"evidence_parser_backed: True"* ]]
+
+  sed -i.bak 's/- lifecycle: unknown/- lifecycle: confirmed/' "$target_file"
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$unknown_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"lifecycle transition blocked: confirmed -> unknown"* ]]
+
+  sed -i.bak '/- lifecycle: confirmed/d' "$target_file"
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$unknown_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"existing record SE-life-001 lifecycle metadata is missing or malformed"* ]]
 }
 
 @test "shadow_effect_writer refuses non-effect-map shadow targets" {
@@ -3864,6 +4224,269 @@ EOF
   [[ "$output" == *"evidence_rule_id is not compatible with effect_type"* ]]
   [[ "$output" == *"anchor_file must match evidence ref path"* ]]
   [[ "$output" == *"probe artifact must exist"* ]]
+}
+
+@test "validate_docs strict audits deterministic_runtime envelope metadata" {
+  local effect_file="$DOCS_ROOT/shadow/packages/codeguide/effects.md"
+  local runtime_probe_file="$TEST_PROJECT/probe-results/runtime-probe.json"
+  local runtime_probe_hash
+  local setter_module_hash
+
+  mkdir -p "$(dirname "$effect_file")" "$(dirname "$runtime_probe_file")"
+  printf '{"status":"pass"}\n' > "$runtime_probe_file"
+  runtime_probe_hash="$(sha256_file_ref "$runtime_probe_file")"
+  setter_module_hash="$(sha256_file_ref "$SHADOW_USER_DECISION")"
+
+  cat > "$effect_file" <<EOF
+# Effects
+
+- doc_role: effect_map
+
+<!-- shadow-effect-record:SE-runtime-100 begin -->
+## SE-runtime-100
+
+- record_id: SE-runtime-100
+- record_type: effect_map_entry
+- lifecycle: confirmed
+- effect_type: cache_evict
+- statement: Runtime evidence without envelope metadata must fail strict docs validation.
+- anchor_file: logs/runtime.trace
+- anchor_line: 1
+- anchor_symbol: event=user.cache.evict
+- evidence_type: deterministic_runtime
+- evidence_ref: any.runtime.trace@v1
+- evidence_rule_id: cache.evict
+- evidence_trace_ref: logs/runtime.trace:1
+- evidence_artifact_hash: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+- evidence_scenario_ref: scenario:user-update-cache
+- evidence_user_decision_ref: UD-runtime-013
+- evidence_probe_result_ref: probe-results/runtime-probe.json
+- evidence_probe_result_hash: $runtime_probe_hash
+
+<!-- shadow-effect-record:SE-runtime-100 end -->
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"deterministic_runtime record requires evidence_artifact_media_type"* ]]
+  [[ "$output" == *"deterministic_runtime record requires evidence_ignored_nondeterministic_fields"* ]]
+  [[ "$output" == *"deterministic_runtime record requires evidence_scenario_scope"* ]]
+
+  cat > "$effect_file" <<EOF
+# Effects
+
+- doc_role: effect_map
+
+<!-- shadow-effect-record:SE-runtime-105 begin -->
+## SE-runtime-105
+
+- record_id: SE-runtime-105
+- record_type: effect_map_entry
+- lifecycle: confirmed
+- effect_type: cache_evict
+- statement: Malformed runtime scenario fit metadata must fail strict docs validation.
+- anchor_file: logs/runtime.trace
+- anchor_line: 1
+- anchor_symbol: event=user.cache.evict
+- evidence_type: deterministic_runtime
+- evidence_ref: any.runtime.trace@v1
+- evidence_rule_id: cache.evict
+- evidence_trace_ref: logs/runtime.trace:1
+- evidence_artifact_hash: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+- evidence_artifact_media_type: text/plain
+- evidence_encoding: utf-8
+- evidence_canonicalization: none
+- evidence_hash_input_scope: whole_artifact
+- evidence_ignored_nondeterministic_fields: []
+- evidence_scenario_ref: scenario:user-update-cache
+- evidence_scenario_scope: no
+- evidence_setter_symbol_path: 1Invalid.setter
+- evidence_setter_module_hash: sha256:x
+- evidence_expiry_or_invalidation_rule: automatic
+- evidence_user_decision_ref: UD-runtime-013
+- evidence_probe_result_ref: probe-results/runtime-probe.json
+- evidence_probe_result_hash: $runtime_probe_hash
+
+<!-- shadow-effect-record:SE-runtime-105 end -->
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"deterministic_runtime evidence_scenario_scope must match"* ]]
+  [[ "$output" == *"deterministic_runtime evidence_setter_symbol_path must match"* ]]
+  [[ "$output" == *"deterministic_runtime evidence_setter_module_hash must be sha256"* ]]
+  [[ "$output" == *"deterministic_runtime evidence_expiry_or_invalidation_rule must be timestamp, binding_change, or manual_revocation"* ]]
+
+  cat > "$effect_file" <<EOF
+# Effects
+
+- doc_role: effect_map
+
+<!-- shadow-effect-record:SE-runtime-101 begin -->
+## SE-runtime-101
+
+- record_id: SE-runtime-101
+- record_type: effect_map_entry
+- lifecycle: confirmed
+- effect_type: cache_evict
+- statement: Binary RFC8785 runtime envelope must fail the strict matrix.
+- anchor_file: logs/runtime.trace
+- anchor_line: 1
+- anchor_symbol: event=user.cache.evict
+- evidence_type: deterministic_runtime
+- evidence_ref: any.runtime.trace@v1
+- evidence_rule_id: cache.evict
+- evidence_trace_ref: logs/runtime.trace:1
+- evidence_artifact_hash: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+- evidence_artifact_media_type: application/octet-stream
+- evidence_encoding: binary
+- evidence_canonicalization: rfc8785
+- evidence_hash_input_scope: whole_artifact
+- evidence_ignored_nondeterministic_fields: []
+- evidence_scenario_ref: scenario:user-update-cache
+- evidence_scenario_scope: runtime.scopes.user_update_cache
+- evidence_setter_symbol_path: RuntimeScenarioRegistry.userUpdateCacheEvict
+- evidence_setter_module_hash: $setter_module_hash
+- evidence_expiry_or_invalidation_rule: binding_change
+- evidence_user_decision_ref: UD-runtime-013
+- evidence_probe_result_ref: probe-results/runtime-probe.json
+- evidence_probe_result_hash: $runtime_probe_hash
+
+<!-- shadow-effect-record:SE-runtime-101 end -->
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"deterministic_runtime evidence envelope is not supported by the v1 validity matrix"* ]]
+
+  cat > "$effect_file" <<EOF
+# Effects
+
+- doc_role: effect_map
+
+<!-- shadow-effect-record:SE-runtime-102 begin -->
+## SE-runtime-102
+
+- record_id: SE-runtime-102
+- record_type: effect_map_entry
+- lifecycle: confirmed
+- effect_type: cache_evict
+- statement: Non-custom runtime envelope must reject canonical_output_type.
+- anchor_file: logs/runtime.trace
+- anchor_line: 1
+- anchor_symbol: event=user.cache.evict
+- evidence_type: deterministic_runtime
+- evidence_ref: any.runtime.trace@v1
+- evidence_rule_id: cache.evict
+- evidence_trace_ref: logs/runtime.trace:1
+- evidence_artifact_hash: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+- evidence_artifact_media_type: text/plain
+- evidence_encoding: utf-8
+- evidence_canonicalization: none
+- evidence_canonical_output_type: text
+- evidence_hash_input_scope: whole_artifact
+- evidence_ignored_nondeterministic_fields: []
+- evidence_scenario_ref: scenario:user-update-cache
+- evidence_scenario_scope: runtime.scopes.user_update_cache
+- evidence_setter_symbol_path: RuntimeScenarioRegistry.userUpdateCacheEvict
+- evidence_setter_module_hash: $setter_module_hash
+- evidence_expiry_or_invalidation_rule: binding_change
+- evidence_user_decision_ref: UD-runtime-013
+- evidence_probe_result_ref: probe-results/runtime-probe.json
+- evidence_probe_result_hash: $runtime_probe_hash
+
+<!-- shadow-effect-record:SE-runtime-102 end -->
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"evidence_canonical_output_type is only valid for custom-declared canonicalization"* ]]
+
+  cat > "$effect_file" <<EOF
+# Effects
+
+- doc_role: effect_map
+
+<!-- shadow-effect-record:SE-runtime-103 begin -->
+## SE-runtime-103
+
+- record_id: SE-runtime-103
+- record_type: effect_map_entry
+- lifecycle: confirmed
+- effect_type: cache_evict
+- statement: Whole-artifact runtime envelope must not ignore fields without custom canonicalization.
+- anchor_file: logs/runtime.trace
+- anchor_line: 1
+- anchor_symbol: event=user.cache.evict
+- evidence_type: deterministic_runtime
+- evidence_ref: any.runtime.trace@v1
+- evidence_rule_id: cache.evict
+- evidence_trace_ref: logs/runtime.trace:1
+- evidence_artifact_hash: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+- evidence_artifact_media_type: text/plain
+- evidence_encoding: utf-8
+- evidence_canonicalization: none
+- evidence_hash_input_scope: whole_artifact
+- evidence_ignored_nondeterministic_fields: ["timestamp"]
+- evidence_scenario_ref: scenario:user-update-cache
+- evidence_scenario_scope: runtime.scopes.user_update_cache
+- evidence_setter_symbol_path: RuntimeScenarioRegistry.userUpdateCacheEvict
+- evidence_setter_module_hash: $setter_module_hash
+- evidence_expiry_or_invalidation_rule: binding_change
+- evidence_user_decision_ref: UD-runtime-013
+- evidence_probe_result_ref: probe-results/runtime-probe.json
+- evidence_probe_result_hash: $runtime_probe_hash
+
+<!-- shadow-effect-record:SE-runtime-103 end -->
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"evidence_ignored_nondeterministic_fields must be [] for whole_artifact unless canonicalization is custom-declared"* ]]
+
+  cat > "$effect_file" <<EOF
+# Effects
+
+- doc_role: effect_map
+
+<!-- shadow-effect-record:SE-runtime-104 begin -->
+## SE-runtime-104
+
+- record_id: SE-runtime-104
+- record_type: effect_map_entry
+- lifecycle: confirmed
+- effect_type: cache_evict
+- statement: Custom textual line-range runtime envelope is declared by the matrix but not implemented by runtime trace hashing.
+- anchor_file: logs/runtime.trace
+- anchor_line: 1
+- anchor_symbol: event=user.cache.evict
+- evidence_type: deterministic_runtime
+- evidence_ref: any.runtime.trace@v1
+- evidence_rule_id: cache.evict
+- evidence_trace_ref: logs/runtime.trace:1
+- evidence_artifact_hash: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+- evidence_artifact_media_type: text/plain
+- evidence_encoding: utf-8
+- evidence_canonicalization: custom-declared
+- evidence_canonical_output_type: text
+- evidence_hash_input_scope: line_range
+- evidence_ignored_nondeterministic_fields: []
+- evidence_line_range: {"end":1,"start":1}
+- evidence_scenario_ref: scenario:user-update-cache
+- evidence_scenario_scope: runtime.scopes.user_update_cache
+- evidence_setter_symbol_path: RuntimeScenarioRegistry.userUpdateCacheEvict
+- evidence_setter_module_hash: $setter_module_hash
+- evidence_expiry_or_invalidation_rule: binding_change
+- evidence_user_decision_ref: UD-runtime-013
+- evidence_probe_result_ref: probe-results/runtime-probe.json
+- evidence_probe_result_hash: $runtime_probe_hash
+
+<!-- shadow-effect-record:SE-runtime-104 end -->
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"deterministic_runtime any.runtime.trace@v1 currently supports only whole_artifact artifact_hash verification"* ]]
 }
 
 @test "validate_docs strict accepts canonical probe coverage for valid effect_map evidence" {

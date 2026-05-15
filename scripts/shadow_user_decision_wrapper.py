@@ -56,6 +56,9 @@ DECISION_TYPE_EFFECT_TYPES = {
 ALLOWED_DECISION_TYPES = {FINAL_DECISION_TYPE, *FACT_DECISION_TYPES}
 FORBIDDEN_VALUE_MARKERS = ("shadow-effect-record:", "<!--")
 SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+SCENARIO_SCOPE_RE = re.compile(r"^[A-Za-z0-9_.:/-]{3,120}$")
+SETTER_SYMBOL_PATH_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
+EXPIRY_OR_INVALIDATION_RULES = {"timestamp", "binding_change", "manual_revocation"}
 
 
 def emit(payload: dict[str, Any]) -> None:
@@ -118,6 +121,57 @@ def as_record_payload(raw: dict[str, Any]) -> dict[str, Any]:
     if isinstance(raw.get("record"), dict):
         return raw["record"]
     return raw
+
+
+def record_evidence(record: dict[str, Any]) -> dict[str, Any]:
+    evidence = record.get("evidence")
+    return evidence if isinstance(evidence, dict) else {}
+
+
+def text_value(value: Any) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
+def runtime_scenario_fit_values(args: argparse.Namespace, record: dict[str, Any]) -> dict[str, str]:
+    evidence = record_evidence(record)
+    return {
+        "trace_ref": text_value(args.trace_ref) or text_value(evidence.get("trace_ref")),
+        "scenario_ref": text_value(args.scenario_ref) or text_value(evidence.get("scenario_ref")),
+        "scenario_scope": text_value(args.scenario_scope) or text_value(evidence.get("scenario_scope")),
+        "setter_symbol_path": text_value(args.setter_symbol_path) or text_value(evidence.get("setter_symbol_path")),
+        "setter_module_hash": text_value(args.setter_module_hash) or text_value(evidence.get("setter_module_hash")),
+        "expiry_or_invalidation_rule": text_value(args.expiry_or_invalidation_rule)
+        or text_value(evidence.get("expiry_or_invalidation_rule")),
+    }
+
+
+def runtime_scenario_fit_value_blockers(values: dict[str, str]) -> list[str]:
+    blockers: list[str] = []
+    if not values["trace_ref"]:
+        blockers.append("runtime_scenario_fit requires trace_ref")
+    if not values["scenario_ref"]:
+        blockers.append("runtime_scenario_fit requires scenario_ref")
+    if not values["scenario_scope"]:
+        blockers.append("runtime_scenario_fit requires scenario_scope")
+    elif not SCENARIO_SCOPE_RE.match(values["scenario_scope"]):
+        blockers.append("runtime_scenario_fit scenario_scope must match ^[A-Za-z0-9_.:/-]{3,120}$")
+    if not values["setter_symbol_path"]:
+        blockers.append("runtime_scenario_fit requires setter_symbol_path")
+    elif not SETTER_SYMBOL_PATH_RE.match(values["setter_symbol_path"]):
+        blockers.append(
+            "runtime_scenario_fit setter_symbol_path must match ^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"
+        )
+    if not values["setter_module_hash"]:
+        blockers.append("runtime_scenario_fit requires setter_module_hash")
+    elif not SHA256_RE.match(values["setter_module_hash"]):
+        blockers.append("runtime_scenario_fit setter_module_hash must be sha256:<64 hex>")
+    if not values["expiry_or_invalidation_rule"]:
+        blockers.append("runtime_scenario_fit requires expiry_or_invalidation_rule")
+    elif values["expiry_or_invalidation_rule"] not in EXPIRY_OR_INVALIDATION_RULES:
+        blockers.append(
+            "runtime_scenario_fit expiry_or_invalidation_rule must be timestamp, binding_change, or manual_revocation"
+        )
+    return blockers
 
 
 def record_binding(record: dict[str, Any], target_shadow_file: str | None) -> dict[str, Any]:
@@ -214,12 +268,9 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         records.append(record)
         binding = record_binding(record, args.target_shadow_file)
         if decision_type == "runtime_scenario_fit":
-            trace_ref = args.trace_ref or str((record.get("evidence") or {}).get("trace_ref", ""))
-            scenario_ref = args.scenario_ref or str((record.get("evidence") or {}).get("scenario_ref", ""))
-            if trace_ref:
-                binding["trace_ref"] = trace_ref
-            if scenario_ref:
-                binding["scenario_ref"] = scenario_ref
+            for field_name, value in runtime_scenario_fit_values(args, record).items():
+                if value:
+                    binding[field_name] = value
         applies_to.append(binding)
     for record_id in args.record_ids or []:
         applies_to.append(record_id)
@@ -238,16 +289,14 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
     if decision_type == "runtime_scenario_fit":
         if len(records) != 1:
             raise ValueError("runtime_scenario_fit requires exactly one --record")
-        trace_ref = args.trace_ref or str((records[0].get("evidence") or {}).get("trace_ref", ""))
-        scenario_ref = args.scenario_ref or str((records[0].get("evidence") or {}).get("scenario_ref", ""))
-        if not trace_ref or not scenario_ref:
-            raise ValueError("runtime_scenario_fit requires trace_ref and scenario_ref")
+        blockers = runtime_scenario_fit_value_blockers(runtime_scenario_fit_values(args, records[0]))
+        if blockers:
+            raise ValueError("; ".join(blockers))
 
     source_refs = source_refs_from(args.source_refs)
     if decision_type == "runtime_scenario_fit":
-        trace_ref = args.trace_ref or str((records[0].get("evidence") or {}).get("trace_ref", ""))
-        scenario_ref = args.scenario_ref or str((records[0].get("evidence") or {}).get("scenario_ref", ""))
-        for ref in (trace_ref, scenario_ref):
+        values = runtime_scenario_fit_values(args, records[0])
+        for ref in (values["trace_ref"], values["scenario_ref"]):
             if ref and ref not in source_refs:
                 source_refs.append(ref)
 
@@ -288,6 +337,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-shadow-file")
     parser.add_argument("--trace-ref")
     parser.add_argument("--scenario-ref")
+    parser.add_argument("--scenario-scope")
+    parser.add_argument("--setter-symbol-path")
+    parser.add_argument("--setter-module-hash")
+    parser.add_argument("--expiry-or-invalidation-rule")
     parser.add_argument("--today")
     return parser.parse_args()
 

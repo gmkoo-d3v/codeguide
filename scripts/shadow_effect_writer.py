@@ -70,6 +70,8 @@ FORBIDDEN_KEYS = {"raw_draft", "raw_llm_text", "llm_output", "prompt", "completi
 FORBIDDEN_VALUE_MARKERS = ("shadow-effect-record:", "<!--")
 RECORD_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{3,120}$")
 SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+SCENARIO_SCOPE_RE = re.compile(r"^[A-Za-z0-9_.:/-]{3,120}$")
+SETTER_SYMBOL_PATH_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
 SOURCE_EVIDENCE_TYPES = {"code_call", "annotation", "code_reference", "config_binding"}
 MARKER_RE = re.compile(r"<!--\s*shadow-effect-record:([^ ]+)\s+(begin|end)\s*-->")
 CALL_MATCH_VALIDATORS = {
@@ -82,6 +84,26 @@ CALL_MATCH_VALIDATORS = {
 DECORATOR_MATCH_VALIDATORS = {
     "py.decorator.match@v1",
     "fastapi.route@v1",
+}
+RUNTIME_ENVELOPE_ENCODINGS = {"utf-8", "binary"}
+RUNTIME_ENVELOPE_CANONICALIZATIONS = {"none", "rfc8785", "custom-declared"}
+RUNTIME_ENVELOPE_HASH_INPUT_SCOPES = {"whole_artifact", "selected_fields", "line_range"}
+RUNTIME_ENVELOPE_CANONICAL_OUTPUT_TYPES = {"text", "binary"}
+EXPIRY_OR_INVALIDATION_RULES = {"timestamp", "binding_change", "manual_revocation"}
+RUNTIME_TRACE_HASH_SCOPE_SUPPORT_MESSAGE = (
+    "deterministic_runtime any.runtime.trace@v1 currently supports only whole_artifact artifact_hash verification"
+)
+RUNTIME_ENVELOPE_V1_MATRIX = {
+    ("utf-8", "rfc8785", None, "whole_artifact"),
+    ("utf-8", "rfc8785", None, "selected_fields"),
+    ("utf-8", "none", None, "whole_artifact"),
+    ("utf-8", "none", None, "line_range"),
+    ("utf-8", "custom-declared", "text", "whole_artifact"),
+    ("utf-8", "custom-declared", "text", "selected_fields"),
+    ("utf-8", "custom-declared", "text", "line_range"),
+    ("utf-8", "custom-declared", "binary", "whole_artifact"),
+    ("binary", "none", None, "whole_artifact"),
+    ("binary", "custom-declared", "binary", "whole_artifact"),
 }
 
 
@@ -116,6 +138,12 @@ def sha256_json(value: Any) -> str:
 
 def single_line(value: Any) -> str:
     return str(value).replace("\n", " ").replace("\r", " ").strip()
+
+
+def stable_single_line(value: Any) -> str:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return single_line(value)
 
 
 def has_text(value: Any) -> bool:
@@ -229,6 +257,10 @@ def decision_has_record_binding(
     expected_anchor: dict[str, Any] | None,
     expected_trace_ref: str | None = None,
     expected_scenario_ref: str | None = None,
+    expected_scenario_scope: str | None = None,
+    expected_setter_symbol_path: str | None = None,
+    expected_setter_module_hash: str | None = None,
+    expected_expiry_or_invalidation_rule: str | None = None,
 ) -> bool:
     decision = decision_payload.get("user_decision")
     if not isinstance(decision, dict):
@@ -253,6 +285,17 @@ def decision_has_record_binding(
         if has_text(expected_trace_ref) and item.get("trace_ref") != expected_trace_ref:
             continue
         if has_text(expected_scenario_ref) and item.get("scenario_ref") != expected_scenario_ref:
+            continue
+        if has_text(expected_scenario_scope) and item.get("scenario_scope") != expected_scenario_scope:
+            continue
+        if has_text(expected_setter_symbol_path) and item.get("setter_symbol_path") != expected_setter_symbol_path:
+            continue
+        if has_text(expected_setter_module_hash) and item.get("setter_module_hash") != expected_setter_module_hash:
+            continue
+        if (
+            has_text(expected_expiry_or_invalidation_rule)
+            and item.get("expiry_or_invalidation_rule") != expected_expiry_or_invalidation_rule
+        ):
             continue
         return True
     return False
@@ -392,6 +435,107 @@ def trace_hash_blockers(evidence: dict[str, Any], project_root: Path) -> list[st
     return []
 
 
+def runtime_evidence_envelope_blockers(evidence: dict[str, Any]) -> list[str]:
+    blockers: list[str] = []
+    artifact_media_type = evidence.get("artifact_media_type")
+    encoding = evidence.get("encoding")
+    canonicalization = evidence.get("canonicalization")
+    hash_input_scope = evidence.get("hash_input_scope")
+    ignored_fields = evidence.get("ignored_nondeterministic_fields")
+    canonical_output_type = evidence.get("canonical_output_type")
+
+    if not has_text(artifact_media_type):
+        blockers.append("deterministic_runtime evidence.artifact_media_type is required")
+    if encoding not in RUNTIME_ENVELOPE_ENCODINGS:
+        blockers.append("deterministic_runtime evidence.encoding must be utf-8 or binary")
+    if canonicalization not in RUNTIME_ENVELOPE_CANONICALIZATIONS:
+        blockers.append("deterministic_runtime evidence.canonicalization must be none, rfc8785, or custom-declared")
+    if hash_input_scope not in RUNTIME_ENVELOPE_HASH_INPUT_SCOPES:
+        blockers.append("deterministic_runtime evidence.hash_input_scope must be whole_artifact, selected_fields, or line_range")
+    if evidence.get("ref") == "any.runtime.trace@v1" and hash_input_scope != "whole_artifact":
+        blockers.append(RUNTIME_TRACE_HASH_SCOPE_SUPPORT_MESSAGE)
+    if not isinstance(ignored_fields, list) or not all(isinstance(item, str) for item in ignored_fields):
+        blockers.append("deterministic_runtime evidence.ignored_nondeterministic_fields must be a list of strings")
+
+    if canonicalization == "custom-declared":
+        if canonical_output_type not in RUNTIME_ENVELOPE_CANONICAL_OUTPUT_TYPES:
+            blockers.append("deterministic_runtime evidence.canonical_output_type must be text or binary for custom-declared canonicalization")
+    elif "canonical_output_type" in evidence:
+        blockers.append("deterministic_runtime evidence.canonical_output_type is only valid for custom-declared canonicalization")
+
+    if hash_input_scope == "selected_fields":
+        selected_fields = evidence.get("selected_fields")
+        if not isinstance(selected_fields, list) or not selected_fields or not all(isinstance(item, str) for item in selected_fields):
+            blockers.append("deterministic_runtime evidence.selected_fields must be a non-empty list of strings for selected_fields scope")
+
+    if hash_input_scope == "line_range":
+        line_range = evidence.get("line_range")
+        if not isinstance(line_range, dict):
+            blockers.append("deterministic_runtime evidence.line_range must contain integer start and end for line_range scope")
+        else:
+            start = line_range.get("start")
+            end = line_range.get("end")
+            if type(start) is not int or type(end) is not int or start < 1 or end < start:
+                blockers.append("deterministic_runtime evidence.line_range must satisfy integer start >= 1 and end >= start")
+        if not (
+            encoding == "utf-8"
+            and (canonicalization == "none" or (canonicalization == "custom-declared" and canonical_output_type == "text"))
+        ):
+            blockers.append("deterministic_runtime evidence.hash_input_scope line_range requires textual output")
+
+    if (
+        hash_input_scope == "whole_artifact"
+        and isinstance(ignored_fields, list)
+        and ignored_fields
+        and canonicalization != "custom-declared"
+    ):
+        blockers.append(
+            "deterministic_runtime evidence.ignored_nondeterministic_fields must be empty for whole_artifact unless canonicalization is custom-declared"
+        )
+
+    canonical_output = canonical_output_type if canonicalization == "custom-declared" else None
+    if (
+        encoding in RUNTIME_ENVELOPE_ENCODINGS
+        and canonicalization in RUNTIME_ENVELOPE_CANONICALIZATIONS
+        and hash_input_scope in RUNTIME_ENVELOPE_HASH_INPUT_SCOPES
+        and (canonicalization != "custom-declared" or canonical_output_type in RUNTIME_ENVELOPE_CANONICAL_OUTPUT_TYPES)
+        and (encoding, canonicalization, canonical_output, hash_input_scope) not in RUNTIME_ENVELOPE_V1_MATRIX
+    ):
+        blockers.append("deterministic_runtime evidence envelope is not supported by the v1 validity matrix")
+
+    return blockers
+
+
+def runtime_scenario_fit_metadata_blockers(evidence: dict[str, Any]) -> list[str]:
+    blockers: list[str] = []
+    scenario_scope = evidence.get("scenario_scope")
+    setter_symbol_path = evidence.get("setter_symbol_path")
+    setter_module_hash = evidence.get("setter_module_hash")
+    expiry_or_invalidation_rule = evidence.get("expiry_or_invalidation_rule")
+
+    if not has_text(scenario_scope):
+        blockers.append("deterministic_runtime evidence.scenario_scope is required")
+    elif not SCENARIO_SCOPE_RE.match(str(scenario_scope)):
+        blockers.append("deterministic_runtime evidence.scenario_scope must match ^[A-Za-z0-9_.:/-]{3,120}$")
+
+    if not has_text(setter_symbol_path):
+        blockers.append("deterministic_runtime evidence.setter_symbol_path is required")
+    elif not SETTER_SYMBOL_PATH_RE.match(str(setter_symbol_path)):
+        blockers.append(
+            "deterministic_runtime evidence.setter_symbol_path must match ^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"
+        )
+
+    if not isinstance(setter_module_hash, str) or not SHA256_RE.match(setter_module_hash):
+        blockers.append("deterministic_runtime evidence.setter_module_hash must be a sha256 reference")
+
+    if expiry_or_invalidation_rule not in EXPIRY_OR_INVALIDATION_RULES:
+        blockers.append(
+            "deterministic_runtime evidence.expiry_or_invalidation_rule must be timestamp, binding_change, or manual_revocation"
+        )
+
+    return blockers
+
+
 def probe_arg_value(evidence: dict[str, Any], name: str) -> str | None:
     probe_args = evidence.get("probe_args")
     if not isinstance(probe_args, dict):
@@ -496,10 +640,16 @@ def evidence_decision_command_hint(
         command.extend(["--target-shadow-file", target_ref])
     evidence = record.get("evidence") if isinstance(record.get("evidence"), dict) else {}
     if decision_type == "runtime_scenario_fit" and isinstance(evidence, dict):
-        if has_text(evidence.get("trace_ref")):
-            command.extend(["--trace-ref", str(evidence["trace_ref"])])
-        if has_text(evidence.get("scenario_ref")):
-            command.extend(["--scenario-ref", str(evidence["scenario_ref"])])
+        for evidence_key, flag in (
+            ("trace_ref", "--trace-ref"),
+            ("scenario_ref", "--scenario-ref"),
+            ("scenario_scope", "--scenario-scope"),
+            ("setter_symbol_path", "--setter-symbol-path"),
+            ("setter_module_hash", "--setter-module-hash"),
+            ("expiry_or_invalidation_rule", "--expiry-or-invalidation-rule"),
+        ):
+            if has_text(evidence.get(evidence_key)):
+                command.extend([flag, str(evidence[evidence_key])])
     for source_ref in source_refs:
         command.extend(["--source-ref", source_ref])
     return {
@@ -562,17 +712,29 @@ def next_action_hints(
     ):
         trace_ref = evidence.get("trace_ref")
         scenario_ref = evidence.get("scenario_ref")
+        scenario_scope = evidence.get("scenario_scope")
+        setter_symbol_path = evidence.get("setter_symbol_path")
+        setter_module_hash = evidence.get("setter_module_hash")
+        expiry_or_invalidation_rule = evidence.get("expiry_or_invalidation_rule")
         missing = []
         if not has_text(trace_ref):
             missing.append("deterministic_runtime evidence.trace_ref")
         if not has_text(scenario_ref):
             missing.append("deterministic_runtime evidence.scenario_ref")
+        if not has_text(scenario_scope):
+            missing.append("deterministic_runtime evidence.scenario_scope")
+        if not has_text(setter_symbol_path):
+            missing.append("deterministic_runtime evidence.setter_symbol_path")
+        if not has_text(setter_module_hash):
+            missing.append("deterministic_runtime evidence.setter_module_hash")
+        if not has_text(expiry_or_invalidation_rule):
+            missing.append("deterministic_runtime evidence.expiry_or_invalidation_rule")
         if missing:
             actions.append(
                 {
                     "action": "complete_runtime_scenario_fit_args",
                     "requires_user_input": True,
-                    "reason": "runtime_scenario_fit user_decision command requires trace_ref and scenario_ref",
+                    "reason": "runtime_scenario_fit user_decision command requires trace_ref, scenario_ref, scenario_scope, setter_symbol_path, setter_module_hash, and expiry_or_invalidation_rule",
                     "missing": missing,
                 }
             )
@@ -926,6 +1088,10 @@ def fact_decision_blockers(
     expected_anchor: dict[str, Any] | None = None,
     expected_trace_ref: str | None = None,
     expected_scenario_ref: str | None = None,
+    expected_scenario_scope: str | None = None,
+    expected_setter_symbol_path: str | None = None,
+    expected_setter_module_hash: str | None = None,
+    expected_expiry_or_invalidation_rule: str | None = None,
     required_decision_type: str | None = None,
     required_answer_values: set[str] | None = None,
     required_source_refs: list[str] | None = None,
@@ -967,8 +1133,14 @@ def fact_decision_blockers(
             expected_anchor,
             expected_trace_ref,
             expected_scenario_ref,
+            expected_scenario_scope,
+            expected_setter_symbol_path,
+            expected_setter_module_hash,
+            expected_expiry_or_invalidation_rule,
         ):
-            blockers.append("evidence user_decision.applies_to must bind record_id, effect_type, statement_hash, anchor, trace_ref, and scenario_ref when required")
+            blockers.append(
+                "evidence user_decision.applies_to must bind record_id, effect_type, statement_hash, anchor, trace_ref, scenario_ref, scenario_scope, setter_symbol_path, setter_module_hash, and expiry_or_invalidation_rule when required"
+            )
     if not has_text(decision.get("rationale")):
         blockers.append("evidence user_decision.rationale is required")
     source_refs = decision.get("source_refs")
@@ -1032,6 +1204,8 @@ def evidence_blockers(
     if evidence_type == "deterministic_runtime":
         if not has_text(evidence.get("rule_id")):
             blockers.append("deterministic_runtime evidence.rule_id is required")
+        blockers.extend(runtime_evidence_envelope_blockers(evidence))
+        blockers.extend(runtime_scenario_fit_metadata_blockers(evidence))
         if not has_text(evidence.get("trace_ref")):
             blockers.append("deterministic_runtime evidence.trace_ref is required")
         artifact_hash = evidence.get("artifact_hash")
@@ -1052,8 +1226,20 @@ def evidence_blockers(
                     expected_effect_type=record_effect_type,
                     expected_statement_hash=record_statement_hash,
                     expected_anchor=record_anchor,
-                    expected_trace_ref=str(evidence.get("trace_ref", "")),
-                    expected_scenario_ref=str(evidence.get("scenario_ref", "")),
+                    expected_trace_ref=str(evidence["trace_ref"]) if has_text(evidence.get("trace_ref")) else None,
+                    expected_scenario_ref=str(evidence["scenario_ref"]) if has_text(evidence.get("scenario_ref")) else None,
+                    expected_scenario_scope=str(evidence["scenario_scope"])
+                    if has_text(evidence.get("scenario_scope"))
+                    else None,
+                    expected_setter_symbol_path=str(evidence["setter_symbol_path"])
+                    if has_text(evidence.get("setter_symbol_path"))
+                    else None,
+                    expected_setter_module_hash=str(evidence["setter_module_hash"])
+                    if has_text(evidence.get("setter_module_hash"))
+                    else None,
+                    expected_expiry_or_invalidation_rule=str(evidence["expiry_or_invalidation_rule"])
+                    if has_text(evidence.get("expiry_or_invalidation_rule"))
+                    else None,
                     required_decision_type="runtime_scenario_fit",
                     required_answer_values=AFFIRMATIVE_DECISION_ANSWERS,
                     required_source_refs=[
@@ -1260,13 +1446,25 @@ def render_record(record: dict[str, Any], user_decision_id: str) -> str:
             "source_hash",
             "trace_ref",
             "artifact_hash",
+            "artifact_media_type",
+            "encoding",
+            "canonicalization",
+            "canonical_output_type",
+            "hash_input_scope",
+            "ignored_nondeterministic_fields",
+            "selected_fields",
+            "line_range",
             "scenario_ref",
+            "scenario_scope",
+            "setter_symbol_path",
+            "setter_module_hash",
+            "expiry_or_invalidation_rule",
             "user_decision_ref",
             "probe_result_ref",
             "probe_result_hash",
         ):
             if evidence_key in evidence:
-                lines.append(f"- evidence_{evidence_key}: {single_line(evidence[evidence_key])}")
+                lines.append(f"- evidence_{evidence_key}: {stable_single_line(evidence[evidence_key])}")
     if record.get("reason"):
         lines.append(f"- reason: {single_line(record['reason'])}")
     for source_ref in record.get("source_refs", []):
@@ -1322,6 +1520,48 @@ def target_role_blockers(existing: str) -> list[str]:
     if leading_metadata_value(existing, "doc_role") != "effect_map":
         return ["target shadow file must declare doc_role: effect_map before effect writes"]
     return []
+
+
+def existing_record_block(existing: str, record_id: str) -> str | None:
+    begin = marker(record_id, "begin")
+    end = marker(record_id, "end")
+    begin_index = existing.find(begin)
+    if begin_index < 0:
+        return None
+    end_index = existing.find(end, begin_index + len(begin))
+    if end_index < 0:
+        return None
+    return existing[begin_index : end_index + len(end)]
+
+
+def existing_record_lifecycle_blockers(existing: str, record_id: str) -> tuple[str | None, list[str]]:
+    block = existing_record_block(existing, record_id)
+    if block is None:
+        return None, []
+
+    lifecycles: list[str] = []
+    for line in block.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- lifecycle:"):
+            lifecycles.append(stripped.split(":", 1)[1].strip())
+
+    if len(lifecycles) != 1 or lifecycles[0] not in ALLOWED_LIFECYCLES:
+        return None, [f"existing record {record_id} lifecycle metadata is missing or malformed"]
+    return lifecycles[0], []
+
+
+def lifecycle_transition_blockers(existing: str, record: dict[str, Any]) -> list[str]:
+    record_id = str(record.get("record_id", ""))
+    incoming_lifecycle = record.get("lifecycle")
+    existing_lifecycle, blockers = existing_record_lifecycle_blockers(existing, record_id)
+    if blockers or existing_lifecycle is None:
+        return blockers
+
+    if existing_lifecycle == incoming_lifecycle and existing_lifecycle in {"unknown", "blocked", "stale", "confirmed"}:
+        return []
+    if existing_lifecycle in {"unknown", "blocked", "stale"} and incoming_lifecycle == "confirmed":
+        return []
+    return [f"lifecycle transition blocked: {existing_lifecycle} -> {incoming_lifecycle}"]
 
 
 def existing_marker_blockers(existing: str, record_id: str) -> list[str]:
@@ -1456,6 +1696,7 @@ def main(argv: list[str]) -> int:
     blockers.extend(reserved_target_blockers(target_ref, existing))
     blockers.extend(target_role_blockers(existing))
     blockers.extend(existing_marker_blockers(existing, record_id))
+    blockers.extend(lifecycle_transition_blockers(existing, record) if not blockers else [])
 
     user_decision = decision_payload.get("user_decision", {})
     rendered = render_record(record, single_line(user_decision.get("id", "unknown"))) if not blockers else ""

@@ -428,6 +428,7 @@ check_effect_map_file() {
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import sys
 from pathlib import Path
@@ -451,7 +452,27 @@ human_effect_types = {
     "waiver_approval",
 }
 sha_re = re.compile(r"^sha256:[0-9a-f]{64}$")
+scenario_scope_re = re.compile(r"^[A-Za-z0-9_.:/-]{3,120}$")
+setter_symbol_path_re = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
 id_re = re.compile(r"^ {2,}([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+@v[0-9]+):\s*$")
+runtime_envelope_encodings = {"utf-8", "binary"}
+runtime_envelope_canonicalizations = {"none", "rfc8785", "custom-declared"}
+runtime_envelope_hash_input_scopes = {"whole_artifact", "selected_fields", "line_range"}
+runtime_envelope_canonical_output_types = {"text", "binary"}
+expiry_or_invalidation_rules = {"timestamp", "binding_change", "manual_revocation"}
+runtime_trace_hash_scope_support_message = "deterministic_runtime any.runtime.trace@v1 currently supports only whole_artifact artifact_hash verification"
+runtime_envelope_v1_matrix = {
+    ("utf-8", "rfc8785", None, "whole_artifact"),
+    ("utf-8", "rfc8785", None, "selected_fields"),
+    ("utf-8", "none", None, "whole_artifact"),
+    ("utf-8", "none", None, "line_range"),
+    ("utf-8", "custom-declared", "text", "whole_artifact"),
+    ("utf-8", "custom-declared", "text", "selected_fields"),
+    ("utf-8", "custom-declared", "text", "line_range"),
+    ("utf-8", "custom-declared", "binary", "whole_artifact"),
+    ("binary", "none", None, "whole_artifact"),
+    ("binary", "custom-declared", "binary", "whole_artifact"),
+}
 bt = chr(96)
 issues = []
 open_id = None
@@ -550,6 +571,106 @@ def check_rule(record_id: str, evidence_type: str, rule_id: str, effect_type: st
         issues.append(f"record {record_id}: {evidence_type} evidence_ref is not compatible with evidence_rule_id")
 
 
+def is_rendered_list(value: str) -> bool:
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(parsed, list)
+
+
+def check_runtime_envelope(record_id: str) -> None:
+    for key in (
+        "evidence_artifact_media_type",
+        "evidence_encoding",
+        "evidence_canonicalization",
+        "evidence_hash_input_scope",
+        "evidence_ignored_nondeterministic_fields",
+    ):
+        if not fields.get(key):
+            issues.append(f"record {record_id}: deterministic_runtime record requires {key}")
+
+    encoding = fields.get("evidence_encoding", "")
+    canonicalization = fields.get("evidence_canonicalization", "")
+    hash_input_scope = fields.get("evidence_hash_input_scope", "")
+    ignored_fields = fields.get("evidence_ignored_nondeterministic_fields", "")
+    canonical_output_type = fields.get("evidence_canonical_output_type")
+
+    if encoding and encoding not in runtime_envelope_encodings:
+        issues.append(f"record {record_id}: deterministic_runtime evidence_encoding must be utf-8 or binary")
+    if canonicalization and canonicalization not in runtime_envelope_canonicalizations:
+        issues.append(
+            f"record {record_id}: deterministic_runtime evidence_canonicalization must be none, rfc8785, or custom-declared"
+        )
+    if hash_input_scope and hash_input_scope not in runtime_envelope_hash_input_scopes:
+        issues.append(
+            f"record {record_id}: deterministic_runtime evidence_hash_input_scope must be whole_artifact, selected_fields, or line_range"
+        )
+    if ignored_fields and not is_rendered_list(ignored_fields):
+        issues.append(f"record {record_id}: deterministic_runtime evidence_ignored_nondeterministic_fields must be a JSON list")
+
+    if canonicalization == "custom-declared":
+        if canonical_output_type not in runtime_envelope_canonical_output_types:
+            issues.append(
+                f"record {record_id}: deterministic_runtime evidence_canonical_output_type must be text or binary for custom-declared canonicalization"
+            )
+    elif canonical_output_type:
+        issues.append(
+            f"record {record_id}: deterministic_runtime evidence_canonical_output_type is only valid for custom-declared canonicalization"
+        )
+
+    if (
+        hash_input_scope == "whole_artifact"
+        and ignored_fields
+        and ignored_fields != "[]"
+        and canonicalization != "custom-declared"
+    ):
+        issues.append(
+            f"record {record_id}: deterministic_runtime evidence_ignored_nondeterministic_fields must be [] for whole_artifact unless canonicalization is custom-declared"
+        )
+
+    canonical_output = canonical_output_type if canonicalization == "custom-declared" else None
+    if (
+        encoding in runtime_envelope_encodings
+        and canonicalization in runtime_envelope_canonicalizations
+        and hash_input_scope in runtime_envelope_hash_input_scopes
+        and (canonicalization != "custom-declared" or canonical_output_type in runtime_envelope_canonical_output_types)
+        and (encoding, canonicalization, canonical_output, hash_input_scope) not in runtime_envelope_v1_matrix
+    ):
+        issues.append(f"record {record_id}: deterministic_runtime evidence envelope is not supported by the v1 validity matrix")
+
+
+def check_runtime_scenario_fit_metadata(record_id: str) -> None:
+    for key in (
+        "evidence_scenario_scope",
+        "evidence_setter_symbol_path",
+        "evidence_setter_module_hash",
+        "evidence_expiry_or_invalidation_rule",
+    ):
+        if not fields.get(key):
+            issues.append(f"record {record_id}: deterministic_runtime record requires {key}")
+
+    scenario_scope = fields.get("evidence_scenario_scope", "")
+    setter_symbol_path = fields.get("evidence_setter_symbol_path", "")
+    setter_module_hash = fields.get("evidence_setter_module_hash", "")
+    expiry_or_invalidation_rule = fields.get("evidence_expiry_or_invalidation_rule", "")
+
+    if scenario_scope and not scenario_scope_re.match(scenario_scope):
+        issues.append(
+            f"record {record_id}: deterministic_runtime evidence_scenario_scope must match ^[A-Za-z0-9_.:/-]{{3,120}}$"
+        )
+    if setter_symbol_path and not setter_symbol_path_re.match(setter_symbol_path):
+        issues.append(
+            f"record {record_id}: deterministic_runtime evidence_setter_symbol_path must match ^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"
+        )
+    if setter_module_hash and not sha_re.match(setter_module_hash):
+        issues.append(f"record {record_id}: deterministic_runtime evidence_setter_module_hash must be sha256")
+    if expiry_or_invalidation_rule and expiry_or_invalidation_rule not in expiry_or_invalidation_rules:
+        issues.append(
+            f"record {record_id}: deterministic_runtime evidence_expiry_or_invalidation_rule must be timestamp, binding_change, or manual_revocation"
+        )
+
+
 def finish(line_no: int, end_id: str) -> None:
     global open_id, fields, record_count
     if open_id is None:
@@ -622,6 +743,8 @@ def finish(line_no: int, end_id: str) -> None:
             ):
                 if not fields.get(key):
                     issues.append(f"record {open_id}: deterministic_runtime record requires {key}")
+            check_runtime_envelope(open_id)
+            check_runtime_scenario_fit_metadata(open_id)
             if fields.get("evidence_artifact_hash") and not sha_re.match(fields["evidence_artifact_hash"]):
                 issues.append(f"record {open_id}: deterministic_runtime evidence_artifact_hash must be sha256")
             if fields.get("evidence_probe_result_hash") and not sha_re.match(fields["evidence_probe_result_hash"]):
@@ -631,6 +754,8 @@ def finish(line_no: int, end_id: str) -> None:
                 issues.append(f"record {open_id}: deterministic_runtime evidence_ref must reference runtime_trace")
             if fields.get("evidence_ref") not in implemented_validators:
                 issues.append(f"record {open_id}: deterministic_runtime evidence_ref must be implemented")
+            if fields.get("evidence_ref") == "any.runtime.trace@v1" and fields.get("evidence_hash_input_scope") != "whole_artifact":
+                issues.append(f"record {open_id}: {runtime_trace_hash_scope_support_message}")
             check_path_binding(open_id, "deterministic_runtime", fields.get("anchor_file", ""), fields.get("evidence_trace_ref", ""), fields.get("anchor_line"))
             check_probe_artifact(open_id, fields.get("evidence_probe_result_ref", ""), fields.get("evidence_probe_result_hash", ""), "deterministic_runtime")
         elif evidence_type == "user_decision":
