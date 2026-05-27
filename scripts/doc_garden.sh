@@ -31,8 +31,8 @@ Options:
   --axis-where "<text>"           Structural placement (MVC/Layered/Hexagonal/Clean)
   --axis-verify "<text>"          Verification strategy (TDD/pyramid/FIRST)
   --execution-mode <mode>         supervisor_subagents|solo (default: solo)
-  --primary-author-tool <tool>    gemini|claude|codex
-  --review-mode <mode>            external_cli|codex_subagents
+  --primary-author-tool <tool>    antigravity|agy
+  --review-mode <mode>            external_cli|agy_subagents
   --risk-preflight-status <status> pass|approved|blocked|approval_required (required before delegated/external orchestration)
   --risk-preflight-recorded-by "<name>"
                                   Main-thread recorder identity (default: main-thread-supervising-lead-architect)
@@ -196,9 +196,9 @@ validate_execution_mode() {
 validate_primary_author_tool() {
   local value="$1"
   case "$value" in
-    gemini|claude|codex) ;;
+    antigravity|agy) ;;
     *)
-      echo "[ERROR] Invalid --primary-author-tool: ${value} (use gemini, claude, or codex)" >&2
+      echo "[ERROR] Invalid --primary-author-tool: ${value} (use antigravity or agy)" >&2
       exit 1
       ;;
   esac
@@ -207,9 +207,9 @@ validate_primary_author_tool() {
 validate_review_mode() {
   local value="$1"
   case "$value" in
-    external_cli|codex_subagents) ;;
+    external_cli|agy_subagents|codex_subagents) ;;
     *)
-      echo "[ERROR] Invalid --review-mode: ${value} (use external_cli or codex_subagents)" >&2
+      echo "[ERROR] Invalid --review-mode: ${value} (use external_cli, agy_subagents, or codex_subagents)" >&2
       exit 1
       ;;
   esac
@@ -235,7 +235,7 @@ validate_risk_preflight_recorder() {
   fi
   normalized="$(printf "%s" "$value" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
   case "$normalized" in
-    gemini|claude|codex|external-review-wrapper|external-cli*)
+    antigravity|agy|external-review-wrapper|external-cli*)
       echo "[ERROR] --risk-preflight-recorded-by must identify the main-thread supervising lead architect, not evaluator/tool identity: ${value}" >&2
       exit 1
       ;;
@@ -879,8 +879,8 @@ ensure_orchestration_file() {
 
 - task_id:
 - execution_mode: supervisor_subagents | solo
-- primary_author_tool: gemini | claude | codex
-- review_mode: external_cli | codex_subagents
+- primary_author_tool: antigravity | agy
+- review_mode: external_cli | agy_subagents
 - supervisor_agent:
 - planner_agents:
 - reviewer_agents:

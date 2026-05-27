@@ -51,11 +51,11 @@ NON_CONFIRMING_EVIDENCE_TYPES = {
 REVIEW_ROUTES = {
     "codex_subagent_md_handoff",
     "runtime_independent_session_md_handoff",
-    "external_gemini_claude",
+    "external_antigravity",
 }
-EXTERNAL_REVIEW_ROUTE = "external_gemini_claude"
+EXTERNAL_REVIEW_ROUTE = "external_antigravity"
 INTERNAL_REVIEW_ROUTES = REVIEW_ROUTES - {EXTERNAL_REVIEW_ROUTE}
-EXTERNAL_REVIEW_EVALUATORS = {"gemini", "claude"}
+EXTERNAL_REVIEW_EVALUATORS = {"antigravity", "agy"}
 INTERNAL_ACCEPT_VERDICTS = {"accept", "accepted"}
 STANDARD_INTERNAL_REVIEW_FIELDS = ("priority_findings", "contract_mismatches", "missing_evidence", "residual_risks")
 STANDARD_EXTERNAL_REVIEW_FIELDS = ("summary", "strengths", "risks", "requested_changes")
@@ -81,7 +81,7 @@ PLACEHOLDER_APPROVAL_VALUES = {
     "tbd",
     "todo",
 }
-EVALUATOR_IDENTITIES = {"gemini", "claude", "codex", "external-review-wrapper", "external-cli"}
+EVALUATOR_IDENTITIES = {"antigravity", "agy", "external-review-wrapper", "external-cli"}
 
 
 def emit(payload: dict[str, Any]) -> None:
@@ -161,13 +161,13 @@ def validate_external_response_artifact(summary: dict[str, Any], path: Path, con
         relative_path = resolved_path.relative_to(docs_orchestration_root)
     except ValueError:
         blockers.append(
-            f"completed external Gemini/Claude review artifact must be under docs/orchestration/<task-id>/external-cli: {path}"
+            f"completed external antigravity review artifact must be under docs/orchestration/<task-id>/external-cli: {path}"
         )
         return blockers
     relative_parts = relative_path.parts
     if len(relative_parts) < 5 or relative_parts[0].startswith("_") or relative_parts[1] != "external-cli":
         blockers.append(
-            f"completed external Gemini/Claude review artifact must be under docs/orchestration/<task-id>/external-cli/<plan-version>/<round>: {path}"
+            f"completed external antigravity review artifact must be under docs/orchestration/<task-id>/external-cli/<plan-version>/<round>: {path}"
         )
         return blockers
     docs_external_root = (docs_orchestration_root / relative_parts[0] / "external-cli").resolve(strict=False)
@@ -187,128 +187,130 @@ def validate_external_response_artifact(summary: dict[str, Any], path: Path, con
                 break
     if normalized_evaluator not in EXTERNAL_REVIEW_EVALUATORS:
         blockers.append(
-            f"completed external Gemini/Claude review artifact requires evaluator gemini or claude in content or filename: {path}"
+            f"completed external antigravity review artifact requires evaluator antigravity or agy in content or filename: {path}"
         )
         return blockers
 
-    expected_names = {f"{normalized_evaluator}.response.md", f"{normalized_evaluator}.retry-response.md"}
-    if path.name not in expected_names:
+    # Filenames use model slugs (e.g. gemini-3-1-pro-high.response.md); accept any slug-based name.
+    if path.suffix != ".md" or not (path.stem.endswith(".response") or path.stem.endswith(".retry-response")):
         blockers.append(
-            f"completed external Gemini/Claude review artifact filename must match evaluator response file: {path}"
+            f"completed external antigravity review artifact filename must end in .response.md or .retry-response.md: {path}"
         )
 
-    request_file = request_file_for_response(path, normalized_evaluator)
+    # Derive the evaluator slug used in file naming from the filename stem.
+    evaluator_slug = path.stem.replace(".response", "").replace(".retry-response", "").replace(".retry", "")
+    request_file = request_file_for_response(path, evaluator_slug)
     summary["request_file"] = str(request_file)
     if not request_file.is_file():
-        blockers.append(f"completed external Gemini/Claude review artifact requires companion request file: {request_file}")
+        blockers.append(f"completed external antigravity review artifact requires companion request file: {request_file}")
         return blockers
     request_content = request_file.read_text(encoding="utf-8", errors="replace")
     if not request_content.strip():
-        blockers.append(f"completed external Gemini/Claude review companion request file must be non-empty: {request_file}")
+        blockers.append(f"completed external antigravity review companion request file must be non-empty: {request_file}")
         return blockers
 
     request_evaluator = normalized_text(review_field(request_content, "evaluator"))
-    if request_evaluator != normalized_evaluator:
+    if request_evaluator not in EXTERNAL_REVIEW_EVALUATORS:
         blockers.append(
-            f"completed external Gemini/Claude review companion request evaluator must match response evaluator: {request_file}"
+            f"completed external antigravity review companion request evaluator must be antigravity or agy: {request_file}"
         )
 
     sanitized_response_file = review_field(request_content, "sanitized_response_file")
     if not sanitized_response_file:
         blockers.append(
-            f"completed external Gemini/Claude review companion request requires sanitized_response_file: {request_file}"
+            f"completed external antigravity review companion request requires sanitized_response_file: {request_file}"
         )
     else:
         sanitized_path = Path(sanitized_response_file).expanduser().resolve(strict=False)
         if sanitized_path != resolved_path:
             blockers.append(
-                f"completed external Gemini/Claude review companion request sanitized_response_file must match artifact path: {request_file}"
+                f"completed external antigravity review companion request sanitized_response_file must match artifact path: {request_file}"
             )
 
     command_response_path = review_field(request_content, "command_response_path")
     raw_path: Path | None = None
     if not command_response_path:
         blockers.append(
-            f"completed external Gemini/Claude review companion request requires command_response_path: {request_file}"
+            f"completed external antigravity review companion request requires command_response_path: {request_file}"
         )
     else:
         raw_path = Path(command_response_path).expanduser().resolve(strict=False)
         summary["command_response_path"] = str(raw_path)
         if not is_relative_to_path(raw_path, docs_external_root):
             blockers.append(
-                f"completed external Gemini/Claude review command_response_path must be under docs/orchestration/<task-id>/external-cli: {request_file}"
+                f"completed external antigravity review command_response_path must be under docs/orchestration/<task-id>/external-cli: {request_file}"
             )
         if raw_path.parent != resolved_path.parent:
             blockers.append(
-                f"completed external Gemini/Claude review command_response_path must share the response directory: {request_file}"
+                f"completed external antigravity review command_response_path must share the response directory: {request_file}"
             )
         if raw_path.name not in {
             f"{normalized_evaluator}.command-response.raw.md",
             f"{normalized_evaluator}.retry-command-response.raw.md",
         }:
             blockers.append(
-                f"completed external Gemini/Claude review command_response_path filename must match evaluator raw capture: {request_file}"
+                f"completed external antigravity review command_response_path filename must match evaluator raw capture: {request_file}"
             )
         if raw_path.exists():
             blockers.append(
-                f"completed external Gemini/Claude review raw command capture must be sanitized and deleted: {raw_path}"
+                f"completed external antigravity review raw command capture must be sanitized and deleted: {raw_path}"
             )
 
     provenance_file = provenance_file_for_response(path)
     summary["provenance_file"] = str(provenance_file)
     if not provenance_file.is_file():
-        blockers.append(f"completed external Gemini/Claude review artifact requires provenance manifest: {provenance_file}")
+        blockers.append(f"completed external antigravity review artifact requires provenance manifest: {provenance_file}")
         return blockers
     provenance_content = provenance_file.read_text(encoding="utf-8", errors="replace")
     if not provenance_content.strip():
-        blockers.append(f"completed external Gemini/Claude review provenance manifest must be non-empty: {provenance_file}")
+        blockers.append(f"completed external antigravity review provenance manifest must be non-empty: {provenance_file}")
         return blockers
     if review_field(provenance_content, "artifact_kind") != "external_cli_review_response_provenance":
-        blockers.append(f"completed external Gemini/Claude review provenance manifest has invalid artifact_kind: {provenance_file}")
+        blockers.append(f"completed external antigravity review provenance manifest has invalid artifact_kind: {provenance_file}")
     if review_field(provenance_content, "generated_by") != "run_external_plan_reviews.sh":
-        blockers.append(f"completed external Gemini/Claude review provenance manifest must be generated by run_external_plan_reviews.sh: {provenance_file}")
+        blockers.append(f"completed external antigravity review provenance manifest must be generated by run_external_plan_reviews.sh: {provenance_file}")
     review_style = normalized_text(review_field(provenance_content, "review_style"))
     if review_style not in {"standard", "adversarial"}:
-        blockers.append(f"completed external Gemini/Claude review provenance manifest requires review_style standard or adversarial: {provenance_file}")
+        blockers.append(f"completed external antigravity review provenance manifest requires review_style standard or adversarial: {provenance_file}")
     if normalized_text(review_field(provenance_content, "evaluator")) != normalized_evaluator:
-        blockers.append(f"completed external Gemini/Claude review provenance evaluator must match response evaluator: {provenance_file}")
+        blockers.append(f"completed external antigravity review provenance evaluator must match response evaluator: {provenance_file}")
     if normalized_text(review_field(provenance_content, "verdict")) != normalized_text(verdict):
-        blockers.append(f"completed external Gemini/Claude review provenance verdict must match response verdict: {provenance_file}")
+        blockers.append(f"completed external antigravity review provenance verdict must match response verdict: {provenance_file}")
     manifest_response_file = review_field(provenance_content, "response_file")
     if not manifest_response_file:
-        blockers.append(f"completed external Gemini/Claude review provenance manifest requires response_file: {provenance_file}")
+        blockers.append(f"completed external antigravity review provenance manifest requires response_file: {provenance_file}")
     elif Path(manifest_response_file).expanduser().resolve(strict=False) != resolved_path:
-        blockers.append(f"completed external Gemini/Claude review provenance response_file must match artifact path: {provenance_file}")
+        blockers.append(f"completed external antigravity review provenance response_file must match artifact path: {provenance_file}")
     if review_field(provenance_content, "response_sha256") != summary["sha256"]:
-        blockers.append(f"completed external Gemini/Claude review provenance response_sha256 must match artifact hash: {provenance_file}")
+        blockers.append(f"completed external antigravity review provenance response_sha256 must match artifact hash: {provenance_file}")
     manifest_request_file = review_field(provenance_content, "request_file")
     if not manifest_request_file:
-        blockers.append(f"completed external Gemini/Claude review provenance manifest requires request_file: {provenance_file}")
+        blockers.append(f"completed external antigravity review provenance manifest requires request_file: {provenance_file}")
     elif Path(manifest_request_file).expanduser().resolve(strict=False) != request_file.resolve(strict=True):
-        blockers.append(f"completed external Gemini/Claude review provenance request_file must match companion request: {provenance_file}")
+        blockers.append(f"completed external antigravity review provenance request_file must match companion request: {provenance_file}")
     manifest_command_response_path = review_field(provenance_content, "command_response_path")
     if not manifest_command_response_path:
-        blockers.append(f"completed external Gemini/Claude review provenance manifest requires command_response_path: {provenance_file}")
+        blockers.append(f"completed external antigravity review provenance manifest requires command_response_path: {provenance_file}")
     elif raw_path is not None and Path(manifest_command_response_path).expanduser().resolve(strict=False) != raw_path:
-        blockers.append(f"completed external Gemini/Claude review provenance command_response_path must match companion request: {provenance_file}")
+        blockers.append(f"completed external antigravity review provenance command_response_path must match companion request: {provenance_file}")
     if normalized_text(review_field(provenance_content, "raw_capture_deleted")) != "true":
-        blockers.append(f"completed external Gemini/Claude review provenance must record raw_capture_deleted: true: {provenance_file}")
+        blockers.append(f"completed external antigravity review provenance must record raw_capture_deleted: true: {provenance_file}")
     if normalized_text(review_field(provenance_content, "sanitized_response")) != "true":
-        blockers.append(f"completed external Gemini/Claude review provenance must record sanitized_response: true: {provenance_file}")
+        blockers.append(f"completed external antigravity review provenance must record sanitized_response: true: {provenance_file}")
 
     if not verdict:
-        blockers.append(f"completed external Gemini/Claude review artifact requires verdict: {path}")
+        blockers.append(f"completed external antigravity review artifact requires verdict: {path}")
     elif verdict.strip().lower() != "accept":
-        blockers.append(f"completed external Gemini/Claude review artifact verdict must be accept: {path}")
+        blockers.append(f"completed external antigravity review artifact verdict must be accept: {path}")
     for field in STANDARD_EXTERNAL_REVIEW_FIELDS:
         if not review_field(content, field):
-            blockers.append(f"completed external Gemini/Claude review artifact requires parser-compatible field {field}: {path}")
+            blockers.append(f"completed external antigravity review artifact requires parser-compatible field {field}: {path}")
     if review_style == "adversarial":
         for field in ADVERSARIAL_EXTERNAL_REVIEW_FIELDS:
             if not review_field(content, field):
-                blockers.append(f"completed adversarial external Gemini/Claude review artifact requires parser-compatible field {field}: {path}")
+                blockers.append(f"completed adversarial external antigravity review artifact requires parser-compatible field {field}: {path}")
     if any(marker in content.lower() for marker in BLOCKED_REVIEW_MARKERS):
-        blockers.append(f"completed external Gemini/Claude review artifact contains blocked/error/no-response marker: {path}")
+        blockers.append(f"completed external antigravity review artifact contains blocked/error/no-response marker: {path}")
     return blockers
 
 
@@ -430,17 +432,17 @@ def review_route_blockers(
     blockers: list[str] = []
     if route not in REVIEW_ROUTES:
         blockers.append("review_route is not supported")
-    if route == "external_gemini_claude" and not external_requested:
-        blockers.append("external Gemini/Claude review requires explicit user request")
-    if route == "external_gemini_claude" and is_placeholder_approval_value(external_approval_ref):
-        blockers.append("external Gemini/Claude review requires concrete approval_ref")
-    if route == "external_gemini_claude" and is_placeholder_approval_value(external_approved_next_step):
-        blockers.append("external Gemini/Claude review requires approved_next_step")
-    if route == "external_gemini_claude":
+    if route == "external_antigravity" and not external_requested:
+        blockers.append("external antigravity review requires explicit user request")
+    if route == "external_antigravity" and is_placeholder_approval_value(external_approval_ref):
+        blockers.append("external antigravity review requires concrete approval_ref")
+    if route == "external_antigravity" and is_placeholder_approval_value(external_approved_next_step):
+        blockers.append("external antigravity review requires approved_next_step")
+    if route == "external_antigravity":
         if not external_recorded_by or not external_recorded_by.strip():
-            blockers.append("external Gemini/Claude review requires main-thread recorded_by")
+            blockers.append("external antigravity review requires main-thread recorded_by")
         elif is_tool_identity(external_recorded_by):
-            blockers.append("external Gemini/Claude approval must be recorded by the main-thread supervising lead architect")
+            blockers.append("external antigravity approval must be recorded by the main-thread supervising lead architect")
     return blockers
 
 
@@ -554,19 +556,19 @@ def close_review_blockers(
         blockers.append(f"required review route is missing: {route}")
     if EXTERNAL_REVIEW_ROUTE in completed_set:
         if not external_requested:
-            blockers.append("completed external Gemini/Claude review requires explicit user request")
+            blockers.append("completed external antigravity review requires explicit user request")
         if is_placeholder_approval_value(external_approval_ref):
-            blockers.append("completed external Gemini/Claude review requires concrete approval_ref")
+            blockers.append("completed external antigravity review requires concrete approval_ref")
         if is_placeholder_approval_value(external_approved_next_step):
-            blockers.append("completed external Gemini/Claude review requires approved_next_step")
+            blockers.append("completed external antigravity review requires approved_next_step")
         if not external_recorded_by or not external_recorded_by.strip():
-            blockers.append("completed external Gemini/Claude review requires main-thread recorded_by")
+            blockers.append("completed external antigravity review requires main-thread recorded_by")
         elif is_tool_identity(external_recorded_by):
             blockers.append(
-                "completed external Gemini/Claude review approval must be recorded by the main-thread supervising lead architect"
+                "completed external antigravity review approval must be recorded by the main-thread supervising lead architect"
             )
         if not artifacts.get(EXTERNAL_REVIEW_ROUTE):
-            blockers.append("completed external Gemini/Claude review requires a durable response artifact")
+            blockers.append("completed external antigravity review requires a durable response artifact")
     for route in sorted((completed_set & INTERNAL_REVIEW_ROUTES) - blocked_set):
         if not artifacts.get(route):
             blockers.append(f"completed internal review route requires a durable response artifact: {route}")
@@ -575,7 +577,7 @@ def close_review_blockers(
         and EXTERNAL_REVIEW_ROUTE in blocked_set
         and "codex_subagent_md_handoff" in completed_set
     ):
-        blockers.append("sub-agent acceptance cannot substitute for blocked external Gemini/Claude review")
+        blockers.append("sub-agent acceptance cannot substitute for blocked external antigravity review")
     return blockers
 
 

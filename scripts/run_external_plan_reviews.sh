@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MODEL_REGISTRY_FILE="${CODEGUIDE_MODEL_REGISTRY:-$THIS_DIR/../config/ai_model_registry.json}"
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -10,30 +13,40 @@ Usage:
 Options:
   --task-id <id>                    Task ID for PLAN-<task-id>-<plan-version>.md
   --plan-version <vX.Y>             Plan version to review (required)
-  --primary-tool <tool>             Plan author tool: gemini|claude|codex (required)
+  --primary-tool <tool>             Plan author/coordinator tool: agy|claude|codex|human (required)
   --review-round <rNN>              Review round label, e.g. r01 (required)
   --risk-preflight-status <status>  Required gate before external review: approved (pass is rejected for external CLI)
   --risk-preflight-recorded-by <id> Main-thread actor that performed preflight (default: main-thread-supervising-lead-architect)
   --risk-preflight-summary "<text>" Required gate summary (default: external review cleared by main thread)
   --approval-ref <ref>              Required when risk-preflight-status=approved
   --approved-next-step "<text>"     Exact approved step when approval was required
-  --reviewer <tool>                 Optional reviewer tool to invoke; repeatable, default is all non-primary tools
-  --adversarial-evaluator <tool>    Optional reviewer to run in adversarial mode
+  --reviewer <model>                Optional reviewer model alias to invoke; repeatable, default is all non-primary models
+  --adversarial-evaluator <model>   Optional reviewer model to run in adversarial mode
   --allow-partial-review            Allow success when only one non-required reviewer succeeds
   --manual-handoff-only             Write request files and manual command files, then stop without invoking external CLIs
   --ingest-manual-responses         Parse existing manual raw/response files into reports and provenance without invoking external CLIs
-  --gemini-model <model>            Optional Gemini model override
-  --claude-model <model>            Optional Claude model override
-  --codex-model <model>             Optional Codex model override
+  --primary-model <model>           Override the primary model alias used to exclude self-review
+  --antigravity-model <model>       Backward-compatible alias for --primary-model
+  --task-phase <phase>              Task phase: planning|review|code|implementation (registry default when unset)
   -h, --help                        Show this message
 
 Environment overrides:
-  CODEGUIDE_GEMINI_BIN              Gemini CLI binary path (default: gemini)
-  CODEGUIDE_CLAUDE_BIN              Claude CLI binary path (default: claude)
-  CODEGUIDE_CODEX_BIN               Codex CLI binary path (default: codex)
-  CODEGUIDE_GEMINI_MODEL            Default Gemini model override
-  CODEGUIDE_CLAUDE_MODEL            Default Claude model override
-  CODEGUIDE_CODEX_MODEL             Default Codex model override
+  CODEGUIDE_ANTIGRAVITY_BIN         agy CLI binary path (default from registry: agy)
+  CODEGUIDE_CLAUDE_BIN              Claude Code CLI binary path (default: claude)
+  CODEGUIDE_PRIMARY_MODEL           Default primary model alias (registry default when unset)
+  CODEGUIDE_ANTIGRAVITY_MODEL       Backward-compatible alias for CODEGUIDE_PRIMARY_MODEL
+  CODEGUIDE_MODEL_REGISTRY          Model registry JSON path
+  CODEGUIDE_TASK_PHASE              Default task phase (registry default when unset)
+
+Model Registry:
+  Runners, model routes, aliases, quota groups, default reviewers, quota patterns,
+  and fallback policy are read from CODEGUIDE_MODEL_REGISTRY, or from the bundled
+  registry next to this script.
+
+Quota Fallback Policy:
+  If a registered model route quota is exhausted, fallback is selected by matching
+  the exhausted route's quota_group and task phase against fallback_policy.
+  Unregistered models never receive automatic quota fallback.
 EOF
 }
 
@@ -42,6 +55,15 @@ if [[ $# -gt 0 && "${1:-}" != -* ]]; then
   PROJECT_ROOT="${1%/}"
   shift
 fi
+
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+  esac
+done
 
 TASK_ID=""
 PLAN_VERSION=""
@@ -57,13 +79,29 @@ ALLOW_PARTIAL_REVIEW="false"
 MANUAL_HANDOFF_ONLY="false"
 INGEST_MANUAL_RESPONSES="false"
 SELECTED_REVIEWERS=()
-GEMINI_MODEL="${CODEGUIDE_GEMINI_MODEL:-}"
-CLAUDE_MODEL="${CODEGUIDE_CLAUDE_MODEL:-}"
-CODEX_MODEL="${CODEGUIDE_CODEX_MODEL:-}"
 
-GEMINI_BIN="${CODEGUIDE_GEMINI_BIN:-gemini}"
-CLAUDE_BIN="${CODEGUIDE_CLAUDE_BIN:-claude}"
-CODEX_BIN="${CODEGUIDE_CODEX_BIN:-codex}"
+# Runner-aware model registry. Values are loaded from JSON below.
+DEFAULT_MODEL_ALIAS=""
+DEFAULT_TASK_PHASE="planning"
+MODEL_ALIAS_KEYS=()
+MODEL_ALIAS_VALUES=()
+RUNNER_IDS=()
+RUNNER_BINARIES=()
+RUNNER_ENV_BINARIES=()
+RUNNER_COMMAND_KINDS=()
+MODEL_ROUTE_IDS=()
+MODEL_RUNNERS=()
+MODEL_CLI_MODELS=()
+MODEL_QUOTA_GROUPS=()
+MODEL_DISPLAY_NAMES=()
+FALLBACK_FROM_GROUPS=()
+FALLBACK_PHASES=()
+FALLBACK_TARGETS=()
+DEFAULT_REVIEWER_ALIASES=()
+QUOTA_ERROR_PATTERNS=()
+PRIMARY_MODEL=""
+TASK_PHASE=""
+
 
 TMP_FILES=()
 
@@ -103,12 +141,266 @@ validate_tool() {
   local option_name="$1"
   local value="$2"
   case "$value" in
-    gemini|claude|codex) ;;
+    antigravity|agy|claude|codex|human|external-runner) ;;
     *)
-      echo "[ERROR] Invalid ${option_name}: ${value} (use gemini, claude, or codex)" >&2
+      echo "[ERROR] Invalid ${option_name}: ${value} (use agy, claude, codex, human, or external-runner)" >&2
       exit 1
       ;;
   esac
+}
+
+load_model_registry() {
+  local registry_file="$1"
+  local registry_output
+  local kind first second third fourth fifth
+
+  if [[ ! -f "$registry_file" ]]; then
+    echo "[ERROR] Model registry not found: $registry_file" >&2
+    exit 1
+  fi
+
+  if ! registry_output="$(python3 "$THIS_DIR/ai_model_registry.py" emit-shell "$registry_file")"; then
+    exit 1
+  fi
+
+  MODEL_ALIAS_KEYS=()
+  MODEL_ALIAS_VALUES=()
+  RUNNER_IDS=()
+  RUNNER_BINARIES=()
+  RUNNER_ENV_BINARIES=()
+  RUNNER_COMMAND_KINDS=()
+  MODEL_ROUTE_IDS=()
+  MODEL_RUNNERS=()
+  MODEL_CLI_MODELS=()
+  MODEL_QUOTA_GROUPS=()
+  MODEL_DISPLAY_NAMES=()
+  FALLBACK_FROM_GROUPS=()
+  FALLBACK_PHASES=()
+  FALLBACK_TARGETS=()
+  DEFAULT_REVIEWER_ALIASES=()
+  QUOTA_ERROR_PATTERNS=()
+
+  while IFS=$'\t' read -r kind first second third fourth fifth; do
+    case "$kind" in
+      default_model)
+        DEFAULT_MODEL_ALIAS="$first"
+        ;;
+      default_task_phase)
+        DEFAULT_TASK_PHASE="$first"
+        ;;
+      alias)
+        MODEL_ALIAS_KEYS+=("$first")
+        MODEL_ALIAS_VALUES+=("$second")
+        ;;
+      runner)
+        RUNNER_IDS+=("$first")
+        RUNNER_BINARIES+=("$second")
+        RUNNER_ENV_BINARIES+=("$third")
+        RUNNER_COMMAND_KINDS+=("$fourth")
+        ;;
+      model)
+        MODEL_ROUTE_IDS+=("$first")
+        MODEL_RUNNERS+=("$second")
+        MODEL_CLI_MODELS+=("$third")
+        MODEL_QUOTA_GROUPS+=("$fourth")
+        MODEL_DISPLAY_NAMES+=("$fifth")
+        ;;
+      fallback)
+        FALLBACK_FROM_GROUPS+=("$first")
+        FALLBACK_PHASES+=("$second")
+        FALLBACK_TARGETS+=("$third")
+        ;;
+      default_reviewer)
+        DEFAULT_REVIEWER_ALIASES+=("$first")
+        ;;
+      quota_pattern)
+        QUOTA_ERROR_PATTERNS+=("$first")
+        ;;
+      "")
+        ;;
+      *)
+        echo "[ERROR] Unknown model registry record kind: $kind" >&2
+        exit 1
+        ;;
+    esac
+  done <<< "$registry_output"
+
+  if [[ -z "$DEFAULT_MODEL_ALIAS" || ${#MODEL_ALIAS_KEYS[@]} -eq 0 || ${#RUNNER_IDS[@]} -eq 0 || ${#MODEL_ROUTE_IDS[@]} -eq 0 || ${#FALLBACK_TARGETS[@]} -eq 0 || ${#DEFAULT_REVIEWER_ALIASES[@]} -eq 0 || ${#QUOTA_ERROR_PATTERNS[@]} -eq 0 ]]; then
+    echo "[ERROR] Model registry is missing one or more required sections: $registry_file" >&2
+    exit 1
+  fi
+}
+
+# Resolve a semantic model alias to a runner-qualified model route.
+resolve_model_name() {
+  local alias="$1"
+  local index
+  for (( index=0; index<${#MODEL_ROUTE_IDS[@]}; index++ )); do
+    if [[ "${MODEL_ROUTE_IDS[$index]}" == "$alias" ]]; then
+      printf "%s" "$alias"
+      return
+    fi
+  done
+  for (( index=0; index<${#MODEL_ALIAS_KEYS[@]}; index++ )); do
+    if [[ "${MODEL_ALIAS_KEYS[$index]}" == "$alias" ]]; then
+      printf "%s" "${MODEL_ALIAS_VALUES[$index]}"
+      return
+    fi
+  done
+  printf "%s" "$alias"
+}
+
+model_index_for() {
+  local route="$1"
+  local index
+  for (( index=0; index<${#MODEL_ROUTE_IDS[@]}; index++ )); do
+    if [[ "${MODEL_ROUTE_IDS[$index]}" == "$route" ]]; then
+      printf "%s" "$index"
+      return
+    fi
+  done
+  return 1
+}
+
+runner_index_for() {
+  local runner_id="$1"
+  local index
+  for (( index=0; index<${#RUNNER_IDS[@]}; index++ )); do
+    if [[ "${RUNNER_IDS[$index]}" == "$runner_id" ]]; then
+      printf "%s" "$index"
+      return
+    fi
+  done
+  return 1
+}
+
+quota_group_for_model() {
+  local route="$1"
+  local index
+  if index="$(model_index_for "$route")"; then
+    printf "%s" "${MODEL_QUOTA_GROUPS[$index]}"
+    return
+  fi
+  printf "unknown"
+}
+
+model_runner_for() {
+  local route="$1"
+  local index
+  if index="$(model_index_for "$route")"; then
+    printf "%s" "${MODEL_RUNNERS[$index]}"
+    return
+  fi
+  return 1
+}
+
+model_cli_model_for() {
+  local route="$1"
+  local index
+  if index="$(model_index_for "$route")"; then
+    printf "%s" "${MODEL_CLI_MODELS[$index]}"
+    return
+  fi
+  return 1
+}
+
+model_display_name_for() {
+  local route="$1"
+  local index
+  if index="$(model_index_for "$route")"; then
+    printf "%s" "${MODEL_DISPLAY_NAMES[$index]}"
+    return
+  fi
+  return 1
+}
+
+runner_binary_for() {
+  local runner_id="$1"
+  local index
+  local env_name
+  if index="$(runner_index_for "$runner_id")"; then
+    env_name="${RUNNER_ENV_BINARIES[$index]}"
+    if [[ -n "$env_name" && -n "${!env_name:-}" ]]; then
+      printf "%s" "${!env_name}"
+      return
+    fi
+    printf "%s" "${RUNNER_BINARIES[$index]}"
+    return
+  fi
+  return 1
+}
+
+runner_command_kind_for() {
+  local runner_id="$1"
+  local index
+  if index="$(runner_index_for "$runner_id")"; then
+    printf "%s" "${RUNNER_COMMAND_KINDS[$index]}"
+    return
+  fi
+  return 1
+}
+
+fallback_model_for_route_phase() {
+  local route="$1"
+  local phase="$2"
+  local quota_group
+  local index
+
+  quota_group="$(quota_group_for_model "$route")"
+  if [[ "$quota_group" == "unknown" ]]; then
+    return 1
+  fi
+  for (( index=0; index<${#FALLBACK_TARGETS[@]}; index++ )); do
+    if [[ "${FALLBACK_FROM_GROUPS[$index]}" == "$quota_group" && "${FALLBACK_PHASES[$index]}" == "$phase" ]]; then
+      printf "%s" "${FALLBACK_TARGETS[$index]}"
+      return
+    fi
+  done
+  return 1
+}
+
+# Detect quota/rate-limit exhaustion from a stderr file.
+# Returns 0 (true) if a quota pattern is found.
+is_quota_exhausted() {
+  local stderr_file="$1"
+  local pattern
+  for pattern in "${QUOTA_ERROR_PATTERNS[@]}"; do
+    if grep -Fqi -- "$pattern" "$stderr_file" 2>/dev/null; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+require_registered_model() {
+  local context="$1"
+  local value="$2"
+  local resolved
+
+  resolved="$(resolve_model_name "$value")"
+  if ! model_index_for "$resolved" >/dev/null; then
+    echo "[ERROR] Model registry reference '${context}' resolves to unregistered model '${resolved}'" >&2
+    exit 1
+  fi
+  printf "%s" "$resolved"
+}
+
+validate_model_registry_references() {
+  local index
+
+  require_registered_model "default_model_alias" "$DEFAULT_MODEL_ALIAS" >/dev/null
+
+  for (( index=0; index<${#MODEL_ALIAS_VALUES[@]}; index++ )); do
+    require_registered_model "aliases[${MODEL_ALIAS_KEYS[$index]}]" "${MODEL_ALIAS_VALUES[$index]}" >/dev/null
+  done
+
+  for (( index=0; index<${#DEFAULT_REVIEWER_ALIASES[@]}; index++ )); do
+    require_registered_model "default_reviewer_aliases[$index]" "${DEFAULT_REVIEWER_ALIASES[$index]}" >/dev/null
+  done
+
+  for (( index=0; index<${#FALLBACK_TARGETS[@]}; index++ )); do
+    require_registered_model "fallback_policy.on_quota_exhausted[$index].to" "${FALLBACK_TARGETS[$index]}" >/dev/null
+  done
 }
 
 validate_plan_version() {
@@ -147,7 +439,7 @@ validate_risk_preflight_recorder() {
   fi
   normalized="$(printf "%s" "$value" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
   case "$normalized" in
-    gemini|claude|codex|external-review-wrapper|external-cli*)
+    antigravity|agy|external-review-wrapper|external-cli*)
       echo "[ERROR] --risk-preflight-recorded-by must identify the main-thread supervising lead architect, not evaluator/tool identity: ${value}" >&2
       exit 1
       ;;
@@ -168,11 +460,21 @@ is_placeholder_approval_value() {
   esac
 }
 
+load_model_registry "$MODEL_REGISTRY_FILE"
+validate_model_registry_references
+PRIMARY_MODEL="${CODEGUIDE_PRIMARY_MODEL:-${CODEGUIDE_ANTIGRAVITY_MODEL:-$DEFAULT_MODEL_ALIAS}}"
+TASK_PHASE="${CODEGUIDE_TASK_PHASE:-$DEFAULT_TASK_PHASE}"
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --task-id)
       require_option_value "$1" "$#"
       TASK_ID="${2:-}"
+      shift 2
+      ;;
+    --task-phase)
+      require_option_value "$1" "$#"
+      TASK_PHASE="${2:-}"
       shift 2
       ;;
     --plan-version)
@@ -217,7 +519,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --reviewer)
       require_option_value "$1" "$#"
-      validate_tool "--reviewer" "${2:-}"
       SELECTED_REVIEWERS+=("${2:-}")
       shift 2
       ;;
@@ -238,19 +539,9 @@ while [[ $# -gt 0 ]]; do
       INGEST_MANUAL_RESPONSES="true"
       shift
       ;;
-    --gemini-model)
+    --primary-model|--antigravity-model)
       require_option_value "$1" "$#"
-      GEMINI_MODEL="${2:-}"
-      shift 2
-      ;;
-    --claude-model)
-      require_option_value "$1" "$#"
-      CLAUDE_MODEL="${2:-}"
-      shift 2
-      ;;
-    --codex-model)
-      require_option_value "$1" "$#"
-      CODEX_MODEL="${2:-}"
+      PRIMARY_MODEL="${2:-}"
       shift 2
       ;;
     -h|--help)
@@ -264,6 +555,17 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# Normalize task phase; route-level quota fallback is selected only after a
+# registered route reports quota exhaustion.
+TASK_PHASE_NORM="$(printf "%s" "${TASK_PHASE:-$DEFAULT_TASK_PHASE}" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+case "$TASK_PHASE_NORM" in
+  planning|review|code|implementation) ;;
+  *)
+    echo "[ERROR] Invalid --task-phase: ${TASK_PHASE} (use planning, review, code, or implementation)" >&2
+    exit 1
+    ;;
+esac
 
 if [[ ! -d "$PROJECT_ROOT" ]]; then
   echo "[ERROR] Project root does not exist: $PROJECT_ROOT" >&2
@@ -306,15 +608,11 @@ else
   APPROVAL_REF="${APPROVAL_REF:-not_required}"
   APPROVED_NEXT_STEP="${APPROVED_NEXT_STEP:-external review ${TASK_ID} ${PLAN_VERSION} ${REVIEW_ROUND}}"
 fi
-if [[ -n "$ADVERSARIAL_EVALUATOR" ]]; then
-  validate_tool "--adversarial-evaluator" "$ADVERSARIAL_EVALUATOR"
-fi
 if [[ "$MANUAL_HANDOFF_ONLY" == "true" && "$INGEST_MANUAL_RESPONSES" == "true" ]]; then
   echo "[ERROR] --manual-handoff-only and --ingest-manual-responses are mutually exclusive" >&2
   exit 1
 fi
 
-THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$THIS_DIR/codeguide_paths.sh"
 
 PROJECT_ROOT_ABS="$(codeguide_resolve_project_root "$PROJECT_ROOT")"
@@ -461,8 +759,8 @@ ensure_orchestration_file() {
 
 - task_id:
 - execution_mode: supervisor_subagents | solo
-- primary_author_tool: gemini | claude | codex
-- review_mode: external_cli | codex_subagents
+- primary_author_tool: agy | claude | codex | human | external-runner
+- review_mode: external_cli | current_task_debate | agy_subagents
 - supervisor_agent:
 - planner_agents:
 - reviewer_agents:
@@ -576,31 +874,36 @@ upsert_field "$ORCHESTRATION_FILE" "approval_ref" "$APPROVAL_REF"
 upsert_field "$ORCHESTRATION_FILE" "approved_next_step" "$APPROVED_NEXT_STEP"
 upsert_field "$ORCHESTRATION_FILE" "last_updated" "$NOW_UTC"
 
-ALL_TOOLS=(gemini claude codex)
+# Default reviewer model aliases are registry-owned. The primary model is used
+# only to prevent self-review; it does not make this wrapper the coordinator.
+PRIMARY_RESOLVED="$(require_registered_model "primary_model" "$PRIMARY_MODEL")"
+
 REVIEWERS=()
 REVIEWER_COUNT=0
 if (( ${#SELECTED_REVIEWERS[@]} > 0 )); then
-  for tool in "${SELECTED_REVIEWERS[@]}"; do
-    if [[ "$tool" == "$PRIMARY_TOOL" ]]; then
-      echo "[ERROR] --reviewer cannot match --primary-tool: ${tool}" >&2
+  for alias in "${SELECTED_REVIEWERS[@]}"; do
+    resolved="$(require_registered_model "reviewer" "$alias")"
+    if [[ "$resolved" == "$PRIMARY_RESOLVED" ]]; then
+      echo "[ERROR] --reviewer model '${alias}' resolves to the same model as --primary-model ('${PRIMARY_RESOLVED}')" >&2
       exit 1
     fi
     already_selected="false"
     for (( reviewer_index=0; reviewer_index<REVIEWER_COUNT; reviewer_index++ )); do
-      if [[ "${REVIEWERS[$reviewer_index]}" == "$tool" ]]; then
+      if [[ "${REVIEWERS[$reviewer_index]}" == "$resolved" ]]; then
         already_selected="true"
         break
       fi
     done
     if [[ "$already_selected" == "false" ]]; then
-      REVIEWERS+=("$tool")
+      REVIEWERS+=("$resolved")
       REVIEWER_COUNT=$((REVIEWER_COUNT + 1))
     fi
   done
 else
-  for tool in "${ALL_TOOLS[@]}"; do
-    if [[ "$tool" != "$PRIMARY_TOOL" ]]; then
-      REVIEWERS+=("$tool")
+  for alias in "${DEFAULT_REVIEWER_ALIASES[@]}"; do
+    resolved="$(require_registered_model "default_reviewer" "$alias")"
+    if [[ "$resolved" != "$PRIMARY_RESOLVED" ]]; then
+      REVIEWERS+=("$resolved")
       REVIEWER_COUNT=$((REVIEWER_COUNT + 1))
     fi
   done
@@ -626,8 +929,9 @@ fi
 
 if [[ -n "$ADVERSARIAL_EVALUATOR" ]]; then
   found="false"
+  adversarial_resolved="$(require_registered_model "adversarial_evaluator" "$ADVERSARIAL_EVALUATOR")"
   for tool in "${REVIEWERS[@]}"; do
-    if [[ "$tool" == "$ADVERSARIAL_EVALUATOR" ]]; then
+    if [[ "$tool" == "$adversarial_resolved" ]]; then
       found="true"
       break
     fi
@@ -636,6 +940,7 @@ if [[ -n "$ADVERSARIAL_EVALUATOR" ]]; then
     echo "[ERROR] adversarial evaluator must be one of the non-primary reviewers: ${REVIEWERS[*]}" >&2
     exit 1
   fi
+  ADVERSARIAL_EVALUATOR="$adversarial_resolved"
 fi
 
 PROMPT_TEMPLATE="$(cat "$PROMPT_TEMPLATE_FILE")"
@@ -761,41 +1066,28 @@ EOF
   redact_secrets_to_file "$raw_request_file" "$request_file"
 }
 
-tool_model_for() {
-  local tool="$1"
-  case "$tool" in
-    gemini) printf "%s" "$GEMINI_MODEL" ;;
-    claude) printf "%s" "$CLAUDE_MODEL" ;;
-    codex) printf "%s" "$CODEX_MODEL" ;;
-  esac
+# Returns the resolved model id for a given reviewer model string.
+# Reviewer entries are already resolved at assignment time; this is a passthrough.
+reviewer_model_for() {
+  local reviewer="$1"
+  printf "%s" "$reviewer"
 }
 
 tool_bin_for() {
-  local tool="$1"
-  case "$tool" in
-    gemini) printf "%s" "$GEMINI_BIN" ;;
-    claude) printf "%s" "$CLAUDE_BIN" ;;
-    codex) printf "%s" "$CODEX_BIN" ;;
-  esac
+  local reviewer_model="$1"
+  local runner_id
+  runner_id="$(model_runner_for "$reviewer_model")" || return 1
+  runner_binary_for "$runner_id"
 }
 
 build_tool_prompt_for() {
-  local tool="$1"
+  local reviewer_model="$1"
   local request_file="$2"
   local output_capture_file="$3"
   local durable_response_file="$4"
 
-  case "$tool" in
-    gemini)
-      printf "Read the Markdown request file from disk at %s. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields to stdout; do not write files. Command-level response path: %s. Sanitized response file: %s. The bash wrapper redirects stdout to the command-level response path, sanitizes it, and deletes the raw capture. Do not claim the review was saved anywhere else." "$request_file" "$output_capture_file" "$durable_response_file"
-      ;;
-    claude)
-      printf "Use read-only file access to read the Markdown request file at %s. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields to stdout; do not write files. Command-level response path: %s. Sanitized response file: %s. The bash wrapper redirects stdout to the command-level response path, sanitizes it, and deletes the raw capture. Do not claim the review was saved anywhere else." "$request_file" "$output_capture_file" "$durable_response_file"
-      ;;
-    codex)
-      printf "Read the Markdown request file from disk at %s. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields as the final message; do not write files. Command-level response path: %s. Sanitized response file: %s. The bash command uses --output-last-message with the command-level response path, sanitizes it, and deletes the raw capture. Do not claim the review was saved anywhere else." "$request_file" "$output_capture_file" "$durable_response_file"
-      ;;
-  esac
+  printf "Read the Markdown request file from disk at %s. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields to stdout; do not write files. Command-level response path: %s. Sanitized response file: %s. The bash wrapper redirects stdout to the command-level response path, sanitizes it, and deletes the raw capture. Do not claim the review was saved anywhere else." \
+    "$request_file" "$output_capture_file" "$durable_response_file"
 }
 
 append_quoted_command() {
@@ -807,71 +1099,78 @@ append_quoted_command() {
   done
 }
 
+TOOL_COMMAND=()
+
+build_tool_command() {
+  local reviewer_model="$1"
+  local request_file="$2"
+  local output_capture_file="$3"
+  local durable_response_file="$4"
+  local runner_id
+  local command_kind
+  local cli_model
+  local binary
+  local prompt
+
+  runner_id="$(model_runner_for "$reviewer_model")" || return 1
+  command_kind="$(runner_command_kind_for "$runner_id")" || return 1
+  cli_model="$(model_cli_model_for "$reviewer_model")" || return 1
+  binary="$(runner_binary_for "$runner_id")" || return 1
+  prompt="$(build_tool_prompt_for "$reviewer_model" "$request_file" "$output_capture_file" "$durable_response_file")"
+
+  case "$command_kind" in
+    agy)
+      TOOL_COMMAND=("$binary" --approval-mode plan --output-format text --include-directories "$CONTEXT_ROOT" -m "$cli_model" -p "$prompt")
+      ;;
+    claude_code)
+      TOOL_COMMAND=("$binary" -p "$prompt" --model "$cli_model" --no-session-persistence --tools "" --add-dir "$CONTEXT_ROOT")
+      ;;
+    *)
+      echo "[ERROR] Unsupported runner command_kind '${command_kind}' for route '${reviewer_model}'" >&2
+      return 1
+      ;;
+  esac
+}
+
 write_manual_command_file() {
-  local tool="$1"
+  local reviewer_model="$1"
   local request_file="$2"
   local output_capture_file="$3"
   local stderr_file="$4"
   local durable_response_file="$5"
   local command_file="$6"
-  local binary
-  local model_override
-  local prompt
+  local runner_id
+  local cli_model
   local -a cmd
 
-  binary="$(tool_bin_for "$tool")"
-  model_override="$(tool_model_for "$tool")"
-  prompt="$(build_tool_prompt_for "$tool" "$request_file" "$output_capture_file" "$durable_response_file")"
-
-  case "$tool" in
-    gemini)
-      cmd=("$binary" --approval-mode plan --output-format text --include-directories "$CONTEXT_ROOT")
-      if [[ -n "$model_override" ]]; then
-        cmd+=(-m "$model_override")
-      fi
-      cmd+=(-p "$prompt")
-      ;;
-    claude)
-      cmd=("$binary" -p --permission-mode dontAsk --tools Read --add-dir "$CONTEXT_ROOT" --output-format text --no-session-persistence)
-      if [[ -n "$model_override" ]]; then
-        cmd+=(--model "$model_override")
-      fi
-      cmd+=("$prompt")
-      ;;
-    codex)
-      cmd=("$binary" exec --skip-git-repo-check --sandbox read-only --ephemeral -C "$CONTEXT_ROOT" --add-dir "$PROJECT_ROOT_ABS" --output-last-message "$output_capture_file")
-      if [[ -n "$model_override" ]]; then
-        cmd+=(-m "$model_override")
-      fi
-      cmd+=("$prompt")
-      ;;
-  esac
+  runner_id="$(model_runner_for "$reviewer_model")"
+  cli_model="$(model_cli_model_for "$reviewer_model")"
+  build_tool_command "$reviewer_model" "$request_file" "$output_capture_file" "$durable_response_file"
+  cmd=("${TOOL_COMMAND[@]}")
 
   cat > "$command_file" <<EOF
-# Manual external review command (${tool})
+# Manual external review command (${runner_id}/${reviewer_model})
 
 - task_id: ${TASK_ID}
 - plan_version: ${PLAN_VERSION}
 - review_round: ${REVIEW_ROUND}
-- evaluator: ${tool}
+- evaluator: ${runner_id}
+- evaluator_route: ${reviewer_model}
+- evaluator_cli_model: ${cli_model}
 - request_file: ${request_file}
 - command_response_path: ${output_capture_file}
 - sanitized_response_file: ${durable_response_file}
 - stderr_file: ${stderr_file}
 - follow_up: rerun run_external_plan_reviews.sh with the same options plus --ingest-manual-responses
 
-Run this only as a last-resort fallback when Codex Desktop cannot invoke the external CLI because the escalation layer blocks private workspace egress. This is a user-operated handoff; do not drive Terminal UI from Codex to bypass that gate.
+Run this only as a last-resort fallback when the escalation layer blocks private workspace egress. This is a user-operated handoff.
 
 \`\`\`bash
 cd $(printf "%q" "$CONTEXT_ROOT")
 EOF
 
   append_quoted_command "$command_file" "${cmd[@]}"
-  if [[ "$tool" == "codex" ]]; then
-    printf ">%q 2>%q\n" "${output_capture_file%.md}.cli.log" "$stderr_file" >> "$command_file"
-  else
-    printf ">%q 2>%q\n" "$output_capture_file" "$stderr_file" >> "$command_file"
-  fi
+  printf ">%q 2>%q\n" "$output_capture_file" "$stderr_file" >> "$command_file"
   cat >> "$command_file" <<EOF
 \`\`\`
 
@@ -879,74 +1178,78 @@ After every requested reviewer has produced a raw response, run the wrapper agai
 EOF
 }
 
+# Execute the configured runner for a given resolved model route.
+# On quota exhaustion, automatically retries with the registry fallback route.
+# Outputs: sets ACTUAL_MODEL and QUOTA_FALLBACK_TRIGGERED.
+ACTUAL_MODEL=""
+QUOTA_FALLBACK_TRIGGERED="false"
+
 run_tool_prompt() {
-  local tool="$1"
+  local reviewer_model="$1"
   local request_file="$2"
   local output_capture_file="$3"
   local stderr_file="$4"
   local durable_response_file="${5:-$output_capture_file}"
-  local model_override
-  local binary
-  local prompt
-  local cli_log_file=""
-  local codex_status=0
-  local -a cmd
+  local run_status=0
 
-  binary="$(tool_bin_for "$tool")"
-  model_override="$(tool_model_for "$tool")"
-  prompt="$(build_tool_prompt_for "$tool" "$request_file" "$output_capture_file" "$durable_response_file")"
+  ACTUAL_MODEL="$reviewer_model"
+  QUOTA_FALLBACK_TRIGGERED="false"
 
-  if ! command -v "$binary" >/dev/null 2>&1; then
-    echo "[ERROR] ${tool} binary not found in PATH: ${binary}" > "$stderr_file"
-    return 127
-  fi
+  _run_model_route() {
+    local model="$1"
+    local model_stderr_file="${2:-$stderr_file}"
+    local binary
+    local runner_id
 
-  case "$tool" in
-    gemini)
-      cmd=("$binary" --approval-mode plan --output-format text --include-directories "$CONTEXT_ROOT")
-      if [[ -n "$model_override" ]]; then
-        cmd+=(-m "$model_override")
-      fi
-      cmd+=(-p "$prompt")
-      ;;
-    claude)
-      cmd=("$binary" -p --permission-mode dontAsk --tools Read --add-dir "$CONTEXT_ROOT" --output-format text --no-session-persistence)
-      if [[ -n "$model_override" ]]; then
-        cmd+=(--model "$model_override")
-      fi
-      cmd+=("$prompt")
-      ;;
-    codex)
-      cmd=("$binary" exec --skip-git-repo-check --sandbox read-only --ephemeral -C "$CONTEXT_ROOT" --add-dir "$PROJECT_ROOT_ABS" --output-last-message "$output_capture_file")
-      if [[ -n "$model_override" ]]; then
-        cmd+=(-m "$model_override")
-      fi
-      cmd+=("$prompt")
-      ;;
-  esac
-
-  if [[ "$tool" == "codex" ]]; then
-    cli_log_file="$(mktemp)"
-    register_tmp_file "$cli_log_file"
-    "${cmd[@]}" >"$cli_log_file" 2>"$stderr_file"
-    codex_status=$?
-    if [[ -s "$cli_log_file" ]]; then
-      cat "$cli_log_file" >> "$stderr_file"
+    if ! build_tool_command "$model" "$request_file" "$output_capture_file" "$durable_response_file"; then
+      echo "[ERROR] Could not build runner command for route '${model}'" > "$model_stderr_file"
+      return 1
     fi
-    if [[ "$codex_status" -ne 0 ]]; then
-      return "$codex_status"
+    binary="${TOOL_COMMAND[0]}"
+    runner_id="$(model_runner_for "$model")"
+    if ! command -v "$binary" >/dev/null 2>&1; then
+      echo "[ERROR] runner '${runner_id}' binary not found in PATH: ${binary}" > "$model_stderr_file"
+      return 127
     fi
-    if [[ ! -s "$output_capture_file" ]]; then
-      echo "[ERROR] codex final message file was empty: ${output_capture_file}" >> "$stderr_file"
-      return 66
-    fi
+    "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
+  }
+
+  if _run_model_route "$reviewer_model" "$stderr_file"; then
     return 0
   fi
+  run_status=$?
 
-  if "${cmd[@]}" >"$output_capture_file" 2>"$stderr_file"; then
-    return 0
+  # Check for quota exhaustion and attempt registry-declared fallback.
+  if is_quota_exhausted "$stderr_file"; then
+    local quota_group fallback_model fallback_group
+    quota_group="$(quota_group_for_model "$reviewer_model")"
+    if fallback_model="$(fallback_model_for_route_phase "$reviewer_model" "$TASK_PHASE_NORM")"; then
+      fallback_group="$(quota_group_for_model "$fallback_model")"
+      echo "[WARN] Quota exhausted for route '${reviewer_model}' (quota_group=${quota_group}). Retrying with fallback route '${fallback_model}' (quota_group=${fallback_group})..." >&2
+      local fallback_stderr
+      fallback_stderr="$(mktemp)"
+      register_tmp_file "$fallback_stderr"
+      if _run_model_route "$fallback_model" "$fallback_stderr"; then
+        cat "$fallback_stderr" >> "$stderr_file"
+        ACTUAL_MODEL="$fallback_model"
+        QUOTA_FALLBACK_TRIGGERED="true"
+        echo "[INFO] Registry fallback succeeded: ${reviewer_model} -> ${fallback_model}" >&2
+        return 0
+      fi
+      if is_quota_exhausted "$fallback_stderr"; then
+        cat "$fallback_stderr" >> "$stderr_file"
+        echo "[ERROR] Quota exhausted for route '${reviewer_model}' and fallback route '${fallback_model}'. Please wait for token restoration or update fallback_policy." >&2
+      else
+        cat "$fallback_stderr" >> "$stderr_file"
+      fi
+      return 1
+    fi
+
+    echo "[ERROR] Quota exhausted for route '${reviewer_model}' (quota_group=${quota_group}), but no fallback is configured for task_phase=${TASK_PHASE_NORM} in ${MODEL_REGISTRY_FILE}." >&2
+    return 1
   fi
-  return $?
+
+  return "$run_status"
 }
 
 preserve_stderr_if_needed() {
@@ -1008,19 +1311,29 @@ file_sha256_ref() {
 }
 
 write_response_provenance_file() {
-  local evaluator="$1"
+  local evaluator_requested_model="$1"
   local review_style="$2"
   local response_file="$3"
   local request_file="$4"
   local command_response_file="$5"
+  local evaluator_actual_model="${6:-$evaluator_requested_model}"
+  local quota_fallback="${7:-false}"
   local provenance_file
   local now_utc
   local response_hash
+  local evaluator_requested_runner
+  local evaluator_actual_runner
+  local evaluator_requested_cli_model
+  local evaluator_actual_cli_model
 
   provenance_file="${response_file%.md}.provenance.md"
   ensure_handoff_path "$provenance_file" "response_provenance_file"
   now_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   response_hash="$(file_sha256_ref "$response_file")"
+  evaluator_requested_runner="$(model_runner_for "$evaluator_requested_model")"
+  evaluator_actual_runner="$(model_runner_for "$evaluator_actual_model")"
+  evaluator_requested_cli_model="$(model_cli_model_for "$evaluator_requested_model")"
+  evaluator_actual_cli_model="$(model_cli_model_for "$evaluator_actual_model")"
 
   cat > "$provenance_file" <<EOF
 # External CLI Review Response Provenance
@@ -1031,7 +1344,16 @@ write_response_provenance_file() {
 - task_id: ${TASK_ID}
 - plan_version: ${PLAN_VERSION}
 - review_round: ${REVIEW_ROUND}
-- evaluator: ${evaluator}
+- evaluator: ${evaluator_actual_runner}
+- evaluator_requested_runner: ${evaluator_requested_runner}
+- evaluator_actual_runner: ${evaluator_actual_runner}
+- evaluator_requested_route: ${evaluator_requested_model}
+- evaluator_actual_route: ${evaluator_actual_model}
+- evaluator_requested_model: ${evaluator_requested_model}
+- evaluator_actual_model: ${evaluator_actual_model}
+- evaluator_requested_cli_model: ${evaluator_requested_cli_model}
+- evaluator_actual_cli_model: ${evaluator_actual_cli_model}
+- quota_fallback_triggered: ${quota_fallback}
 - review_style: ${review_style}
 - verdict: ${PARSED_VERDICT}
 - request_file: ${request_file}
@@ -1044,18 +1366,37 @@ EOF
 }
 
 write_report_file() {
-  local evaluator="$1"
+  local evaluator_requested_model="$1"
   local review_style="$2"
   local report_file="$3"
+  local evaluator_actual_model="${4:-$evaluator_requested_model}"
+  local quota_fallback="${5:-false}"
   local now_utc
+  local evaluator_requested_runner
+  local evaluator_actual_runner
+  local evaluator_requested_cli_model
+  local evaluator_actual_cli_model
 
   now_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  evaluator_requested_runner="$(model_runner_for "$evaluator_requested_model")"
+  evaluator_actual_runner="$(model_runner_for "$evaluator_actual_model")"
+  evaluator_requested_cli_model="$(model_cli_model_for "$evaluator_requested_model")"
+  evaluator_actual_cli_model="$(model_cli_model_for "$evaluator_actual_model")"
   cat > "$report_file" <<EOF
-# PLAN-${TASK_ID}-${PLAN_VERSION} review (${evaluator})
+# PLAN-${TASK_ID}-${PLAN_VERSION} review (${evaluator_actual_runner}/${evaluator_actual_model})
 
 - task_id: ${TASK_ID}
 - plan_version: ${PLAN_VERSION}
-- evaluator: ${evaluator}
+- evaluator: ${evaluator_actual_runner}
+- evaluator_requested_runner: ${evaluator_requested_runner}
+- evaluator_actual_runner: ${evaluator_actual_runner}
+- evaluator_requested_route: ${evaluator_requested_model}
+- evaluator_actual_route: ${evaluator_actual_model}
+- evaluator_requested_model: ${evaluator_requested_model}
+- evaluator_actual_model: ${evaluator_actual_model}
+- evaluator_requested_cli_model: ${evaluator_requested_cli_model}
+- evaluator_actual_cli_model: ${evaluator_actual_cli_model}
+- quota_fallback_triggered: ${quota_fallback}
 - review_style: ${review_style}
 - review_round: ${REVIEW_ROUND}
 - verdict: ${PARSED_VERDICT}
@@ -1077,22 +1418,29 @@ STATUS_LINES=()
 ADVERSARIAL_SUCCESS="false"
 
 for reviewer in "${REVIEWERS[@]}"; do
+  # reviewer is already a registry-resolved runner-qualified model route.
+  # Use a filesystem-safe slug derived from the model id for file naming.
+  reviewer_runner="$(model_runner_for "$reviewer")"
+  reviewer_slug="$(printf "%s" "$reviewer" | sed 's/[^A-Za-z0-9._-]/-/g')"
   review_style="standard"
-  if [[ -n "$ADVERSARIAL_EVALUATOR" && "$reviewer" == "$ADVERSARIAL_EVALUATOR" ]]; then
-    review_style="adversarial"
+  if [[ -n "$ADVERSARIAL_EVALUATOR" ]]; then
+    adversarial_resolved="$(resolve_model_name "$ADVERSARIAL_EVALUATOR")"
+    if [[ "$reviewer" == "$adversarial_resolved" ]]; then
+      review_style="adversarial"
+    fi
   fi
 
-  report_file="$REPORT_DIR/PLAN-${TASK_ID}-${PLAN_VERSION}-review-${reviewer}-${REVIEW_ROUND}.md"
+  report_file="$REPORT_DIR/PLAN-${TASK_ID}-${PLAN_VERSION}-review-${reviewer_slug}-${REVIEW_ROUND}.md"
   if [[ -f "$report_file" ]]; then
     stale_file="${report_file}.stale-${NOW_UTC}"
     mv "$report_file" "$stale_file"
   fi
 
-  request_file="$HANDOFF_DIR/${reviewer}.request.md"
-  response_file="$HANDOFF_DIR/${reviewer}.response.md"
-  response_raw_file="$HANDOFF_DIR/${reviewer}.command-response.raw.md"
-  stderr_durable_file="$HANDOFF_DIR/${reviewer}.stderr.md"
-  manual_command_file="$HANDOFF_DIR/${reviewer}.manual-command.md"
+  request_file="$HANDOFF_DIR/${reviewer_slug}.request.md"
+  response_file="$HANDOFF_DIR/${reviewer_slug}.response.md"
+  response_raw_file="$HANDOFF_DIR/${reviewer_slug}.command-response.raw.md"
+  stderr_durable_file="$HANDOFF_DIR/${reviewer_slug}.stderr.md"
+  manual_command_file="$HANDOFF_DIR/${reviewer_slug}.manual-command.md"
   active_stderr_durable_file="$stderr_durable_file"
   stderr_file="$(mktemp)"
   register_tmp_file "$stderr_file"
@@ -1119,24 +1467,24 @@ for reviewer in "${REVIEWERS[@]}"; do
       run_status=0
     else
       run_status=65
-      echo "[ERROR] manual ingest requires raw response or sanitized response file for ${reviewer}: ${response_raw_file} or ${response_file}" > "$stderr_file"
+      echo "[ERROR] manual ingest requires raw response or sanitized response file for ${reviewer_slug}: ${response_raw_file} or ${response_file}" > "$stderr_file"
     fi
     preserve_stderr_if_needed "$stderr_file" "$stderr_durable_file" "$run_status"
     if [[ "$run_status" -eq 0 ]] && parse_review_response "$response_file" "$review_style"; then
-      write_response_provenance_file "$reviewer" "$review_style" "$response_file" "$effective_request_file" "$effective_response_raw_file"
-      write_report_file "$reviewer" "$review_style" "$report_file"
+      write_response_provenance_file "$reviewer" "$review_style" "$response_file" "$effective_request_file" "$effective_response_raw_file" "$reviewer" "false"
+      write_report_file "$reviewer" "$review_style" "$report_file" "$reviewer" "false"
       SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
       if [[ "$review_style" == "adversarial" ]]; then
         ADVERSARIAL_SUCCESS="true"
       fi
-      STATUS_LINES+=("[OK] evaluator=${reviewer} style=${review_style} verdict=${PARSED_VERDICT} file=${report_file} summary=$(normalize_one_line "$PARSED_SUMMARY")")
+      STATUS_LINES+=("[OK] evaluator=${reviewer_runner} route=${reviewer} style=${review_style} verdict=${PARSED_VERDICT} file=${report_file} summary=$(normalize_one_line "$PARSED_SUMMARY")")
     else
       FAIL_COUNT=$((FAIL_COUNT + 1))
       failure_reason="$(normalize_one_line "$(cat "$active_stderr_durable_file" 2>/dev/null || cat "$stderr_file" 2>/dev/null || true)")"
       if [[ -z "$failure_reason" ]]; then
         failure_reason="manual response missing required fields"
       fi
-      STATUS_LINES+=("[FAIL] evaluator=${reviewer} style=${review_style} reason=${failure_reason}")
+      STATUS_LINES+=("[FAIL] evaluator=${reviewer_runner} route=${reviewer} style=${review_style} reason=${failure_reason}")
     fi
     continue
   fi
@@ -1144,12 +1492,12 @@ for reviewer in "${REVIEWERS[@]}"; do
   rm -f "$request_file" "$response_file" "$stderr_durable_file" \
     "$response_raw_file" \
     "$manual_command_file" \
-    "$HANDOFF_DIR/${reviewer}.retry-request.md" \
-    "$HANDOFF_DIR/${reviewer}.retry-response.md" \
-    "$HANDOFF_DIR/${reviewer}.response.provenance.md" \
-    "$HANDOFF_DIR/${reviewer}.retry-response.provenance.md" \
-    "$HANDOFF_DIR/${reviewer}.retry-command-response.raw.md" \
-    "$HANDOFF_DIR/${reviewer}.retry-stderr.md"
+    "$HANDOFF_DIR/${reviewer_slug}.retry-request.md" \
+    "$HANDOFF_DIR/${reviewer_slug}.retry-response.md" \
+    "$HANDOFF_DIR/${reviewer_slug}.response.provenance.md" \
+    "$HANDOFF_DIR/${reviewer_slug}.retry-response.provenance.md" \
+    "$HANDOFF_DIR/${reviewer_slug}.retry-command-response.raw.md" \
+    "$HANDOFF_DIR/${reviewer_slug}.retry-stderr.md"
 
   write_handoff_request "$request_file" "$response_file" "$response_raw_file" "$reviewer" "$review_style" "false"
   effective_request_file="$request_file"
@@ -1157,7 +1505,7 @@ for reviewer in "${REVIEWERS[@]}"; do
 
   if [[ "$MANUAL_HANDOFF_ONLY" == "true" ]]; then
     write_manual_command_file "$reviewer" "$request_file" "$response_raw_file" "$stderr_durable_file" "$response_file" "$manual_command_file"
-    STATUS_LINES+=("[MANUAL] evaluator=${reviewer} style=${review_style} request=${request_file} command_file=${manual_command_file} raw_response=${response_raw_file}")
+    STATUS_LINES+=("[MANUAL] evaluator=${reviewer_runner} route=${reviewer} style=${review_style} request=${request_file} command_file=${manual_command_file} raw_response=${response_raw_file}")
     continue
   fi
 
@@ -1182,10 +1530,10 @@ for reviewer in "${REVIEWERS[@]}"; do
   if [[ "$run_status" -eq 0 && "$invalid_response_claim" == "false" ]] && parse_review_response "$response_file" "$review_style"; then
     :
   elif [[ "$run_status" -eq 0 ]]; then
-    retry_request_file="$HANDOFF_DIR/${reviewer}.retry-request.md"
-    retry_response_file="$HANDOFF_DIR/${reviewer}.retry-response.md"
-    retry_response_raw_file="$HANDOFF_DIR/${reviewer}.retry-command-response.raw.md"
-    retry_stderr_durable_file="$HANDOFF_DIR/${reviewer}.retry-stderr.md"
+    retry_request_file="$HANDOFF_DIR/${reviewer_slug}.retry-request.md"
+    retry_response_file="$HANDOFF_DIR/${reviewer_slug}.retry-response.md"
+    retry_response_raw_file="$HANDOFF_DIR/${reviewer_slug}.retry-command-response.raw.md"
+    retry_stderr_durable_file="$HANDOFF_DIR/${reviewer_slug}.retry-stderr.md"
     retry_stderr="$(mktemp)"
     register_tmp_file "$retry_response_raw_file"
     register_tmp_file "$retry_stderr"
@@ -1230,20 +1578,21 @@ for reviewer in "${REVIEWERS[@]}"; do
   fi
 
   if [[ "$run_status" -eq 0 ]]; then
-    write_response_provenance_file "$reviewer" "$review_style" "$response_file" "$effective_request_file" "$effective_response_raw_file"
-    write_report_file "$reviewer" "$review_style" "$report_file"
+    actual_runner="$(model_runner_for "$ACTUAL_MODEL")"
+    write_response_provenance_file "$reviewer" "$review_style" "$response_file" "$effective_request_file" "$effective_response_raw_file" "$ACTUAL_MODEL" "$QUOTA_FALLBACK_TRIGGERED"
+    write_report_file "$reviewer" "$review_style" "$report_file" "$ACTUAL_MODEL" "$QUOTA_FALLBACK_TRIGGERED"
     SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
     if [[ "$review_style" == "adversarial" ]]; then
       ADVERSARIAL_SUCCESS="true"
     fi
-    STATUS_LINES+=("[OK] evaluator=${reviewer} style=${review_style} verdict=${PARSED_VERDICT} file=${report_file} summary=$(normalize_one_line "$PARSED_SUMMARY")")
+    STATUS_LINES+=("[OK] evaluator=${actual_runner} requested_route=${reviewer} actual_route=${ACTUAL_MODEL} quota_fallback=${QUOTA_FALLBACK_TRIGGERED} style=${review_style} verdict=${PARSED_VERDICT} file=${report_file} summary=$(normalize_one_line "$PARSED_SUMMARY")")
   else
     FAIL_COUNT=$((FAIL_COUNT + 1))
     failure_reason="$(normalize_one_line "$(cat "$active_stderr_durable_file" 2>/dev/null || cat "$stderr_file" 2>/dev/null || true)")"
     if [[ -z "$failure_reason" ]]; then
       failure_reason="response missing required fields"
     fi
-    STATUS_LINES+=("[FAIL] evaluator=${reviewer} style=${review_style} reason=${failure_reason}")
+    STATUS_LINES+=("[FAIL] evaluator=${reviewer_runner} route=${reviewer} style=${review_style} reason=${failure_reason}")
   fi
 done
 

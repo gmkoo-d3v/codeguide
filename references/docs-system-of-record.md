@@ -25,7 +25,7 @@ Default assumption:
 - Freshness checks use `last_updated` field when available; fall back to file mtime only when the field is absent.
 - Validation checks plan/report contracts:
   - active tasks (`in_progress|blocked|done`) require at least one `PLAN-<task-id>-v*.md`
-  - evaluator reports must follow `PLAN-...-review-(gemini|claude|codex)-rNN.md`
+  - evaluator reports must follow `PLAN-...-review-<runner>-<model-slug>-rNN.md`
 
 ## Change scope execution
 - `run_codeguide.sh` supports `--change-scope docs-only|code-or-runtime` to control validation behavior.
@@ -88,8 +88,8 @@ Use one task capsule per delegated or externally reviewed task: `docs/orchestrat
 
 - task_id:
 - execution_mode: supervisor_subagents | solo
-- primary_author_tool: gemini | claude | codex
-- review_mode: external_cli | codex_subagents
+- primary_author_tool: agy | claude | codex | human | external-runner
+- review_mode: external_cli | current_task_debate | agy_subagents
 - supervisor_agent:
 - planner_agents:
 - reviewer_agents:
@@ -107,7 +107,7 @@ Use one task capsule per delegated or externally reviewed task: `docs/orchestrat
 - last_updated:
 ```
 
-Run and record main-thread risk preflight before spawning sub-agents, invoking external reviewers, or starting ping-pong. Default orchestration is `execution_mode: solo`; delegated fields, external review fields, or `execution_mode: supervisor_subagents` require explicit preflight. If preflight is `blocked` or `approval_required`, stop before delegation/external review. Continue only when the status is `pass`, or when the user approves the exact next step and the status is `approved` with `approval_required: true`, a concrete `approval_ref`, and a concrete `approved_next_step`. External Gemini/Claude CLI review requires the `approved` form because it crosses an external-service boundary. `risk_preflight_recorded_by` must identify the main-thread supervising lead architect, not an evaluator/tool identity.
+Run and record main-thread risk preflight before spawning sub-agents, invoking external reviewers, or starting ping-pong. Default orchestration is `execution_mode: solo`; delegated fields, external review fields, or `execution_mode: supervisor_subagents` require explicit preflight. If preflight is `blocked` or `approval_required`, stop before delegation/external review. Continue only when the status is `pass`, or when the user approves the exact next step and the status is `approved` with `approval_required: true`, a concrete `approval_ref`, and a concrete `approved_next_step`. External CLI review requires the `approved` form because it crosses an external-service boundary. `risk_preflight_recorded_by` must identify the main-thread supervising lead architect, not an evaluator/tool identity.
 
 ## Project dictionary template
 
@@ -372,19 +372,25 @@ Use one file per plan version: `docs/plan/PLAN-<task-id>-v<major>.<minor>.md`
 ```
 
 Use one file per evaluator report:
-`docs/report/PLAN-<task-id>-v<major>.<minor>-review-<evaluator>-r<nn>.md`
+`docs/report/PLAN-<task-id>-v<major>.<minor>-review-<runner>-<model-slug>-r<nn>.md`
 
-Evaluator label must be one of:
-- `gemini`
-- `claude`
-- `codex`
+Evaluator label is the actual runner id, such as `agy` or `claude`, from `config/ai_model_registry.json`.
 
 ```markdown
-# PLAN-<task-id>-v1.0 review (gemini)
+# PLAN-<task-id>-v1.0 review (<runner>/<route>)
 
-- task_id:
+- task_id: <task-id>
 - plan_version: v1.0
-- evaluator: gemini
+- evaluator: <runner>
+- evaluator_requested_runner: <runner>
+- evaluator_actual_runner: <runner>
+- evaluator_requested_route: <runner:model-route>
+- evaluator_actual_route: <runner:model-route>
+- evaluator_requested_model: <runner:model-route>
+- evaluator_actual_model: <runner:model-route>
+- evaluator_requested_cli_model: <cli-model>
+- evaluator_actual_cli_model: <cli-model>
+- quota_fallback_triggered: false
 - review_style: standard | adversarial
 - review_round: r01
 - verdict: accept | revise | blocked
@@ -409,7 +415,7 @@ Evaluator label must be one of:
 ## Update rules
 - Update docs for every task without exception.
 - Before implementation, create an initial plan file (usually `v1.0`).
-- For each feedback round, write evaluator-specific report files in `docs/report/` with evaluator labels `gemini|claude|codex`.
+- For each feedback round, write evaluator-specific report files in `docs/report/` with runner route slug in the filename: `PLAN-<id>-<version>-review-<runner>-<model-slug>-rNN.md`.
 - Set `risk_level: high|critical` on the task or a linked decision when the change is high risk.
 - Record `risk_preflight_status`, `risk_preflight_recorded_by`, `risk_preflight_summary`, `approval_required`, `approval_ref`, and `approved_next_step` before delegated or external review work begins; `pass` pairs with `approval_required: false`, and `approved` pairs with `approval_required: true`.
 - In advisory mode, active tasks without `risk_level` should emit a warning so teams can backfill the signal before strict policy tightens.

@@ -79,8 +79,8 @@ Recommended command flow:
   - preserve previous versions for audit and orchestration traceability
 - `docs/report`:
   - write one evaluator report per feedback per round
-  - evaluator label must be exactly one of `gemini`, `claude`, `codex`
-  - keep report file names version-aware (`PLAN-...-vX.Y-review-<evaluator>-rNN.md`)
+  - external CLI evaluator label is the actual runner (`agy`, `claude`, etc.); model identity belongs in requested/actual route and CLI model fields
+  - keep report file names version-aware (`PLAN-...-vX.Y-review-<runner>-<model-slug>-rNN.md`)
   - `execution_mode: supervisor_subagents` tasks must have at least one evaluator report before strict validation/merge handoff
 - `docs/shadow/`:
   - refresh the top router, `_global.md` when applicable, bucket indexes, unit overviews, and affected concern leaves
@@ -109,7 +109,7 @@ Mode guidance:
 - [ ] Task file updated
 - [ ] Decision file created/updated
 - [ ] Plan file created/updated with semantic version (`v1.0`, `v1.1`, ...)
-- [ ] Evaluator report file(s) added (`gemini|claude|codex`) when `execution_mode: supervisor_subagents`
+- [ ] Evaluator report file(s) added when `execution_mode: supervisor_subagents`
 - [ ] Shadow router, `_global.md` when applicable, bucket indexes, unit overviews, and affected leaf docs refreshed
 - [ ] Thin redirect shims added for moved shadow paths and replaced bodies archived under `_deprecated` or `_obsolete`
 - [ ] Decision index updated

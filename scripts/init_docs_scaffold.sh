@@ -513,11 +513,15 @@ write_if_missing "${PLAN_DIR}/PLAN-template.md" '# PLAN-<task-id>-v1.0
 3.
 '
 
-write_if_missing "${REPORT_DIR}/LLM-REVIEW-template.md" '# PLAN-<task-id>-v1.0 review (gemini)
+write_if_missing "${REPORT_DIR}/LLM-REVIEW-template.md" '# PLAN-<task-id>-v1.0 review (antigravity/gemini-3.5-flash-medium)
 
-- task_id:
+- task_id: <task-id>
 - plan_version: v1.0
-- evaluator: gemini # allowed: gemini | claude | codex
+- evaluator: antigravity
+- evaluator_requested_model: gemini-3.5-flash-medium
+- evaluator_actual_model: gemini-3.5-flash-medium
+- quota_fallback_triggered: false
+- review_style: standard
 - review_style: standard | adversarial
 - review_round: r01
 - verdict: accept | revise | blocked
@@ -536,8 +540,8 @@ write_if_missing "${ORCHESTRATION_TEMPLATES_DIR}/ORCH.md" '# ORCH-<task-id>
 
 - task_id:
 - execution_mode: supervisor_subagents | solo
-- primary_author_tool: gemini | claude | codex
-- review_mode: external_cli | codex_subagents
+- primary_author_tool: antigravity | agy
+- review_mode: external_cli | agy_subagents
 - supervisor_agent:
 - planner_agents:
 - reviewer_agents:
@@ -660,11 +664,11 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 ## Plan orchestration loop
 
 - Create plan file first: project docs `plan/PLAN-<task-id>-v1.0.md`.
-- Write evaluator report files in project docs `report/` with evaluator labels: gemini | claude | codex.
+- Write evaluator report files in project docs `report/` with evaluator label `antigravity` and model slug in the filename: `PLAN-<id>-<version>-review-antigravity-<model-slug>-rNN.md`.
 - External CLI handoff files live under `orchestration/<task-id>/external-cli/<plan-version>/<round>/`.
 - External CLI requests use metadata plus `Why`, `What`, `How`, `Where`, `Verify`, then payload; the command itself must name an explicit command-output path before the wrapper captures sanitized Markdown and parser-compatible bullet fields.
 - Pass only a short instruction plus the request file path and command-output path to the CLI; do not rely on output paths mentioned only inside the prompt.
-- External CLI ping-pong runs only when explicitly approved with concrete approval provenance; if the user explicitly asks for sub-agent ping-pong review, interpret it as Codex sub-agent mode instead.
+- External CLI ping-pong runs only when explicitly approved with concrete approval provenance; if the user explicitly asks for sub-agent ping-pong review, interpret it as agy sub-agent mode instead.
 - Mark high-risk work with `risk_level: high|critical` on the task or linked decision.
 - Advisory validation warns when an active task omits `risk_level`.
 - If a task or linked non-superseded decision is high-risk, strict validation requires one adversarial review pass with objection/counterproposal/rebuttal/residual_risk.

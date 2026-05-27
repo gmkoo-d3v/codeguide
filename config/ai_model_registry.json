@@ -1,0 +1,151 @@
+{
+  "default_model_alias": "agy-gemini-3.5-flash-medium",
+  "default_task_phase": "planning",
+  "runners": {
+    "agy": {
+      "binary": "agy",
+      "env_binary": "CODEGUIDE_ANTIGRAVITY_BIN",
+      "command_kind": "agy"
+    },
+    "claude": {
+      "binary": "claude",
+      "env_binary": "CODEGUIDE_CLAUDE_BIN",
+      "command_kind": "claude_code"
+    }
+  },
+  "models": {
+    "agy:gemini-3.5-flash-medium": {
+      "runner": "agy",
+      "cli_model": "gemini-3.5-flash-medium",
+      "display_name": "Gemini 3.5 Flash (Medium)",
+      "quota_group": "agy-gemini-shared"
+    },
+    "agy:gemini-3.5-flash-high": {
+      "runner": "agy",
+      "cli_model": "gemini-3.5-flash-high",
+      "display_name": "Gemini 3.5 Flash (High)",
+      "quota_group": "agy-gemini-shared"
+    },
+    "agy:gemini-3.5-flash-low": {
+      "runner": "agy",
+      "cli_model": "gemini-3.5-flash-low",
+      "display_name": "Gemini 3.5 Flash (Low)",
+      "quota_group": "agy-gemini-shared"
+    },
+    "agy:gemini-3.1-pro-low": {
+      "runner": "agy",
+      "cli_model": "gemini-3.1-pro-low",
+      "display_name": "Gemini 3.1 Pro (Low)",
+      "quota_group": "agy-gemini-shared"
+    },
+    "agy:gemini-3.1-pro-high": {
+      "runner": "agy",
+      "cli_model": "gemini-3.1-pro-high",
+      "display_name": "Gemini 3.1 Pro (High)",
+      "quota_group": "agy-gemini-shared"
+    },
+    "agy:claude-sonnet-4.6-thinking": {
+      "runner": "agy",
+      "cli_model": "claude-4.6-sonnet",
+      "display_name": "Claude Sonnet 4.6 (Thinking)",
+      "quota_group": "agy-third-party-shared"
+    },
+    "agy:claude-opus-4.6-thinking": {
+      "runner": "agy",
+      "cli_model": "claude-4.6-opus",
+      "display_name": "Claude Opus 4.6 (Thinking)",
+      "quota_group": "agy-third-party-shared"
+    },
+    "agy:gpt-oss-120b-medium": {
+      "runner": "agy",
+      "cli_model": "gpt-oss-120b",
+      "display_name": "GPT-OSS 120B (Medium)",
+      "quota_group": "agy-third-party-shared"
+    },
+    "claude:opus-4.7": {
+      "runner": "claude",
+      "cli_model": "opus-4.7",
+      "display_name": "Opus 4.7",
+      "quota_group": "claude-direct-subscription",
+      "effort": "max"
+    },
+    "claude:sonnet-4.6": {
+      "runner": "claude",
+      "cli_model": "sonnet-4.6",
+      "display_name": "Sonnet 4.6",
+      "quota_group": "claude-direct-subscription",
+      "effort": "max"
+    },
+    "claude:haiku-4.5": {
+      "runner": "claude",
+      "cli_model": "haiku-4.5",
+      "display_name": "Haiku 4.5",
+      "quota_group": "claude-direct-subscription"
+    },
+    "claude:opus-4.6-legacy": {
+      "runner": "claude",
+      "cli_model": "opus-4.6",
+      "display_name": "Opus 4.6 Legacy",
+      "quota_group": "claude-direct-subscription"
+    }
+  },
+  "aliases": {
+    "agy-gemini-3.5-flash-medium": "agy:gemini-3.5-flash-medium",
+    "agy-gemini-3.5-flash-high": "agy:gemini-3.5-flash-high",
+    "agy-gemini-3.5-flash-low": "agy:gemini-3.5-flash-low",
+    "agy-gemini-3.1-pro-low": "agy:gemini-3.1-pro-low",
+    "agy-gemini-3.1-pro-high": "agy:gemini-3.1-pro-high",
+    "agy-claude-sonnet-4.6-thinking": "agy:claude-sonnet-4.6-thinking",
+    "agy-sonnet-thinking": "agy:claude-sonnet-4.6-thinking",
+    "agy-claude-opus-4.6-thinking": "agy:claude-opus-4.6-thinking",
+    "agy-opus-thinking": "agy:claude-opus-4.6-thinking",
+    "agy-gpt-oss-120b-medium": "agy:gpt-oss-120b-medium",
+    "agy-gpt-oss-120b": "agy:gpt-oss-120b-medium",
+    "claude-opus-4.7": "claude:opus-4.7",
+    "claude-opus-direct": "claude:opus-4.7",
+    "claude-sonnet-4.6": "claude:sonnet-4.6",
+    "claude-sonnet-direct": "claude:sonnet-4.6",
+    "claude-haiku-4.5": "claude:haiku-4.5",
+    "claude-haiku-direct": "claude:haiku-4.5",
+    "claude-opus-4.6-legacy": "claude:opus-4.6-legacy",
+    "claude-opus-legacy": "claude:opus-4.6-legacy"
+  },
+  "default_reviewer_aliases": [
+    "agy-gemini-3.5-flash-high",
+    "claude-opus-4.7"
+  ],
+  "fallback_policy": {
+    "on_quota_exhausted": [
+      {
+        "from_quota_group": "agy-gemini-shared",
+        "phases": ["planning", "review"],
+        "to": "claude:opus-4.7"
+      },
+      {
+        "from_quota_group": "agy-gemini-shared",
+        "phases": ["code", "implementation"],
+        "to": "claude:sonnet-4.6"
+      },
+      {
+        "from_quota_group": "agy-third-party-shared",
+        "phases": ["planning", "review"],
+        "to": "claude:opus-4.7"
+      },
+      {
+        "from_quota_group": "agy-third-party-shared",
+        "phases": ["code", "implementation"],
+        "to": "claude:sonnet-4.6"
+      }
+    ],
+    "fail_closed_for_unregistered_models": true
+  },
+  "quota_error_patterns": [
+    "quota",
+    "limit exceeded",
+    "exhausted",
+    "rate limit",
+    "429",
+    "resource_exhausted",
+    "RESOURCE_EXHAUSTED"
+  ]
+}

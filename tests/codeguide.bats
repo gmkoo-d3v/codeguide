@@ -7,6 +7,7 @@ DOC_GARDEN="$SCRIPTS_DIR/doc_garden.sh"
 VALIDATE="$SCRIPTS_DIR/validate_docs.sh"
 RUN_CODEGUIDE="$SCRIPTS_DIR/run_codeguide.sh"
 RUN_EXTERNAL_REVIEWS="$SCRIPTS_DIR/run_external_plan_reviews.sh"
+EXTERNAL_REVIEW_RUNNER="$SCRIPTS_DIR/external_review_runner.py"
 INIT_SCAFFOLD="$SCRIPTS_DIR/init_docs_scaffold.sh"
 CHECK_ENGLISH_DOCS="$SCRIPTS_DIR/check_english_docs.sh"
 SHADOW_PROBE="$SCRIPTS_DIR/shadow_evidence_probe.py"
@@ -82,7 +83,7 @@ write_mock_cli() {
 
 create_mock_external_review_artifact() {
   local task_id="$1"
-  local reviewer="$2"
+  local reviewer="${2:-gemini-3-5-flash-medium}"
   local plan_version="v1.0"
   local review_round="r01"
   local plan_file="$DOCS_ROOT/plan/PLAN-${task_id}-${plan_version}.md"
@@ -97,7 +98,7 @@ create_mock_external_review_artifact() {
 - plan_version: ${plan_version}
 - objective: create wrapper-generated external review artifacts
 - scope: test fixture generation
-- assumptions: mock CLIs return parser-compatible accept responses
+- assumptions: mock agy CLI returns parser-compatible accept responses
 - risks: fixture generation failure
 - acceptance_signals: response and provenance files are written
 - stop_conditions: wrapper completes
@@ -106,30 +107,19 @@ create_mock_external_review_artifact() {
 EOF
 
   mkdir -p "$mock_bin"
-  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
 cat <<EOF
 - verdict: accept
-- summary: Mock Gemini accepts the bounded review packet.
+- summary: Mock agy accepts the bounded review packet.
 - strengths: The handoff is constrained.
 - risks: This is a deterministic test fixture.
 - requested_changes: None.
 EOF'
-  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
-cat <<EOF
-- verdict: accept
-- summary: Mock Claude accepts the bounded review packet.
-- strengths: The handoff is constrained.
-- risks: This is a deterministic test fixture.
-- requested_changes: None.
-EOF'
-  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
-echo "codex should not be called for primary=codex" >&2
-exit 99'
 
   env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
     --task-id "$task_id" \
     --plan-version "$plan_version" \
-    --primary-tool "codex" \
+    --primary-tool "antigravity" \
     --review-round "$review_round" \
     --risk-preflight-status "approved" \
     --approval-ref "user-approval-${task_id}" \
@@ -5788,29 +5778,29 @@ EOF
 @test "shadow_v2_gate_skeleton blocks external review by default and disables batch apply" {
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
-    --review-route "external_gemini_claude" \
+    --review-route "external_antigravity" \
     --record-count 2 \
     --print-contract
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"external Gemini/Claude review requires explicit user request"* ]]
+  [[ "$output" == *"external antigravity review requires explicit user request"* ]]
   [[ "$output" == *"batch apply is disabled in Phase 0"* ]]
   [[ "$output" == *'"writes_shadow_docs":false'* ]]
 
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
-    --review-route "external_gemini_claude" \
+    --review-route "external_antigravity" \
     --external-review-requested \
     --print-contract
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"external Gemini/Claude review requires concrete approval_ref"* ]]
-  [[ "$output" == *"external Gemini/Claude review requires approved_next_step"* ]]
-  [[ "$output" == *"external Gemini/Claude review requires main-thread recorded_by"* ]]
+  [[ "$output" == *"external antigravity review requires concrete approval_ref"* ]]
+  [[ "$output" == *"external antigravity review requires approved_next_step"* ]]
+  [[ "$output" == *"external antigravity review requires main-thread recorded_by"* ]]
 
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
-    --review-route "external_gemini_claude" \
+    --review-route "external_antigravity" \
     --external-review-requested \
     --external-review-approval-ref "user-approval-001" \
     --external-review-approved-next-step "generate external review packet only" \
@@ -5825,40 +5815,40 @@ EOF
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
     --close-required-review "codex_subagent_md_handoff" \
-    --close-required-review "external_gemini_claude" \
+    --close-required-review "external_antigravity" \
     --completed-review "codex_subagent_md_handoff" \
-    --blocked-review "external_gemini_claude" \
+    --blocked-review "external_antigravity" \
     --print-contract
 
   [ "$status" -eq 1 ]
   [[ "$output" == *'"status":"blocked"'* ]]
-  [[ "$output" == *"required review route is blocked: external_gemini_claude"* ]]
+  [[ "$output" == *"required review route is blocked: external_antigravity"* ]]
   [[ "$output" == *"stop without substituting another reviewer route"* ]]
-  [[ "$output" == *"sub-agent acceptance cannot substitute for blocked external Gemini/Claude review"* ]]
+  [[ "$output" == *"sub-agent acceptance cannot substitute for blocked external antigravity review"* ]]
   [[ "$output" == *'"combined_review_close_gate":"all_required_routes_must_complete"'* ]]
 
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
     --close-required-review "codex_subagent_md_handoff" \
-    --close-required-review "external_gemini_claude" \
+    --close-required-review "external_antigravity" \
     --completed-review "codex_subagent_md_handoff" \
-    --blocked-review "external_gemini_claude=platform_permission_blocked" \
+    --blocked-review "external_antigravity=platform_permission_blocked" \
     --print-contract
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"required review route is blocked: external_gemini_claude (platform_permission_blocked)"* ]]
+  [[ "$output" == *"required review route is blocked: external_antigravity (platform_permission_blocked)"* ]]
   [[ "$output" == *"switch permission mode"* ]]
-  [[ "$output" == *'"blocked_review_reasons":{"external_gemini_claude":"platform_permission_blocked"}'* ]]
+  [[ "$output" == *'"blocked_review_reasons":{"external_antigravity":"platform_permission_blocked"}'* ]]
 
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
     --close-required-review "codex_subagent_md_handoff" \
-    --close-required-review "external_gemini_claude" \
+    --close-required-review "external_antigravity" \
     --completed-review "codex_subagent_md_handoff" \
     --print-contract
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"required review route is missing: external_gemini_claude"* ]]
+  [[ "$output" == *"required review route is missing: external_antigravity"* ]]
 }
 
 @test "shadow_v2_gate_skeleton requires durable accepted internal review artifact before close completion" {
@@ -5987,7 +5977,7 @@ command_response_path: $thin_dir/gemini.command-response.raw.md
 raw_capture_deleted: true
 sanitized_response: true
 EOF
-  accepted_artifact="$(create_mock_external_review_artifact "shadow-v2-close-accepted" "gemini")"
+  accepted_artifact="$(create_mock_external_review_artifact "shadow-v2-close-accepted" "gemini-3-5-flash-medium")"
   internal_artifact="$(create_mock_internal_review_artifact "shadow-v2-close-internal")"
   [ -n "$accepted_artifact" ]
   [ -n "$internal_artifact" ]
@@ -6003,14 +5993,14 @@ EOF
     --external-review-approved-next-step "close shadow v2 external review gate" \
     --external-review-recorded-by "main-thread-supervising-lead-architect" \
     --close-required-review "codex_subagent_md_handoff" \
-    --close-required-review "external_gemini_claude" \
+    --close-required-review "external_antigravity" \
     --completed-review "codex_subagent_md_handoff" \
     --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
-    --completed-review "external_gemini_claude" \
+    --completed-review "external_antigravity" \
     --print-contract
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"completed external Gemini/Claude review requires a durable response artifact"* ]]
+  [[ "$output" == *"completed external antigravity review requires a durable response artifact"* ]]
 
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
@@ -6019,15 +6009,15 @@ EOF
     --external-review-approved-next-step "close shadow v2 external review gate" \
     --external-review-recorded-by "main-thread-supervising-lead-architect" \
     --close-required-review "codex_subagent_md_handoff" \
-    --close-required-review "external_gemini_claude" \
+    --close-required-review "external_antigravity" \
     --completed-review "codex_subagent_md_handoff" \
     --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
-    --completed-review "external_gemini_claude" \
-    --completed-review-artifact "external_gemini_claude=$stub_artifact" \
+    --completed-review "external_antigravity" \
+    --completed-review-artifact "external_antigravity=$stub_artifact" \
     --print-contract
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"completed external Gemini/Claude review artifact must be under docs/orchestration/<task-id>/external-cli"* ]]
+  [[ "$output" == *"completed external antigravity review artifact must be under docs/orchestration/<task-id>/external-cli"* ]]
 
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
@@ -6036,15 +6026,15 @@ EOF
     --external-review-approved-next-step "close shadow v2 external review gate" \
     --external-review-recorded-by "main-thread-supervising-lead-architect" \
     --close-required-review "codex_subagent_md_handoff" \
-    --close-required-review "external_gemini_claude" \
+    --close-required-review "external_antigravity" \
     --completed-review "codex_subagent_md_handoff" \
     --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
-    --completed-review "external_gemini_claude" \
-    --completed-review-artifact "external_gemini_claude=$no_manifest_artifact" \
+    --completed-review "external_antigravity" \
+    --completed-review-artifact "external_antigravity=$no_manifest_artifact" \
     --print-contract
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"completed external Gemini/Claude review artifact requires provenance manifest"* ]]
+  [[ "$output" == *"completed external antigravity review artifact requires provenance manifest"* ]]
 
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
@@ -6053,16 +6043,16 @@ EOF
     --external-review-approved-next-step "close shadow v2 external review gate" \
     --external-review-recorded-by "main-thread-supervising-lead-architect" \
     --close-required-review "codex_subagent_md_handoff" \
-    --close-required-review "external_gemini_claude" \
+    --close-required-review "external_antigravity" \
     --completed-review "codex_subagent_md_handoff" \
     --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
-    --completed-review "external_gemini_claude" \
-    --completed-review-artifact "external_gemini_claude=$thin_artifact" \
+    --completed-review "external_antigravity" \
+    --completed-review-artifact "external_antigravity=$thin_artifact" \
     --print-contract
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"completed external Gemini/Claude review artifact requires parser-compatible field summary"* ]]
-  [[ "$output" == *"completed external Gemini/Claude review artifact requires parser-compatible field requested_changes"* ]]
+  [[ "$output" == *"completed external antigravity review artifact requires parser-compatible field summary"* ]]
+  [[ "$output" == *"completed external antigravity review artifact requires parser-compatible field requested_changes"* ]]
 
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
@@ -6071,15 +6061,15 @@ EOF
     --external-review-approved-next-step "close shadow v2 external review gate" \
     --external-review-recorded-by "main-thread-supervising-lead-architect" \
     --close-required-review "codex_subagent_md_handoff" \
-    --close-required-review "external_gemini_claude" \
+    --close-required-review "external_antigravity" \
     --completed-review "codex_subagent_md_handoff" \
     --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
-    --completed-review "external_gemini_claude" \
-    --completed-review-artifact "external_gemini_claude=$empty_artifact" \
+    --completed-review "external_antigravity" \
+    --completed-review-artifact "external_antigravity=$empty_artifact" \
     --print-contract
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"completed review artifact must be non-empty for route external_gemini_claude"* ]]
+  [[ "$output" == *"completed review artifact must be non-empty for route external_antigravity"* ]]
 
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
@@ -6088,16 +6078,16 @@ EOF
     --external-review-approved-next-step "close shadow v2 external review gate" \
     --external-review-recorded-by "main-thread-supervising-lead-architect" \
     --close-required-review "codex_subagent_md_handoff" \
-    --close-required-review "external_gemini_claude" \
+    --close-required-review "external_antigravity" \
     --completed-review "codex_subagent_md_handoff" \
     --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
-    --completed-review "external_gemini_claude" \
-    --completed-review-artifact "external_gemini_claude=$blocked_artifact" \
+    --completed-review "external_antigravity" \
+    --completed-review-artifact "external_antigravity=$blocked_artifact" \
     --print-contract
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"completed external Gemini/Claude review artifact verdict must be accept"* ]]
-  [[ "$output" == *"completed external Gemini/Claude review artifact contains blocked/error/no-response marker"* ]]
+  [[ "$output" == *"completed external antigravity review artifact verdict must be accept"* ]]
+  [[ "$output" == *"completed external antigravity review artifact contains blocked/error/no-response marker"* ]]
 
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
@@ -6106,11 +6096,11 @@ EOF
     --external-review-approved-next-step "close shadow v2 external review gate" \
     --external-review-recorded-by "main-thread-supervising-lead-architect" \
     --close-required-review "codex_subagent_md_handoff" \
-    --close-required-review "external_gemini_claude" \
+    --close-required-review "external_antigravity" \
     --completed-review "codex_subagent_md_handoff" \
     --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
-    --completed-review "external_gemini_claude" \
-    --completed-review-artifact "external_gemini_claude=$accepted_artifact" \
+    --completed-review "external_antigravity" \
+    --completed-review-artifact "external_antigravity=$accepted_artifact" \
     --print-contract
 
   [ "$status" -eq 0 ]
@@ -6131,12 +6121,12 @@ EOF
     --close-required-review "codex_subagent_md_handoff" \
     --completed-review "codex_subagent_md_handoff" \
     --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
-    --blocked-review "external_gemini_claude" \
+    --blocked-review "external_antigravity" \
     --print-contract
 
   [ "$status" -eq 0 ]
   [[ "$output" == *'"status":"ok"'* ]]
-  [[ "$output" != *"sub-agent acceptance cannot substitute for blocked external Gemini/Claude review"* ]]
+  [[ "$output" != *"sub-agent acceptance cannot substitute for blocked external antigravity review"* ]]
 }
 
 @test "shadow_v2_gate_skeleton rejects hint evidence for confirmed facts" {
@@ -6535,12 +6525,12 @@ EOF
 @test "shadow_v2_review_packet_generator blocks external route unless requested" {
   run python3 "$SHADOW_V2_REVIEW_PACKET" \
     --project-root "$TEST_PROJECT" \
-    --review-route "external_gemini_claude" \
+    --review-route "external_antigravity" \
     --format json
 
   [ "$status" -eq 1 ]
   [[ "$output" == *'"status": "blocked"'* ]]
-  [[ "$output" == *"external Gemini/Claude review requires explicit user request"* ]]
+  [[ "$output" == *"external antigravity review requires explicit user request"* ]]
   [[ "$output" == *"external_review_user_request"* ]]
   [[ "$output" == *"external_review_approval_ref"* ]]
   [[ "$output" == *"external_review_approved_next_step"* ]]
@@ -6550,18 +6540,18 @@ EOF
 
   run python3 "$SHADOW_V2_REVIEW_PACKET" \
     --project-root "$TEST_PROJECT" \
-    --review-route "external_gemini_claude" \
+    --review-route "external_antigravity" \
     --external-review-requested \
     --source-ref "TASK-shadow-effect-map-01" \
     --format json
 
   [ "$status" -eq 1 ]
   [[ "$output" == *'"review_provenance": "external_review_missing_approval_provenance"'* ]]
-  [[ "$output" == *"external Gemini/Claude review requires concrete approval_ref"* ]]
+  [[ "$output" == *"external antigravity review requires concrete approval_ref"* ]]
 
   run python3 "$SHADOW_V2_REVIEW_PACKET" \
     --project-root "$TEST_PROJECT" \
-    --review-route "external_gemini_claude" \
+    --review-route "external_antigravity" \
     --external-review-requested \
     --external-review-approval-ref "user-approval-001" \
     --external-review-approved-next-step "generate external review packet only" \
@@ -6633,28 +6623,28 @@ EOF
 @test "shadow_v2_pipeline_wrapper blocks external review route without approval" {
   run python3 "$SHADOW_V2_PIPELINE" \
     --project-root "$TEST_PROJECT" \
-    --review-route "external_gemini_claude" \
+    --review-route "external_antigravity" \
     --format json
 
   [ "$status" -eq 1 ]
   [[ "$output" == *'"status": "blocked"'* ]]
-  [[ "$output" == *"external Gemini/Claude review requires explicit user request"* ]]
+  [[ "$output" == *"external antigravity review requires explicit user request"* ]]
   [[ "$output" == *'"executes_commands": false'* ]]
 
   run python3 "$SHADOW_V2_PIPELINE" \
     --project-root "$TEST_PROJECT" \
-    --review-route "external_gemini_claude" \
+    --review-route "external_antigravity" \
     --external-review-requested \
     --format json
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"external Gemini/Claude review requires concrete approval_ref"* ]]
-  [[ "$output" == *"external Gemini/Claude review requires approved_next_step"* ]]
-  [[ "$output" == *"external Gemini/Claude review requires main-thread recorded_by"* ]]
+  [[ "$output" == *"external antigravity review requires concrete approval_ref"* ]]
+  [[ "$output" == *"external antigravity review requires approved_next_step"* ]]
+  [[ "$output" == *"external antigravity review requires main-thread recorded_by"* ]]
 
   run python3 "$SHADOW_V2_PIPELINE" \
     --project-root "$TEST_PROJECT" \
-    --review-route "external_gemini_claude" \
+    --review-route "external_antigravity" \
     --external-review-requested \
     --external-review-approval-ref "user-approval-001" \
     --external-review-approved-next-step "generate external review packet only" \
@@ -6671,28 +6661,28 @@ EOF
   run python3 "$SHADOW_V2_PIPELINE" \
     --project-root "$TEST_PROJECT" \
     --close-required-review "codex_subagent_md_handoff" \
-    --close-required-review "external_gemini_claude" \
+    --close-required-review "external_antigravity" \
     --completed-review "codex_subagent_md_handoff" \
-    --blocked-review "external_gemini_claude" \
+    --blocked-review "external_antigravity" \
     --format json
 
   [ "$status" -eq 1 ]
   [[ "$output" == *'"status": "blocked"'* ]]
   [[ "$output" == *"close_review_gate"* ]]
-  [[ "$output" == *"required review route is blocked: external_gemini_claude"* ]]
-  [[ "$output" == *"sub-agent acceptance cannot substitute for blocked external Gemini/Claude review"* ]]
+  [[ "$output" == *"required review route is blocked: external_antigravity"* ]]
+  [[ "$output" == *"sub-agent acceptance cannot substitute for blocked external antigravity review"* ]]
   [[ "$output" == *'"executes_commands": false'* ]]
 
   run python3 "$SHADOW_V2_PIPELINE" \
     --project-root "$TEST_PROJECT" \
     --close-required-review "codex_subagent_md_handoff" \
-    --close-required-review "external_gemini_claude" \
+    --close-required-review "external_antigravity" \
     --completed-review "codex_subagent_md_handoff" \
-    --blocked-review "external_gemini_claude=platform_permission_blocked" \
+    --blocked-review "external_antigravity=platform_permission_blocked" \
     --format json
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"required review route is blocked: external_gemini_claude (platform_permission_blocked)"* ]]
+  [[ "$output" == *"required review route is blocked: external_antigravity (platform_permission_blocked)"* ]]
   [[ "$output" == *"switch permission mode"* ]]
   [[ "$output" == *'"blocked_review_reasons"'* ]]
   [[ "$output" == *'"platform_permission_blocked"'* ]]
@@ -6701,7 +6691,7 @@ EOF
 @test "shadow_v2_pipeline_wrapper requires external close artifact provenance" {
   local accepted_artifact
   local internal_artifact
-  accepted_artifact="$(create_mock_external_review_artifact "shadow-v2-pipeline-accepted" "claude")"
+  accepted_artifact="$(create_mock_external_review_artifact "shadow-v2-pipeline-accepted" "gemini-3-5-flash-medium")"
   internal_artifact="$(create_mock_internal_review_artifact "shadow-v2-pipeline-internal")"
   [ -n "$accepted_artifact" ]
   [ -n "$internal_artifact" ]
@@ -6717,15 +6707,15 @@ EOF
     --external-review-approved-next-step "close shadow v2 external review gate" \
     --external-review-recorded-by "main-thread-supervising-lead-architect" \
     --close-required-review "codex_subagent_md_handoff" \
-    --close-required-review "external_gemini_claude" \
+    --close-required-review "external_antigravity" \
     --completed-review "codex_subagent_md_handoff" \
     --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
-    --completed-review "external_gemini_claude" \
+    --completed-review "external_antigravity" \
     --format json
 
   [ "$status" -eq 1 ]
   [[ "$output" == *'"status": "blocked"'* ]]
-  [[ "$output" == *"completed external Gemini/Claude review requires a durable response artifact"* ]]
+  [[ "$output" == *"completed external antigravity review requires a durable response artifact"* ]]
   [[ "$output" == *'"executes_commands": false'* ]]
 
   run python3 "$SHADOW_V2_PIPELINE" \
@@ -6735,11 +6725,11 @@ EOF
     --external-review-approved-next-step "close shadow v2 external review gate" \
     --external-review-recorded-by "main-thread-supervising-lead-architect" \
     --close-required-review "codex_subagent_md_handoff" \
-    --close-required-review "external_gemini_claude" \
+    --close-required-review "external_antigravity" \
     --completed-review "codex_subagent_md_handoff" \
     --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
-    --completed-review "external_gemini_claude" \
-    --completed-review-artifact "external_gemini_claude=$accepted_artifact" \
+    --completed-review "external_antigravity" \
+    --completed-review-artifact "external_antigravity=$accepted_artifact" \
     --format json
 
   [ "$status" -eq 0 ]
@@ -6747,7 +6737,7 @@ EOF
   [[ "$output" == *'"status": "satisfied"'* ]]
   [[ "$output" == *'"completed_review_artifacts"'* ]]
   [[ "$output" == *'"sha256": "sha256:'* ]]
-  [[ "$output" != *"completed external Gemini/Claude review requires a durable response artifact"* ]]
+  [[ "$output" != *"completed external antigravity review requires a durable response artifact"* ]]
 }
 
 @test "shadow_v2_pipeline_wrapper refuses outputs under docs shadow" {
@@ -6791,8 +6781,8 @@ EOF
     --axis-verify "verify" \
     --execution-mode "supervisor_subagents" \
     --risk-preflight-status "pass" \
-    --primary-author-tool "codex" \
-    --review-mode "codex_subagents" \
+    --primary-author-tool "antigravity" \
+    --review-mode "agy_subagents" \
     --no-init
 
   cat > "$DOCS_ROOT/plan/PLAN-orch-strict-01-v1.0.md" <<'EOF'
@@ -6829,8 +6819,8 @@ EOF
     --implementation-agents "coder-1" \
     --validation-agents "validator-1" \
     --owned-scopes "planner:docs/plan; coder:src/app" \
-    --primary-author-tool "codex" \
-    --review-mode "codex_subagents" \
+    --primary-author-tool "antigravity" \
+    --review-mode "agy_subagents" \
     --no-init
 
   cat > "$DOCS_ROOT/plan/PLAN-orch-preflight-01-v1.0.md" <<'EOF'
@@ -6862,8 +6852,8 @@ EOF
     --task-title "Approval stop test" \
     --execution-mode "supervisor_subagents" \
     --risk-preflight-status "approval_required" \
-    --primary-author-tool "codex" \
-    --review-mode "codex_subagents" \
+    --primary-author-tool "antigravity" \
+    --review-mode "agy_subagents" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -6892,8 +6882,8 @@ EOF
     --risk-preflight-status "approved" \
     --approval-ref "user-approval-001" \
     --approved-next-step "run delegated review round r01" \
-    --primary-author-tool "codex" \
-    --review-mode "codex_subagents" \
+    --primary-author-tool "antigravity" \
+    --review-mode "agy_subagents" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -6932,8 +6922,8 @@ EOF
     --risk-preflight-status "approved" \
     --approval-ref "not_required" \
     --approved-next-step "run delegated review" \
-    --primary-author-tool "codex" \
-    --review-mode "codex_subagents" \
+    --primary-author-tool "antigravity" \
+    --review-mode "agy_subagents" \
     --no-init
 
   [ "$status" -ne 0 ]
@@ -6972,12 +6962,13 @@ EOF
 
   local mock_bin="$TEST_WORKSPACE/mock-bin-approved-placeholder"
   mkdir -p "$mock_bin"
-  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
-touch "${TEST_WORKSPACE}/gemini-approved-placeholder-called"
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/agy-approved-placeholder-called"
 exit 99'
-  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
-touch "${TEST_WORKSPACE}/claude-approved-placeholder-called"
-exit 99'
+  # (claude mock replaced by agy)
+  # true #  '#!/usr/bin/env bash
+# touch "${TEST_WORKSPACE}/agy-approved-placeholder-called-2"
+# exit 99'
 
   run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
     --task-id "ext-approved-placeholder" \
@@ -6990,9 +6981,9 @@ exit 99'
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"Concrete --approval-ref"* ]]
-  run test ! -e "$TEST_WORKSPACE/gemini-approved-placeholder-called"
+  run test ! -e "$TEST_WORKSPACE/agy-approved-placeholder-called"
   [ "$status" -eq 0 ]
-  run test ! -e "$TEST_WORKSPACE/claude-approved-placeholder-called"
+  run test ! -e "$TEST_WORKSPACE/agy-approved-placeholder-called-2"
   [ "$status" -eq 0 ]
 }
 
@@ -7002,7 +6993,7 @@ exit 99'
     --task-title "External pass should block" \
     --execution-mode "supervisor_subagents" \
     --risk-preflight-status "pass" \
-    --primary-author-tool "codex" \
+    --primary-author-tool "antigravity" \
     --review-mode "external_cli" \
     --planner-agents "planner-1" \
     --reviewer-agents "external-cli:gemini" \
@@ -7024,8 +7015,8 @@ exit 99'
     --axis-verify "verify" \
     --execution-mode "supervisor_subagents" \
     --risk-preflight-status "pass" \
-    --primary-author-tool "codex" \
-    --review-mode "codex_subagents" \
+    --primary-author-tool "antigravity" \
+    --review-mode "agy_subagents" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -7065,8 +7056,8 @@ EOF
     --axis-verify "verify" \
     --execution-mode "supervisor_subagents" \
     --risk-preflight-status "pass" \
-    --primary-author-tool "codex" \
-    --review-mode "codex_subagents" \
+    --primary-author-tool "antigravity" \
+    --review-mode "agy_subagents" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -7274,8 +7265,8 @@ EOF
     --axis-verify "verify" \
     --execution-mode "supervisor_subagents" \
     --risk-preflight-status "pass" \
-    --primary-author-tool "codex" \
-    --review-mode "codex_subagents" \
+    --primary-author-tool "antigravity" \
+    --review-mode "agy_subagents" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -7364,8 +7355,8 @@ EOF
     --axis-verify "verify" \
     --execution-mode "supervisor_subagents" \
     --risk-preflight-status "pass" \
-    --primary-author-tool "codex" \
-    --review-mode "codex_subagents" \
+    --primary-author-tool "antigravity" \
+    --review-mode "agy_subagents" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -7419,8 +7410,8 @@ EOF
     --axis-verify "verify" \
     --execution-mode "supervisor_subagents" \
     --risk-preflight-status "pass" \
-    --primary-author-tool "codex" \
-    --review-mode "codex_subagents" \
+    --primary-author-tool "antigravity" \
+    --review-mode "agy_subagents" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -7489,8 +7480,8 @@ EOF
     --axis-verify "verify" \
     --execution-mode "supervisor_subagents" \
     --risk-preflight-status "pass" \
-    --primary-author-tool "codex" \
-    --review-mode "codex_subagents" \
+    --primary-author-tool "antigravity" \
+    --review-mode "agy_subagents" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -7544,8 +7535,8 @@ EOF
     --axis-verify "verify" \
     --execution-mode "supervisor_subagents" \
     --risk-preflight-status "pass" \
-    --primary-author-tool "codex" \
-    --review-mode "codex_subagents" \
+    --primary-author-tool "antigravity" \
+    --review-mode "agy_subagents" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -7600,8 +7591,8 @@ EOF
     --axis-verify "verify" \
     --execution-mode "supervisor_subagents" \
     --risk-preflight-status "pass" \
-    --primary-author-tool "codex" \
-    --review-mode "codex_subagents" \
+    --primary-author-tool "antigravity" \
+    --review-mode "agy_subagents" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -7655,8 +7646,8 @@ EOF
     --axis-verify "verify" \
     --execution-mode "supervisor_subagents" \
     --risk-preflight-status "pass" \
-    --primary-author-tool "codex" \
-    --review-mode "codex_subagents" \
+    --primary-author-tool "antigravity" \
+    --review-mode "agy_subagents" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
     --implementation-agents "coder-1" \
@@ -7772,7 +7763,7 @@ EOF
     --implementation-agents "coder-1" \
     --validation-agents "validator-1" \
     --owned-scopes "planner:docs/plan; coder:src/app" \
-    --primary-author-tool "codex" \
+    --primary-author-tool "antigravity" \
     --review-mode "external_cli" \
     --no-init
 
@@ -8246,8 +8237,8 @@ EOF
     --task-id "doc-preflight-gate-01" \
     --task-title "Doc preflight gate" \
     --execution-mode "supervisor_subagents" \
-    --primary-author-tool "codex" \
-    --review-mode "codex_subagents" \
+    --primary-author-tool "antigravity" \
+    --review-mode "agy_subagents" \
     --no-init
 
   [ "$status" -ne 0 ]
@@ -8722,12 +8713,13 @@ EOF
 
   local mock_bin="$TEST_WORKSPACE/mock-bin"
   mkdir -p "$mock_bin"
-  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
 touch "${TEST_WORKSPACE}/gemini-called"
 exit 99'
-  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
-touch "${TEST_WORKSPACE}/claude-called"
-exit 99'
+  # (claude mock replaced by agy)
+  # true #  '#!/usr/bin/env bash
+# touch "${TEST_WORKSPACE}/claude-called"
+# exit 99'
   write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
 touch "${TEST_WORKSPACE}/codex-called"
 exit 99'
@@ -8802,7 +8794,7 @@ EOF
   local mock_bin="$TEST_WORKSPACE/mock-bin"
   mkdir -p "$mock_bin"
 
-  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
 count_file="${TEST_WORKSPACE}/gemini-count"
 count=0
 if [[ -f "$count_file" ]]; then
@@ -8829,15 +8821,16 @@ else
 EOF
 fi'
 
-  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
-printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
-  cat <<EOF
-- verdict: blocked
-- summary: The flow is semi-automated in the right place, but report validation should remain strict because downstream handoff depends on it.
-- strengths: It preserves old plan versions and keeps the user in control.
-- risks: If reviewers return partial fields, the operator could mistake a weak report for a valid one.
-- requested_changes: Make the failure summary explicit and ensure malformed responses never create report files.
-EOF'
+  # (claude mock replaced by agy)
+  # true #  '#!/usr/bin/env bash
+# printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
+  # cat <<EOF
+# - verdict: blocked
+# - summary: The flow is semi-automated in the right place, but report validation should remain strict because downstream handoff depends on it.
+# - strengths: It preserves old plan versions and keeps the user in control.
+# - risks: If reviewers return partial fields, the operator could mistake a weak report for a valid one.
+# - requested_changes: Make the failure summary explicit and ensure malformed responses never create report files.
+# EOF'
 
   write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
 echo "codex should not be called for primary=codex" >&2
@@ -9012,20 +9005,21 @@ EOF
   local mock_bin="$TEST_WORKSPACE/mock-bin"
   mkdir -p "$mock_bin"
 
-  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
 touch "${TEST_WORKSPACE}/gemini-called"
 echo "gemini should not be called for selected reviewer claude" >&2
 exit 99'
 
-  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
-printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
-cat <<EOF
-- verdict: accept
-- summary: The selected reviewer path invokes only Claude and still writes the standard report artifacts.
-- strengths: It preserves the normal request, response, report, and provenance flow.
-- risks: Reviewer selection could hide missing multi-review coverage if operators use it for initial review rounds.
-- requested_changes: Use targeted reviewer selection only for focused reruns or explicitly scoped review rounds.
-EOF'
+  # (claude mock replaced by agy)
+  # true #  '#!/usr/bin/env bash
+# printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
+# cat <<EOF
+# - verdict: accept
+# - summary: The selected reviewer path invokes only Claude and still writes the standard report artifacts.
+# - strengths: It preserves the normal request, response, report, and provenance flow.
+# - risks: Reviewer selection could hide missing multi-review coverage if operators use it for initial review rounds.
+# - requested_changes: Use targeted reviewer selection only for focused reruns or explicitly scoped review rounds.
+# EOF'
 
   write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
 touch "${TEST_WORKSPACE}/codex-called"
@@ -9093,12 +9087,13 @@ EOF
 
   local mock_bin="$TEST_WORKSPACE/mock-bin"
   mkdir -p "$mock_bin"
-  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
 touch "${TEST_WORKSPACE}/gemini-called"
 exit 99'
-  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
-touch "${TEST_WORKSPACE}/claude-called"
-exit 99'
+  # (claude mock replaced by agy)
+  # true #  '#!/usr/bin/env bash
+# touch "${TEST_WORKSPACE}/claude-called"
+# exit 99'
   write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
 touch "${TEST_WORKSPACE}/codex-called"
 exit 99'
@@ -9212,14 +9207,15 @@ EOF
   local mock_bin="$TEST_WORKSPACE/mock-bin"
   mkdir -p "$mock_bin"
 
-  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
 echo "gemini should not be called for primary=gemini" >&2
 exit 99'
 
-  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
-printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
-echo "mock claude failure with token=sk-proj-12345678901234567890" >&2
-exit 7'
+  # (claude mock replaced by agy)
+  # true #  '#!/usr/bin/env bash
+# printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
+# echo "mock claude failure with token=sk-proj-12345678901234567890" >&2
+# exit 7'
 
   write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
 printf "%s\n" "$@" > "${TEST_WORKSPACE}/codex-args.log"
@@ -9317,7 +9313,7 @@ EOF'
     --risk-preflight-status "approved" \
     --approval-ref "user-approval-ext-review-04" \
     --approved-next-step "run external review ext-review-04 v1.0 r04" \
-    --primary-author-tool "codex" \
+    --primary-author-tool "antigravity" \
     --review-mode "external_cli" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
@@ -9349,11 +9345,12 @@ EOF
   local mock_bin="$TEST_WORKSPACE/mock-bin"
   mkdir -p "$mock_bin"
 
-  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
-echo "claude should not be called for primary=claude" >&2
-exit 99'
+  # (claude mock replaced by agy)
+  # true #  '#!/usr/bin/env bash
+# echo "claude should not be called for primary=claude" >&2
+# exit 99'
 
-  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
 printf "%s\n" "$@" > "${TEST_WORKSPACE}/gemini-args.log"
 cat <<EOF
 - verdict: revise
@@ -9473,13 +9470,14 @@ EOF
   local mock_bin="$TEST_WORKSPACE/mock-bin"
   mkdir -p "$mock_bin"
 
-  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
 echo "gemini failure" >&2
 exit 3'
 
-  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
-echo "claude should not be called for primary=claude" >&2
-exit 99'
+  # (claude mock replaced by agy)
+  # true #  '#!/usr/bin/env bash
+# echo "claude should not be called for primary=claude" >&2
+# exit 99'
 
   write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
 echo "codex failure" >&2
@@ -9514,7 +9512,7 @@ exit 4'
     --risk-preflight-status "approved" \
     --approval-ref "user-approval-ext-review-05" \
     --approved-next-step "run external review ext-review-05 v1.0 r05" \
-    --primary-author-tool "codex" \
+    --primary-author-tool "antigravity" \
     --review-mode "external_cli" \
     --planner-agents "planner-1" \
     --reviewer-agents "reviewer-1" \
@@ -9546,11 +9544,12 @@ EOF
   local mock_bin="$TEST_WORKSPACE/mock-bin"
   mkdir -p "$mock_bin"
 
-  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
-echo "claude should not be called for primary=claude" >&2
-exit 99'
+  # (claude mock replaced by agy)
+  # true #  '#!/usr/bin/env bash
+# echo "claude should not be called for primary=claude" >&2
+# exit 99'
 
-  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
 echo "forced adversarial failure" >&2
 exit 8'
 
@@ -9615,13 +9614,14 @@ EOF
   local mock_bin="$TEST_WORKSPACE/mock-bin"
   mkdir -p "$mock_bin"
 
-  write_mock_cli "$mock_bin/gemini" '#!/usr/bin/env bash
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
 echo "gemini should not be called for primary=gemini" >&2
 exit 99'
 
-  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
-echo "mock claude failure" >&2
-exit 7'
+  # (claude mock replaced by agy)
+  # true #  '#!/usr/bin/env bash
+# echo "mock claude failure" >&2
+# exit 7'
 
   write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
 printf "%s\n" "$@" > "${TEST_WORKSPACE}/codex-args.log"
@@ -9649,4 +9649,614 @@ exit 0'
   [ "$status" -eq 0 ]
   run grep "codex runtime log only" "$handoff_dir/codex.stderr.md"
   [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews falls back from agy Gemini quota group to direct Claude in planning phase" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-fallback-plan-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-fallback-plan-v1.0
+
+- task_id: ext-fallback-plan
+- plan_version: v1.0
+- objective: test runner-neutral fallback to direct Claude
+- scope: external review
+- assumptions: gemini exhausted
+- risks: fallback fails
+- acceptance_signals: report written
+- stop_conditions: report generated
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Test fallback.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
+  args=("$@")
+  model=""
+  for ((i=0; i<${#args[@]}; i++)); do
+    if [[ "${args[i]}" == "-m" ]]; then
+      model="${args[i+1]}"
+    fi
+  done
+  
+  echo "Requested model: $model" >> "${TEST_WORKSPACE}/agy-calls.log"
+  
+  if [[ "$model" == "gemini-3.5-flash-medium" ]]; then
+    echo "Error 429: resource_exhausted rate limit exceeded" >&2
+    exit 1
+  fi'
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+  args=("$@")
+  model=""
+  for ((i=0; i<${#args[@]}; i++)); do
+    if [[ "${args[i]}" == "--model" ]]; then
+      model="${args[i+1]}"
+    fi
+  done
+  echo "Requested model: $model" >> "${TEST_WORKSPACE}/claude-calls.log"
+  if [[ "$model" != "opus-4.7" ]]; then
+    echo "Unexpected Claude model requested: $model" >&2
+    exit 99
+  fi
+  cat <<EOF
+- verdict: accept
+- summary: Direct Claude fallback succeeded.
+- strengths: Registry selected a separate quota group.
+- risks: None.
+- requested_changes: None.
+EOF'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-fallback-plan" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --primary-model "claude-sonnet-4.6" \
+    --reviewer "agy-gemini-3.5-flash-medium" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-fallback-plan" \
+    --approved-next-step "run external review ext-fallback-plan" \
+    --task-phase "planning"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Quota exhausted for route 'agy:gemini-3.5-flash-medium' (quota_group=agy-gemini-shared)"* ]]
+  [[ "$output" == *"fallback route 'claude:opus-4.7'"* ]]
+  [[ "$output" == *"Registry fallback succeeded: agy:gemini-3.5-flash-medium -> claude:opus-4.7"* ]]
+
+  run grep "Requested model: gemini-3.5-flash-medium" "$TEST_WORKSPACE/agy-calls.log"
+  [ "$status" -eq 0 ]
+  run grep "Requested model: opus-4.7" "$TEST_WORKSPACE/claude-calls.log"
+  [ "$status" -eq 0 ]
+  run test -f "$DOCS_ROOT/report/PLAN-ext-fallback-plan-v1.0-review-agy-gemini-3.5-flash-medium-r01.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews falls back from agy Gemini quota group to direct Claude in code phase" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-fallback-code-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-fallback-code-v1.0
+
+- task_id: ext-fallback-code
+- plan_version: v1.0
+- objective: test code-phase runner fallback
+- scope: external review
+- assumptions: gemini exhausted
+- risks: fallback fails
+- acceptance_signals: report written
+- stop_conditions: report generated
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Test fallback.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
+  args=("$@")
+  model=""
+  for ((i=0; i<${#args[@]}; i++)); do
+    if [[ "${args[i]}" == "-m" ]]; then
+      model="${args[i+1]}"
+    fi
+  done
+  
+  echo "Requested model: $model" >> "${TEST_WORKSPACE}/agy-calls-code.log"
+  
+  if [[ "$model" == "gemini-3.5-flash-medium" ]]; then
+    echo "Error 429: resource_exhausted rate limit exceeded" >&2
+    exit 1
+  fi'
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+  args=("$@")
+  model=""
+  for ((i=0; i<${#args[@]}; i++)); do
+    if [[ "${args[i]}" == "--model" ]]; then
+      model="${args[i+1]}"
+    fi
+  done
+  echo "Requested model: $model" >> "${TEST_WORKSPACE}/claude-calls-code.log"
+  if [[ "$model" != "sonnet-4.6" ]]; then
+    echo "Unexpected Claude model requested: $model" >&2
+    exit 99
+  fi
+  cat <<EOF
+- verdict: accept
+- summary: Direct Claude code fallback succeeded.
+- strengths: Registry selected Sonnet for code.
+- risks: None.
+- requested_changes: None.
+EOF'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-fallback-code" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --primary-model "claude-opus-4.7" \
+    --reviewer "agy-gemini-3.5-flash-medium" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-fallback-code" \
+    --approved-next-step "run external review ext-fallback-code" \
+    --task-phase "code"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"fallback route 'claude:sonnet-4.6'"* ]]
+  [[ "$output" == *"Registry fallback succeeded: agy:gemini-3.5-flash-medium -> claude:sonnet-4.6"* ]]
+
+  run grep "Requested model: sonnet-4.6" "$TEST_WORKSPACE/claude-calls-code.log"
+  [ "$status" -eq 0 ]
+  run test -f "$DOCS_ROOT/report/PLAN-ext-fallback-code-v1.0-review-agy-gemini-3.5-flash-medium-r01.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews direct Claude quota exhaustion fails closed without explicit fallback" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-fallback-fail-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-fallback-fail-v1.0
+
+- task_id: ext-fallback-fail
+- plan_version: v1.0
+- objective: test direct Claude fail-closed behavior
+- scope: external review
+- assumptions: direct subscription exhausted
+- risks: implicit agy fallback happens
+- acceptance_signals: script fails
+- stop_conditions: script exits
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Test failure.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+  args=("$@")
+  model=""
+  for ((i=0; i<${#args[@]}; i++)); do
+    if [[ "${args[i]}" == "--model" ]]; then
+      model="${args[i+1]}"
+    fi
+  done
+  
+  echo "Requested model: $model" >> "${TEST_WORKSPACE}/claude-calls-fail.log"
+  
+  echo "Error 429: resource_exhausted rate limit exceeded" >&2
+  exit 1'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-fallback-fail" \
+    --plan-version "v1.0" \
+    --primary-tool "claude" \
+    --primary-model "agy-gemini-3.5-flash-medium" \
+    --reviewer "claude-opus-4.7" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-fallback-fail" \
+    --approved-next-step "run external review ext-fallback-fail"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Quota exhausted for route 'claude:opus-4.7' (quota_group=claude-direct-subscription), but no fallback is configured"* ]]
+  [[ "$output" != *"Registry fallback succeeded"* ]]
+}
+
+@test "run_external_plan_reviews loads runner routes and fallbacks from registry override" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-registry-override-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-registry-override-v1.0
+
+- task_id: ext-registry-override
+- plan_version: v1.0
+- objective: test registry-owned model routing
+- scope: external review
+- assumptions: local registry can add new model aliases without script edits
+- risks: wrapper ignores registry override
+- acceptance_signals: configured fallback model is invoked
+- stop_conditions: report generated
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Test registry override.
+EOF
+
+  local registry_file="$TEST_WORKSPACE/model-registry.json"
+  cat > "$registry_file" <<'EOF'
+{
+  "default_model_alias": "new-sonnet",
+  "default_task_phase": "planning",
+  "runners": {
+    "agy": {
+      "binary": "agy",
+      "env_binary": "CODEGUIDE_ANTIGRAVITY_BIN",
+      "command_kind": "agy"
+    },
+    "claude": {
+      "binary": "claude",
+      "env_binary": "CODEGUIDE_CLAUDE_BIN",
+      "command_kind": "claude_code"
+    }
+  },
+  "models": {
+    "agy:new-gemini": {
+      "runner": "agy",
+      "cli_model": "gemini-3.6-pro",
+      "quota_group": "agy-future-gemini",
+      "display_name": "Future Gemini"
+    },
+    "claude:new-sonnet": {
+      "runner": "claude",
+      "cli_model": "claude-4.7-sonnet",
+      "quota_group": "claude-direct-future",
+      "display_name": "Future Sonnet"
+    }
+  },
+  "aliases": {
+    "new-gemini": "agy:new-gemini",
+    "new-sonnet": "claude:new-sonnet"
+  },
+  "default_reviewer_aliases": [
+    "new-gemini"
+  ],
+  "fallback_policy": {
+    "on_quota_exhausted": [
+      {
+        "from_quota_group": "agy-future-gemini",
+        "phases": ["planning", "review"],
+        "to": "new-sonnet"
+      }
+    ],
+    "fail_closed_for_unregistered_models": true
+  },
+  "quota_error_patterns": [
+    "resource_exhausted"
+  ]
+}
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
+  args=("$@")
+  model=""
+  for ((i=0; i<${#args[@]}; i++)); do
+    if [[ "${args[i]}" == "-m" ]]; then
+      model="${args[i+1]}"
+    fi
+  done
+
+  echo "Requested model: $model" >> "${TEST_WORKSPACE}/agy-registry-calls.log"
+
+  if [[ "$model" == "gemini-3.6-pro" ]]; then
+    echo "Error 429: resource_exhausted" >&2
+    exit 1
+  elif [[ "$model" == "claude-4.7-sonnet" ]]; then
+    cat <<EOF
+- verdict: accept
+- summary: Registry override fallback succeeded.
+- strengths: The wrapper used the configured model registry.
+- risks: None.
+- requested_changes: None.
+EOF
+    exit 0
+  else
+    echo "Unexpected model requested from registry override: $model" >&2
+    exit 99
+  fi'
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+  args=("$@")
+  model=""
+  for ((i=0; i<${#args[@]}; i++)); do
+    if [[ "${args[i]}" == "--model" ]]; then
+      model="${args[i+1]}"
+    fi
+  done
+
+  echo "Requested model: $model" >> "${TEST_WORKSPACE}/claude-registry-calls.log"
+
+  if [[ "$model" == "claude-4.7-sonnet" ]]; then
+    cat <<EOF
+- verdict: accept
+- summary: Registry override fallback succeeded.
+- strengths: The wrapper used the configured runner registry.
+- risks: None.
+- requested_changes: None.
+EOF
+    exit 0
+  fi
+  echo "Unexpected Claude model requested from registry override: $model" >&2
+  exit 99'
+
+  run env CODEGUIDE_MODEL_REGISTRY="$registry_file" PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-registry-override" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --primary-model "new-sonnet" \
+    --reviewer "new-gemini" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-registry-override" \
+    --approved-next-step "run external review ext-registry-override"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Quota exhausted for route 'agy:new-gemini' (quota_group=agy-future-gemini)"* ]]
+  [[ "$output" == *"Registry fallback succeeded: agy:new-gemini -> claude:new-sonnet"* ]]
+
+  run grep "Requested model: gemini-3.6-pro" "$TEST_WORKSPACE/agy-registry-calls.log"
+  [ "$status" -eq 0 ]
+  run grep "Requested model: claude-4.7-sonnet" "$TEST_WORKSPACE/claude-registry-calls.log"
+  [ "$status" -eq 0 ]
+  run test -f "$DOCS_ROOT/report/PLAN-ext-registry-override-v1.0-review-agy-new-gemini-r01.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews --help does not require a readable model registry" {
+  run env CODEGUIDE_MODEL_REGISTRY="$TEST_WORKSPACE/missing-registry.json" bash "$RUN_EXTERNAL_REVIEWS" --help
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Usage:"* ]]
+  [[ "$output" != *"Model registry not found"* ]]
+}
+
+@test "run_external_plan_reviews rejects invalid task phase before fallback routing" {
+  run bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-invalid-phase" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-invalid-phase" \
+    --approved-next-step "run external review ext-invalid-phase" \
+    --task-phase "cod"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"[ERROR] Invalid --task-phase: cod"* ]]
+}
+
+@test "run_external_plan_reviews unregistered reviewer route fails closed before invocation" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-unknown-model-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-unknown-model-v1.0
+
+- task_id: ext-unknown-model
+- plan_version: v1.0
+- objective: test unknown model quota behavior
+- scope: external review
+- assumptions: unknown model exhausts quota
+- risks: wrapper guesses fallback pool
+- acceptance_signals: script fails closed
+- stop_conditions: script exits
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
+echo "Error 429: resource_exhausted" >&2
+exit 1'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-unknown-model" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --primary-model "claude-sonnet-4.6" \
+    --reviewer "future-model" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-unknown-model" \
+    --approved-next-step "run external review ext-unknown-model"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"resolves to unregistered model 'future-model'"* ]]
+  [[ "$output" != *"Registry fallback succeeded"* ]]
+}
+
+@test "run_external_plan_reviews rejects registry fallback targets outside known routes" {
+  local registry_file="$TEST_WORKSPACE/bad-fallback-registry.json"
+  cat > "$registry_file" <<'EOF'
+{
+  "default_model_alias": "gemini",
+  "runners": {
+    "agy": {
+      "binary": "agy",
+      "env_binary": "CODEGUIDE_ANTIGRAVITY_BIN",
+      "command_kind": "agy"
+    }
+  },
+  "models": {
+    "agy:gemini-local": {
+      "runner": "agy",
+      "cli_model": "gemini-local",
+      "quota_group": "agy-gemini",
+      "display_name": "Gemini Local"
+    }
+  },
+  "aliases": {
+    "gemini": "agy:gemini-local",
+    "fallback": "agy:missing"
+  },
+  "default_reviewer_aliases": [
+    "gemini"
+  ],
+  "fallback_policy": {
+    "on_quota_exhausted": [
+      {
+        "from_quota_group": "agy-gemini",
+        "phases": ["planning"],
+        "to": "fallback"
+      }
+    ],
+    "fail_closed_for_unregistered_models": true
+  },
+  "quota_error_patterns": [
+    "quota"
+  ]
+}
+EOF
+
+  run env CODEGUIDE_MODEL_REGISTRY="$registry_file" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-bad-fallback" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-bad-fallback" \
+    --approved-next-step "run external review ext-bad-fallback"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"references unknown model route"* ]]
+}
+
+@test "run_external_plan_reviews detects exhausted fallback model stderr" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-fallback-exhausted-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-fallback-exhausted-v1.0
+
+- task_id: ext-fallback-exhausted
+- plan_version: v1.0
+- objective: test fallback stderr classification
+- scope: external review
+- assumptions: both primary and fallback models exhaust quota
+- risks: fallback stderr is lost
+- acceptance_signals: both-pools exhausted message appears
+- stop_conditions: script exits
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
+echo "Error 429: resource_exhausted rate limit exceeded" >&2
+exit 1'
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+echo "Error 429: resource_exhausted rate limit exceeded" >&2
+exit 1'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-fallback-exhausted" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --primary-model "claude-sonnet-4.6" \
+    --reviewer "agy-gemini-3.5-flash-medium" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-fallback-exhausted" \
+    --approved-next-step "run external review ext-fallback-exhausted"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Quota exhausted for route 'agy:gemini-3.5-flash-medium' and fallback route 'claude:opus-4.7'"* ]]
+}
+
+@test "run_external_plan_reviews resolves adversarial evaluator runner aliases" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-adversarial-alias-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-adversarial-alias-v1.0
+
+- task_id: ext-adversarial-alias
+- plan_version: v1.0
+- objective: test adversarial evaluator alias
+- scope: external review
+- assumptions: adversarial evaluator is a model alias
+- risks: alias validation rejects the evaluator
+- acceptance_signals: adversarial report is written
+- stop_conditions: report generated
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
+cat <<EOF
+- verdict: accept
+- summary: Standard agy review completed.
+- strengths: The request was bounded.
+- risks: None.
+- requested_changes: None.
+EOF'
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+cat <<EOF
+- verdict: revise
+- summary: Alias review completed.
+- strengths: The request was bounded.
+- risks: The adversarial path needs clear metadata.
+- requested_changes: Keep adversarial style visible.
+- objection: Alias handling may be brittle.
+- counterproposal: Resolve aliases before matching reviewers.
+- rebuttal: The resolved reviewer list can still preserve intent.
+- residual_risk: Operators may misconfigure aliases.
+EOF'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-adversarial-alias" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --primary-model "claude-opus-4.7" \
+    --reviewer "agy-gemini-3.5-flash-medium" \
+    --reviewer "claude-sonnet-4.6" \
+    --adversarial-evaluator "claude-sonnet-4.6" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-adversarial-alias" \
+    --approved-next-step "run external review ext-adversarial-alias"
+
+  [ "$status" -eq 0 ]
+  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-adversarial-alias-v1.0-review-claude-sonnet-4.6-r01.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "external_review_runner enqueues current-task debate and dry-runs runner participants" {
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-neutral" --plan-version "v1.0" --review-round "r01" --task-phase "planning" --coordinator "claude" --participant "agy-gemini-3.5-flash-high" --participant "claude-opus-4.7"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
+
+  [ "$status" -eq 0 ]
+  run test -f "$DOCS_ROOT/orchestration/runner-neutral/current-task/debate.json"
+  [ "$status" -eq 0 ]
+  run grep '"coordinator": "claude"' "$DOCS_ROOT/orchestration/runner-neutral/current-task/debate.json"
+  [ "$status" -eq 0 ]
+  run grep '"runner_route": "agy:gemini-3.5-flash-high"' "$DOCS_ROOT/orchestration/runner-neutral/current-task/debate.json"
+  [ "$status" -eq 0 ]
+  run grep '"runner_route": "claude:opus-4.7"' "$DOCS_ROOT/orchestration/runner-neutral/current-task/debate.json"
+  [ "$status" -eq 0 ]
+
+  run python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-neutral" --dry-run
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"agy --approval-mode plan"* ]]
+  [[ "$output" == *"claude -p"* ]]
+  [[ "$output" == *"--model opus-4.7"* ]]
 }
