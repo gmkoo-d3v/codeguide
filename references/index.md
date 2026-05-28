@@ -10,6 +10,10 @@ Use this file to pick the smallest authoritative reference set for the active ta
 - PR and commit templates: `git-pr-commit-templates.md`
 - Engineering operating principles: `harness-engineering-principles.md`
 - Goal-oriented loop stop/continue contract: `goal-loop-contract.md`
+- Documentation language policy: `doc-language-policy.md`
+- Orchestration contract: `orchestration-contract.md`
+- External CLI file handoff contract: `external-cli-handoff.md`
+- Plan orchestration loop: `plan-orchestration-loop.md`
 
 ## Context and Retrieval Routing
 - Context-budget workflow and MCP source-authority rules: `mcp-context-integration.md`
