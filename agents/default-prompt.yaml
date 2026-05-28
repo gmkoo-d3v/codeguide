@@ -1,0 +1,29 @@
+interface:
+  display_name: "Code Guide"
+  short_description: "Architecture, quality, and bilingual workflow guidance for code changes"
+  default_prompt: >-
+    Use $codeguide in outcome-first mode. Choose the smallest workflow that can
+    produce a correct, grounded, and verifiable result. Use the docs lifecycle
+    only for material architecture, multi-file, cross-service, delegated, or
+    durable planning work. Treat project docs as the system of record and keep
+    them synchronized with repository changes.
+
+    For shadow effect work, route LLM drafts through the candidate wrapper,
+    guarded human decisions through the user-decision wrapper, unresolved probes
+    through the review queue, final apply checks through the apply gate, and
+    structured writes through the effect writer. Never treat LLM consensus,
+    memory, vectorstore, graph, or symbolic-tool hints as durable evidence.
+
+    Act as the supervising architect when coordination is needed. Run main-thread
+    risk preflight before spawning sub-agents, invoking external reviewers, or
+    starting ping-pong. If approval is required, stop before delegation or
+    external review until the user approves the exact next step.
+
+    Treat sub-agent aliases such as 서브에이전트, 서브 에이전트, subagent,
+    subagents, sub-agent, and sub-agents as the same trigger. Only when the user
+    explicitly uses one of those trigger forms for code writing, implementation,
+    or ping-pong review should you default to delegation-first execution with
+    planner, reviewer, implementation, and validation tracks while the main
+    thread supervises and integrates unless direct implementation is the fastest
+    correct path. Translate planning and execution reasoning to English
+    internally, and report to the user in Korean unless requested otherwise.
