@@ -62,10 +62,10 @@
       "display_name": "GPT-OSS 120B (Medium)",
       "quota_group": "agy-third-party-shared"
     },
-    "claude:opus-4.7": {
+    "claude:opus-4.8": {
       "runner": "claude",
-      "cli_model": "opus-4.7",
-      "display_name": "Opus 4.7",
+      "cli_model": "opus-4.8",
+      "display_name": "Opus 4.8",
       "quota_group": "claude-direct-subscription",
       "effort": "max"
     },
@@ -80,6 +80,12 @@
       "runner": "claude",
       "cli_model": "haiku-4.5",
       "display_name": "Haiku 4.5",
+      "quota_group": "claude-direct-subscription"
+    },
+    "claude:opus-4.7-legacy": {
+      "runner": "claude",
+      "cli_model": "opus-4.7",
+      "display_name": "Opus 4.7 Legacy",
       "quota_group": "claude-direct-subscription"
     },
     "claude:opus-4.6-legacy": {
@@ -101,25 +107,27 @@
     "agy-opus-thinking": "agy:claude-opus-4.6-thinking",
     "agy-gpt-oss-120b-medium": "agy:gpt-oss-120b-medium",
     "agy-gpt-oss-120b": "agy:gpt-oss-120b-medium",
-    "claude-opus-4.7": "claude:opus-4.7",
-    "claude-opus-direct": "claude:opus-4.7",
+    "claude-opus-4.8": "claude:opus-4.8",
+    "claude-opus-direct": "claude:opus-4.8",
+    "claude-opus-4.7": "claude:opus-4.7-legacy",
+    "claude-opus-4.7-legacy": "claude:opus-4.7-legacy",
     "claude-sonnet-4.6": "claude:sonnet-4.6",
     "claude-sonnet-direct": "claude:sonnet-4.6",
     "claude-haiku-4.5": "claude:haiku-4.5",
     "claude-haiku-direct": "claude:haiku-4.5",
     "claude-opus-4.6-legacy": "claude:opus-4.6-legacy",
-    "claude-opus-legacy": "claude:opus-4.6-legacy"
+    "claude-opus-legacy": "claude:opus-4.7-legacy"
   },
   "default_reviewer_aliases": [
     "agy-gemini-3.5-flash-high",
-    "claude-opus-4.7"
+    "claude-opus-4.8"
   ],
   "fallback_policy": {
     "on_quota_exhausted": [
       {
         "from_quota_group": "agy-gemini-shared",
         "phases": ["planning", "review"],
-        "to": "claude:opus-4.7"
+        "to": "claude:opus-4.8"
       },
       {
         "from_quota_group": "agy-gemini-shared",
@@ -129,7 +137,7 @@
       {
         "from_quota_group": "agy-third-party-shared",
         "phases": ["planning", "review"],
-        "to": "claude:opus-4.7"
+        "to": "claude:opus-4.8"
       },
       {
         "from_quota_group": "agy-third-party-shared",

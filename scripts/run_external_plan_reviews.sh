@@ -1120,7 +1120,7 @@ build_tool_command() {
 
   case "$command_kind" in
     agy)
-      TOOL_COMMAND=("$binary" --approval-mode plan --output-format text --include-directories "$CONTEXT_ROOT" -m "$cli_model" -p "$prompt")
+      TOOL_COMMAND=("$binary" --add-dir "$CONTEXT_ROOT" -p "$prompt")
       ;;
     claude_code)
       TOOL_COMMAND=("$binary" -p "$prompt" --model "$cli_model" --no-session-persistence --tools "" --add-dir "$CONTEXT_ROOT")
@@ -1130,6 +1130,95 @@ build_tool_command() {
       return 1
       ;;
   esac
+}
+
+agy_settings_file() {
+  printf "%s" "${CODEGUIDE_AGY_SETTINGS_FILE:-$HOME/.gemini/antigravity-cli/settings.json}"
+}
+
+write_agy_model_setting() {
+  local settings_file="$1"
+  local display_name="$2"
+  local backup_file="$3"
+
+  python3 - "$settings_file" "$display_name" "$backup_file" <<'PY'
+import json
+import os
+import sys
+from pathlib import Path
+
+settings_file = Path(sys.argv[1])
+display_name = sys.argv[2]
+backup_file = Path(sys.argv[3])
+
+original_exists = settings_file.exists()
+original_text = settings_file.read_text(encoding="utf-8") if original_exists else ""
+backup_file.write_text(json.dumps({"exists": original_exists, "text": original_text}), encoding="utf-8")
+
+data = {}
+if original_text.strip():
+    parsed = json.loads(original_text)
+    if not isinstance(parsed, dict):
+        raise SystemExit(f"agy settings root must be an object: {settings_file}")
+    data = parsed
+data["model"] = display_name
+
+settings_file.parent.mkdir(parents=True, exist_ok=True)
+tmp_file = settings_file.with_name(settings_file.name + f".codeguide.{os.getpid()}.tmp")
+tmp_file.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+os.replace(tmp_file, settings_file)
+PY
+}
+
+restore_agy_model_setting() {
+  local settings_file="$1"
+  local backup_file="$2"
+
+  python3 - "$settings_file" "$backup_file" <<'PY'
+import json
+import os
+import sys
+from pathlib import Path
+
+settings_file = Path(sys.argv[1])
+backup_file = Path(sys.argv[2])
+state = json.loads(backup_file.read_text(encoding="utf-8"))
+
+if state["exists"]:
+    settings_file.parent.mkdir(parents=True, exist_ok=True)
+    tmp_file = settings_file.with_name(settings_file.name + f".codeguide.restore.{os.getpid()}.tmp")
+    tmp_file.write_text(state["text"], encoding="utf-8")
+    os.replace(tmp_file, settings_file)
+elif settings_file.exists():
+    settings_file.unlink()
+PY
+}
+
+run_agy_tool_command() {
+  local model="$1"
+  local output_capture_file="$2"
+  local model_stderr_file="$3"
+  local display_name
+  local settings_file
+  local backup_file
+  local status
+
+  display_name="$(model_display_name_for "$model")" || return 1
+  settings_file="$(agy_settings_file)"
+  backup_file="$(mktemp)"
+  register_tmp_file "$backup_file"
+
+  if ! write_agy_model_setting "$settings_file" "$display_name" "$backup_file" 2>"$model_stderr_file"; then
+    return 1
+  fi
+
+  "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
+  status=$?
+
+  if ! restore_agy_model_setting "$settings_file" "$backup_file" >>"$model_stderr_file" 2>&1; then
+    return 1
+  fi
+  return "$status"
 }
 
 write_manual_command_file() {
@@ -1211,7 +1300,11 @@ run_tool_prompt() {
       echo "[ERROR] runner '${runner_id}' binary not found in PATH: ${binary}" > "$model_stderr_file"
       return 127
     fi
-    "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
+    if [[ "$runner_id" == "agy" ]]; then
+      run_agy_tool_command "$model" "$output_capture_file" "$model_stderr_file"
+    else
+      "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
+    fi
   }
 
   if _run_model_route "$reviewer_model" "$stderr_file"; then

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import datetime as dt
 import hashlib
 import json
@@ -82,14 +83,8 @@ def command_for_route(registry: dict[str, Any], route: str, request_file: Path, 
     if runner["command_kind"] == "agy":
         return [
             binary,
-            "--approval-mode",
-            "plan",
-            "--output-format",
-            "text",
-            "--include-directories",
+            "--add-dir",
             str(project_root),
-            "-m",
-            model["cli_model"],
             "-p",
             prompt,
         ]
@@ -107,6 +102,46 @@ def command_for_route(registry: dict[str, Any], route: str, request_file: Path, 
             str(project_root),
         ]
     raise ValueError(f"unsupported command_kind: {runner['command_kind']}")
+
+
+def agy_settings_file() -> Path:
+    configured = os.environ.get("CODEGUIDE_AGY_SETTINGS_FILE")
+    if configured:
+        return Path(configured)
+    return Path.home() / ".gemini" / "antigravity-cli" / "settings.json"
+
+
+@contextmanager
+def agy_model_setting(display_name: str):
+    settings_file = agy_settings_file()
+    original_exists = settings_file.exists()
+    original_text = read_text(settings_file) if original_exists else ""
+
+    data: dict[str, Any] = {}
+    if original_text.strip():
+        parsed = json.loads(original_text)
+        if not isinstance(parsed, dict):
+            raise ValueError(f"agy settings root must be an object: {settings_file}")
+        data = parsed
+    data["model"] = display_name
+
+    try:
+        write_text(settings_file, json.dumps(data, indent=2, sort_keys=True) + "\n")
+        yield
+    finally:
+        if original_exists:
+            write_text(settings_file, original_text)
+        elif settings_file.exists():
+            settings_file.unlink()
+
+
+def run_command_for_route(registry: dict[str, Any], route: str, command: list[str]) -> subprocess.CompletedProcess[str]:
+    model = model_for_route(registry, route)
+    runner = runner_for_route(registry, route)
+    if runner["command_kind"] != "agy":
+        return subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+    with agy_model_setting(model.get("display_name", model["cli_model"])):
+        return subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
 
 
 def enqueue(args: argparse.Namespace) -> int:
@@ -200,7 +235,7 @@ def execute_once(args: argparse.Namespace) -> int:
             print(" ".join(shlex.quote(part) for part in command))
             continue
 
-        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+        result = run_command_for_route(registry, route, command)
         stderr_text = result.stderr
         stdout_text = result.stdout
         if result.returncode != 0 and is_quota_error(registry, stderr_text):
@@ -209,7 +244,7 @@ def execute_once(args: argparse.Namespace) -> int:
                 fallback_triggered = True
                 actual_route = fallback_route
                 command = command_for_route(registry, fallback_route, external_request, external_response, project_root)
-                result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+                result = run_command_for_route(registry, fallback_route, command)
                 stderr_text = stderr_text + "\n" + result.stderr
                 stdout_text = result.stdout
 
@@ -228,6 +263,9 @@ def execute_once(args: argparse.Namespace) -> int:
             "review_round": debate["review_round"],
             "requested_route": route,
             "actual_route": actual_route,
+            "requested_cli_model": model_for_route(registry, route)["cli_model"],
+            "requested_display_name": model_for_route(registry, route).get("display_name", route),
+            "model_selection": "agy_settings_json" if runner_for_route(registry, actual_route)["command_kind"] == "agy" else "cli_flag",
             "quota_fallback_triggered": fallback_triggered,
             "request_file": str(external_request),
             "response_file": str(external_response),

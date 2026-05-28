@@ -8878,6 +8878,8 @@ exit 99'
   run grep -E -- '(^|[[:space:]])--model([[:space:]]|$)' "$TEST_WORKSPACE/claude-args.log"
   [ "$status" -ne 0 ]
   run grep -- "--include-directories" "$TEST_WORKSPACE/gemini-args.log"
+  [ "$status" -ne 0 ]
+  run grep -- "--add-dir" "$TEST_WORKSPACE/gemini-args.log"
   [ "$status" -eq 0 ]
   run grep -- "$TEST_PROJECT" "$TEST_WORKSPACE/gemini-args.log"
   [ "$status" -eq 0 ]
@@ -9675,17 +9677,16 @@ EOF
   mkdir -p "$mock_bin"
 
   write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
-  args=("$@")
-  model=""
-  for ((i=0; i<${#args[@]}; i++)); do
-    if [[ "${args[i]}" == "-m" ]]; then
-      model="${args[i+1]}"
-    fi
-  done
+  model="$(python3 - <<'"'"'PY'"'"'
+import json, os
+from pathlib import Path
+print(json.loads(Path(os.environ["CODEGUIDE_AGY_SETTINGS_FILE"]).read_text(encoding="utf-8")).get("model", ""))
+PY
+)"
   
   echo "Requested model: $model" >> "${TEST_WORKSPACE}/agy-calls.log"
   
-  if [[ "$model" == "gemini-3.5-flash-medium" ]]; then
+  if [[ "$model" == "Gemini 3.5 Flash (Medium)" ]]; then
     echo "Error 429: resource_exhausted rate limit exceeded" >&2
     exit 1
   fi'
@@ -9699,7 +9700,7 @@ EOF
     fi
   done
   echo "Requested model: $model" >> "${TEST_WORKSPACE}/claude-calls.log"
-  if [[ "$model" != "opus-4.7" ]]; then
+  if [[ "$model" != "opus-4.8" ]]; then
     echo "Unexpected Claude model requested: $model" >&2
     exit 99
   fi
@@ -9711,7 +9712,7 @@ EOF
 - requested_changes: None.
 EOF'
 
-  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+  run env CODEGUIDE_AGY_SETTINGS_FILE="$TEST_WORKSPACE/agy-settings.json" PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
     --task-id "ext-fallback-plan" \
     --plan-version "v1.0" \
     --primary-tool "agy" \
@@ -9725,12 +9726,14 @@ EOF'
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"Quota exhausted for route 'agy:gemini-3.5-flash-medium' (quota_group=agy-gemini-shared)"* ]]
-  [[ "$output" == *"fallback route 'claude:opus-4.7'"* ]]
-  [[ "$output" == *"Registry fallback succeeded: agy:gemini-3.5-flash-medium -> claude:opus-4.7"* ]]
+  [[ "$output" == *"fallback route 'claude:opus-4.8'"* ]]
+  [[ "$output" == *"Registry fallback succeeded: agy:gemini-3.5-flash-medium -> claude:opus-4.8"* ]]
 
-  run grep "Requested model: gemini-3.5-flash-medium" "$TEST_WORKSPACE/agy-calls.log"
+  run grep "Requested model: Gemini 3.5 Flash (Medium)" "$TEST_WORKSPACE/agy-calls.log"
   [ "$status" -eq 0 ]
-  run grep "Requested model: opus-4.7" "$TEST_WORKSPACE/claude-calls.log"
+  run test ! -e "$TEST_WORKSPACE/agy-settings.json"
+  [ "$status" -eq 0 ]
+  run grep "Requested model: opus-4.8" "$TEST_WORKSPACE/claude-calls.log"
   [ "$status" -eq 0 ]
   run test -f "$DOCS_ROOT/report/PLAN-ext-fallback-plan-v1.0-review-agy-gemini-3.5-flash-medium-r01.md"
   [ "$status" -eq 0 ]
@@ -9760,17 +9763,16 @@ EOF
   mkdir -p "$mock_bin"
 
   write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
-  args=("$@")
-  model=""
-  for ((i=0; i<${#args[@]}; i++)); do
-    if [[ "${args[i]}" == "-m" ]]; then
-      model="${args[i+1]}"
-    fi
-  done
+  model="$(python3 - <<'"'"'PY'"'"'
+import json, os
+from pathlib import Path
+print(json.loads(Path(os.environ["CODEGUIDE_AGY_SETTINGS_FILE"]).read_text(encoding="utf-8")).get("model", ""))
+PY
+)"
   
   echo "Requested model: $model" >> "${TEST_WORKSPACE}/agy-calls-code.log"
   
-  if [[ "$model" == "gemini-3.5-flash-medium" ]]; then
+  if [[ "$model" == "Gemini 3.5 Flash (Medium)" ]]; then
     echo "Error 429: resource_exhausted rate limit exceeded" >&2
     exit 1
   fi'
@@ -9796,11 +9798,11 @@ EOF
 - requested_changes: None.
 EOF'
 
-  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+  run env CODEGUIDE_AGY_SETTINGS_FILE="$TEST_WORKSPACE/agy-settings-code.json" PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
     --task-id "ext-fallback-code" \
     --plan-version "v1.0" \
     --primary-tool "agy" \
-    --primary-model "claude-opus-4.7" \
+    --primary-model "claude-opus-4.8" \
     --reviewer "agy-gemini-3.5-flash-medium" \
     --review-round "r01" \
     --risk-preflight-status "approved" \
@@ -9860,14 +9862,14 @@ EOF
     --plan-version "v1.0" \
     --primary-tool "claude" \
     --primary-model "agy-gemini-3.5-flash-medium" \
-    --reviewer "claude-opus-4.7" \
+    --reviewer "claude-opus-4.8" \
     --review-round "r01" \
     --risk-preflight-status "approved" \
     --approval-ref "user-approval-ext-fallback-fail" \
     --approved-next-step "run external review ext-fallback-fail"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Quota exhausted for route 'claude:opus-4.7' (quota_group=claude-direct-subscription), but no fallback is configured"* ]]
+  [[ "$output" == *"Quota exhausted for route 'claude:opus-4.8' (quota_group=claude-direct-subscription), but no fallback is configured"* ]]
   [[ "$output" != *"Registry fallback succeeded"* ]]
 }
 
@@ -9949,17 +9951,16 @@ EOF
   mkdir -p "$mock_bin"
 
   write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
-  args=("$@")
-  model=""
-  for ((i=0; i<${#args[@]}; i++)); do
-    if [[ "${args[i]}" == "-m" ]]; then
-      model="${args[i+1]}"
-    fi
-  done
+  model="$(python3 - <<'"'"'PY'"'"'
+import json, os
+from pathlib import Path
+print(json.loads(Path(os.environ["CODEGUIDE_AGY_SETTINGS_FILE"]).read_text(encoding="utf-8")).get("model", ""))
+PY
+)"
 
   echo "Requested model: $model" >> "${TEST_WORKSPACE}/agy-registry-calls.log"
 
-  if [[ "$model" == "gemini-3.6-pro" ]]; then
+  if [[ "$model" == "Future Gemini" ]]; then
     echo "Error 429: resource_exhausted" >&2
     exit 1
   elif [[ "$model" == "claude-4.7-sonnet" ]]; then
@@ -10000,7 +10001,7 @@ EOF
   echo "Unexpected Claude model requested from registry override: $model" >&2
   exit 99'
 
-  run env CODEGUIDE_MODEL_REGISTRY="$registry_file" PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+  run env CODEGUIDE_MODEL_REGISTRY="$registry_file" CODEGUIDE_AGY_SETTINGS_FILE="$TEST_WORKSPACE/agy-registry-settings.json" PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
     --task-id "ext-registry-override" \
     --plan-version "v1.0" \
     --primary-tool "agy" \
@@ -10015,7 +10016,9 @@ EOF
   [[ "$output" == *"Quota exhausted for route 'agy:new-gemini' (quota_group=agy-future-gemini)"* ]]
   [[ "$output" == *"Registry fallback succeeded: agy:new-gemini -> claude:new-sonnet"* ]]
 
-  run grep "Requested model: gemini-3.6-pro" "$TEST_WORKSPACE/agy-registry-calls.log"
+  run grep "Requested model: Future Gemini" "$TEST_WORKSPACE/agy-registry-calls.log"
+  [ "$status" -eq 0 ]
+  run test ! -e "$TEST_WORKSPACE/agy-registry-settings.json"
   [ "$status" -eq 0 ]
   run grep "Requested model: claude-4.7-sonnet" "$TEST_WORKSPACE/claude-registry-calls.log"
   [ "$status" -eq 0 ]
@@ -10179,7 +10182,7 @@ exit 1'
     --approved-next-step "run external review ext-fallback-exhausted"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Quota exhausted for route 'agy:gemini-3.5-flash-medium' and fallback route 'claude:opus-4.7'"* ]]
+  [[ "$output" == *"Quota exhausted for route 'agy:gemini-3.5-flash-medium' and fallback route 'claude:opus-4.8'"* ]]
 }
 
 @test "run_external_plan_reviews resolves adversarial evaluator runner aliases" {
@@ -10226,7 +10229,7 @@ EOF'
     --task-id "ext-adversarial-alias" \
     --plan-version "v1.0" \
     --primary-tool "agy" \
-    --primary-model "claude-opus-4.7" \
+    --primary-model "claude-opus-4.8" \
     --reviewer "agy-gemini-3.5-flash-medium" \
     --reviewer "claude-sonnet-4.6" \
     --adversarial-evaluator "claude-sonnet-4.6" \
@@ -10241,7 +10244,7 @@ EOF'
 }
 
 @test "external_review_runner enqueues current-task debate and dry-runs runner participants" {
-  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-neutral" --plan-version "v1.0" --review-round "r01" --task-phase "planning" --coordinator "claude" --participant "agy-gemini-3.5-flash-high" --participant "claude-opus-4.7"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-neutral" --plan-version "v1.0" --review-round "r01" --task-phase "planning" --coordinator "claude" --participant "agy-gemini-3.5-flash-high" --participant "claude-opus-4.8"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
 
   [ "$status" -eq 0 ]
   run test -f "$DOCS_ROOT/orchestration/runner-neutral/current-task/debate.json"
@@ -10250,13 +10253,50 @@ EOF'
   [ "$status" -eq 0 ]
   run grep '"runner_route": "agy:gemini-3.5-flash-high"' "$DOCS_ROOT/orchestration/runner-neutral/current-task/debate.json"
   [ "$status" -eq 0 ]
-  run grep '"runner_route": "claude:opus-4.7"' "$DOCS_ROOT/orchestration/runner-neutral/current-task/debate.json"
+  run grep '"runner_route": "claude:opus-4.8"' "$DOCS_ROOT/orchestration/runner-neutral/current-task/debate.json"
   [ "$status" -eq 0 ]
 
   run python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-neutral" --dry-run
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"agy --approval-mode plan"* ]]
+  [[ "$output" == *"agy --add-dir"* ]]
   [[ "$output" == *"claude -p"* ]]
-  [[ "$output" == *"--model opus-4.7"* ]]
+  [[ "$output" == *"--model opus-4.8"* ]]
+}
+
+@test "external_review_runner executes agy with current CLI flags and temporary model setting" {
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/runner-agy-args.log"
+python3 - <<'"'"'PY'"'"' > "${TEST_WORKSPACE}/runner-agy-model.log"
+import json, os
+from pathlib import Path
+print(json.loads(Path(os.environ["CODEGUIDE_AGY_SETTINGS_FILE"]).read_text(encoding="utf-8")).get("model", ""))
+PY
+cat <<EOF
+- verdict: accept
+- summary: Mock agy accepted the current-task debate packet.
+- strengths: The runner used current CLI flags.
+- risks: None.
+- requested_changes: None.
+EOF'
+
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-agy-exec" --plan-version "v1.0" --review-round "r01" --task-phase "review" --coordinator "codex" --participant "agy-gemini-3.5-flash-high"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+
+  run env CODEGUIDE_AGY_SETTINGS_FILE="$TEST_WORKSPACE/runner-agy-settings.json" PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-agy-exec" --force
+  [ "$status" -eq 0 ]
+
+  run grep "Gemini 3.5 Flash (High)" "$TEST_WORKSPACE/runner-agy-model.log"
+  [ "$status" -eq 0 ]
+  run test ! -e "$TEST_WORKSPACE/runner-agy-settings.json"
+  [ "$status" -eq 0 ]
+  run grep -- "--add-dir" "$TEST_WORKSPACE/runner-agy-args.log"
+  [ "$status" -eq 0 ]
+  run grep -E -- '(^|[[:space:]])-m([[:space:]]|$)|--approval-mode|--output-format|--include-directories' "$TEST_WORKSPACE/runner-agy-args.log"
+  [ "$status" -ne 0 ]
+  run test -f "$DOCS_ROOT/orchestration/runner-agy-exec/current-task/responses/agy-gemini-3.5-flash-high.response.md"
+  [ "$status" -eq 0 ]
 }
