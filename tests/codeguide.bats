@@ -8108,6 +8108,40 @@ EOF
   [[ "$output" == *"English-only"* ]]
 }
 
+@test "check_english_docs rejects fenced code blocks in structural indexes" {
+  local workspace
+  workspace="$(mktemp -d)"
+  mkdir -p "$workspace/references/backend"
+
+  cat > "$workspace/references/backend/_index.md" <<'EOF'
+# Backend Index
+
+```text
+no fenced blocks in indexes
+```
+EOF
+
+  run "$CHECK_ENGLISH_DOCS" "$workspace"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"fenced code block is not allowed in structural index files"* ]]
+}
+
+@test "check_english_docs requires explicit md pointers in index entries" {
+  local workspace
+  workspace="$(mktemp -d)"
+  mkdir -p "$workspace/references/backend"
+
+  cat > "$workspace/references/backend/_index.md" <<'EOF'
+# Backend Index
+
+- Java / Spring Boot implementation patterns: missing pointer
+EOF
+
+  run "$CHECK_ENGLISH_DOCS" "$workspace"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"index entry must include a backtick-wrapped .md pointer"* ]]
+}
+
 @test "SKILL.md documents pre-orchestration risk approval gate" {
   local skill_file
   local orchestration_ref

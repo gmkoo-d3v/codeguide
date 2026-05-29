@@ -23,7 +23,7 @@ Use this file to pick the smallest authoritative reference set for the active ta
 - Shadow v2 automation plan and user-decision assistant scope: `shadow-v2-automation-plan.md`
 - Serena symbolic narrowing for current-code anchors, references, call chains, and impact analysis: `serena-workflow.md`
 - mem0, pgvector, and Neo4j restricted prior-context and graph/vector hint policy: `mem0-policy.md`
-- Default order for large or uncertain investigations: docs/shadow first, `rg` plus Serena for current-code narrowing, mem0/pgvector/Neo4j for bounded prior-context hints, then direct source/test/runtime validation.
+- Default order for large or uncertain investigations: docs/shadow first, `rg` plus Serena for current-code narrowing, mem0/pgvector/Neo4j for bounded prior-context hints, then direct source/test/runtime validation; see `mcp-context-integration.md`, `serena-workflow.md`, and `mem0-policy.md`.
 - Skip auxiliary retrieval when direct docs or target files already answer the task with low risk.
 
 ## Quality Gates
@@ -36,15 +36,12 @@ Use this file to pick the smallest authoritative reference set for the active ta
 - Vue smells: `smells-vue.md`
 
 ## Architecture Decision Aids
-- Backend architecture patterns: `backend-patterns.md`
+- Backend architecture patterns: `backend/_index.md`
 - Frontend architecture decision rules: `frontend-patterns.md`
-- Integration and security patterns: `integration-patterns.md`
+- Integration and security patterns: `integration/_index.md`
 
 ## Deprecated / Secondary Framework References
-- React (JavaScript) legacy examples: `frontend-react-javascript.md`
-- React (TypeScript) legacy examples: `frontend-react-typescript.md`
-- Tailwind legacy examples: `frontend-tailwind.md`
-- Vue legacy examples: `frontend-vue.md`
+- Frontend legacy examples by stack: `frontend/_index.md`
 - Claude SC comparative playbooks: `claude-sc/index.md`
 - Use dedicated framework skills and official documentation first for setup, API details, and version-specific behavior.
 - Legacy Claude SC playbooks are comparative references only; their Serena or memory instructions must not override `SKILL.md`, `mcp-context-integration.md`, `serena-workflow.md`, or `mem0-policy.md`.

@@ -17,6 +17,8 @@ Exclusions:
 Special checks:
   - references/claude-sc/*.md legacy playbooks are not language-scanned, but each file must
     include the standard "Legacy comparative reference only" warning.
+  - SKILL.md, references/index.md, and every _index.md must not contain fenced code blocks.
+  - Index bullets with a summary separator must include a backtick-wrapped .md pointer.
 EOF
 }
 
@@ -47,15 +49,18 @@ import re
 
 root = pathlib.Path(".")
 korean = re.compile(r"[가-힣]")
-fence = re.compile(r"```.*?```", re.DOTALL)
 tick = chr(96)
+triple_tick = re.escape(tick) * 3
+fence = re.compile(triple_tick + r".*?" + triple_tick, re.DOTALL)
+fence_marker = re.compile(r"^\s*" + triple_tick)
 inline_code = re.compile(re.escape(tick) + r"[^" + re.escape(tick) + r"]*" + re.escape(tick))
+md_pointer = re.compile(re.escape(tick) + r"[^" + re.escape(tick) + r"]+\.md" + re.escape(tick))
 legacy_markers = (
     "> [!CAUTION]",
     "**LEGACY REFERENCE ONLY**",
     "Legacy comparative reference only",
     "not active Codeguide policy",
-    "Active policy is defined in `SKILL.md`",
+    "Active policy is defined in " + tick + "SKILL.md" + tick,
 )
 
 def is_claude_sc(path: pathlib.Path) -> bool:
@@ -73,6 +78,12 @@ def should_skip(path: pathlib.Path) -> bool:
         return True
     return False
 
+def is_structural_index_target(path: pathlib.Path) -> bool:
+    return path.name == "_index.md" or path.name == "SKILL.md" or path.as_posix() == "references/index.md"
+
+def needs_index_entry_check(path: pathlib.Path) -> bool:
+    return path.name == "_index.md" or path.as_posix() == "references/index.md"
+
 for path in sorted(root.rglob("*.md")):
     if is_claude_sc(path):
         text = path.read_text(encoding="utf-8")
@@ -84,6 +95,12 @@ for path in sorted(root.rglob("*.md")):
     if should_skip(path):
         continue
     text = path.read_text(encoding="utf-8")
+    if is_structural_index_target(path):
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            if fence_marker.search(line):
+                print(f"{path.as_posix()}:{lineno}:fenced code block is not allowed in structural index files")
+            if needs_index_entry_check(path) and line.startswith("- ") and ":" in line and not md_pointer.search(line):
+                print(f"{path.as_posix()}:{lineno}:index entry must include a backtick-wrapped .md pointer")
     text = fence.sub("", text)
     text = inline_code.sub("", text)
     for lineno, line in enumerate(text.splitlines(), start=1):
