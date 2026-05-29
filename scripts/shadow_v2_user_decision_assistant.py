@@ -56,11 +56,15 @@ SUPPORTED_COMMAND_DECISION_TYPES = {
     "waiver_approval",
 }
 FORBIDDEN_COMMAND_TOOLS = {
-    "shadow_effect_writer.py",
-    "run_external_plan_reviews.sh",
-    "gemini",
+    "antigravity",
+    "agy",
     "claude",
     "codex",
+    "external-review-wrapper",
+    "external-cli",
+    "gemini",
+    "shadow_effect_writer.py",
+    "run_external_plan_reviews.sh",
 }
 SINGLE_USE_WRAPPER_FLAGS = {
     "--project-root",
@@ -171,6 +175,12 @@ def command_tokens(command: list[Any]) -> set[str]:
     return tokens
 
 
+def forbidden_command_tokens(tokens: set[str]) -> list[str]:
+    return sorted(
+        token for token in tokens if token in FORBIDDEN_COMMAND_TOOLS or token.startswith("external-cli:")
+    )
+
+
 def wrapper_script_index(command: list[Any]) -> tuple[int | None, list[str]]:
     blockers: list[str] = []
     if not command:
@@ -219,7 +229,7 @@ def validate_user_decision_command(command: list[Any]) -> tuple[bool, list[str]]
     script_index, shape_blockers = wrapper_script_index(command)
     blockers.extend(shape_blockers)
     names = command_tokens(command)
-    forbidden = sorted(names.intersection(FORBIDDEN_COMMAND_TOOLS))
+    forbidden = forbidden_command_tokens(names)
     if forbidden:
         blockers.append("command hint must not target write, external, or reviewer tools: " + ", ".join(forbidden))
     if any(str(item) in SHELL_CONTROL_TOKENS for item in command):

@@ -81,7 +81,7 @@ PLACEHOLDER_APPROVAL_VALUES = {
     "tbd",
     "todo",
 }
-EVALUATOR_IDENTITIES = {"antigravity", "agy", "external-review-wrapper", "external-cli"}
+EVALUATOR_IDENTITIES = {"antigravity", "agy", "claude", "codex", "gemini", "external-review-wrapper", "external-cli"}
 
 
 def emit(payload: dict[str, Any]) -> None:

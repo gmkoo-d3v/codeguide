@@ -1941,7 +1941,7 @@ check_orchestration_file_for_task() {
 
   risk_preflight_recorded_by_normalized="$(printf "%s" "$risk_preflight_recorded_by" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
   case "$risk_preflight_recorded_by_normalized" in
-    antigravity|agy|external-review-wrapper|external-cli*)
+    antigravity|agy|claude|codex|gemini|external-review-wrapper|external-cli*)
       fail "orchestration risk_preflight_recorded_by must identify the main-thread supervising lead architect, not evaluator/tool identity: ${orchestration_file}"
       ;;
   esac

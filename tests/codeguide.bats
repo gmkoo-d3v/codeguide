@@ -6309,6 +6309,36 @@ EOF
   [[ "$output" != *"shadow_effect_writer.py --mode write"* ]]
 }
 
+@test "shadow_v2_user_decision_assistant blocks external reviewer command hint tools" {
+  local forged_writer_result="$TEST_WORKSPACE/forged-external-tool-result.json"
+  cat > "$forged_writer_result" <<EOF
+{
+  "status": "blocked",
+  "writes_shadow_docs": false,
+  "auto_promotes_facts": false,
+  "next_actions": [
+    {
+      "action": "create_evidence_decision",
+      "requires_user_input": true,
+      "reason": "external reviewer tools cannot author user fact decisions",
+      "command": ["python3", "$SHADOW_USER_DECISION", "--project-root", "/repo", "--output", "<evidence-decision.json>", "--decision-id", "<decision-id>", "--decision-type", "business_intent", "--answer", "confirmed", "--decided-by", "antigravity", "--decided-at", "<YYYY-MM-DD>", "--expires-at", "<YYYY-MM-DD>", "--rationale", "gemini should not be part of this command hint", "--source-ref", "external-cli:agy"]
+    }
+  ]
+}
+EOF
+
+  run python3 "$SHADOW_V2_USER_DECISION" --project-root "$TEST_PROJECT" --writer-result "$forged_writer_result" --format json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"question_count": 1'* ]]
+  [[ "$output" == *'"command_ready": false'* ]]
+  [[ "$output" == *"command hint must not target write, external, or reviewer tools:"* ]]
+  [[ "$output" == *"antigravity"* ]]
+  [[ "$output" == *"external-cli:agy"* ]]
+  [[ "$output" == *"gemini"* ]]
+  [[ "$output" != *'"command_hint"'* ]]
+}
+
 @test "shadow_v2_user_decision_assistant renders command text only from validated argv" {
   local misleading_writer_result="$TEST_WORKSPACE/misleading-command-text-result.json"
   cat > "$misleading_writer_result" <<EOF
@@ -7006,7 +7036,20 @@ exit 99'
   [ "$status" -eq 0 ]
 }
 
-@test "validate_docs strict rejects evaluator identity recorder case-insensitively" {
+@test "run_codeguide and validate_docs reject evaluator identity recorders consistently" {
+  local identity
+  for identity in antigravity agy claude codex gemini; do
+    run "$RUN_CODEGUIDE" "$TEST_PROJECT" \
+      --task-id "run-recorder-${identity}" \
+      --mode advisory \
+      --execution-mode "supervisor_subagents" \
+      --risk-preflight-status "pass" \
+      --risk-preflight-recorded-by "$identity"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"--risk-preflight-recorded-by must identify the main-thread supervising lead architect"* ]]
+  done
+
   "$DOC_GARDEN" "$TEST_PROJECT" \
     --task-id "orch-recorder-01" \
     --task-title "Recorder identity test" \
@@ -7040,11 +7083,13 @@ exit 99'
 EOF
 
   local orch_file="$DOCS_ROOT/orchestration/orch-recorder-01/ORCH.md"
-  perl -0pi -e 's/^- risk_preflight_recorded_by: .+$/- risk_preflight_recorded_by: Gemini/m' "$orch_file"
+  for identity in antigravity agy claude codex gemini; do
+    perl -0pi -e "s/^- risk_preflight_recorded_by: .+\$/- risk_preflight_recorded_by: ${identity}/m" "$orch_file"
 
-  run "$VALIDATE" "$TEST_PROJECT" --mode strict
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"risk_preflight_recorded_by must identify the main-thread supervising lead architect"* ]]
+    run "$VALIDATE" "$TEST_PROJECT" --mode strict
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"risk_preflight_recorded_by must identify the main-thread supervising lead architect"* ]]
+  done
 }
 
 @test "validate_docs strict fails when supervisor_subagents task has no evaluator report" {

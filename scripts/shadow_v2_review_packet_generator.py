@@ -18,6 +18,7 @@ from typing import Any
 
 from codeguide_paths import docs_root_for, resolve_project_root
 from shadow_v2_gate_skeleton import (
+    EXTERNAL_REVIEW_ROUTE,
     REVIEW_ROUTES,
     is_placeholder_approval_value,
     is_tool_identity,
@@ -152,7 +153,7 @@ def review_provenance(
     external_approved_next_step: str | None,
     external_recorded_by: str | None,
 ) -> str:
-    if route == "external_gemini_claude":
+    if route == EXTERNAL_REVIEW_ROUTE:
         if (
             external_requested
             and not is_placeholder_approval_value(external_approval_ref)
@@ -287,7 +288,7 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]]:
         unsupported_by_packet.append("source_refs")
     if not artifacts:
         unsupported_by_packet.append("evidence_artifacts")
-    if args.review_route == "external_gemini_claude":
+    if args.review_route == EXTERNAL_REVIEW_ROUTE:
         if not args.external_review_requested:
             unsupported_by_packet.append("external_review_user_request")
         if is_placeholder_approval_value(args.external_review_approval_ref):
@@ -307,7 +308,7 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]]:
         "source_refs": source_refs[:20],
         "artifacts": artifacts,
     }
-    if args.review_route == "external_gemini_claude":
+    if args.review_route == EXTERNAL_REVIEW_ROUTE:
         required_response_fields = [
             "verdict",
             "summary",
