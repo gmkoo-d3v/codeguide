@@ -14,11 +14,4 @@ Extracted verbatim from SKILL.md for Phase 1 coverage audit; SKILL.md retains th
 - Secondary references may preserve legacy examples, but deprecation and routing notices must remain in English.
 
 ## Runtime Report Language Policy
-- Parse user requests in their original language.
-- Translate intent, planning, and execution reasoning into English internally before taking action.
-- Report progress, findings, and final results in Korean by default.
-- Change report language only when explicitly requested by the user.
-- Keep technical terms in English when precision is improved.
-- Preserve user-provided literals (names, IDs, exact constraints) without translation.
-- Add a visible English translation for Korean requests, or a grammar correction for English requests, only when it improves a conversational or analytical response.
-- Do not add translation, grammar correction, or extra prose when the user requested a strict artifact such as code, JSON, SQL, patch content, commit text, review comments, or another fixed format.
+Runtime report language (which language to address the user in) is operating/interaction behavior, not a documentation-artifact rule, and its single source of truth is `references/operating-model.md` (Operating Model). This file governs documentation-artifact language only.

@@ -23,7 +23,7 @@ Outcome-first governance skill for architecture, code quality, documentation lif
 
 ## Always Apply
 - Safety hard stop: Never store raw secret values in docs; policy, privacy, destructive-action, external-side-effect, provenance, permission, and user-decision gates are hard stops; stop and wait for explicit approval of the exact next step. → `references/orchestration-contract.md`
-- Report language: report in Korean by default; reason in English internally; change only on explicit request. → `references/doc-language-policy.md`
+- Report language: report in Korean by default; reason in English internally; change only on explicit request. → `references/operating-model.md`
 - Defect-seeking review: Reviewer and evaluator roles should both assume defects are likely until checked, especially for code-related work where API contracts, team conventions, integration boundaries, validation rules, and regression exposure are commonly missed. For code review, prefer surfacing contract violations, convention drift, missing validation, integration risk, and weak verification before style-level praise. → `references/review-checklist.md`
 - Docs = system of record: material work uses project docs as the system of record; keep code and docs synchronized. → `references/docs-system-of-record.md`
 
