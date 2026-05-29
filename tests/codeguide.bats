@@ -8187,6 +8187,22 @@ EOF
   [[ "$output" == *"index entry must include a backtick-wrapped .md pointer"* ]]
 }
 
+@test "check_english_docs detects indented star index entries without md pointers" {
+  local workspace
+  workspace="$(mktemp -d)"
+  mkdir -p "$workspace/references/backend"
+
+  cat > "$workspace/references/backend/_index.md" <<'EOF'
+# Backend Index
+
+  * Java / Spring Boot implementation patterns: missing pointer
+EOF
+
+  run "$CHECK_ENGLISH_DOCS" "$workspace"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"index entry must include a backtick-wrapped .md pointer"* ]]
+}
+
 @test "SKILL.md documents pre-orchestration risk approval gate" {
   local skill_file
   local orchestration_ref
@@ -8257,12 +8273,12 @@ EOF
   rm -rf "$workspace"
 }
 
-@test "check_english_docs requires legacy warning on claude-sc references" {
+@test "check_english_docs requires legacy warning on archived claude-sc references" {
   local workspace
   workspace="$(mktemp -d)"
-  mkdir -p "$workspace/references/claude-sc"
+  mkdir -p "$workspace/archive/claude-sc"
 
-  cat > "$workspace/references/claude-sc/pm.md" <<'EOF'
+  cat > "$workspace/archive/claude-sc/pm.md" <<'EOF'
 # Legacy PM
 
 Session Start (MANDATORY): ALWAYS activates memory.
@@ -8275,12 +8291,12 @@ EOF
   rm -rf "$workspace"
 }
 
-@test "check_english_docs allows guarded claude-sc legacy examples" {
+@test "check_english_docs allows guarded archived claude-sc legacy examples" {
   local workspace
   workspace="$(mktemp -d)"
-  mkdir -p "$workspace/references/claude-sc"
+  mkdir -p "$workspace/archive/claude-sc"
 
-  cat > "$workspace/references/claude-sc/pm.md" <<'EOF'
+  cat > "$workspace/archive/claude-sc/pm.md" <<'EOF'
 > [!CAUTION]
 > **LEGACY REFERENCE ONLY**
 > Legacy comparative reference only. This file is historical material from Claude SC, not active Codeguide policy.

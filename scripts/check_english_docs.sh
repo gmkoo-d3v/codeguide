@@ -15,10 +15,12 @@ Exclusions:
   - temp/**, tmp/**, .serena/**, and mold/temp/** generated traces and scratch artifacts
 
 Special checks:
-  - references/claude-sc/*.md legacy playbooks are not language-scanned, but each file must
+  - archive/claude-sc/*.md legacy playbooks are not language-scanned, but each file must
     include the standard "Legacy comparative reference only" warning.
   - SKILL.md, references/index.md, and every _index.md must not contain fenced code blocks.
   - Index bullets with a summary separator must include a backtick-wrapped .md pointer.
+    In structural index files, any list bullet with a colon is treated as an index entry;
+    write prose notes as paragraphs or avoid colon-entry shape when no pointer is intended.
 EOF
 }
 
@@ -55,6 +57,7 @@ fence = re.compile(triple_tick + r".*?" + triple_tick, re.DOTALL)
 fence_marker = re.compile(r"^\s*" + triple_tick)
 inline_code = re.compile(re.escape(tick) + r"[^" + re.escape(tick) + r"]*" + re.escape(tick))
 md_pointer = re.compile(re.escape(tick) + r"[^" + re.escape(tick) + r"]+\.md" + re.escape(tick))
+index_bullet = re.compile(r"^\s*[-*+]\s+")
 legacy_markers = (
     "> [!CAUTION]",
     "**LEGACY REFERENCE ONLY**",
@@ -65,7 +68,7 @@ legacy_markers = (
 
 def is_claude_sc(path: pathlib.Path) -> bool:
     parts = path.parts
-    return len(parts) >= 2 and parts[0] == "references" and parts[1] == "claude-sc"
+    return len(parts) >= 2 and parts[0] == "archive" and parts[1] == "claude-sc"
 
 def should_skip(path: pathlib.Path) -> bool:
     parts = path.parts
@@ -99,7 +102,8 @@ for path in sorted(root.rglob("*.md")):
         for lineno, line in enumerate(text.splitlines(), start=1):
             if fence_marker.search(line):
                 print(f"{path.as_posix()}:{lineno}:fenced code block is not allowed in structural index files")
-            if needs_index_entry_check(path) and line.startswith("- ") and ":" in line and not md_pointer.search(line):
+            # Convention: colon-bearing list bullets in structural indexes are entries and must point to .md.
+            if needs_index_entry_check(path) and index_bullet.search(line) and ":" in line and not md_pointer.search(line):
                 print(f"{path.as_posix()}:{lineno}:index entry must include a backtick-wrapped .md pointer")
     text = fence.sub("", text)
     text = inline_code.sub("", text)
