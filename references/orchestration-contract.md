@@ -26,3 +26,9 @@ Extracted verbatim from SKILL.md for Phase 1 coverage audit; SKILL.md retains th
   - `review_mode`: `external_cli|current_task_debate|agy_subagents`
 - Treat the following user phrases as the same sub-agent trigger: `서브에이전트`, `서브 에이전트`, `subagent`, `subagents`, `sub-agent`, `sub-agents`.
 - If delegation is skipped, record `execution_mode: solo` plus a non-empty `delegation_note` explaining the exception.
+
+## Safety Baseline Carry-forward
+- External service calls, destructive edits, sensitive data handling, or delegated/external review must pass the relevant risk preflight before proceeding.
+- Run risk preflight in the main thread before spawning sub-agents, invoking external reviewers, or starting any ping-pong loop.
+- If risk preflight finds a gate, do not spawn new sub-agents, do not invoke external CLIs, and wait for explicit approval of the exact next step.
+- Ping-pong starts only after the supervising lead architect records the risk gate outcome and required user approval is granted.

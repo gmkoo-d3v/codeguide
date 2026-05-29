@@ -161,8 +161,8 @@ Residual risk remains explicit rather than hidden: local JSON candidate and deci
 For workflow changes, verify the smallest relevant set:
 
 ```bash
-"$CODEGUIDE_ROOT/scripts/check_english_docs.sh" "$CODEGUIDE_ROOT"
-"$CODEGUIDE_ROOT/scripts/validate_docs.sh" "$CODEGUIDE_ROOT" --mode advisory
+<skill-dir>/scripts/check_english_docs.sh <skill-dir>
+<skill-dir>/scripts/validate_docs.sh <project-root> --mode advisory
 ```
 
 For script behavior changes, also run focused Bats tests for the touched script.

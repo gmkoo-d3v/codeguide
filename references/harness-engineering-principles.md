@@ -1,4 +1,4 @@
-# Harness Engineering Principles (OpenAI-aligned)
+# Harness Engineering Principles
 
 Source:
 - https://openai.com/index/harness-engineering/ (accessed 2026-02-12)

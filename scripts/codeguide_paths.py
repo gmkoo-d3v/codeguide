@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 def is_skill_package_root(candidate_root: Path) -> bool:
-    """Return whether a directory looks like a reusable Codex skill package."""
+    """Return whether a directory looks like a reusable skill package."""
     skill_file = candidate_root / "SKILL.md"
     if not skill_file.is_file():
         return False

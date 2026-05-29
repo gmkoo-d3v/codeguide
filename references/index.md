@@ -3,6 +3,8 @@
 Use this file to pick the smallest authoritative reference set for the active task.
 
 ## Core Governance
+- Operating model, response style, and evidence lookup rules: `operating-model.md`
+- Workflow, scope modes, and validation routing: `workflow.md`
 - Docs system-of-record and templates: `docs-system-of-record.md`
 - Doc-gardening process: `doc-gardening-agent.md`
 - Tools and automation details: `tools-automation.md`

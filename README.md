@@ -108,21 +108,21 @@ README의 중심은 아니지만, 이 스킬은 몇 개의 쉘 스크립트로 �
 자동화나 테스트 관점에서 직접 실행할 수도 있습니다.
 
 ```bash
-export CODEGUIDE_ROOT="$HOME/.codex/skills/codeguide"
-"$CODEGUIDE_ROOT/scripts/init_docs_scaffold.sh" /path/to/project
-"$CODEGUIDE_ROOT/scripts/run_codeguide.sh" /path/to/project --mode auto
-python3 "$CODEGUIDE_ROOT/scripts/shadow_policy_loader.py" --project-root /path/to/project --adapter-module "$CODEGUIDE_ROOT/scripts/shadow_evidence_probe.py" --check-parity
-python3 "$CODEGUIDE_ROOT/scripts/shadow_evidence_probe.py" --project-root /path/to/project --validator-id py.ast.call_match@v1 --source-file src/app.py --callee save
-python3 "$CODEGUIDE_ROOT/scripts/shadow_review_queue.py" --input probe.jsonl --task-id shadow-effect-map-01
-python3 "$CODEGUIDE_ROOT/scripts/shadow_user_decision_wrapper.py" --project-root /path/to/project --output decision.json --decision-id UD-001 --decision-type final_shadow_apply --answer yes --decided-by gm --decided-at 2026-05-03 --expires-at 2026-05-10 --candidate-id LC-... --record record.json --target-shadow-file packages/app/effects.md --rationale "Approve exact record" --source-ref TASK-shadow-effect-map-01
-"$CODEGUIDE_ROOT/scripts/run_external_plan_reviews.sh" /path/to/project \
+cd <skill-dir>
+scripts/init_docs_scaffold.sh /path/to/project
+scripts/run_codeguide.sh /path/to/project --mode auto
+python3 scripts/shadow_policy_loader.py --project-root /path/to/project --adapter-module scripts/shadow_evidence_probe.py --check-parity
+python3 scripts/shadow_evidence_probe.py --project-root /path/to/project --validator-id py.ast.call_match@v1 --source-file src/app.py --callee save
+python3 scripts/shadow_review_queue.py --input probe.jsonl --task-id shadow-effect-map-01
+python3 scripts/shadow_user_decision_wrapper.py --project-root /path/to/project --output decision.json --decision-id UD-001 --decision-type final_shadow_apply --answer yes --decided-by gm --decided-at 2026-05-03 --expires-at 2026-05-10 --candidate-id LC-... --record record.json --target-shadow-file packages/app/effects.md --rationale "Approve exact record" --source-ref TASK-shadow-effect-map-01
+scripts/run_external_plan_reviews.sh /path/to/project \
   --task-id search-nav-01 \
   --plan-version v1.0 \
   --primary-tool codex \
   --review-round r01 \
   --risk-preflight-status pass
-"$CODEGUIDE_ROOT/scripts/validate_docs.sh" /path/to/project --mode strict
-bats "$CODEGUIDE_ROOT/tests/codeguide.bats"
+scripts/validate_docs.sh /path/to/project --mode strict
+bats tests/codeguide.bats
 ```
 
 `run_external_plan_reviews.sh`는 기본적으로 CLI의 기본 모델을 사용하며, 사용자가 override를 주지 않으면 버전명 하드코딩을 피합니다. 긴 프롬프트는 shell 인자로 직접 넘기지 않고 `docs/orchestration/<task-id>/external-cli/<plan-version>/<round>/` 아래의 Markdown request/response 파일로 왕복합니다. 외부 CLI에 넘기는 짧은 bash 명령은 stdout redirection, `tee`, 또는 `--output-last-message` 같은 도구별 옵션으로 절대 command-output 경로를 명시해야 하며, 프롬프트 안의 경로 언급만으로는 부족합니다. wrapper는 raw command output을 redaction한 뒤 durable response 파일로 저장하고 raw capture를 삭제합니다. request는 `Why/What/How/Where/Verify` 축을 포함하고, 유효한 response는 parser-friendly bullet field를 따르며, 보존 파일은 저장 전 민감값을 redaction합니다. 이 명령은 review report를 만든 뒤 멈추며, 다음 `PLAN-v1.1`을 자동 생성하지 않습니다.

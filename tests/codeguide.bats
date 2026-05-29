@@ -8110,13 +8110,19 @@ EOF
 
 @test "SKILL.md documents pre-orchestration risk approval gate" {
   local skill_file
+  local orchestration_ref
   skill_file="$(cd "$SCRIPTS_DIR/.." && pwd)/SKILL.md"
+  orchestration_ref="$(cd "$SCRIPTS_DIR/.." && pwd)/references/orchestration-contract.md"
 
-  run grep "Run risk preflight in the main thread before spawning sub-agents" "$skill_file"
+  run grep "Safety hard stop:" "$skill_file"
   [ "$status" -eq 0 ]
-  run grep "do not spawn new sub-agents, do not invoke external CLIs" "$skill_file"
+  run grep "references/orchestration-contract.md" "$skill_file"
   [ "$status" -eq 0 ]
-  run grep "Ping-pong starts only after the supervising lead architect records the risk gate outcome" "$skill_file"
+  run grep "Run risk preflight in the main thread before spawning sub-agents" "$orchestration_ref"
+  [ "$status" -eq 0 ]
+  run grep "do not spawn new sub-agents, do not invoke external CLIs" "$orchestration_ref"
+  [ "$status" -eq 0 ]
+  run grep "Ping-pong starts only after the supervising lead architect records the risk gate outcome" "$orchestration_ref"
   [ "$status" -eq 0 ]
 }
 
