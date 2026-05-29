@@ -42,9 +42,7 @@ Use this file to pick the smallest authoritative reference set for the active ta
 
 ## Deprecated / Secondary Framework References
 - Frontend legacy examples by stack: `frontend/_index.md`
-- Claude SC comparative playbooks (archived): `../archive/claude-sc/index.md`
 - Use dedicated framework skills and official documentation first for setup, API details, and version-specific behavior.
-- Legacy Claude SC playbooks are comparative references only; their Serena or memory instructions must not override `SKILL.md`, `mcp-context-integration.md`, `serena-workflow.md`, or `mem0-policy.md`.
 
 ## Selection Rules
 1. Start with one core governance or quality-gate file.
