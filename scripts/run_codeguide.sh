@@ -598,7 +598,7 @@ EOF
     if [[ "$EXECUTION_MODE" == "solo" ]]; then
       echo "[INFO] Evaluator report is not required for task ${task_id} because solo execution mode is active."
     else
-      echo "[WARN] Evaluator report is missing for task ${task_id}. Add PLAN-${task_id}-v*-review-(gemini|claude|codex)-rNN.md before strict handoff."
+      echo "[WARN] Evaluator report is missing for task ${task_id}. Add PLAN-${task_id}-v*-review-<runner>-<model-slug>-rNN.md before strict handoff."
     fi
   fi
 }

@@ -2087,10 +2087,10 @@ check_evaluator_reports_for_task() {
   if compgen -G "$expected_report_glob" >/dev/null; then
     while IFS= read -r report_file; do
       report_base="$(basename "$report_file")"
-      # New format: PLAN-<task>-<version>-review-antigravity-<model-slug>-rNN.md
-      file_report_task_id="$(printf "%s" "$report_base" | sed -E 's/^PLAN-(.*)-v[0-9]+\.[0-9]+-review-antigravity-[A-Za-z0-9._-]+-r[0-9]{2}\.md$/\1/')"
-      file_evaluator="antigravity"
-      file_round="$(printf "%s" "$report_base" | sed -E 's/^.*-review-antigravity-[A-Za-z0-9._-]+-(r[0-9]{2})\.md$/\1/')"
+      # Format: PLAN-<task>-<version>-review-<runner>-<model-slug>-rNN.md
+      file_report_task_id="$(printf "%s" "$report_base" | sed -E 's/^PLAN-(.*)-v[0-9]+\.[0-9]+-review-[A-Za-z0-9._]+-[A-Za-z0-9._-]+-r[0-9]{2}\.md$/\1/')"
+      file_evaluator="$(printf "%s" "$report_base" | sed -E 's/^PLAN-.*-review-([A-Za-z0-9._]+)-[A-Za-z0-9._-]+-r[0-9]{2}\.md$/\1/')"
+      file_round="$(printf "%s" "$report_base" | sed -E 's/^.*-review-[A-Za-z0-9._]+-[A-Za-z0-9._-]+-(r[0-9]{2})\.md$/\1/')"
       report_task_id="$(extract_field_value "$report_file" "task_id")"
       report_plan_version="$(extract_field_value "$report_file" "plan_version")"
       report_evaluator="$(extract_field_value "$report_file" "evaluator")"
@@ -2122,7 +2122,7 @@ check_evaluator_reports_for_task() {
     if (( adversarial_count > 0 )); then
       pass "adversarial evaluator report exists for high-risk task ${task_ref} latest plan ${latest_plan_version} (${adversarial_count})"
     else
-      fail "missing adversarial evaluator report for high-risk task ${task_ref} latest plan ${latest_plan_version} (${adversarial_source}): expected ${REPORT_DIR}/PLAN-${task_id}-${latest_plan_version}-review-antigravity-(model)-rNN.md with review_style: adversarial"
+      fail "missing adversarial evaluator report for high-risk task ${task_ref} latest plan ${latest_plan_version} (${adversarial_source}): expected ${REPORT_DIR}/PLAN-${task_id}-${latest_plan_version}-review-<runner>-<model-slug>-rNN.md with review_style: adversarial"
     fi
     return
   fi
@@ -2137,7 +2137,7 @@ check_evaluator_reports_for_task() {
   elif (( stale_report_count > 0 )); then
     fail "missing fresh evaluator report for active task ${task_ref} latest plan ${latest_plan_version}: ${stale_report_count} stale report(s) ignored"
   else
-    fail "missing evaluator report for active task ${task_ref} latest plan ${latest_plan_version}: expected ${REPORT_DIR}/PLAN-${task_id}-${latest_plan_version}-review-antigravity-(model)-rNN.md"
+    fail "missing evaluator report for active task ${task_ref} latest plan ${latest_plan_version}: expected ${REPORT_DIR}/PLAN-${task_id}-${latest_plan_version}-review-<runner>-<model-slug>-rNN.md"
   fi
 }
 
@@ -2426,7 +2426,7 @@ if [[ -d "$REPORT_DIR" ]]; then
     report_review_style=""
     check_line_limit "$report_file" "$MAX_REPORT_LINES" "evaluator report"
 
-    if [[ ! "$report_base" =~ ^PLAN-[A-Za-z0-9._-]+-v[0-9]+\.[0-9]+-review-antigravity-[A-Za-z0-9._-]+-r[0-9]{2}\.md$ ]]; then
+    if [[ ! "$report_base" =~ ^PLAN-[A-Za-z0-9._-]+-v[0-9]+\.[0-9]+-review-[A-Za-z0-9._]+-[A-Za-z0-9._-]+-r[0-9]{2}\.md$ ]]; then
       fail "invalid evaluator report file name format: ${report_base}"
     fi
 
@@ -2455,8 +2455,8 @@ if [[ -d "$REPORT_DIR" ]]; then
     fi
 
     report_evaluator="$(extract_field_value "$report_file" "evaluator")"
-    if [[ -n "$report_evaluator" && ! "$report_evaluator" =~ ^(antigravity|agy)$ ]]; then
-      fail "invalid evaluator in ${report_base}: ${report_evaluator} (expected antigravity or agy)"
+    if [[ -n "$report_evaluator" && ! "$report_evaluator" =~ ^[A-Za-z0-9._]+$ ]]; then
+      fail "invalid evaluator in ${report_base}: ${report_evaluator} (expected runner slug)"
     fi
 
     report_review_style="$(extract_field_value "$report_file" "review_style")"
@@ -2474,32 +2474,32 @@ if [[ -d "$REPORT_DIR" ]]; then
       fail "invalid verdict in ${report_base}: ${report_verdict} (expected accept|revise|blocked)"
     fi
 
-    # File name format: PLAN-<task>-<version>-review-antigravity-<model-slug>-rNN.md
-    file_evaluator="antigravity"
+    # File name format: PLAN-<task>-<version>-review-<runner>-<model-slug>-rNN.md
+    file_evaluator="$(printf "%s" "$report_base" | sed -E 's/^PLAN-.*-review-([A-Za-z0-9._]+)-[A-Za-z0-9._-]+-r[0-9]{2}\.md$/\1/')"
     if [[ -n "$report_evaluator" && "$report_evaluator" != "$file_evaluator" ]]; then
       fail "evaluator mismatch between file name and field in ${report_base}: ${file_evaluator} != ${report_evaluator}"
     fi
 
-    # Extract plan ref (everything up to -review-antigravity-...)
-    file_plan_ref="$(printf "%s" "$report_base" | sed -E 's/^(PLAN-.*)-review-antigravity-[A-Za-z0-9._-]+-r[0-9]{2}\.md$/\1/')"
+    # Extract plan ref (everything up to -review-<runner>-...)
+    file_plan_ref="$(printf "%s" "$report_base" | sed -E 's/^(PLAN-.*)-review-[A-Za-z0-9._]+-[A-Za-z0-9._-]+-r[0-9]{2}\.md$/\1/')"
     expected_plan_file="${PLAN_DIR}/${file_plan_ref}.md"
     if [[ ! -f "$expected_plan_file" ]]; then
       fail "evaluator report references missing plan file: ${expected_plan_file}"
     fi
 
-    file_report_task_id="$(printf "%s" "$report_base" | sed -E 's/^PLAN-(.*)-v[0-9]+\.[0-9]+-review-antigravity-[A-Za-z0-9._-]+-r[0-9]{2}\.md$/\1/')"
+    file_report_task_id="$(printf "%s" "$report_base" | sed -E 's/^PLAN-(.*)-v[0-9]+\.[0-9]+-review-[A-Za-z0-9._]+-[A-Za-z0-9._-]+-r[0-9]{2}\.md$/\1/')"
     report_task_id="$(extract_field_value "$report_file" "task_id")"
     if [[ -n "$report_task_id" && "$report_task_id" != "$file_report_task_id" ]]; then
       fail "task_id mismatch between file name and field in ${report_base}: ${file_report_task_id} != ${report_task_id}"
     fi
 
-    file_report_plan_version="$(printf "%s" "$report_base" | sed -E 's/^.*-(v[0-9]+\.[0-9]+)-review-antigravity-.*$/\1/')"
+    file_report_plan_version="$(printf "%s" "$report_base" | sed -E 's/^.*-(v[0-9]+\.[0-9]+)-review-[A-Za-z0-9._]+-[A-Za-z0-9._-]+-r[0-9]{2}\.md$/\1/')"
     report_plan_version="$(extract_field_value "$report_file" "plan_version")"
     if [[ -n "$report_plan_version" && "$report_plan_version" != "$file_report_plan_version" ]]; then
       fail "plan_version mismatch between file name and field in ${report_base}: ${file_report_plan_version} != ${report_plan_version}"
     fi
 
-    file_report_round="$(printf "%s" "$report_base" | sed -E 's/^.*-review-antigravity-[A-Za-z0-9._-]+-(r[0-9]{2})\.md$/\1/')"
+    file_report_round="$(printf "%s" "$report_base" | sed -E 's/^.*-review-[A-Za-z0-9._]+-[A-Za-z0-9._-]+-(r[0-9]{2})\.md$/\1/')"
     if [[ -n "$report_round" && "$report_round" != "$file_report_round" ]]; then
       fail "review_round mismatch between file name and field in ${report_base}: ${file_report_round} != ${report_round}"
     fi

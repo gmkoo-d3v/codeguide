@@ -207,7 +207,7 @@ Implemented v2 behavior:
 - bounds supplied artifact inputs to the resolved project root and records raw artifact sha256 and byte size in packet summaries
 - preserves `writes_shadow_docs=false`
 - preserves `auto_promotes_facts=false`
-- blocks `external_gemini_claude` unless explicit user request, concrete approval ref, approved next step, and main-thread recorder are provided
+- blocks `external_antigravity` unless explicit user request, concrete approval ref, approved next step, and main-thread recorder are provided
 - treats Codex CLI review artifacts as advisory plan-review outputs only; they do not satisfy the Gemini/Claude close route unless the close gate is explicitly expanded
 - treats direct Gemini/Claude CLI invocation through `require_escalated` and user approval as the primary path; if a guardian reviewer blocks after explicit approval, records `platform_permission_blocked` and asks for permission-mode change before considering the last-resort manual handoff route
 - marks blocked external packets as `external_review_missing_user_request`, not `external_user_requested`
@@ -438,8 +438,8 @@ Phase 5 current state:
 For documentation-only changes:
 
 ```bash
-"$CODEGUIDE_ROOT/scripts/check_english_docs.sh"
-"$CODEGUIDE_ROOT/scripts/validate_docs.sh" "$CODEGUIDE_ROOT" --mode advisory
+"<skill-dir>/scripts/check_english_docs.sh"
+"<skill-dir>/scripts/validate_docs.sh" "<project-root>" --mode advisory
 ```
 
 For future implementation:
