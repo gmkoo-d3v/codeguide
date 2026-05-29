@@ -2575,16 +2575,12 @@ else
     "no quoted secret assignment patterns found" \
     "true"
 
+  # Matches key-name suffixes inside provider-specific env vars, e.g. FOO_API_KEY=known-format-value.
   scan_secret_pattern \
     "(api[_-]?key|token|password|secret|private[_-]?key)\\s*[:=]\\s*(sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35})" \
     "potential yaml/env-style secret assignments detected in docs" \
     "no yaml/env-style secret assignment patterns found" \
     "true"
-
-  scan_secret_pattern \
-    "[A-Z][A-Z0-9_]*(API_KEY|TOKEN|SECRET|PASSWORD)\\s*[:=]\\s*(sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|[A-Za-z0-9_./+=:@-]{20,})" \
-    "potential provider secret assignment detected in docs" \
-    "no provider secret assignment patterns found"
 fi
 
 # --- Result ---

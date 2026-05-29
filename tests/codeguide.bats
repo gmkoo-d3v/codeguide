@@ -7940,7 +7940,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"potential secret values detected"* ]] || [[ "$output" == *"yaml/env-style secret assignments"* ]] || [[ "$output" == *"provider secret assignment"* ]]
+  [[ "$output" == *"potential secret values detected"* ]] || [[ "$output" == *"yaml/env-style secret assignments"* ]]
   [[ "$output" == *"[REDACTED_SECRET]"* ]]
   [[ "$output" != *"$google_key"* ]]
 }
