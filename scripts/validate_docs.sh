@@ -2529,6 +2529,7 @@ redact_secret_report() {
     s/sk-[A-Za-z0-9_-]{20,}/[REDACTED_SECRET]/g;
     s/ghp_[A-Za-z0-9]{20,}/[REDACTED_SECRET]/g;
     s/AKIA[0-9A-Z]{16}/[REDACTED_AWS_ACCESS_KEY]/g;
+    s/AIza[0-9A-Za-z_-]{35}/[REDACTED_SECRET]/g;
     s/((?:api[_-]?key|token|password|secret|private[_-]?key)\s*[:=]\s*)(?:"[^"\n]{6,}"|'\''[^'\''\n]{6,}'\''|[^\s\n]{6,})/${1}[REDACTED_SECRET]/gi;
   ' "$1"
 }
@@ -2564,7 +2565,7 @@ if ! command -v rg >/dev/null 2>&1; then
   fail "ripgrep (rg) is required for secret scanning but was not found in PATH"
 else
   scan_secret_pattern \
-    "sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN (RSA|EC|OPENSSH|PRIVATE) KEY-----" \
+    "sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|-----BEGIN (RSA|EC|OPENSSH|PRIVATE) KEY-----" \
     "potential secret values detected in docs (known key formats)" \
     "no known key-format secret patterns found"
 
@@ -2575,15 +2576,15 @@ else
     "true"
 
   scan_secret_pattern \
-    "(api[_-]?key|token|password|secret|private[_-]?key)\\s*[:=]\\s*(sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16})" \
+    "(api[_-]?key|token|password|secret|private[_-]?key)\\s*[:=]\\s*(sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35})" \
     "potential yaml/env-style secret assignments detected in docs" \
     "no yaml/env-style secret assignment patterns found" \
     "true"
 
   scan_secret_pattern \
-    "OPENAI_API_KEY\\s*[:=]\\s*(sk-[A-Za-z0-9_-]{20,}|\"sk-[A-Za-z0-9_-]{20,}\"|'sk-[A-Za-z0-9_-]{20,}')" \
-    "potential OPENAI API key assignment detected in docs" \
-    "no OPENAI API key assignment patterns found"
+    "[A-Z][A-Z0-9_]*(API_KEY|TOKEN|SECRET|PASSWORD)\\s*[:=]\\s*(sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|[A-Za-z0-9_./+=:@-]{20,})" \
+    "potential provider secret assignment detected in docs" \
+    "no provider secret assignment patterns found"
 fi
 
 # --- Result ---

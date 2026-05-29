@@ -446,5 +446,5 @@ Evaluator label is the actual runner id, such as `agy` or `claude`, from `config
 ## Secret and sensitive data rules
 - Never put raw secrets in docs.
 - Never put key/token/password/private key values in docs.
-- In docs, reference only variable names such as `OPENAI_API_KEY`, `DB_PASSWORD`, `JWT_SECRET`.
+- In docs, reference only variable names such as `PROVIDER_API_KEY`, `DB_PASSWORD`, `JWT_SECRET`.
 - If sensitive data is accidentally documented, redact immediately and log remediation in `docs/decisions`.

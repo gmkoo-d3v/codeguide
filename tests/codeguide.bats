@@ -7928,6 +7928,34 @@ EOF
   [[ "$output" != *"sk-proj-12345678901234567890"* ]]
 }
 
+@test "validate_docs secret scan catches Google Gemini API key formats" {
+  local google_key
+  google_key="$(printf 'AIzaSy%033d' 0)"
+
+  cat > "$DOCS_ROOT/SECURITY-NOTES.md" <<EOF
+# accidental leak
+GEMINI_API_KEY=$google_key
+Bare value: $google_key
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"potential secret values detected"* ]] || [[ "$output" == *"yaml/env-style secret assignments"* ]] || [[ "$output" == *"provider secret assignment"* ]]
+  [[ "$output" == *"[REDACTED_SECRET]"* ]]
+  [[ "$output" != *"$google_key"* ]]
+}
+
+@test "validate_docs secret scan allows provider variable names without values" {
+  cat > "$DOCS_ROOT/SECURITY-NOTES.md" <<'EOF'
+# variable names only
+Reference variable names such as PROVIDER_API_KEY, DB_PASSWORD, and JWT_SECRET.
+Set API_KEY in the environment before running local tools.
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -eq 0 ]
+}
+
 @test "validate_docs reports missing rg for secret scanning" {
   run env PATH="/usr/bin:/bin" "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
