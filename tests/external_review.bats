@@ -501,7 +501,7 @@ exit 99'
   [ "$status" -eq 0 ]
 }
 
-@test "run_external_plan_reviews supports user-owned handoff and response ingest without invoking CLIs" {
+@test "run_external_plan_reviews supports last-resort manual handoff and response ingest without invoking CLIs" {
   local plan_file="$DOCS_ROOT/plan/PLAN-ext-review-manual-v1.0.md"
   cat > "$plan_file" <<'EOF'
 # PLAN-ext-review-manual-v1.0
@@ -569,9 +569,9 @@ exit 99'
   [ "$status" -eq 0 ]
   run test -f "$handoff_dir/claude.manual-command.md"
   [ "$status" -eq 0 ]
-  run grep "user-owned terminal process" "$handoff_dir/gemini.manual-command.md"
+  run grep "last-resort fallback" "$handoff_dir/gemini.manual-command.md"
   [ "$status" -eq 0 ]
-  run grep "does not edit runner settings" "$handoff_dir/claude.manual-command.md"
+  run grep "do not drive Terminal UI" "$handoff_dir/claude.manual-command.md"
   [ "$status" -eq 0 ]
 
   cat > "$handoff_dir/gemini.command-response.raw.md" <<'EOF'
@@ -1684,141 +1684,5 @@ EOF'
   run test -f "$DOCS_ROOT/orchestration/runner-codex-exec/current-task/responses/codex-current.response.md"
   [ "$status" -eq 0 ]
   run grep "^- model_selection: preconfigured_runtime" "$DOCS_ROOT/orchestration/runner-codex-exec/current-task/provenance/codex-current.provenance.md"
-  [ "$status" -eq 0 ]
-}
-
-@test "external_review_executor requires explicit egress approval" {
-  run python3 "$EXTERNAL_REVIEW_EXECUTOR" --project-root "$TEST_PROJECT" --run-once --runner "all"
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"--egress-approved is required"* ]]
-}
-
-@test "external_review_executor runs user-owned current-task jobs for agy claude and codex" {
-  local mock_bin="$TEST_WORKSPACE/mock-bin"
-  mkdir -p "$mock_bin"
-
-  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
-printf "%s\n" "$@" > "${TEST_WORKSPACE}/executor-agy-args.log"
-cat <<EOF
-- verdict: accept
-- summary: User-owned agy executor accepted the packet.
-- strengths: The executor used the runner global model.
-- risks: None.
-- requested_changes: None.
-EOF'
-  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
-printf "%s\n" "$@" > "${TEST_WORKSPACE}/executor-claude-args.log"
-cat <<EOF
-- verdict: accept
-- summary: User-owned Claude executor accepted the packet.
-- strengths: The executor kept model selection preconfigured.
-- risks: None.
-- requested_changes: None.
-EOF'
-  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
-printf "%s\n" "$@" > "${TEST_WORKSPACE}/executor-codex-args.log"
-output_file=""
-while [[ $# -gt 0 ]]; do
-  if [[ "$1" == "--output-last-message" ]]; then
-    output_file="${2:-}"
-    shift 2
-  else
-    shift
-  fi
-done
-cat > "$output_file" <<EOF
-- verdict: accept
-- summary: User-owned Codex executor accepted the packet.
-- strengths: The executor wrote the final message file.
-- risks: None.
-- requested_changes: None.
-EOF'
-
-  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "executor-all" --plan-version "v1.0" --review-round "r01" --task-phase "review" --coordinator "human" --participant "agy-current" --participant "claude-current" --participant "codex-current"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
-  [ "$status" -eq 0 ]
-
-  run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_EXECUTOR" --project-root "$TEST_PROJECT" --run-once --runner "all" --egress-approved
-  [ "$status" -eq 0 ]
-
-  run test -f "$DOCS_ROOT/orchestration/executor-all/current-task/responses/agy-current.response.md"
-  [ "$status" -eq 0 ]
-  run test -f "$DOCS_ROOT/orchestration/executor-all/current-task/responses/claude-current.response.md"
-  [ "$status" -eq 0 ]
-  run test -f "$DOCS_ROOT/orchestration/executor-all/current-task/responses/codex-current.response.md"
-  [ "$status" -eq 0 ]
-  run grep '"status": "ingested"' "$DOCS_ROOT/orchestration/executor-all/current-task/status/agy-current.status.json"
-  [ "$status" -eq 0 ]
-  run grep '"executor": "user_owned_executor"' "$DOCS_ROOT/orchestration/executor-all/current-task/status/codex-current.status.json"
-  [ "$status" -eq 0 ]
-  run grep -E -- '(^|[[:space:]])-m([[:space:]]|$)|--model' "$TEST_WORKSPACE/executor-agy-args.log" "$TEST_WORKSPACE/executor-claude-args.log" "$TEST_WORKSPACE/executor-codex-args.log"
-  [ "$status" -ne 0 ]
-}
-
-@test "external_review_executor records quota blocked without fallback" {
-  local mock_bin="$TEST_WORKSPACE/mock-bin"
-  mkdir -p "$mock_bin"
-
-  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
-echo "quota exhausted" >&2
-exit 1'
-
-  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "executor-quota" --plan-version "v1.0" --review-round "r01" --task-phase "review" --coordinator "human" --participant "agy-current"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
-  [ "$status" -eq 0 ]
-
-  run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_EXECUTOR" --project-root "$TEST_PROJECT" --run-once --runner "agy" --egress-approved
-  [ "$status" -ne 0 ]
-
-  run grep '"status": "quota_blocked"' "$DOCS_ROOT/orchestration/executor-quota/current-task/status/agy-current.status.json"
-  [ "$status" -eq 0 ]
-  run grep "Switch the globally selected model" "$DOCS_ROOT/orchestration/executor-quota/current-task/status/agy-current.status.json"
-  [ "$status" -eq 0 ]
-  run test ! -e "$DOCS_ROOT/orchestration/executor-quota/current-task/responses/agy-current.response.md"
-  [ "$status" -eq 0 ]
-}
-
-@test "external_review_executor records platform permission and auth blockers" {
-  local mock_bin="$TEST_WORKSPACE/mock-bin"
-  mkdir -p "$mock_bin"
-
-  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
-echo "private workspace egress blocked by permission layer" >&2
-exit 1'
-  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
-echo "login required" >&2
-exit 1'
-
-  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "executor-blockers" --plan-version "v1.0" --review-round "r01" --task-phase "review" --coordinator "human" --participant "agy-current" --participant "claude-current"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
-  [ "$status" -eq 0 ]
-
-  run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_EXECUTOR" --project-root "$TEST_PROJECT" --run-once --runner "all" --egress-approved
-  [ "$status" -ne 0 ]
-
-  run grep '"status": "platform_permission_blocked"' "$DOCS_ROOT/orchestration/executor-blockers/current-task/status/agy-current.status.json"
-  [ "$status" -eq 0 ]
-  run grep '"status": "auth_blocked"' "$DOCS_ROOT/orchestration/executor-blockers/current-task/status/claude-current.status.json"
-  [ "$status" -eq 0 ]
-}
-
-@test "external_review_executor records malformed responses as invalid" {
-  local mock_bin="$TEST_WORKSPACE/mock-bin"
-  mkdir -p "$mock_bin"
-
-  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
-cat <<EOF
-- verdict: accept
-EOF'
-
-  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "executor-invalid" --plan-version "v1.0" --review-round "r01" --task-phase "review" --coordinator "human" --participant "agy-current"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
-  [ "$status" -eq 0 ]
-
-  run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_EXECUTOR" --project-root "$TEST_PROJECT" --run-once --runner "agy" --egress-approved
-  [ "$status" -ne 0 ]
-
-  run grep '"status": "invalid_response"' "$DOCS_ROOT/orchestration/executor-invalid/current-task/status/agy-current.status.json"
-  [ "$status" -eq 0 ]
-  run grep "missing required fields" "$DOCS_ROOT/orchestration/executor-invalid/current-task/status/agy-current.status.json"
-  [ "$status" -eq 0 ]
-  run test ! -e "$DOCS_ROOT/orchestration/executor-invalid/current-task/responses/agy-current.response.md"
   [ "$status" -eq 0 ]
 }

@@ -23,8 +23,8 @@ Options:
   --reviewer <model>                Optional reviewer model alias to invoke; repeatable, default is all non-primary models
   --adversarial-evaluator <model>   Optional reviewer model to run in adversarial mode
   --allow-partial-review            Allow success when only one non-required reviewer succeeds
-  --manual-handoff-only             Write user-owned executor handoff request/command files, then stop without invoking external CLIs
-  --ingest-manual-responses         Parse existing user-owned raw/response files into reports and provenance without invoking external CLIs
+  --manual-handoff-only             Write request files and manual command files, then stop without invoking external CLIs
+  --ingest-manual-responses         Parse existing manual raw/response files into reports and provenance without invoking external CLIs
   --primary-model <model>           Override the primary model alias used to exclude self-review
   --antigravity-model <model>       Backward-compatible alias for --primary-model
   --task-phase <phase>              Task phase: planning|review|code|implementation (registry default when unset)
@@ -1226,7 +1226,7 @@ write_manual_command_file() {
 - stderr_file: ${stderr_file}
 - follow_up: rerun run_external_plan_reviews.sh with the same options plus --ingest-manual-responses
 
-Run this from a user-owned terminal process when the host app cannot own private workspace egress. This command does not edit runner settings and uses the model already selected in the runner runtime.
+Run this only as a last-resort fallback when the escalation layer blocks private workspace egress. This is a user-operated handoff.
 
 \`\`\`bash
 cd $(printf "%q" "$CONTEXT_ROOT")
@@ -1655,7 +1655,7 @@ echo "[INFO] Semi-automated stop reached. No new plan version was created automa
 
 if [[ "$MANUAL_HANDOFF_ONLY" == "true" ]]; then
   echo "[INFO] manual_handoff_only=true; no external CLI was invoked."
-  echo "[INFO] Run the generated user-owned executor handoff commands, then rerun this wrapper with --ingest-manual-responses."
+  echo "[INFO] Run the generated *.manual-command.md commands yourself, then rerun this wrapper with --ingest-manual-responses."
   exit 0
 fi
 

@@ -24,7 +24,7 @@ Extracted verbatim from SKILL.md for Phase 1 coverage audit; SKILL.md retains th
    - plan is acceptable for execution
    - user explicitly asks to stop
    - another review loop is unlikely to change the decision materially
-   - user-owned external review executor mode may collect route responses automatically, but it must stop after report/provenance collection and must not auto-create the next plan version
+   - semi-automated external review mode must stop after collecting report docs and showing the user the results; it must not auto-create the next plan version
    - external CLI ping-pong should use Markdown request/response files for tool handoff, use each tool's default model unless the operator explicitly overrides it, and avoid hardcoded model-version strings
    - fixed iteration count, token budget, and cost cap are not primary stop conditions; use `Goal Loop Contract` hard stops instead
 6. When delegated implementation begins, coding sub-agents own disjoint code scopes while the supervising lead architect tracks the selected plan version in related `decision-*` and `TASK-*` docs.
