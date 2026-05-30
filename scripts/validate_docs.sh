@@ -201,6 +201,13 @@ pass() {
   echo "[PASS] $1"
 }
 
+for _required_cmd in python3 perl; do
+  if ! command -v "$_required_cmd" >/dev/null 2>&1; then
+    echo "[ERROR] ${_required_cmd} is required for documentation validation but was not found in PATH" >&2
+    exit 1
+  fi
+done
+
 file_mtime_epoch() {
   local file_path="$1"
   if stat -f %m "$file_path" >/dev/null 2>&1; then

@@ -40,6 +40,11 @@ if [[ ! -d "$SKILL_ROOT" ]]; then
   exit 1
 fi
 
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "[ERROR] python3 is required for documentation validation but was not found in PATH" >&2
+  exit 1
+fi
+
 pushd "$SKILL_ROOT" >/dev/null
 
 matches="$(
