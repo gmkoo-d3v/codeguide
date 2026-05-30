@@ -134,7 +134,6 @@ bats tests/codeguide.bats
 ```text
 codeguide/
 ├── README.md
-├── README.en.md
 ├── SKILL.md
 ├── agents/
 ├── references/
