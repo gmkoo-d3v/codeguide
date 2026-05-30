@@ -375,6 +375,7 @@ Use one file per evaluator report:
 `docs/report/PLAN-<task-id>-v<major>.<minor>-review-<runner>-<model-slug>-r<nn>.md`
 
 Evaluator label is the actual runner id, such as `agy` or `claude`, from `config/ai_model_registry.json`.
+For `agy`, model selection is `agy_preconfigured_runtime`: the wrapper records the requested route but uses the model already selected in Antigravity.
 
 ```markdown
 # PLAN-<task-id>-v1.0 review (<runner>/<route>)
@@ -390,6 +391,7 @@ Evaluator label is the actual runner id, such as `agy` or `claude`, from `config
 - evaluator_actual_model: <runner:model-route>
 - evaluator_requested_cli_model: <cli-model>
 - evaluator_actual_cli_model: <cli-model>
+- evaluator_model_selection: cli_flag | agy_preconfigured_runtime
 - quota_fallback_triggered: false
 - review_style: standard | adversarial
 - review_round: r01

@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
 import datetime as dt
 import hashlib
 import json
@@ -104,44 +103,15 @@ def command_for_route(registry: dict[str, Any], route: str, request_file: Path, 
     raise ValueError(f"unsupported command_kind: {runner['command_kind']}")
 
 
-def agy_settings_file() -> Path:
-    configured = os.environ.get("CODEGUIDE_AGY_SETTINGS_FILE")
-    if configured:
-        return Path(configured)
-    return Path.home() / ".gemini" / "antigravity-cli" / "settings.json"
-
-
-@contextmanager
-def agy_model_setting(display_name: str):
-    settings_file = agy_settings_file()
-    original_exists = settings_file.exists()
-    original_text = read_text(settings_file) if original_exists else ""
-
-    data: dict[str, Any] = {}
-    if original_text.strip():
-        parsed = json.loads(original_text)
-        if not isinstance(parsed, dict):
-            raise ValueError(f"agy settings root must be an object: {settings_file}")
-        data = parsed
-    data["model"] = display_name
-
-    try:
-        write_text(settings_file, json.dumps(data, indent=2, sort_keys=True) + "\n")
-        yield
-    finally:
-        if original_exists:
-            write_text(settings_file, original_text)
-        elif settings_file.exists():
-            settings_file.unlink()
-
-
 def run_command_for_route(registry: dict[str, Any], route: str, command: list[str]) -> subprocess.CompletedProcess[str]:
-    model = model_for_route(registry, route)
+    return subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+
+
+def model_selection_for_route(registry: dict[str, Any], route: str) -> str:
     runner = runner_for_route(registry, route)
-    if runner["command_kind"] != "agy":
-        return subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
-    with agy_model_setting(model.get("display_name", model["cli_model"])):
-        return subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+    if runner["command_kind"] == "agy":
+        return "agy_preconfigured_runtime"
+    return "cli_flag"
 
 
 def enqueue(args: argparse.Namespace) -> int:
@@ -265,7 +235,7 @@ def execute_once(args: argparse.Namespace) -> int:
             "actual_route": actual_route,
             "requested_cli_model": model_for_route(registry, route)["cli_model"],
             "requested_display_name": model_for_route(registry, route).get("display_name", route),
-            "model_selection": "agy_settings_json" if runner_for_route(registry, actual_route)["command_kind"] == "agy" else "cli_flag",
+            "model_selection": model_selection_for_route(registry, actual_route),
             "quota_fallback_triggered": fallback_triggered,
             "request_file": str(external_request),
             "response_file": str(external_response),

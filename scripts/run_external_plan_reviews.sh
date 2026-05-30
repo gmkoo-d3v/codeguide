@@ -340,6 +340,20 @@ runner_command_kind_for() {
   return 1
 }
 
+model_selection_for_model() {
+  local route="$1"
+  local runner_id
+  local command_kind
+
+  runner_id="$(model_runner_for "$route")" || return 1
+  command_kind="$(runner_command_kind_for "$runner_id")" || return 1
+  if [[ "$command_kind" == "agy" ]]; then
+    printf "%s" "agy_preconfigured_runtime"
+    return
+  fi
+  printf "%s" "cli_flag"
+}
+
 fallback_model_for_route_phase() {
   local route="$1"
   local phase="$2"
@@ -1132,93 +1146,12 @@ build_tool_command() {
   esac
 }
 
-agy_settings_file() {
-  printf "%s" "${CODEGUIDE_AGY_SETTINGS_FILE:-$HOME/.gemini/antigravity-cli/settings.json}"
-}
-
-write_agy_model_setting() {
-  local settings_file="$1"
-  local display_name="$2"
-  local backup_file="$3"
-
-  python3 - "$settings_file" "$display_name" "$backup_file" <<'PY'
-import json
-import os
-import sys
-from pathlib import Path
-
-settings_file = Path(sys.argv[1])
-display_name = sys.argv[2]
-backup_file = Path(sys.argv[3])
-
-original_exists = settings_file.exists()
-original_text = settings_file.read_text(encoding="utf-8") if original_exists else ""
-backup_file.write_text(json.dumps({"exists": original_exists, "text": original_text}), encoding="utf-8")
-
-data = {}
-if original_text.strip():
-    parsed = json.loads(original_text)
-    if not isinstance(parsed, dict):
-        raise SystemExit(f"agy settings root must be an object: {settings_file}")
-    data = parsed
-data["model"] = display_name
-
-settings_file.parent.mkdir(parents=True, exist_ok=True)
-tmp_file = settings_file.with_name(settings_file.name + f".codeguide.{os.getpid()}.tmp")
-tmp_file.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-os.replace(tmp_file, settings_file)
-PY
-}
-
-restore_agy_model_setting() {
-  local settings_file="$1"
-  local backup_file="$2"
-
-  python3 - "$settings_file" "$backup_file" <<'PY'
-import json
-import os
-import sys
-from pathlib import Path
-
-settings_file = Path(sys.argv[1])
-backup_file = Path(sys.argv[2])
-state = json.loads(backup_file.read_text(encoding="utf-8"))
-
-if state["exists"]:
-    settings_file.parent.mkdir(parents=True, exist_ok=True)
-    tmp_file = settings_file.with_name(settings_file.name + f".codeguide.restore.{os.getpid()}.tmp")
-    tmp_file.write_text(state["text"], encoding="utf-8")
-    os.replace(tmp_file, settings_file)
-elif settings_file.exists():
-    settings_file.unlink()
-PY
-}
-
 run_agy_tool_command() {
-  local model="$1"
+  local _model="$1"
   local output_capture_file="$2"
   local model_stderr_file="$3"
-  local display_name
-  local settings_file
-  local backup_file
-  local status
-
-  display_name="$(model_display_name_for "$model")" || return 1
-  settings_file="$(agy_settings_file)"
-  backup_file="$(mktemp)"
-  register_tmp_file "$backup_file"
-
-  if ! write_agy_model_setting "$settings_file" "$display_name" "$backup_file" 2>"$model_stderr_file"; then
-    return 1
-  fi
-
+  # agy has no documented per-call model flag; use the model already selected in Antigravity.
   "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
-  status=$?
-
-  if ! restore_agy_model_setting "$settings_file" "$backup_file" >>"$model_stderr_file" 2>&1; then
-    return 1
-  fi
-  return "$status"
 }
 
 write_manual_command_file() {
@@ -1230,10 +1163,12 @@ write_manual_command_file() {
   local command_file="$6"
   local runner_id
   local cli_model
+  local model_selection
   local -a cmd
 
   runner_id="$(model_runner_for "$reviewer_model")"
   cli_model="$(model_cli_model_for "$reviewer_model")"
+  model_selection="$(model_selection_for_model "$reviewer_model")"
   build_tool_command "$reviewer_model" "$request_file" "$output_capture_file" "$durable_response_file"
   cmd=("${TOOL_COMMAND[@]}")
 
@@ -1246,6 +1181,7 @@ write_manual_command_file() {
 - evaluator: ${runner_id}
 - evaluator_route: ${reviewer_model}
 - evaluator_cli_model: ${cli_model}
+- evaluator_model_selection: ${model_selection}
 - request_file: ${request_file}
 - command_response_path: ${output_capture_file}
 - sanitized_response_file: ${durable_response_file}
@@ -1418,6 +1354,7 @@ write_response_provenance_file() {
   local evaluator_actual_runner
   local evaluator_requested_cli_model
   local evaluator_actual_cli_model
+  local evaluator_model_selection
 
   provenance_file="${response_file%.md}.provenance.md"
   ensure_handoff_path "$provenance_file" "response_provenance_file"
@@ -1427,6 +1364,7 @@ write_response_provenance_file() {
   evaluator_actual_runner="$(model_runner_for "$evaluator_actual_model")"
   evaluator_requested_cli_model="$(model_cli_model_for "$evaluator_requested_model")"
   evaluator_actual_cli_model="$(model_cli_model_for "$evaluator_actual_model")"
+  evaluator_model_selection="$(model_selection_for_model "$evaluator_actual_model")"
 
   cat > "$provenance_file" <<EOF
 # External CLI Review Response Provenance
@@ -1446,6 +1384,7 @@ write_response_provenance_file() {
 - evaluator_actual_model: ${evaluator_actual_model}
 - evaluator_requested_cli_model: ${evaluator_requested_cli_model}
 - evaluator_actual_cli_model: ${evaluator_actual_cli_model}
+- evaluator_model_selection: ${evaluator_model_selection}
 - quota_fallback_triggered: ${quota_fallback}
 - review_style: ${review_style}
 - verdict: ${PARSED_VERDICT}
@@ -1469,12 +1408,14 @@ write_report_file() {
   local evaluator_actual_runner
   local evaluator_requested_cli_model
   local evaluator_actual_cli_model
+  local evaluator_model_selection
 
   now_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   evaluator_requested_runner="$(model_runner_for "$evaluator_requested_model")"
   evaluator_actual_runner="$(model_runner_for "$evaluator_actual_model")"
   evaluator_requested_cli_model="$(model_cli_model_for "$evaluator_requested_model")"
   evaluator_actual_cli_model="$(model_cli_model_for "$evaluator_actual_model")"
+  evaluator_model_selection="$(model_selection_for_model "$evaluator_actual_model")"
   cat > "$report_file" <<EOF
 # PLAN-${TASK_ID}-${PLAN_VERSION} review (${evaluator_actual_runner}/${evaluator_actual_model})
 
@@ -1489,6 +1430,7 @@ write_report_file() {
 - evaluator_actual_model: ${evaluator_actual_model}
 - evaluator_requested_cli_model: ${evaluator_requested_cli_model}
 - evaluator_actual_cli_model: ${evaluator_actual_cli_model}
+- evaluator_model_selection: ${evaluator_model_selection}
 - quota_fallback_triggered: ${quota_fallback}
 - review_style: ${review_style}
 - review_round: ${REVIEW_ROUND}

@@ -55,7 +55,8 @@ Use `<skill-dir>` for the directory containing this skill package and `SKILL.md`
 - `<skill-dir>/scripts/run_codeguide.sh <project-root> --mode auto --task-status in_progress --shadow-note "search and navigation updated"`
 - `<skill-dir>/scripts/run_codeguide.sh <project-root> --mode auto --task-status done --shadow-note "final architecture synced"`
 - `<skill-dir>/scripts/run_external_plan_reviews.sh <project-root> --task-id <TASK_ID> --plan-version <vX.Y> --primary-tool agy --primary-model <alias> --review-round <rNN> --risk-preflight-status approved --approval-ref <USER_APPROVAL_REF> --approved-next-step "run external CLI review round <rNN>"`
-  - Model selection: use `--primary-model <alias>` and repeat `--reviewer <alias>`; aliases, quota groups, default reviewers, and phase fallback rules come from `config/ai_model_registry.json` or the configured model registry path.
+  - Route selection: use `--primary-model <alias>` for self-review exclusion and repeat `--reviewer <alias>` for reviewer routes; aliases, quota groups, default reviewers, and phase fallback rules come from `config/ai_model_registry.json` or the configured model registry path.
+  - `agy` uses the model already selected in the Antigravity runtime; the wrapper does not mutate Antigravity settings or pass a per-call model flag.
   - Quota fallback is automatic only for registered routes with an explicit `fallback_policy` match for the current task phase; unconfigured or unregistered quota-exhausted routes fail closed.
 - `python3 <skill-dir>/scripts/external_review_runner.py --project-root <project-root> enqueue ...`
   - Use only to create artifact-centered review packets under `docs/orchestration/<task-id>/current-task/`; this is a review handoff tool, not an authoring tool.

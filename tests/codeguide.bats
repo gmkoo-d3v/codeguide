@@ -9763,19 +9763,9 @@ EOF
   mkdir -p "$mock_bin"
 
   write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
-  model="$(python3 - <<'"'"'PY'"'"'
-import json, os
-from pathlib import Path
-print(json.loads(Path(os.environ["CODEGUIDE_AGY_SETTINGS_FILE"]).read_text(encoding="utf-8")).get("model", ""))
-PY
-)"
-  
-  echo "Requested model: $model" >> "${TEST_WORKSPACE}/agy-calls.log"
-  
-  if [[ "$model" == "Gemini 3.5 Flash (Medium)" ]]; then
-    echo "Error 429: resource_exhausted rate limit exceeded" >&2
-    exit 1
-  fi'
+  printf "%s\n" "$@" > "${TEST_WORKSPACE}/agy-calls.log"
+  echo "Error 429: resource_exhausted rate limit exceeded" >&2
+  exit 1'
 
   write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
   args=("$@")
@@ -9798,7 +9788,7 @@ PY
 - requested_changes: None.
 EOF'
 
-  run env CODEGUIDE_AGY_SETTINGS_FILE="$TEST_WORKSPACE/agy-settings.json" PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
     --task-id "ext-fallback-plan" \
     --plan-version "v1.0" \
     --primary-tool "agy" \
@@ -9815,7 +9805,7 @@ EOF'
   [[ "$output" == *"fallback route 'claude:opus-4.8'"* ]]
   [[ "$output" == *"Registry fallback succeeded: agy:gemini-3.5-flash-medium -> claude:opus-4.8"* ]]
 
-  run grep "Requested model: Gemini 3.5 Flash (Medium)" "$TEST_WORKSPACE/agy-calls.log"
+  run grep -- "--add-dir" "$TEST_WORKSPACE/agy-calls.log"
   [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/agy-settings.json"
   [ "$status" -eq 0 ]
@@ -9849,19 +9839,9 @@ EOF
   mkdir -p "$mock_bin"
 
   write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
-  model="$(python3 - <<'"'"'PY'"'"'
-import json, os
-from pathlib import Path
-print(json.loads(Path(os.environ["CODEGUIDE_AGY_SETTINGS_FILE"]).read_text(encoding="utf-8")).get("model", ""))
-PY
-)"
-  
-  echo "Requested model: $model" >> "${TEST_WORKSPACE}/agy-calls-code.log"
-  
-  if [[ "$model" == "Gemini 3.5 Flash (Medium)" ]]; then
-    echo "Error 429: resource_exhausted rate limit exceeded" >&2
-    exit 1
-  fi'
+  printf "%s\n" "$@" > "${TEST_WORKSPACE}/agy-calls-code.log"
+  echo "Error 429: resource_exhausted rate limit exceeded" >&2
+  exit 1'
 
   write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
   args=("$@")
@@ -9884,7 +9864,7 @@ PY
 - requested_changes: None.
 EOF'
 
-  run env CODEGUIDE_AGY_SETTINGS_FILE="$TEST_WORKSPACE/agy-settings-code.json" PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
     --task-id "ext-fallback-code" \
     --plan-version "v1.0" \
     --primary-tool "agy" \
@@ -9900,6 +9880,10 @@ EOF'
   [[ "$output" == *"fallback route 'claude:sonnet-4.6'"* ]]
   [[ "$output" == *"Registry fallback succeeded: agy:gemini-3.5-flash-medium -> claude:sonnet-4.6"* ]]
 
+  run grep -- "--add-dir" "$TEST_WORKSPACE/agy-calls-code.log"
+  [ "$status" -eq 0 ]
+  run test ! -e "$TEST_WORKSPACE/agy-settings-code.json"
+  [ "$status" -eq 0 ]
   run grep "Requested model: sonnet-4.6" "$TEST_WORKSPACE/claude-calls-code.log"
   [ "$status" -eq 0 ]
   run test -f "$DOCS_ROOT/report/PLAN-ext-fallback-code-v1.0-review-agy-gemini-3.5-flash-medium-r01.md"
@@ -10037,31 +10021,9 @@ EOF
   mkdir -p "$mock_bin"
 
   write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
-  model="$(python3 - <<'"'"'PY'"'"'
-import json, os
-from pathlib import Path
-print(json.loads(Path(os.environ["CODEGUIDE_AGY_SETTINGS_FILE"]).read_text(encoding="utf-8")).get("model", ""))
-PY
-)"
-
-  echo "Requested model: $model" >> "${TEST_WORKSPACE}/agy-registry-calls.log"
-
-  if [[ "$model" == "Future Gemini" ]]; then
-    echo "Error 429: resource_exhausted" >&2
-    exit 1
-  elif [[ "$model" == "claude-4.7-sonnet" ]]; then
-    cat <<EOF
-- verdict: accept
-- summary: Registry override fallback succeeded.
-- strengths: The wrapper used the configured model registry.
-- risks: None.
-- requested_changes: None.
-EOF
-    exit 0
-  else
-    echo "Unexpected model requested from registry override: $model" >&2
-    exit 99
-  fi'
+  printf "%s\n" "$@" > "${TEST_WORKSPACE}/agy-registry-calls.log"
+  echo "Error 429: resource_exhausted" >&2
+  exit 1'
 
   write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
   args=("$@")
@@ -10087,7 +10049,7 @@ EOF
   echo "Unexpected Claude model requested from registry override: $model" >&2
   exit 99'
 
-  run env CODEGUIDE_MODEL_REGISTRY="$registry_file" CODEGUIDE_AGY_SETTINGS_FILE="$TEST_WORKSPACE/agy-registry-settings.json" PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+  run env CODEGUIDE_MODEL_REGISTRY="$registry_file" PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
     --task-id "ext-registry-override" \
     --plan-version "v1.0" \
     --primary-tool "agy" \
@@ -10102,7 +10064,7 @@ EOF
   [[ "$output" == *"Quota exhausted for route 'agy:new-gemini' (quota_group=agy-future-gemini)"* ]]
   [[ "$output" == *"Registry fallback succeeded: agy:new-gemini -> claude:new-sonnet"* ]]
 
-  run grep "Requested model: Future Gemini" "$TEST_WORKSPACE/agy-registry-calls.log"
+  run grep -- "--add-dir" "$TEST_WORKSPACE/agy-registry-calls.log"
   [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/agy-registry-settings.json"
   [ "$status" -eq 0 ]
@@ -10350,17 +10312,12 @@ EOF'
   [[ "$output" == *"--model opus-4.8"* ]]
 }
 
-@test "external_review_runner executes agy with current CLI flags and temporary model setting" {
+@test "external_review_runner executes agy with current CLI flags and preconfigured model selection" {
   local mock_bin="$TEST_WORKSPACE/mock-bin"
   mkdir -p "$mock_bin"
 
   write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
 printf "%s\n" "$@" > "${TEST_WORKSPACE}/runner-agy-args.log"
-python3 - <<'"'"'PY'"'"' > "${TEST_WORKSPACE}/runner-agy-model.log"
-import json, os
-from pathlib import Path
-print(json.loads(Path(os.environ["CODEGUIDE_AGY_SETTINGS_FILE"]).read_text(encoding="utf-8")).get("model", ""))
-PY
 cat <<EOF
 - verdict: accept
 - summary: Mock agy accepted the current-task debate packet.
@@ -10372,11 +10329,9 @@ EOF'
   run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-agy-exec" --plan-version "v1.0" --review-round "r01" --task-phase "review" --coordinator "codex" --participant "agy-gemini-3.5-flash-high"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
   [ "$status" -eq 0 ]
 
-  run env CODEGUIDE_AGY_SETTINGS_FILE="$TEST_WORKSPACE/runner-agy-settings.json" PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-agy-exec" --force
+  run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-agy-exec" --force
   [ "$status" -eq 0 ]
 
-  run grep "Gemini 3.5 Flash (High)" "$TEST_WORKSPACE/runner-agy-model.log"
-  [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/runner-agy-settings.json"
   [ "$status" -eq 0 ]
   run grep -- "--add-dir" "$TEST_WORKSPACE/runner-agy-args.log"
@@ -10384,5 +10339,7 @@ EOF'
   run grep -E -- '(^|[[:space:]])-m([[:space:]]|$)|--approval-mode|--output-format|--include-directories' "$TEST_WORKSPACE/runner-agy-args.log"
   [ "$status" -ne 0 ]
   run test -f "$DOCS_ROOT/orchestration/runner-agy-exec/current-task/responses/agy-gemini-3.5-flash-high.response.md"
+  [ "$status" -eq 0 ]
+  run grep "^- model_selection: agy_preconfigured_runtime" "$DOCS_ROOT/orchestration/runner-agy-exec/current-task/provenance/agy-gemini-3.5-flash-high.provenance.md"
   [ "$status" -eq 0 ]
 }
