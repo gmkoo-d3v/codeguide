@@ -14,7 +14,7 @@ LLM을 활용한 개발은 보통 다음 지점에서 쉽게 흔들립니다.
 - 관련 없는 파일이 현재 작업 맥락을 오염시킨다
 - 문서 품질이 개인 습관에 의존한다
 
-`codeguide`는 이런 문제를 docs-as-system-of-record 방식과 가벼운 자동화 스크립트로 줄이되, GPT-5.5에 맞게 필요한 만큼만 문서화하고 검증하는 데 초점을 둡니다.
+`codeguide`는 이런 문제를 docs-as-system-of-record 방식과 가벼운 자동화 스크립트로 줄이되, 런타임에 맞게 필요한 만큼만 문서화하고 검증하는 데 초점을 둡니다.
 
 ## 핵심 구조
 
@@ -28,7 +28,7 @@ LLM을 활용한 개발은 보통 다음 지점에서 쉽게 흔들립니다.
 
 ## 이 스킬이 하는 일
 
-`codeguide`는 쉘 스크립트 모음이라기보다, Codex가 설계·리팩터링·리뷰·디버그 작업을 수행할 때 따를 운영 규칙과 문서 워크플로우를 제공하는 스킬입니다.
+`codeguide`는 쉘 스크립트 모음이라기보다, 에이전트가 설계·리팩터링·리뷰·디버그 작업을 수행할 때 따를 운영 규칙과 문서 워크플로우를 제공하는 스킬입니다.
 
 사용자가 기대해야 하는 핵심은 다음과 같습니다.
 
@@ -42,7 +42,7 @@ LLM을 활용한 개발은 보통 다음 지점에서 쉽게 흔들립니다.
 
 ## 스킬로서의 사용법
 
-이 스킬은 보통 사용자가 직접 쉘 명령을 외우는 방식보다, Codex에게 `codeguide` 기준으로 일해달라고 요청할 때 의미가 있습니다.
+이 스킬은 보통 사용자가 직접 쉘 명령을 외우는 방식보다, 에이전트에게 `codeguide` 기준으로 일해달라고 요청할 때 의미가 있습니다.
 
 예를 들면 이런 요청에 맞습니다.
 
@@ -54,7 +54,7 @@ LLM을 활용한 개발은 보통 다음 지점에서 쉽게 흔들립니다.
 
 사용 흐름은 대체로 이렇습니다.
 
-1. Codex가 현재 작업을 `design`, `refactor`, `review`, `debug` 중 어떤 흐름으로 다룰지 정합니다.
+1. 에이전트가 현재 작업을 `design`, `refactor`, `review`, `debug` 중 어떤 흐름으로 다룰지 정합니다.
 2. 작업 규모와 위험도를 보고 프로젝트 루트의 `docs/` 아래 task, decision, plan, orchestration 문서가 필요한지 판단합니다.
 3. 변경 위험이 크면 plan review loop를 돌리고, high risk면 adversarial review를 요구합니다.
 4. 구현 후에는 필요한 범위에서 shadow와 문서 상태를 맞추고, 관련 lint/test/e2e를 실행합니다.
@@ -97,7 +97,7 @@ README의 중심은 아니지만, 이 스킬은 몇 개의 쉘 스크립트로 �
 - [`scripts/shadow_user_decision_wrapper.py`](./scripts/shadow_user_decision_wrapper.py): 최종 적용 승인과 human fact-evidence 결정을 guarded user_decision artifact로 생성
 - [`scripts/shadow_apply_gate.py`](./scripts/shadow_apply_gate.py): 최종 shadow 적용 승인 조건을 dry-run으로 검사
 - [`scripts/shadow_effect_writer.py`](./scripts/shadow_effect_writer.py): gate를 통과한 `confirmed/unknown/blocked/stale` structured effect record를 shadow effect_map에 기록하고, blocked 결과에는 가능한 다음 probe/decision command를 `next_actions`로 제안
-- [`tests/codeguide.bats`](./tests/codeguide.bats): 위 자동화의 회귀 테스트
+- [`tests/`](./tests/): 위 자동화의 기능별 회귀 테스트 (feature-split bats suite)
 
 즉 스크립트는 스킬의 본체라기보다, 스킬 운영 원칙을 반복 가능하게 만드는 구현 레이어입니다.
 
@@ -122,7 +122,7 @@ scripts/run_external_plan_reviews.sh /path/to/project \
   --review-round r01 \
   --risk-preflight-status pass
 scripts/validate_docs.sh /path/to/project --mode strict
-bats tests/codeguide.bats
+bats tests/
 ```
 
 `run_external_plan_reviews.sh`는 기본적으로 CLI의 기본 모델을 사용하며, 사용자가 override를 주지 않으면 버전명 하드코딩을 피합니다. 긴 프롬프트는 shell 인자로 직접 넘기지 않고 `docs/orchestration/<task-id>/external-cli/<plan-version>/<round>/` 아래의 Markdown request/response 파일로 왕복합니다. 외부 CLI에 넘기는 짧은 bash 명령은 stdout redirection, `tee`, 또는 `--output-last-message` 같은 도구별 옵션으로 절대 command-output 경로를 명시해야 하며, 프롬프트 안의 경로 언급만으로는 부족합니다. wrapper는 raw command output을 redaction한 뒤 durable response 파일로 저장하고 raw capture를 삭제합니다. request는 `Why/What/How/Where/Verify` 축을 포함하고, 유효한 response는 parser-friendly bullet field를 따르며, 보존 파일은 저장 전 민감값을 redaction합니다. 이 명령은 review report를 만든 뒤 멈추며, 다음 `PLAN-v1.1`을 자동 생성하지 않습니다.

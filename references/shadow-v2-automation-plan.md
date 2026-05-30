@@ -445,5 +445,5 @@ For documentation-only changes:
 For future implementation:
 
 ```bash
-bats --filter 'shadow_v2|shadow_user_decision|shadow_review_queue|shadow_effect_writer|shadow_policy_loader' tests/codeguide.bats
+bats --filter 'shadow_v2|shadow_user_decision|shadow_review_queue|shadow_effect_writer|shadow_policy_loader' tests/
 ```
