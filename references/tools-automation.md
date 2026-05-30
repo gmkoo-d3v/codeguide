@@ -64,7 +64,8 @@ Use `<skill-dir>` for the directory containing this skill package and `SKILL.md`
 - `<skill-dir>/scripts/validate_docs.sh <project-root> --mode advisory`
 - `<skill-dir>/scripts/validate_docs.sh <project-root> --mode strict`
 - `<skill-dir>/scripts/check_english_docs.sh <skill-dir>`
-- `bats <skill-dir>/tests/codeguide.bats`
+- `bats <skill-dir>/tests/` (runs the full feature-split bats suite)
+  - Capture the pass/fail baseline from the current HEAD at review time; do not rely on a stored count. Some pre-existing failures may exist in a given environment, so the gate is "no NEW failures versus the freshly captured baseline," not "zero failures."
 
 ## No-RAG baseline
 - Baseline workflow should not require vector DB, embedding jobs, or retrieval pipelines.
