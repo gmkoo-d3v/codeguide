@@ -88,7 +88,7 @@ Use one task capsule per delegated or externally reviewed task: `docs/orchestrat
 
 - task_id:
 - execution_mode: supervisor_subagents | solo
-- primary_author_tool: agy | claude | codex | human | external-runner
+- primary_author_tool: antigravity | agy | claude | codex | human | external-runner
 - review_mode: external_cli | current_task_debate | agy_subagents
 - supervisor_agent:
 - planner_agents:

@@ -22,7 +22,7 @@ Extracted verbatim from SKILL.md for Phase 1 coverage audit; SKILL.md retains th
 - Active delegated tasks must maintain `orchestration/<task-id>/ORCH.md` with supervising lead architect identity, delegated agent roles, and owned scopes.
 - For solo work, create or update orchestration docs only when the docs lifecycle is already active or the task risk/traceability need justifies it.
 - Track plan authorship and review routing in orchestration docs:
-  - `primary_author_tool`: `agy|claude|codex|human|external-runner`
+  - `primary_author_tool`: `antigravity|agy|claude|codex|human|external-runner`
   - `review_mode`: `external_cli|current_task_debate|agy_subagents`
 - Treat the following user phrases as the same sub-agent trigger: `서브에이전트`, `서브 에이전트`, `subagent`, `subagents`, `sub-agent`, `sub-agents`.
 - If delegation is skipped, record `execution_mode: solo` plus a non-empty `delegation_note` explaining the exception.

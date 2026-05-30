@@ -13,7 +13,7 @@ Usage:
 Options:
   --task-id <id>                    Task ID for PLAN-<task-id>-<plan-version>.md
   --plan-version <vX.Y>             Plan version to review (required)
-  --primary-tool <tool>             Plan author/coordinator tool: agy|claude|codex|human (required)
+  --primary-tool <tool>             Plan author/coordinator tool: antigravity|agy|claude|codex|human|external-runner (required)
   --review-round <rNN>              Review round label, e.g. r01 (required)
   --risk-preflight-status <status>  Required gate before external review: approved (pass is rejected for external CLI)
   --risk-preflight-recorded-by <id> Main-thread actor that performed preflight (default: main-thread-supervising-lead-architect)
@@ -144,7 +144,7 @@ validate_tool() {
   case "$value" in
     antigravity|agy|claude|codex|human|external-runner) ;;
     *)
-      echo "[ERROR] Invalid ${option_name}: ${value} (use agy, claude, codex, human, or external-runner)" >&2
+      echo "[ERROR] Invalid ${option_name}: ${value} (use antigravity, agy, claude, codex, human, or external-runner)" >&2
       exit 1
       ;;
   esac
@@ -785,7 +785,7 @@ ensure_orchestration_file() {
 
 - task_id:
 - execution_mode: supervisor_subagents | solo
-- primary_author_tool: agy | claude | codex | human | external-runner
+- primary_author_tool: antigravity | agy | claude | codex | human | external-runner
 - review_mode: external_cli | current_task_debate | agy_subagents
 - supervisor_agent:
 - planner_agents:

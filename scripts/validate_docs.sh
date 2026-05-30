@@ -1933,7 +1933,7 @@ check_orchestration_file_for_task() {
   approval_ref="$(extract_field_value "$orchestration_file" "approval_ref")"
   approved_next_step="$(extract_field_value "$orchestration_file" "approved_next_step")"
   check_enum_membership "$execution_mode" "orchestration.execution_mode" "$orchestration_file" supervisor_subagents solo || true
-  check_enum_membership "$primary_author_tool" "orchestration.primary_author_tool" "$orchestration_file" antigravity agy || true
+  check_enum_membership "$primary_author_tool" "orchestration.primary_author_tool" "$orchestration_file" antigravity agy claude codex human external-runner || true
   check_enum_membership "$review_mode" "orchestration.review_mode" "$orchestration_file" external_cli agy_subagents codex_subagents || true
   check_enum_membership "$delegation_status" "orchestration.delegation_status" "$orchestration_file" planned active completed blocked || true
   check_enum_membership "$risk_preflight_status" "orchestration.risk_preflight_status" "$orchestration_file" pass approved blocked approval_required || true
