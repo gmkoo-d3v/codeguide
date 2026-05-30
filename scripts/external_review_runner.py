@@ -26,6 +26,27 @@ REDACTIONS = [
     re.compile(r"ghp_[A-Za-z0-9_]{16,}"),
 ]
 
+REQUIRED_STANDARD_FIELDS = ("verdict", "summary", "strengths", "risks", "requested_changes")
+REQUIRED_ADVERSARIAL_FIELDS = ("objection", "counterproposal", "rebuttal", "residual_risk")
+PLATFORM_PERMISSION_PATTERNS = (
+    "platform_permission_blocked",
+    "permission layer",
+    "private workspace egress",
+    "private local project",
+    "external egress",
+    "blocked private workspace",
+    "guardian reviewer",
+)
+AUTH_ERROR_PATTERNS = (
+    "auth",
+    "authentication",
+    "not authenticated",
+    "unauthorized",
+    "sign in",
+    "login required",
+    "please login",
+)
+
 
 def utc_now() -> str:
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -143,6 +164,70 @@ def quota_exhausted_message(registry: dict[str, Any], route: str) -> str:
     )
 
 
+def status_dir_for(debate_dir: Path) -> Path:
+    return debate_dir / "status"
+
+
+def route_status_file(debate_dir: Path, route: str) -> Path:
+    return status_dir_for(debate_dir) / f"{slug(route)}.status.json"
+
+
+def write_route_status(
+    debate_dir: Path,
+    route: str,
+    status: str,
+    *,
+    registry: dict[str, Any],
+    reason: str = "",
+    details: dict[str, Any] | None = None,
+) -> None:
+    model = model_for_route(registry, route)
+    payload: dict[str, Any] = {
+        "schema_version": "codeguide.external_review.status.v1",
+        "updated_at": utc_now(),
+        "status": status,
+        "route": route,
+        "runner": model["runner"],
+        "cli_model": model["cli_model"],
+        "model_selection": model_selection_for_route(registry, route),
+    }
+    if reason:
+        payload["reason"] = reason
+    if details:
+        payload.update(details)
+    write_text(route_status_file(debate_dir, route), json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
+def review_field(text: str, field: str) -> str:
+    match = re.search(rf"(?im)^\s*-\s*{re.escape(field)}\s*:\s*(.*)$", text)
+    return match.group(1).strip() if match else ""
+
+
+def missing_review_fields(text: str, review_style: str = "standard") -> list[str]:
+    required = list(REQUIRED_STANDARD_FIELDS)
+    if review_style == "adversarial":
+        required.extend(REQUIRED_ADVERSARIAL_FIELDS)
+    missing = [field for field in required if not review_field(text, field)]
+    verdict = review_field(text, "verdict").lower()
+    if "verdict" not in missing and verdict not in {"accept", "revise", "blocked"}:
+        missing.append("verdict")
+    return missing
+
+
+def classify_failure(registry: dict[str, Any], route: str, stderr_text: str) -> tuple[str, str]:
+    if is_quota_error(registry, stderr_text):
+        return "quota_blocked", quota_exhausted_message(registry, route).strip()
+    folded = stderr_text.lower()
+    if any(pattern in folded for pattern in PLATFORM_PERMISSION_PATTERNS):
+        return (
+            "platform_permission_blocked",
+            "External CLI egress was blocked by the hosting platform permission layer; use the user-owned executor path.",
+        )
+    if any(pattern in folded for pattern in AUTH_ERROR_PATTERNS):
+        return "auth_blocked", "External CLI authentication is required before this route can run."
+    return "invalid_response", "External CLI command failed before producing a parser-compatible response."
+
+
 def enqueue(args: argparse.Namespace) -> int:
     project_root = resolve_project_root(args.project_root)
     registry = load_registry(args.registry)
@@ -152,8 +237,10 @@ def enqueue(args: argparse.Namespace) -> int:
     debate_dir = current_task_dir(project_root, args.task_id)
     responses_dir = debate_dir / "responses"
     provenance_dir = debate_dir / "provenance"
+    status_dir = status_dir_for(debate_dir)
     responses_dir.mkdir(parents=True, exist_ok=True)
     provenance_dir.mkdir(parents=True, exist_ok=True)
+    status_dir.mkdir(parents=True, exist_ok=True)
 
     if args.request_file:
         request_text = read_text(args.request_file)
@@ -191,14 +278,25 @@ def enqueue(args: argparse.Namespace) -> int:
         "created_at": utc_now(),
     }
     write_text(debate_dir / "debate.json", json.dumps(debate, indent=2, sort_keys=True) + "\n")
+    for participant in participants:
+        route = participant["runner_route"]
+        if route != "manual/current-thread":
+            write_route_status(debate_dir, route, "pending", registry=registry)
     print(str(debate_dir / "debate.json"))
     return 0
 
 
-def execute_once(args: argparse.Namespace) -> int:
-    project_root = resolve_project_root(args.project_root)
-    registry = load_registry(args.registry)
-    debate_dir = current_task_dir(project_root, args.task_id)
+def execute_debate(
+    *,
+    project_root: Path,
+    registry: dict[str, Any],
+    task_id: str,
+    force: bool = False,
+    dry_run: bool = False,
+    runner_filter: str = "all",
+    executor_kind: str = "direct",
+) -> int:
+    debate_dir = current_task_dir(project_root, task_id)
     debate_file = debate_dir / "debate.json"
     if not debate_file.is_file():
         print(f"[ERROR] debate file not found: {debate_file}", file=sys.stderr)
@@ -216,6 +314,9 @@ def execute_once(args: argparse.Namespace) -> int:
         if route == "manual/current-thread":
             continue
         route = resolve_model_route(registry, route)
+        route_model = model_for_route(registry, route)
+        if runner_filter != "all" and route_model["runner"] != runner_filter:
+            continue
         route_slug = slug(route)
         current_response = debate_dir / "responses" / f"{route_slug}.response.md"
         current_provenance = debate_dir / "provenance" / f"{route_slug}.provenance.md"
@@ -223,29 +324,84 @@ def execute_once(args: argparse.Namespace) -> int:
         external_response = external_dir / f"{route_slug}.response.md"
         external_stderr = external_dir / f"{route_slug}.stderr.md"
         external_provenance = external_dir / f"{route_slug}.provenance.md"
-        if current_response.exists() and not args.force:
+        if current_response.exists() and not force:
+            write_route_status(
+                debate_dir,
+                route,
+                "ingested",
+                registry=registry,
+                details={"response_file": str(current_response), "provenance_file": str(current_provenance)},
+            )
             continue
         write_text(external_request, request_text)
 
         actual_route = route
         fallback_triggered = False
         command = command_for_route(registry, route, external_request, external_response, project_root)
-        if args.dry_run:
+        if dry_run:
             print(" ".join(shlex.quote(part) for part in command))
             continue
 
+        write_route_status(
+            debate_dir,
+            route,
+            "running",
+            registry=registry,
+            details={
+                "executor": executor_kind,
+                "request_file": str(external_request),
+                "response_file": str(external_response),
+            },
+        )
         result = run_command_for_route(registry, route, command, external_response)
         stderr_text = result.stderr
         stdout_text = result.stdout
-        if result.returncode != 0 and is_quota_error(registry, stderr_text):
-            stderr_text = stderr_text + "\n" + quota_exhausted_message(registry, route)
-
-        write_text(external_stderr, redact(stderr_text))
         if result.returncode != 0:
+            status, reason = classify_failure(registry, route, stderr_text)
+            if status == "quota_blocked":
+                stderr_text = stderr_text + "\n" + reason + "\n"
+            write_text(external_stderr, redact(stderr_text))
+            write_route_status(
+                debate_dir,
+                route,
+                status,
+                registry=registry,
+                reason=reason,
+                details={"stderr_file": str(external_stderr), "executor": executor_kind},
+            )
             failures += 1
             continue
         response_text = redact(stdout_text)
         write_text(external_response, response_text)
+        write_route_status(
+            debate_dir,
+            route,
+            "executed",
+            registry=registry,
+            details={
+                "executor": executor_kind,
+                "request_file": str(external_request),
+                "response_file": str(external_response),
+            },
+        )
+        missing_fields = missing_review_fields(response_text, debate.get("review_style", "standard"))
+        if missing_fields:
+            write_text(external_stderr, f"[ERROR] response missing required fields: {', '.join(missing_fields)}\n")
+            write_route_status(
+                debate_dir,
+                route,
+                "invalid_response",
+                registry=registry,
+                reason=f"missing required fields: {', '.join(missing_fields)}",
+                details={
+                    "executor": executor_kind,
+                    "request_file": str(external_request),
+                    "response_file": str(external_response),
+                    "stderr_file": str(external_stderr),
+                },
+            )
+            failures += 1
+            continue
         write_text(current_response, response_text)
         provenance = {
             "schema_version": "codeguide.debate.provenance.v1",
@@ -269,7 +425,35 @@ def execute_once(args: argparse.Namespace) -> int:
         encoded = provenance_markdown(provenance)
         write_text(external_provenance, encoded)
         write_text(current_provenance, encoded)
+        write_route_status(
+            debate_dir,
+            route,
+            "ingested",
+            registry=registry,
+            details={
+                "executor": executor_kind,
+                "request_file": str(external_request),
+                "response_file": str(current_response),
+                "provenance_file": str(current_provenance),
+                "external_response_file": str(external_response),
+                "external_provenance_file": str(external_provenance),
+            },
+        )
     return 1 if failures else 0
+
+
+def execute_once(args: argparse.Namespace) -> int:
+    project_root = resolve_project_root(args.project_root)
+    registry = load_registry(args.registry)
+    return execute_debate(
+        project_root=project_root,
+        registry=registry,
+        task_id=args.task_id,
+        force=args.force,
+        dry_run=args.dry_run,
+        runner_filter=getattr(args, "runner", "all"),
+        executor_kind="direct",
+    )
 
 
 def status(args: argparse.Namespace) -> int:
@@ -281,7 +465,14 @@ def status(args: argparse.Namespace) -> int:
         return 1
     debate = json.loads(read_text(debate_file))
     responses = sorted(path.name for path in (debate_dir / "responses").glob("*.response.md"))
-    print(json.dumps({"status": "ok", "debate_file": str(debate_file), "responses": responses}, sort_keys=True))
+    statuses = {}
+    for path in sorted(status_dir_for(debate_dir).glob("*.status.json")):
+        try:
+            payload = json.loads(read_text(path))
+        except json.JSONDecodeError:
+            payload = {"status": "invalid_status_json", "file": str(path)}
+        statuses[path.stem.removesuffix(".status")] = payload
+    print(json.dumps({"status": "ok", "debate_file": str(debate_file), "responses": responses, "route_statuses": statuses}, sort_keys=True))
     return 0
 
 
@@ -307,6 +498,7 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--task-id", required=True)
     run_parser.add_argument("--force", action="store_true")
     run_parser.add_argument("--dry-run", action="store_true")
+    run_parser.add_argument("--runner", choices=["agy", "claude", "codex", "all"], default="all")
     run_parser.set_defaults(func=execute_once)
 
     status_parser = subparsers.add_parser("status")

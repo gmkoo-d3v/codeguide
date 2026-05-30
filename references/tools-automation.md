@@ -60,6 +60,9 @@ Use `<skill-dir>` for the directory containing this skill package and `SKILL.md`
   - On quota exhaustion, stop and ask the user to switch the runner's globally selected model, then rerun with a reviewer route that records that selection.
 - `python3 <skill-dir>/scripts/external_review_runner.py --project-root <project-root> enqueue ...`
   - Use only to create artifact-centered review packets under `docs/orchestration/<task-id>/current-task/`; this is a review handoff tool, not an authoring tool.
+- `python3 <skill-dir>/scripts/external_review_executor.py --project-root <project-root> --run-once --runner all --egress-approved`
+  - User-owned executor for current-task review packets. Use `--watch` for repeated polling, `--runner agy|claude|codex` to narrow execution, and keep model selection in each CLI runtime's global settings.
+  - Route status files record `pending`, `running`, `ingested`, `quota_blocked`, `platform_permission_blocked`, `auth_blocked`, or `invalid_response`; quota and auth blockers stop for user action instead of editing runner settings.
 - `<skill-dir>/scripts/doc_garden.sh <project-root> --task-id <TASK_ID>`
 - `<skill-dir>/scripts/validate_docs.sh <project-root> --mode advisory`
 - `<skill-dir>/scripts/validate_docs.sh <project-root> --mode strict`

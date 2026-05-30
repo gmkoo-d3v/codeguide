@@ -209,7 +209,7 @@ Implemented v2 behavior:
 - preserves `auto_promotes_facts=false`
 - blocks `external_antigravity` unless explicit user request, concrete approval ref, approved next step, and main-thread recorder are provided
 - treats Codex CLI review artifacts as advisory plan-review outputs only; they do not satisfy the Gemini/Claude close route unless the close gate is explicitly expanded
-- treats direct Gemini/Claude CLI invocation through `require_escalated` and user approval as the primary path; if a guardian reviewer blocks after explicit approval, records `platform_permission_blocked` and asks for permission-mode change before considering the last-resort manual handoff route
+- treats direct Gemini/Claude CLI invocation through `require_escalated` and user approval as valid when the host permits it; if a guardian reviewer blocks after explicit approval, records `platform_permission_blocked` and moves repeated review loops to the user-owned executor handoff route
 - marks blocked external packets as `external_review_missing_user_request`, not `external_user_requested`
 - marks missing packet context in `unsupported_by_packet`
 - refuses packet output under `docs/shadow/`
