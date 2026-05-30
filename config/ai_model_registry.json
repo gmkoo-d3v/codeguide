@@ -1,5 +1,5 @@
 {
-  "default_model_alias": "agy-gemini-3.5-flash-medium",
+  "default_model_alias": "agy-current",
   "default_task_phase": "planning",
   "runners": {
     "agy": {
@@ -11,9 +11,20 @@
       "binary": "claude",
       "env_binary": "CODEGUIDE_CLAUDE_BIN",
       "command_kind": "claude_code"
+    },
+    "codex": {
+      "binary": "codex",
+      "env_binary": "CODEGUIDE_CODEX_BIN",
+      "command_kind": "codex_cli"
     }
   },
   "models": {
+    "agy:current": {
+      "runner": "agy",
+      "cli_model": "preconfigured-runtime",
+      "display_name": "Antigravity preconfigured runtime",
+      "quota_group": "agy-preconfigured-runtime"
+    },
     "agy:gemini-3.5-flash-medium": {
       "runner": "agy",
       "cli_model": "gemini-3.5-flash-medium",
@@ -62,6 +73,12 @@
       "display_name": "GPT-OSS 120B (Medium)",
       "quota_group": "agy-third-party-shared"
     },
+    "claude:current": {
+      "runner": "claude",
+      "cli_model": "preconfigured-runtime",
+      "display_name": "Claude preconfigured runtime",
+      "quota_group": "claude-preconfigured-runtime"
+    },
     "claude:opus-4.8": {
       "runner": "claude",
       "cli_model": "opus-4.8",
@@ -93,9 +110,19 @@
       "cli_model": "opus-4.6",
       "display_name": "Opus 4.6 Legacy",
       "quota_group": "claude-direct-subscription"
+    },
+    "codex:current": {
+      "runner": "codex",
+      "cli_model": "preconfigured-runtime",
+      "display_name": "Codex preconfigured runtime",
+      "quota_group": "codex-preconfigured-runtime"
     }
   },
   "aliases": {
+    "agy-current": "agy:current",
+    "agy": "agy:current",
+    "antigravity-current": "agy:current",
+    "antigravity": "agy:current",
     "agy-gemini-3.5-flash-medium": "agy:gemini-3.5-flash-medium",
     "agy-gemini-3.5-flash-high": "agy:gemini-3.5-flash-high",
     "agy-gemini-3.5-flash-low": "agy:gemini-3.5-flash-low",
@@ -107,6 +134,8 @@
     "agy-opus-thinking": "agy:claude-opus-4.6-thinking",
     "agy-gpt-oss-120b-medium": "agy:gpt-oss-120b-medium",
     "agy-gpt-oss-120b": "agy:gpt-oss-120b-medium",
+    "claude-current": "claude:current",
+    "claude": "claude:current",
     "claude-opus-4.8": "claude:opus-4.8",
     "claude-opus-direct": "claude:opus-4.8",
     "claude-opus-4.7": "claude:opus-4.7-legacy",
@@ -116,35 +145,17 @@
     "claude-haiku-4.5": "claude:haiku-4.5",
     "claude-haiku-direct": "claude:haiku-4.5",
     "claude-opus-4.6-legacy": "claude:opus-4.6-legacy",
-    "claude-opus-legacy": "claude:opus-4.7-legacy"
+    "claude-opus-legacy": "claude:opus-4.7-legacy",
+    "codex-current": "codex:current",
+    "codex": "codex:current"
   },
   "default_reviewer_aliases": [
-    "agy-gemini-3.5-flash-high",
-    "claude-opus-4.8"
+    "agy-current",
+    "claude-current",
+    "codex-current"
   ],
   "fallback_policy": {
-    "on_quota_exhausted": [
-      {
-        "from_quota_group": "agy-gemini-shared",
-        "phases": ["planning", "review"],
-        "to": "claude:opus-4.8"
-      },
-      {
-        "from_quota_group": "agy-gemini-shared",
-        "phases": ["code", "implementation"],
-        "to": "claude:sonnet-4.6"
-      },
-      {
-        "from_quota_group": "agy-third-party-shared",
-        "phases": ["planning", "review"],
-        "to": "claude:opus-4.8"
-      },
-      {
-        "from_quota_group": "agy-third-party-shared",
-        "phases": ["code", "implementation"],
-        "to": "claude:sonnet-4.6"
-      }
-    ],
+    "on_quota_exhausted": [],
     "fail_closed_for_unregistered_models": true
   },
   "quota_error_patterns": [

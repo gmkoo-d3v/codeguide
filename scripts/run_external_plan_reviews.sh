@@ -33,6 +33,7 @@ Options:
 Environment overrides:
   CODEGUIDE_ANTIGRAVITY_BIN         agy CLI binary path (default from registry: agy)
   CODEGUIDE_CLAUDE_BIN              Claude Code CLI binary path (default: claude)
+  CODEGUIDE_CODEX_BIN               Codex CLI binary path (default: codex)
   CODEGUIDE_PRIMARY_MODEL           Default primary model alias (registry default when unset)
   CODEGUIDE_ANTIGRAVITY_MODEL       Backward-compatible alias for CODEGUIDE_PRIMARY_MODEL
   CODEGUIDE_MODEL_REGISTRY          Model registry JSON path
@@ -40,13 +41,13 @@ Environment overrides:
 
 Model Registry:
   Runners, model routes, aliases, quota groups, default reviewers, quota patterns,
-  and fallback policy are read from CODEGUIDE_MODEL_REGISTRY, or from the bundled
+  and quota-stop policy are read from CODEGUIDE_MODEL_REGISTRY, or from the bundled
   registry next to this script.
 
-Quota Fallback Policy:
-  If a registered model route quota is exhausted, fallback is selected by matching
-  the exhausted route's quota_group and task phase against fallback_policy.
-  Unregistered models never receive automatic quota fallback.
+Quota Exhaustion Policy:
+  If a registered model route quota is exhausted, the wrapper stops and asks the
+  user to switch the runner's globally selected model, then rerun with the route
+  that records the new selection. The wrapper does not auto-edit runner settings.
 EOF
 }
 
@@ -225,7 +226,7 @@ load_model_registry() {
     esac
   done <<< "$registry_output"
 
-  if [[ -z "$DEFAULT_MODEL_ALIAS" || ${#MODEL_ALIAS_KEYS[@]} -eq 0 || ${#RUNNER_IDS[@]} -eq 0 || ${#MODEL_ROUTE_IDS[@]} -eq 0 || ${#FALLBACK_TARGETS[@]} -eq 0 || ${#DEFAULT_REVIEWER_ALIASES[@]} -eq 0 || ${#QUOTA_ERROR_PATTERNS[@]} -eq 0 ]]; then
+  if [[ -z "$DEFAULT_MODEL_ALIAS" || ${#MODEL_ALIAS_KEYS[@]} -eq 0 || ${#RUNNER_IDS[@]} -eq 0 || ${#MODEL_ROUTE_IDS[@]} -eq 0 || ${#DEFAULT_REVIEWER_ALIASES[@]} -eq 0 || ${#QUOTA_ERROR_PATTERNS[@]} -eq 0 ]]; then
     echo "[ERROR] Model registry is missing one or more required sections: $registry_file" >&2
     exit 1
   fi
@@ -342,35 +343,39 @@ runner_command_kind_for() {
 
 model_selection_for_model() {
   local route="$1"
-  local runner_id
-  local command_kind
-
-  runner_id="$(model_runner_for "$route")" || return 1
-  command_kind="$(runner_command_kind_for "$runner_id")" || return 1
-  if [[ "$command_kind" == "agy" ]]; then
-    printf "%s" "agy_preconfigured_runtime"
-    return
-  fi
-  printf "%s" "cli_flag"
+  require_registered_model "model_selection" "$route" >/dev/null || return 1
+  printf "%s" "preconfigured_runtime"
 }
 
-fallback_model_for_route_phase() {
-  local route="$1"
-  local phase="$2"
-  local quota_group
-  local index
+primary_model_for_tool() {
+  local tool="$1"
+  case "$tool" in
+    antigravity|agy)
+      printf "%s" "agy-current"
+      ;;
+    claude)
+      printf "%s" "claude-current"
+      ;;
+    codex)
+      printf "%s" "codex-current"
+      ;;
+    *)
+      printf "%s" "$DEFAULT_MODEL_ALIAS"
+      ;;
+  esac
+}
 
-  quota_group="$(quota_group_for_model "$route")"
-  if [[ "$quota_group" == "unknown" ]]; then
-    return 1
-  fi
-  for (( index=0; index<${#FALLBACK_TARGETS[@]}; index++ )); do
-    if [[ "${FALLBACK_FROM_GROUPS[$index]}" == "$quota_group" && "${FALLBACK_PHASES[$index]}" == "$phase" ]]; then
-      printf "%s" "${FALLBACK_TARGETS[$index]}"
-      return
-    fi
-  done
-  return 1
+quota_exhausted_message() {
+  local route="$1"
+  local quota_group="$2"
+  local runner_id
+
+  runner_id="$(model_runner_for "$route")"
+  cat <<EOF
+[BLOCKED] Quota exhausted for route '${route}' (quota_group=${quota_group}).
+Switch the globally selected model in runner '${runner_id}' to a non-exhausted model, then rerun with a reviewer route that records that selection.
+Do not auto-edit runner settings from this wrapper.
+EOF
 }
 
 # Detect quota/rate-limit exhaustion from a stderr file.
@@ -476,7 +481,11 @@ is_placeholder_approval_value() {
 
 load_model_registry "$MODEL_REGISTRY_FILE"
 validate_model_registry_references
-PRIMARY_MODEL="${CODEGUIDE_PRIMARY_MODEL:-${CODEGUIDE_ANTIGRAVITY_MODEL:-$DEFAULT_MODEL_ALIAS}}"
+PRIMARY_MODEL="${CODEGUIDE_PRIMARY_MODEL:-${CODEGUIDE_ANTIGRAVITY_MODEL:-}}"
+PRIMARY_MODEL_EXPLICIT="false"
+if [[ -n "$PRIMARY_MODEL" ]]; then
+  PRIMARY_MODEL_EXPLICIT="true"
+fi
 TASK_PHASE="${CODEGUIDE_TASK_PHASE:-$DEFAULT_TASK_PHASE}"
 
 while [[ $# -gt 0 ]]; do
@@ -556,6 +565,7 @@ while [[ $# -gt 0 ]]; do
     --primary-model|--antigravity-model)
       require_option_value "$1" "$#"
       PRIMARY_MODEL="${2:-}"
+      PRIMARY_MODEL_EXPLICIT="true"
       shift 2
       ;;
     -h|--help)
@@ -570,8 +580,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Normalize task phase; route-level quota fallback is selected only after a
-# registered route reports quota exhaustion.
+# Normalize task phase for provenance and future phase-aware route policy.
 TASK_PHASE_NORM="$(printf "%s" "${TASK_PHASE:-$DEFAULT_TASK_PHASE}" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
 case "$TASK_PHASE_NORM" in
   planning|review|code|implementation) ;;
@@ -596,6 +605,9 @@ validate_identifier "--task-id" "$TASK_ID"
 validate_plan_version "$PLAN_VERSION"
 validate_tool "--primary-tool" "$PRIMARY_TOOL"
 validate_review_round "$REVIEW_ROUND"
+if [[ "$PRIMARY_MODEL_EXPLICIT" != "true" ]]; then
+  PRIMARY_MODEL="$(primary_model_for_tool "$PRIMARY_TOOL")"
+fi
 if [[ -z "$RISK_PREFLIGHT_STATUS" ]]; then
   echo "[ERROR] --risk-preflight-status is required before external reviewers can be invoked" >&2
   exit 1
@@ -1100,7 +1112,7 @@ build_tool_prompt_for() {
   local output_capture_file="$3"
   local durable_response_file="$4"
 
-  printf "Read the Markdown request file from disk at %s. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields to stdout; do not write files. Command-level response path: %s. Sanitized response file: %s. The bash wrapper redirects stdout to the command-level response path, sanitizes it, and deletes the raw capture. Do not claim the review was saved anywhere else." \
+  printf "Read the Markdown request file from disk at %s. Review only that handoff content unless it explicitly asks for another source. Return only the requested markdown bullet fields; do not write files. Command-level response path: %s. Sanitized response file: %s. The wrapper captures the command-level response path, sanitizes it, and deletes the raw capture. Do not claim the review was saved anywhere else." \
     "$request_file" "$output_capture_file" "$durable_response_file"
 }
 
@@ -1122,13 +1134,11 @@ build_tool_command() {
   local durable_response_file="$4"
   local runner_id
   local command_kind
-  local cli_model
   local binary
   local prompt
 
   runner_id="$(model_runner_for "$reviewer_model")" || return 1
   command_kind="$(runner_command_kind_for "$runner_id")" || return 1
-  cli_model="$(model_cli_model_for "$reviewer_model")" || return 1
   binary="$(runner_binary_for "$runner_id")" || return 1
   prompt="$(build_tool_prompt_for "$reviewer_model" "$request_file" "$output_capture_file" "$durable_response_file")"
 
@@ -1137,7 +1147,10 @@ build_tool_command() {
       TOOL_COMMAND=("$binary" --add-dir "$CONTEXT_ROOT" -p "$prompt")
       ;;
     claude_code)
-      TOOL_COMMAND=("$binary" -p "$prompt" --model "$cli_model" --no-session-persistence --tools "" --add-dir "$CONTEXT_ROOT")
+      TOOL_COMMAND=("$binary" -p "$prompt" --no-session-persistence --tools "" --add-dir "$CONTEXT_ROOT")
+      ;;
+    codex_cli)
+      TOOL_COMMAND=("$binary" exec --cd "$CONTEXT_ROOT" --sandbox read-only --ephemeral --output-last-message "$output_capture_file" "$prompt")
       ;;
     *)
       echo "[ERROR] Unsupported runner command_kind '${command_kind}' for route '${reviewer_model}'" >&2
@@ -1152,6 +1165,31 @@ run_agy_tool_command() {
   local model_stderr_file="$3"
   # agy has no documented per-call model flag; use the model already selected in Antigravity.
   "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
+}
+
+run_codex_tool_command() {
+  local _model="$1"
+  local output_capture_file="$2"
+  local model_stderr_file="$3"
+  local runtime_stdout
+  local status
+
+  runtime_stdout="$(mktemp)"
+  register_tmp_file "$runtime_stdout"
+
+  "${TOOL_COMMAND[@]}" >"$runtime_stdout" 2>"$model_stderr_file"
+  status=$?
+  if [[ -s "$runtime_stdout" ]]; then
+    cat "$runtime_stdout" >> "$model_stderr_file"
+  fi
+  if (( status != 0 )); then
+    return "$status"
+  fi
+  if [[ ! -s "$output_capture_file" ]]; then
+    echo "[ERROR] codex final message file was empty: ${output_capture_file}" >>"$model_stderr_file"
+    return 1
+  fi
+  return 0
 }
 
 write_manual_command_file() {
@@ -1204,7 +1242,7 @@ EOF
 }
 
 # Execute the configured runner for a given resolved model route.
-# On quota exhaustion, automatically retries with the registry fallback route.
+# On quota exhaustion, stop and ask the user to switch the runner's global model.
 # Outputs: sets ACTUAL_MODEL and QUOTA_FALLBACK_TRIGGERED.
 ACTUAL_MODEL=""
 QUOTA_FALLBACK_TRIGGERED="false"
@@ -1238,6 +1276,8 @@ run_tool_prompt() {
     fi
     if [[ "$runner_id" == "agy" ]]; then
       run_agy_tool_command "$model" "$output_capture_file" "$model_stderr_file"
+    elif [[ "$runner_id" == "codex" ]]; then
+      run_codex_tool_command "$model" "$output_capture_file" "$model_stderr_file"
     else
       "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
     fi
@@ -1248,33 +1288,11 @@ run_tool_prompt() {
   fi
   run_status=$?
 
-  # Check for quota exhaustion and attempt registry-declared fallback.
+  # Check for quota exhaustion and stop for user-selected model switching.
   if is_quota_exhausted "$stderr_file"; then
-    local quota_group fallback_model fallback_group
+    local quota_group
     quota_group="$(quota_group_for_model "$reviewer_model")"
-    if fallback_model="$(fallback_model_for_route_phase "$reviewer_model" "$TASK_PHASE_NORM")"; then
-      fallback_group="$(quota_group_for_model "$fallback_model")"
-      echo "[WARN] Quota exhausted for route '${reviewer_model}' (quota_group=${quota_group}). Retrying with fallback route '${fallback_model}' (quota_group=${fallback_group})..." >&2
-      local fallback_stderr
-      fallback_stderr="$(mktemp)"
-      register_tmp_file "$fallback_stderr"
-      if _run_model_route "$fallback_model" "$fallback_stderr"; then
-        cat "$fallback_stderr" >> "$stderr_file"
-        ACTUAL_MODEL="$fallback_model"
-        QUOTA_FALLBACK_TRIGGERED="true"
-        echo "[INFO] Registry fallback succeeded: ${reviewer_model} -> ${fallback_model}" >&2
-        return 0
-      fi
-      if is_quota_exhausted "$fallback_stderr"; then
-        cat "$fallback_stderr" >> "$stderr_file"
-        echo "[ERROR] Quota exhausted for route '${reviewer_model}' and fallback route '${fallback_model}'. Please wait for token restoration or update fallback_policy." >&2
-      else
-        cat "$fallback_stderr" >> "$stderr_file"
-      fi
-      return 1
-    fi
-
-    echo "[ERROR] Quota exhausted for route '${reviewer_model}' (quota_group=${quota_group}), but no fallback is configured for task_phase=${TASK_PHASE_NORM} in ${MODEL_REGISTRY_FILE}." >&2
+    quota_exhausted_message "$reviewer_model" "$quota_group" >&2
     return 1
   fi
 

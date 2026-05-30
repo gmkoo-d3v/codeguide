@@ -55,9 +55,9 @@ Use `<skill-dir>` for the directory containing this skill package and `SKILL.md`
 - `<skill-dir>/scripts/run_codeguide.sh <project-root> --mode auto --task-status in_progress --shadow-note "search and navigation updated"`
 - `<skill-dir>/scripts/run_codeguide.sh <project-root> --mode auto --task-status done --shadow-note "final architecture synced"`
 - `<skill-dir>/scripts/run_external_plan_reviews.sh <project-root> --task-id <TASK_ID> --plan-version <vX.Y> --primary-tool agy --primary-model <alias> --review-round <rNN> --risk-preflight-status approved --approval-ref <USER_APPROVAL_REF> --approved-next-step "run external CLI review round <rNN>"`
-  - Route selection: use `--primary-model <alias>` for self-review exclusion and repeat `--reviewer <alias>` for reviewer routes; aliases, quota groups, default reviewers, and phase fallback rules come from `config/ai_model_registry.json` or the configured model registry path.
-  - `agy` uses the model already selected in the Antigravity runtime; the wrapper does not mutate Antigravity settings or pass a per-call model flag.
-  - Quota fallback is automatic only for registered routes with an explicit `fallback_policy` match for the current task phase; unconfigured or unregistered quota-exhausted routes fail closed.
+  - Route selection: use `--primary-model <alias>` for self-review exclusion and repeat `--reviewer <alias>` for reviewer routes; aliases, quota groups, default reviewers, and quota-error patterns come from `config/ai_model_registry.json` or the configured model registry path.
+  - External reviewers use the model already selected in each runner runtime; the wrapper does not mutate runner settings or pass per-call model flags.
+  - On quota exhaustion, stop and ask the user to switch the runner's globally selected model, then rerun with a reviewer route that records that selection.
 - `python3 <skill-dir>/scripts/external_review_runner.py --project-root <project-root> enqueue ...`
   - Use only to create artifact-centered review packets under `docs/orchestration/<task-id>/current-task/`; this is a review handoff tool, not an authoring tool.
 - `<skill-dir>/scripts/doc_garden.sh <project-root> --task-id <TASK_ID>`

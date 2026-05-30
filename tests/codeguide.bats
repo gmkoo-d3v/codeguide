@@ -9739,24 +9739,24 @@ exit 0'
   [ "$status" -eq 0 ]
 }
 
-@test "run_external_plan_reviews falls back from agy Gemini quota group to direct Claude in planning phase" {
+@test "run_external_plan_reviews stops on agy quota exhaustion and asks for user model switch in planning phase" {
   local plan_file="$DOCS_ROOT/plan/PLAN-ext-fallback-plan-v1.0.md"
   cat > "$plan_file" <<'EOF'
 # PLAN-ext-fallback-plan-v1.0
 
 - task_id: ext-fallback-plan
 - plan_version: v1.0
-- objective: test runner-neutral fallback to direct Claude
+- objective: test runner-neutral quota stop
 - scope: external review
 - assumptions: gemini exhausted
-- risks: fallback fails
-- acceptance_signals: report written
-- stop_conditions: report generated
+- risks: wrapper auto-switches model without user control
+- acceptance_signals: wrapper stops with model-switch guidance
+- stop_conditions: no fallback CLI is invoked
 - owner: test
 - last_updated: 2026-01-01T00:00:00Z
 
 ## Steps
-1. Test fallback.
+1. Test quota stop.
 EOF
 
   local mock_bin="$TEST_WORKSPACE/mock-bin"
@@ -9768,25 +9768,9 @@ EOF
   exit 1'
 
   write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
-  args=("$@")
-  model=""
-  for ((i=0; i<${#args[@]}; i++)); do
-    if [[ "${args[i]}" == "--model" ]]; then
-      model="${args[i+1]}"
-    fi
-  done
-  echo "Requested model: $model" >> "${TEST_WORKSPACE}/claude-calls.log"
-  if [[ "$model" != "opus-4.8" ]]; then
-    echo "Unexpected Claude model requested: $model" >&2
-    exit 99
-  fi
-  cat <<EOF
-- verdict: accept
-- summary: Direct Claude fallback succeeded.
-- strengths: Registry selected a separate quota group.
-- risks: None.
-- requested_changes: None.
-EOF'
+  touch "${TEST_WORKSPACE}/claude-calls.log"
+  echo "claude should not be auto-invoked after agy quota exhaustion" >&2
+  exit 99'
 
   run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
     --task-id "ext-fallback-plan" \
@@ -9800,39 +9784,39 @@ EOF'
     --approved-next-step "run external review ext-fallback-plan" \
     --task-phase "planning"
 
-  [ "$status" -eq 0 ]
+  [ "$status" -ne 0 ]
   [[ "$output" == *"Quota exhausted for route 'agy:gemini-3.5-flash-medium' (quota_group=agy-gemini-shared)"* ]]
-  [[ "$output" == *"fallback route 'claude:opus-4.8'"* ]]
-  [[ "$output" == *"Registry fallback succeeded: agy:gemini-3.5-flash-medium -> claude:opus-4.8"* ]]
+  [[ "$output" == *"Switch the globally selected model in runner 'agy'"* ]]
+  [[ "$output" == *"Do not auto-edit runner settings"* ]]
 
   run grep -- "--add-dir" "$TEST_WORKSPACE/agy-calls.log"
   [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/agy-settings.json"
   [ "$status" -eq 0 ]
-  run grep "Requested model: opus-4.8" "$TEST_WORKSPACE/claude-calls.log"
+  run test ! -e "$TEST_WORKSPACE/claude-calls.log"
   [ "$status" -eq 0 ]
-  run test -f "$DOCS_ROOT/report/PLAN-ext-fallback-plan-v1.0-review-agy-gemini-3.5-flash-medium-r01.md"
+  run test ! -f "$DOCS_ROOT/report/PLAN-ext-fallback-plan-v1.0-review-agy-gemini-3.5-flash-medium-r01.md"
   [ "$status" -eq 0 ]
 }
 
-@test "run_external_plan_reviews falls back from agy Gemini quota group to direct Claude in code phase" {
+@test "run_external_plan_reviews stops on agy quota exhaustion and asks for user model switch in code phase" {
   local plan_file="$DOCS_ROOT/plan/PLAN-ext-fallback-code-v1.0.md"
   cat > "$plan_file" <<'EOF'
 # PLAN-ext-fallback-code-v1.0
 
 - task_id: ext-fallback-code
 - plan_version: v1.0
-- objective: test code-phase runner fallback
+- objective: test code-phase quota stop
 - scope: external review
 - assumptions: gemini exhausted
-- risks: fallback fails
-- acceptance_signals: report written
-- stop_conditions: report generated
+- risks: wrapper auto-switches model without user control
+- acceptance_signals: wrapper stops with model-switch guidance
+- stop_conditions: no fallback CLI is invoked
 - owner: test
 - last_updated: 2026-01-01T00:00:00Z
 
 ## Steps
-1. Test fallback.
+1. Test quota stop.
 EOF
 
   local mock_bin="$TEST_WORKSPACE/mock-bin"
@@ -9844,25 +9828,9 @@ EOF
   exit 1'
 
   write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
-  args=("$@")
-  model=""
-  for ((i=0; i<${#args[@]}; i++)); do
-    if [[ "${args[i]}" == "--model" ]]; then
-      model="${args[i+1]}"
-    fi
-  done
-  echo "Requested model: $model" >> "${TEST_WORKSPACE}/claude-calls-code.log"
-  if [[ "$model" != "sonnet-4.6" ]]; then
-    echo "Unexpected Claude model requested: $model" >&2
-    exit 99
-  fi
-  cat <<EOF
-- verdict: accept
-- summary: Direct Claude code fallback succeeded.
-- strengths: Registry selected Sonnet for code.
-- risks: None.
-- requested_changes: None.
-EOF'
+  touch "${TEST_WORKSPACE}/claude-calls-code.log"
+  echo "claude should not be auto-invoked after agy quota exhaustion" >&2
+  exit 99'
 
   run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
     --task-id "ext-fallback-code" \
@@ -9876,17 +9844,18 @@ EOF'
     --approved-next-step "run external review ext-fallback-code" \
     --task-phase "code"
 
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"fallback route 'claude:sonnet-4.6'"* ]]
-  [[ "$output" == *"Registry fallback succeeded: agy:gemini-3.5-flash-medium -> claude:sonnet-4.6"* ]]
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Quota exhausted for route 'agy:gemini-3.5-flash-medium' (quota_group=agy-gemini-shared)"* ]]
+  [[ "$output" == *"Switch the globally selected model in runner 'agy'"* ]]
+  [[ "$output" == *"Do not auto-edit runner settings"* ]]
 
   run grep -- "--add-dir" "$TEST_WORKSPACE/agy-calls-code.log"
   [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/agy-settings-code.json"
   [ "$status" -eq 0 ]
-  run grep "Requested model: sonnet-4.6" "$TEST_WORKSPACE/claude-calls-code.log"
+  run test ! -e "$TEST_WORKSPACE/claude-calls-code.log"
   [ "$status" -eq 0 ]
-  run test -f "$DOCS_ROOT/report/PLAN-ext-fallback-code-v1.0-review-agy-gemini-3.5-flash-medium-r01.md"
+  run test ! -f "$DOCS_ROOT/report/PLAN-ext-fallback-code-v1.0-review-agy-gemini-3.5-flash-medium-r01.md"
   [ "$status" -eq 0 ]
 }
 
@@ -9914,16 +9883,7 @@ EOF
   mkdir -p "$mock_bin"
 
   write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
-  args=("$@")
-  model=""
-  for ((i=0; i<${#args[@]}; i++)); do
-    if [[ "${args[i]}" == "--model" ]]; then
-      model="${args[i+1]}"
-    fi
-  done
-  
-  echo "Requested model: $model" >> "${TEST_WORKSPACE}/claude-calls-fail.log"
-  
+  printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-calls-fail.log"
   echo "Error 429: resource_exhausted rate limit exceeded" >&2
   exit 1'
 
@@ -9939,11 +9899,14 @@ EOF
     --approved-next-step "run external review ext-fallback-fail"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Quota exhausted for route 'claude:opus-4.8' (quota_group=claude-direct-subscription), but no fallback is configured"* ]]
+  [[ "$output" == *"Quota exhausted for route 'claude:opus-4.8' (quota_group=claude-direct-subscription)"* ]]
+  [[ "$output" == *"Switch the globally selected model in runner 'claude'"* ]]
   [[ "$output" != *"Registry fallback succeeded"* ]]
+  run grep -E -- '(^|[[:space:]])--model([[:space:]]|$)' "$TEST_WORKSPACE/claude-calls-fail.log"
+  [ "$status" -ne 0 ]
 }
 
-@test "run_external_plan_reviews loads runner routes and fallbacks from registry override" {
+@test "run_external_plan_reviews loads runner routes from registry override and still stops on quota" {
   local plan_file="$DOCS_ROOT/plan/PLAN-ext-registry-override-v1.0.md"
   cat > "$plan_file" <<'EOF'
 # PLAN-ext-registry-override-v1.0
@@ -9954,8 +9917,8 @@ EOF
 - scope: external review
 - assumptions: local registry can add new model aliases without script edits
 - risks: wrapper ignores registry override
-- acceptance_signals: configured fallback model is invoked
-- stop_conditions: report generated
+- acceptance_signals: configured route is invoked and quota stop is reported
+- stop_conditions: no fallback CLI is invoked
 - owner: test
 - last_updated: 2026-01-01T00:00:00Z
 
@@ -10026,27 +9989,8 @@ EOF
   exit 1'
 
   write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
-  args=("$@")
-  model=""
-  for ((i=0; i<${#args[@]}; i++)); do
-    if [[ "${args[i]}" == "--model" ]]; then
-      model="${args[i+1]}"
-    fi
-  done
-
-  echo "Requested model: $model" >> "${TEST_WORKSPACE}/claude-registry-calls.log"
-
-  if [[ "$model" == "claude-4.7-sonnet" ]]; then
-    cat <<EOF
-- verdict: accept
-- summary: Registry override fallback succeeded.
-- strengths: The wrapper used the configured runner registry.
-- risks: None.
-- requested_changes: None.
-EOF
-    exit 0
-  fi
-  echo "Unexpected Claude model requested from registry override: $model" >&2
+  touch "${TEST_WORKSPACE}/claude-registry-calls.log"
+  echo "claude should not be auto-invoked after agy quota exhaustion" >&2
   exit 99'
 
   run env CODEGUIDE_MODEL_REGISTRY="$registry_file" PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
@@ -10060,17 +10004,17 @@ EOF
     --approval-ref "user-approval-ext-registry-override" \
     --approved-next-step "run external review ext-registry-override"
 
-  [ "$status" -eq 0 ]
+  [ "$status" -ne 0 ]
   [[ "$output" == *"Quota exhausted for route 'agy:new-gemini' (quota_group=agy-future-gemini)"* ]]
-  [[ "$output" == *"Registry fallback succeeded: agy:new-gemini -> claude:new-sonnet"* ]]
+  [[ "$output" == *"Switch the globally selected model in runner 'agy'"* ]]
 
   run grep -- "--add-dir" "$TEST_WORKSPACE/agy-registry-calls.log"
   [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/agy-registry-settings.json"
   [ "$status" -eq 0 ]
-  run grep "Requested model: claude-4.7-sonnet" "$TEST_WORKSPACE/claude-registry-calls.log"
+  run test ! -e "$TEST_WORKSPACE/claude-registry-calls.log"
   [ "$status" -eq 0 ]
-  run test -f "$DOCS_ROOT/report/PLAN-ext-registry-override-v1.0-review-agy-new-gemini-r01.md"
+  run test ! -f "$DOCS_ROOT/report/PLAN-ext-registry-override-v1.0-review-agy-new-gemini-r01.md"
   [ "$status" -eq 0 ]
 }
 
@@ -10192,18 +10136,18 @@ EOF
   [[ "$output" == *"references unknown model route"* ]]
 }
 
-@test "run_external_plan_reviews detects exhausted fallback model stderr" {
+@test "run_external_plan_reviews stops after first exhausted route without fallback invocation" {
   local plan_file="$DOCS_ROOT/plan/PLAN-ext-fallback-exhausted-v1.0.md"
   cat > "$plan_file" <<'EOF'
 # PLAN-ext-fallback-exhausted-v1.0
 
 - task_id: ext-fallback-exhausted
 - plan_version: v1.0
-- objective: test fallback stderr classification
+- objective: test quota stop classification
 - scope: external review
-- assumptions: both primary and fallback models exhaust quota
-- risks: fallback stderr is lost
-- acceptance_signals: both-pools exhausted message appears
+- assumptions: primary route exhausts quota
+- risks: fallback CLI is invoked without user model selection
+- acceptance_signals: model-switch guidance appears and fallback CLI is not called
 - stop_conditions: script exits
 - owner: test
 - last_updated: 2026-01-01T00:00:00Z
@@ -10215,6 +10159,7 @@ EOF
 echo "Error 429: resource_exhausted rate limit exceeded" >&2
 exit 1'
   write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/claude-fallback-called"
 echo "Error 429: resource_exhausted rate limit exceeded" >&2
 exit 1'
 
@@ -10230,7 +10175,10 @@ exit 1'
     --approved-next-step "run external review ext-fallback-exhausted"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Quota exhausted for route 'agy:gemini-3.5-flash-medium' and fallback route 'claude:opus-4.8'"* ]]
+  [[ "$output" == *"Quota exhausted for route 'agy:gemini-3.5-flash-medium' (quota_group=agy-gemini-shared)"* ]]
+  [[ "$output" == *"Switch the globally selected model in runner 'agy'"* ]]
+  run test ! -e "$TEST_WORKSPACE/claude-fallback-called"
+  [ "$status" -eq 0 ]
 }
 
 @test "run_external_plan_reviews resolves adversarial evaluator runner aliases" {
@@ -10292,16 +10240,18 @@ EOF'
 }
 
 @test "external_review_runner enqueues current-task debate and dry-runs runner participants" {
-  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-neutral" --plan-version "v1.0" --review-round "r01" --task-phase "planning" --coordinator "claude" --participant "agy-gemini-3.5-flash-high" --participant "claude-opus-4.8"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-neutral" --plan-version "v1.0" --review-round "r01" --task-phase "planning" --coordinator "claude" --participant "agy-current" --participant "claude-current" --participant "codex-current"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
 
   [ "$status" -eq 0 ]
   run test -f "$DOCS_ROOT/orchestration/runner-neutral/current-task/debate.json"
   [ "$status" -eq 0 ]
   run grep '"coordinator": "claude"' "$DOCS_ROOT/orchestration/runner-neutral/current-task/debate.json"
   [ "$status" -eq 0 ]
-  run grep '"runner_route": "agy:gemini-3.5-flash-high"' "$DOCS_ROOT/orchestration/runner-neutral/current-task/debate.json"
+  run grep '"runner_route": "agy:current"' "$DOCS_ROOT/orchestration/runner-neutral/current-task/debate.json"
   [ "$status" -eq 0 ]
-  run grep '"runner_route": "claude:opus-4.8"' "$DOCS_ROOT/orchestration/runner-neutral/current-task/debate.json"
+  run grep '"runner_route": "claude:current"' "$DOCS_ROOT/orchestration/runner-neutral/current-task/debate.json"
+  [ "$status" -eq 0 ]
+  run grep '"runner_route": "codex:current"' "$DOCS_ROOT/orchestration/runner-neutral/current-task/debate.json"
   [ "$status" -eq 0 ]
 
   run python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-neutral" --dry-run
@@ -10309,7 +10259,9 @@ EOF'
   [ "$status" -eq 0 ]
   [[ "$output" == *"agy --add-dir"* ]]
   [[ "$output" == *"claude -p"* ]]
-  [[ "$output" == *"--model opus-4.8"* ]]
+  [[ "$output" == *"codex exec"* ]]
+  [[ "$output" != *"--model"* ]]
+  [[ "$output" != *" -m "* ]]
 }
 
 @test "external_review_runner executes agy with current CLI flags and preconfigured model selection" {
@@ -10340,6 +10292,47 @@ EOF'
   [ "$status" -ne 0 ]
   run test -f "$DOCS_ROOT/orchestration/runner-agy-exec/current-task/responses/agy-gemini-3.5-flash-high.response.md"
   [ "$status" -eq 0 ]
-  run grep "^- model_selection: agy_preconfigured_runtime" "$DOCS_ROOT/orchestration/runner-agy-exec/current-task/provenance/agy-gemini-3.5-flash-high.provenance.md"
+  run grep "^- model_selection: preconfigured_runtime" "$DOCS_ROOT/orchestration/runner-agy-exec/current-task/provenance/agy-gemini-3.5-flash-high.provenance.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "external_review_runner executes codex with preconfigured model selection" {
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/runner-codex-args.log"
+output_file=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-last-message" ]]; then
+    output_file="${2:-}"
+    shift 2
+  else
+    shift
+  fi
+done
+cat > "$output_file" <<EOF
+- verdict: accept
+- summary: Mock Codex accepted the current-task debate packet.
+- strengths: The runner used global Codex configuration.
+- risks: None.
+- requested_changes: None.
+EOF'
+
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-codex-exec" --plan-version "v1.0" --review-round "r01" --task-phase "review" --coordinator "agy" --participant "codex-current"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+
+  run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-codex-exec" --force
+  [ "$status" -eq 0 ]
+
+  run grep -- "exec" "$TEST_WORKSPACE/runner-codex-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "--output-last-message" "$TEST_WORKSPACE/runner-codex-args.log"
+  [ "$status" -eq 0 ]
+  run grep -E -- '(^|[[:space:]])-m([[:space:]]|$)|--model' "$TEST_WORKSPACE/runner-codex-args.log"
+  [ "$status" -ne 0 ]
+  run test -f "$DOCS_ROOT/orchestration/runner-codex-exec/current-task/responses/codex-current.response.md"
+  [ "$status" -eq 0 ]
+  run grep "^- model_selection: preconfigured_runtime" "$DOCS_ROOT/orchestration/runner-codex-exec/current-task/provenance/codex-current.provenance.md"
   [ "$status" -eq 0 ]
 }

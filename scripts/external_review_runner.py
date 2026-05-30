@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ai_model_registry import VALID_PHASES, RegistryError, fallback_for, is_quota_error, load_registry, model_for_route, resolve_model_route, runner_for_route
+from ai_model_registry import VALID_PHASES, RegistryError, is_quota_error, load_registry, model_for_route, resolve_model_route, runner_for_route
 from codeguide_paths import docs_root_for, external_cli_dir_for, orchestration_task_dir_for, resolve_project_root
 
 
@@ -71,7 +71,6 @@ def current_task_dir(project_root: Path, task_id: str) -> Path:
 
 
 def command_for_route(registry: dict[str, Any], route: str, request_file: Path, response_file: Path, project_root: Path) -> list[str]:
-    model = model_for_route(registry, route)
     runner = runner_for_route(registry, route)
     binary = os.environ.get(runner.get("env_binary") or "", runner["binary"])
     prompt = (
@@ -92,26 +91,56 @@ def command_for_route(registry: dict[str, Any], route: str, request_file: Path, 
             binary,
             "-p",
             prompt,
-            "--model",
-            model["cli_model"],
             "--no-session-persistence",
             "--tools",
             "",
             "--add-dir",
             str(project_root),
         ]
+    if runner["command_kind"] == "codex_cli":
+        return [
+            binary,
+            "exec",
+            "--cd",
+            str(project_root),
+            "--sandbox",
+            "read-only",
+            "--ephemeral",
+            "--output-last-message",
+            str(response_file),
+            prompt,
+        ]
     raise ValueError(f"unsupported command_kind: {runner['command_kind']}")
 
 
-def run_command_for_route(registry: dict[str, Any], route: str, command: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+def run_command_for_route(registry: dict[str, Any], route: str, command: list[str], response_file: Path) -> subprocess.CompletedProcess[str]:
+    runner = runner_for_route(registry, route)
+    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+    if runner["command_kind"] != "codex_cli" or result.returncode != 0:
+        return result
+    response_text = read_text(response_file) if response_file.exists() else ""
+    stderr_text = result.stderr
+    if result.stdout.strip():
+        stderr_text = (stderr_text + "\n" + result.stdout).strip() + "\n"
+    if not response_text.strip():
+        stderr_text = stderr_text + f"[ERROR] codex final message file was empty: {response_file}\n"
+        return subprocess.CompletedProcess(result.args, 1, "", stderr_text)
+    return subprocess.CompletedProcess(result.args, 0, response_text, stderr_text)
 
 
 def model_selection_for_route(registry: dict[str, Any], route: str) -> str:
-    runner = runner_for_route(registry, route)
-    if runner["command_kind"] == "agy":
-        return "agy_preconfigured_runtime"
-    return "cli_flag"
+    model_for_route(registry, route)
+    return "preconfigured_runtime"
+
+
+def quota_exhausted_message(registry: dict[str, Any], route: str) -> str:
+    model = model_for_route(registry, route)
+    return (
+        f"[BLOCKED] Quota exhausted for route '{route}' (quota_group={model['quota_group']}).\n"
+        f"Switch the globally selected model in runner '{model['runner']}' to a non-exhausted model, "
+        "then rerun with a reviewer route that records that selection.\n"
+        "Do not auto-edit runner settings from this wrapper.\n"
+    )
 
 
 def enqueue(args: argparse.Namespace) -> int:
@@ -205,18 +234,11 @@ def execute_once(args: argparse.Namespace) -> int:
             print(" ".join(shlex.quote(part) for part in command))
             continue
 
-        result = run_command_for_route(registry, route, command)
+        result = run_command_for_route(registry, route, command, external_response)
         stderr_text = result.stderr
         stdout_text = result.stdout
         if result.returncode != 0 and is_quota_error(registry, stderr_text):
-            fallback_route = fallback_for(registry, route, phase)
-            if fallback_route:
-                fallback_triggered = True
-                actual_route = fallback_route
-                command = command_for_route(registry, fallback_route, external_request, external_response, project_root)
-                result = run_command_for_route(registry, fallback_route, command)
-                stderr_text = stderr_text + "\n" + result.stderr
-                stdout_text = result.stdout
+            stderr_text = stderr_text + "\n" + quota_exhausted_message(registry, route)
 
         write_text(external_stderr, redact(stderr_text))
         if result.returncode != 0:

@@ -111,8 +111,8 @@ def validate_registry(registry: dict[str, Any]) -> None:
         if env_binary not in ("", None):
             _scalar(env_binary, f"runners[{runner_id!r}].env_binary")
         command_kind = _scalar(runner.get("command_kind", ""), f"runners[{runner_id!r}].command_kind")
-        if command_kind not in {"agy", "claude_code", "manual"}:
-            _fail(f"runners[{runner_id!r}].command_kind must be agy, claude_code, or manual")
+        if command_kind not in {"agy", "claude_code", "codex_cli", "manual"}:
+            _fail(f"runners[{runner_id!r}].command_kind must be agy, claude_code, codex_cli, or manual")
 
     models = registry.get("models")
     if not isinstance(models, dict) or not models:

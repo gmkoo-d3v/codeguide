@@ -7,7 +7,7 @@ Extracted verbatim from SKILL.md for Phase 1 coverage audit; SKILL.md retains th
 2. The supervising lead architect creates or delegates the initial plan doc at project docs `docs/plan/PLAN-<task-id>-v1.0.md`.
 3. Planning sub-agent drafts the plan; review sub-agent(s) critique it and write one report per evaluator in project `docs/report/`:
    - evaluator is the actual runner (`agy`, `claude`, etc.); reports are named by route slug (e.g. `PLAN-<id>-<version>-review-<runner>-<model-slug>-rNN.md`)
-   - requested/actual runner, route, and CLI model are recorded in the report; if a quota fallback was triggered `quota_fallback_triggered: true` is also set
+   - requested/actual runner, route, CLI model, and model-selection mode are recorded in the report; quota exhaustion stops for user-directed model switching
    - reviewer and evaluator tracks both default to defect-seeking review rather than approval-seeking review; prioritize logical gaps, weak assumptions, missing verification, understated risks, contract mismatches, and team-convention violations over praise
    - keep critical review evidence-based: prefer concrete defects, violated rules, and missing safeguards over vague negativity
    - do not require exact command phrases for stronger scrutiny; infer review intensity from task context, user wording, and risk level
