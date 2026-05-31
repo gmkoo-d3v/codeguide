@@ -29,4 +29,7 @@ Extracted verbatim from SKILL.md for Phase 1 coverage audit; SKILL.md retains th
    - fixed iteration count, token budget, and cost cap are not primary stop conditions; use `Goal Loop Contract` hard stops instead
 6. When delegated implementation begins, coding sub-agents own disjoint code scopes while the supervising lead architect tracks the selected plan version in related `decision-*` and `TASK-*` docs.
    - for `codeguide`-invoked code writing work that explicitly requests sub-agents, prefer a standard four-track split when practical: planner, reviewer/evaluator, implementation, validation
+   - before plan-dependent implementation starts, run `scripts/validate_docs.sh <project-root> --mode advisory`; if the external-review await gate emits a WARN for the consumed plan, treat that WARN as a stop signal and wait for an accepted external review or an explicit waiver
+   - when ORCH sets `external_review_required_for: implementation_start`, the matching active TASK must declare a same-task `consumes_plan_ref`; deleting that field is not a valid way to claim independence
+   - parallel or post-hoc work remains allowed only when ORCH does not require an implementation-start review gate for the current task
 7. At task close, ensure the final architecture/runtime state is reflected in the affected `docs/shadow/` router, `_global.md` when applicable, bucket indexes, unit overviews, and leaf docs.

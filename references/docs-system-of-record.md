@@ -90,6 +90,13 @@ Use one task capsule per delegated or externally reviewed task: `docs/orchestrat
 - execution_mode: supervisor_subagents | solo
 - primary_author_tool: antigravity | agy | claude | codex | human | external-runner
 - review_mode: external_cli | current_task_debate | agy_subagents
+- external_review_status: not_requested | requested | running | awaiting_response | ingested | blocked | waived
+- external_review_required_for: plan_acceptance | implementation_start | commit | close
+- required_review_routes: <colon route>, ...
+- external_review_round: rNN
+- external_review_result_ref:
+- external_review_waiver_ref:
+- external_review_waiver_reason:
 - supervisor_agent:
 - planner_agents:
 - reviewer_agents:
@@ -108,6 +115,8 @@ Use one task capsule per delegated or externally reviewed task: `docs/orchestrat
 ```
 
 Run and record main-thread risk preflight before spawning sub-agents, invoking external reviewers, or starting ping-pong. Default orchestration is `execution_mode: solo`; delegated fields, external review fields, or `execution_mode: supervisor_subagents` require explicit preflight. If preflight is `blocked` or `approval_required`, stop before delegation/external review. Continue only when the status is `pass`, or when the user approves the exact next step and the status is `approved` with `approval_required: true`, a concrete `approval_ref`, and a concrete `approved_next_step`. External CLI review requires the `approved` form because it crosses an external-service boundary. `risk_preflight_recorded_by` must identify the main-thread supervising lead architect, not evaluator/tool identities such as `antigravity`, `agy`, `claude`, `codex`, `gemini`, `external-review-wrapper`, or `external-cli*`.
+
+External review await gate fields live in `ORCH.md`. `required_review_routes` uses registry colon routes such as `agy:current`; report and response file names use route slugs and must not be treated as canonical route ids. `external_review_result_ref` points at the round directory `docs/orchestration/<task-id>/external-cli/<plan-version>/<round>/`, whose `<plan-version>` must match the consumed plan version. For a plan-dependent transition, only `external_review_status: ingested` with a satisfied ingested guard, or `external_review_status: waived` with a satisfied waiver guard, passes; `not_requested`, `requested`, `running`, `awaiting_response`, `blocked`, missing, empty, or unknown status values warn in advisory mode. The ingested guard requires `required_review_routes` to be non-empty, comma-split parseable, non-placeholder, registry-resolvable, and for every listed route to have an inspectable accepted artifact with `verdict: accept` under the referenced round directory. Every "for every item" gate first proves the item set is non-empty, parseable, and well formed; empty, null, duplicate, placeholder, or unresolvable members fail the guard instead of satisfying it vacuously. The waiver guard requires non-placeholder `external_review_waiver_ref` and `external_review_waiver_reason`.
 
 ## Project dictionary template
 
@@ -150,6 +159,7 @@ Use one file per task: `docs/task/TASK-<id>.md`
 - test_scope:
 - risks:
 - risk_level:
+- consumes_plan_ref:
 - status: planned | in_progress | blocked | done
 - owner:
 - due_date:
@@ -159,6 +169,8 @@ Use one file per task: `docs/task/TASK-<id>.md`
 ```
 
 `<project-root>/docs/task/task-index.md` should list task ids organized by status section (Planned/In Progress/Blocked/Done). Rows are automatically moved between sections when task status changes.
+
+`consumes_plan_ref` is required when the matching ORCH capsule sets `external_review_required_for: implementation_start` and the task is `in_progress` or `done`. It must reference a same-task plan in the form `PLAN-<task-id>-vX.Y`; cross-task plan consumption is out of scope for this gate and warns instead of being treated as independent.
 
 ## Anti-dump policy (default recommended, strict in CI)
 - Keep shadow docs close to 200 lines and preferably at or below 300 lines.
