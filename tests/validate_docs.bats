@@ -2,6 +2,258 @@
 
 load codeguide_helper
 
+await_gate_route_slug() {
+  printf "%s" "$1" | sed 's/[^A-Za-z0-9._-]/-/g'
+}
+
+write_await_gate_fixture() {
+  local task_id="$1"
+  local task_status="$2"
+  local required_for="$3"
+  local consumes_plan_ref="$4"
+  local external_status="$5"
+  local required_routes="$6"
+  local result_ref="$7"
+  local waiver_ref="$8"
+  local waiver_reason="$9"
+  local task_file="$DOCS_ROOT/task/TASK-${task_id}.md"
+  local plan_version="v1.0"
+  local plan_file="$DOCS_ROOT/plan/PLAN-${task_id}-${plan_version}.md"
+  local orch_dir="$DOCS_ROOT/orchestration/${task_id}"
+  local orch_file="$orch_dir/ORCH.md"
+
+  cat > "$task_file" <<EOF
+# TASK-${task_id}
+
+- title: Await gate fixture
+- objective: exercise external review await gate
+- acceptance_criteria: validator emits the expected gate warning
+- non_goals: production docs
+- affected_modules: docs
+- interfaces_changed: none
+- data_migrations: none
+- test_scope: validate_docs
+- risks: low
+- risk_level: low
+- consumes_plan_ref: ${consumes_plan_ref}
+- status: ${task_status}
+- owner: test
+- due_date:
+- axis_why: verify await gate behavior
+- axis_where: docs validation fixture
+- axis_verify: bats
+EOF
+
+  cat > "$plan_file" <<EOF
+# PLAN-${task_id}-${plan_version}
+
+- task_id: ${task_id}
+- plan_version: ${plan_version}
+- objective: await gate fixture plan
+- scope: validate_docs test
+- assumptions: test fixture
+- risks: low
+- acceptance_signals: validator behavior observed
+- stop_conditions: test done
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  mkdir -p "$orch_dir"
+  cat > "$orch_file" <<EOF
+# ORCH-${task_id}
+
+- task_id: ${task_id}
+- execution_mode: solo
+- primary_author_tool: human
+- review_mode: agy_subagents
+- external_review_status: ${external_status}
+- external_review_required_for: ${required_for}
+- required_review_routes: ${required_routes}
+- external_review_round: r01
+- external_review_result_ref: ${result_ref}
+- external_review_waiver_ref: ${waiver_ref}
+- external_review_waiver_reason: ${waiver_reason}
+- supervisor_agent:
+- planner_agents:
+- reviewer_agents:
+- implementation_agents:
+- validation_agents:
+- owned_scopes:
+- delegation_status: planned
+- delegation_note: await gate fixture is solo
+- risk_preflight_status: pass
+- risk_preflight_recorded_by: main-thread
+- risk_preflight_summary: no external side effect in fixture
+- approval_required: false
+- approval_ref: not_required
+- approved_next_step: not_required
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  printf '%s\n' "- TASK-${task_id} ${task_status}" >> "$DOCS_ROOT/task/task-index.md"
+}
+
+create_await_gate_result_dir() {
+  local task_id="$1"
+  local plan_version="${2:-v1.0}"
+  local review_round="${3:-r01}"
+  local result_dir="$DOCS_ROOT/orchestration/${task_id}/external-cli/${plan_version}/${review_round}"
+  local route_spec
+  local route
+  local verdict
+  local slug
+
+  mkdir -p "$result_dir"
+  shift 3
+  for route_spec in "$@"; do
+    route="${route_spec%=*}"
+    verdict="${route_spec##*=}"
+    slug="$(await_gate_route_slug "$route")"
+    cat > "$result_dir/${slug}.response.md" <<EOF
+# External Review ${slug}
+
+- verdict: ${verdict}
+- summary: fixture response
+- strengths: fixture
+- risks: fixture
+- requested_changes: none
+EOF
+  done
+
+  printf "%s\n" "docs/orchestration/${task_id}/external-cli/${plan_version}/${review_round}"
+}
+
+@test "validate_docs advisory warns when dependent external review is requested" {
+  write_await_gate_fixture "await-gate-requested-01" "in_progress" "implementation_start" "PLAN-await-gate-requested-01-v1.0" "requested" "agy:current" "" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] external review await gate not satisfied for TASK-await-gate-requested-01: external_review_status=requested"* ]]
+}
+
+@test "validate_docs advisory warns when dependent external review is not requested" {
+  write_await_gate_fixture "await-gate-not-requested-01" "in_progress" "implementation_start" "PLAN-await-gate-not-requested-01-v1.0" "not_requested" "agy:current" "" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] external review await gate not satisfied for TASK-await-gate-not-requested-01: external_review_status=not_requested"* ]]
+}
+
+@test "validate_docs advisory warns when dependent external review is blocked" {
+  write_await_gate_fixture "await-gate-blocked-01" "in_progress" "implementation_start" "PLAN-await-gate-blocked-01-v1.0" "blocked" "agy:current" "" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] external review await gate not satisfied for TASK-await-gate-blocked-01: external_review_status=blocked"* ]]
+}
+
+@test "validate_docs advisory warns when ingested review lacks required route accept" {
+  local result_ref
+  result_ref="$(create_await_gate_result_dir "await-gate-missing-route-01" "v1.0" "r01" "agy:current=accept" "claude:current=revise")"
+  write_await_gate_fixture "await-gate-missing-route-01" "in_progress" "implementation_start" "PLAN-await-gate-missing-route-01-v1.0" "ingested" "agy:current, claude:current" "$result_ref" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] external review await gate missing accepted route artifact for claude:current"* ]]
+}
+
+@test "validate_docs advisory passes when ingested review has all required route accepts" {
+  local result_ref
+  result_ref="$(create_await_gate_result_dir "await-gate-accept-01" "v1.0" "r01" "agy:current=accept" "claude:current=accept")"
+  write_await_gate_fixture "await-gate-accept-01" "in_progress" "implementation_start" "PLAN-await-gate-accept-01-v1.0" "ingested" "agy:current, claude:current" "$result_ref" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"[WARN] external review await gate"* ]]
+  [[ "$output" == *"[PASS] external review await gate satisfied for PLAN-await-gate-accept-01-v1.0"* ]]
+}
+
+@test "validate_docs advisory warns when waived review lacks ref or reason" {
+  write_await_gate_fixture "await-gate-waived-missing-01" "in_progress" "implementation_start" "PLAN-await-gate-waived-missing-01-v1.0" "waived" "agy:current" "" "" "user approved waiver"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] external review await gate waiver requires concrete external_review_waiver_ref and external_review_waiver_reason"* ]]
+}
+
+@test "validate_docs advisory passes when waived review has concrete ref and reason" {
+  write_await_gate_fixture "await-gate-waived-ok-01" "in_progress" "implementation_start" "PLAN-await-gate-waived-ok-01-v1.0" "waived" "agy:current" "" "docs/decisions/decision-waive-01.md" "user accepted external review waiver for this implementation"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"[WARN] external review await gate"* ]]
+  [[ "$output" == *"[PASS] external review await gate waived with concrete provenance"* ]]
+}
+
+@test "validate_docs advisory does not warn independent task when ORCH does not require implementation review" {
+  write_await_gate_fixture "await-gate-independent-01" "in_progress" "close" "" "requested" "agy:current" "" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"[WARN] external review await gate"* ]]
+}
+
+@test "validate_docs advisory warns when dependent task misses external_review_status" {
+  write_await_gate_fixture "await-gate-missing-status-01" "in_progress" "implementation_start" "PLAN-await-gate-missing-status-01-v1.0" "" "agy:current" "" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] external review await gate requires external_review_status for TASK-await-gate-missing-status-01"* ]]
+}
+
+@test "validate_docs advisory warns when implementation-start review omits consumes_plan_ref" {
+  write_await_gate_fixture "await-gate-no-consumes-01" "in_progress" "implementation_start" "" "requested" "agy:current" "" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] external review await gate requires same-task consumes_plan_ref for TASK-await-gate-no-consumes-01"* ]]
+}
+
+@test "validate_docs advisory warns when external_review_status is outside allowlist enum" {
+  write_await_gate_fixture "await-gate-invalid-status-01" "in_progress" "implementation_start" "PLAN-await-gate-invalid-status-01-v1.0" "skipped" "agy:current" "" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] external review await gate has invalid external_review_status for TASK-await-gate-invalid-status-01: skipped"* ]]
+}
+
+@test "validate_docs advisory warns when ingested result_ref directory is absent" {
+  write_await_gate_fixture "await-gate-missing-dir-01" "in_progress" "implementation_start" "PLAN-await-gate-missing-dir-01-v1.0" "ingested" "agy:current" "docs/orchestration/await-gate-missing-dir-01/external-cli/v1.0/r01" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] external review await gate result_ref directory missing or not a directory"* ]]
+}
+
+@test "validate_docs advisory warns when waived review uses placeholder values" {
+  write_await_gate_fixture "await-gate-waived-placeholder-01" "in_progress" "implementation_start" "PLAN-await-gate-waived-placeholder-01-v1.0" "waived" "agy:current" "" "TBD" "TODO"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] external review await gate waiver requires concrete external_review_waiver_ref and external_review_waiver_reason"* ]]
+}
+
+@test "validate_docs advisory warns when ingested review routes are empty or unparseable" {
+  local result_ref
+  result_ref="$(create_await_gate_result_dir "await-gate-empty-routes-01" "v1.0" "r01" "agy:current=accept")"
+  write_await_gate_fixture "await-gate-empty-routes-01" "in_progress" "implementation_start" "PLAN-await-gate-empty-routes-01-v1.0" "ingested" "" "$result_ref" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] external review await gate requires non-empty required_review_routes"* ]]
+}
+
+@test "validate_docs advisory warns when required review route is not registry resolvable" {
+  local result_ref
+  result_ref="$(create_await_gate_result_dir "await-gate-unknown-route-01" "v1.0" "r01")"
+  write_await_gate_fixture "await-gate-unknown-route-01" "in_progress" "implementation_start" "PLAN-await-gate-unknown-route-01-v1.0" "ingested" "agy:not-a-real-route" "$result_ref" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] external review await gate required_review_routes must use registered colon route: agy:not-a-real-route"* ]]
+}
+
 @test "validate_docs rejects legacy root orchestration paths" {
   cat > "$DOCS_ROOT/orchestration/ORCH-legacy-01.md" <<'EOF'
 # ORCH-legacy-01
@@ -1907,4 +2159,3 @@ EOF
   [ "$status" -ne 0 ]
   [[ "$output" == *"decision index missing row for decision-dot.a.md"* ]]
 }
-

@@ -2156,6 +2156,238 @@ is_active_task_status() {
   esac
 }
 
+trim_value() {
+  printf "%s" "$1" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
+}
+
+is_registry_colon_route() {
+  local route="$1"
+  python3 - "$SCRIPT_DIR" "$route" <<'PY'
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+script_dir = Path(sys.argv[1])
+route = sys.argv[2]
+sys.path.insert(0, str(script_dir))
+from ai_model_registry import RegistryError, load_registry
+
+try:
+    registry = load_registry(script_dir.parent / "config" / "ai_model_registry.json")
+except RegistryError:
+    raise SystemExit(1)
+
+if route not in registry["models"] or ":" not in route:
+    raise SystemExit(1)
+PY
+}
+
+route_slug_for_filename() {
+  printf "%s" "$1" | sed 's/[^A-Za-z0-9._-]/-/g'
+}
+
+resolve_docs_ref_path() {
+  local ref="$1"
+  ref="${ref%/}"
+  case "$ref" in
+    /*) printf "%s" "$ref" ;;
+    docs/*) printf "%s/%s" "$PROJECT_ROOT_ABS" "$ref" ;;
+    *) printf "%s/%s" "$DOCS_DIR" "$ref" ;;
+  esac
+}
+
+await_gate_route_has_accept_artifact() {
+  local result_dir="$1"
+  local route="$2"
+  local slug
+  local candidate
+  local verdict
+
+  slug="$(route_slug_for_filename "$route")"
+  for candidate in "$result_dir/${slug}.response.md" "$result_dir/${slug}.retry-response.md"; do
+    if [[ ! -f "$candidate" ]]; then
+      continue
+    fi
+    verdict="$(extract_field_value "$candidate" "verdict")"
+    if [[ "$verdict" == "accept" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+parse_required_review_routes_for_await_gate() {
+  local raw_routes="$1"
+  local route
+  local normalized
+  local seen_routes="|"
+  local parsed_count=0
+
+  AWAIT_GATE_ROUTES=()
+  if is_placeholder_approval_value "$raw_routes"; then
+    fail "external review await gate requires non-empty required_review_routes"
+    return 1
+  fi
+
+  IFS=',' read -r -a AWAIT_GATE_RAW_ROUTES <<< "$raw_routes"
+  for route in "${AWAIT_GATE_RAW_ROUTES[@]}"; do
+    normalized="$(trim_value "$route")"
+    if [[ -z "$normalized" ]]; then
+      fail "external review await gate required_review_routes contains an empty route member"
+      return 1
+    fi
+    if [[ "$seen_routes" == *"|${normalized}|"* ]]; then
+      fail "external review await gate required_review_routes contains duplicate route: ${normalized}"
+      return 1
+    fi
+    if ! is_registry_colon_route "$normalized"; then
+      fail "external review await gate required_review_routes must use registered colon route: ${normalized}"
+      return 1
+    fi
+    seen_routes="${seen_routes}${normalized}|"
+    AWAIT_GATE_ROUTES+=("$normalized")
+    parsed_count=$((parsed_count + 1))
+  done
+
+  if (( parsed_count == 0 )); then
+    fail "external review await gate requires non-empty required_review_routes"
+    return 1
+  fi
+  return 0
+}
+
+check_ingested_external_review_await_gate() {
+  local task_id="$1"
+  local consumes_plan_ref="$2"
+  local consumed_plan_version="$3"
+  local orchestration_file="$4"
+  local required_review_routes
+  local review_round
+  local result_ref
+  local result_dir
+  local result_dir_physical
+  local expected_dir
+  local expected_dir_physical
+  local route
+
+  required_review_routes="$(extract_field_value "$orchestration_file" "required_review_routes")"
+  if ! parse_required_review_routes_for_await_gate "$required_review_routes"; then
+    return
+  fi
+
+  review_round="$(extract_field_value "$orchestration_file" "external_review_round")"
+  if [[ ! "$review_round" =~ ^r[0-9][0-9]$ ]]; then
+    fail "external review await gate requires external_review_round rNN for ${consumes_plan_ref}"
+    return
+  fi
+
+  result_ref="$(extract_field_value "$orchestration_file" "external_review_result_ref")"
+  if is_placeholder_approval_value "$result_ref"; then
+    fail "external review await gate requires external_review_result_ref directory for ${consumes_plan_ref}"
+    return
+  fi
+
+  result_dir="$(resolve_docs_ref_path "$result_ref")"
+  if [[ ! -d "$result_dir" ]]; then
+    fail "external review await gate result_ref directory missing or not a directory: ${result_ref}"
+    return
+  fi
+
+  expected_dir="$(codeguide_external_cli_dir "$PROJECT_ROOT_ABS" "$task_id" "$consumed_plan_version" "$review_round")"
+  result_dir_physical="$(cd "$result_dir" && pwd -P)"
+  if [[ -d "$expected_dir" ]]; then
+    expected_dir_physical="$(cd "$expected_dir" && pwd -P)"
+  else
+    expected_dir_physical="$expected_dir"
+  fi
+  if [[ "$result_dir_physical" != "$expected_dir_physical" ]]; then
+    fail "external review await gate result_ref must match consumed plan version and round: ${result_ref} != ${expected_dir}"
+    return
+  fi
+
+  for route in "${AWAIT_GATE_ROUTES[@]}"; do
+    if ! await_gate_route_has_accept_artifact "$result_dir_physical" "$route"; then
+      fail "external review await gate missing accepted route artifact for ${route} under ${result_ref}"
+      return
+    fi
+  done
+
+  pass "external review await gate satisfied for ${consumes_plan_ref}"
+}
+
+check_waived_external_review_await_gate() {
+  local orchestration_file="$1"
+  local waiver_ref
+  local waiver_reason
+
+  waiver_ref="$(extract_field_value "$orchestration_file" "external_review_waiver_ref")"
+  waiver_reason="$(extract_field_value "$orchestration_file" "external_review_waiver_reason")"
+  if is_placeholder_approval_value "$waiver_ref" || is_placeholder_approval_value "$waiver_reason"; then
+    fail "external review await gate waiver requires concrete external_review_waiver_ref and external_review_waiver_reason"
+    return
+  fi
+
+  pass "external review await gate waived with concrete provenance"
+}
+
+check_external_review_await_gate_for_task() {
+  local task_id="$1"
+  local task_ref="$2"
+  local task_file="$3"
+  local task_status="$4"
+  local orchestration_file
+  local required_for
+  local consumes_plan_ref
+  local consumed_plan_version
+  local status
+
+  [[ "$MODE" == "advisory" ]] || return 0
+  [[ "$task_status" == "in_progress" || "$task_status" == "done" ]] || return 0
+
+  orchestration_file="$(codeguide_orchestration_file "$PROJECT_ROOT_ABS" "$task_id")"
+  [[ -f "$orchestration_file" ]] || return 0
+
+  required_for="$(extract_field_value "$orchestration_file" "external_review_required_for")"
+  [[ "$required_for" == "implementation_start" ]] || return 0
+
+  consumes_plan_ref="$(extract_field_value "$task_file" "consumes_plan_ref")"
+  if [[ "$consumes_plan_ref" != PLAN-"${task_id}"-v* ]]; then
+    fail "external review await gate requires same-task consumes_plan_ref for ${task_ref}"
+    return
+  fi
+  consumed_plan_version="${consumes_plan_ref#PLAN-${task_id}-}"
+  if [[ ! "$consumed_plan_version" =~ ^v[0-9]+\.[0-9]+$ ]]; then
+    fail "external review await gate requires same-task consumes_plan_ref for ${task_ref}"
+    return
+  fi
+  if [[ ! -f "$PLAN_DIR/${consumes_plan_ref}.md" ]]; then
+    fail "external review await gate consumes_plan_ref points to missing plan: ${consumes_plan_ref}"
+    return
+  fi
+
+  status="$(extract_field_value "$orchestration_file" "external_review_status")"
+  case "$status" in
+    ingested)
+      check_ingested_external_review_await_gate "$task_id" "$consumes_plan_ref" "$consumed_plan_version" "$orchestration_file"
+      ;;
+    waived)
+      check_waived_external_review_await_gate "$orchestration_file"
+      ;;
+    "")
+      fail "external review await gate requires external_review_status for ${task_ref}"
+      ;;
+    not_requested|requested|running|awaiting_response|blocked)
+      fail "external review await gate not satisfied for ${task_ref}: external_review_status=${status}"
+      ;;
+    *)
+      fail "external review await gate has invalid external_review_status for ${task_ref}: ${status}"
+      ;;
+  esac
+  return 0
+}
+
 # --- Structure checks ---
 check_dir_exists "$DOCS_DIR" "docs directory"
 check_dir_exists "$TASK_DIR" "task directory"
@@ -2326,6 +2558,7 @@ if [[ -d "$TASK_DIR" ]]; then
         fail "missing plan file for active task ${task_ref}: expected ${PLAN_DIR}/PLAN-${task_id}-v*.md"
       fi
       check_orchestration_file_for_task "$task_id" "$task_ref"
+      check_external_review_await_gate_for_task "$task_id" "$task_ref" "$task_file" "$task_status"
       orchestration_mode="$(orchestration_execution_mode_for_task "$task_id")"
       adversarial_source="$(adversarial_requirement_source_for_task "$task_id")"
       check_evaluator_reports_for_task "$task_id" "$task_ref" "$orchestration_mode" "$adversarial_source" "$latest_plan_version"
