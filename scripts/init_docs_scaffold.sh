@@ -668,7 +668,9 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 - Write evaluator report files in project docs `report/` with runner and model slug placeholders in the filename: `PLAN-<id>-<version>-review-<runner>-<model-slug>-rNN.md`.
 - External CLI handoff files live under `orchestration/<task-id>/external-cli/<plan-version>/<round>/`.
 - External CLI requests use metadata plus `Why`, `What`, `How`, `Where`, `Verify`, then payload; the command itself must name an explicit command-output path before the wrapper captures sanitized Markdown and parser-compatible bullet fields.
-- Pass only a short instruction plus the request file path and command-output path to the CLI; do not rely on output paths mentioned only inside the prompt.
+- Pass only a short instruction plus the request file path and command-output path to CLIs that can reliably read the request file; runners whose safe non-interactive mode cannot read workspace paths may receive the already-written request content on stdin while the Markdown request file remains the durable handoff contract.
+- If the Codex app sandbox blocks private workspace egress, request explicit user approval and rerun the same external CLI command through the user-approved unsandboxed path; record `platform_permission_blocked` only when that approval path is unavailable or still blocked.
+- If a runner reports `Not logged in` inside the Codex app but works in a normal user Terminal, treat it as a sandbox/keychain permission boundary and rerun through the user-approved unsandboxed path before asking the user to log in.
 - External CLI ping-pong runs only when explicitly approved with concrete approval provenance; if the user explicitly asks for sub-agent ping-pong review, interpret it as runtime sub-agent review mode instead.
 - Mark high-risk work with `risk_level: high|critical` on the task or linked decision.
 - Advisory validation warns when an active task omits `risk_level`.
