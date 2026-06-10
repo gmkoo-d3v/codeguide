@@ -154,6 +154,15 @@ def quota_exhausted_message(registry: dict[str, Any], route: str) -> str:
     )
 
 
+def auth_unavailable_message(registry: dict[str, Any], route: str) -> str:
+    model = model_for_route(registry, route)
+    return (
+        f"[BLOCKED] Runner authentication unavailable for route '{route}' (runner={model['runner']}).\n"
+        "If the CLI works in a normal user Terminal, this is likely a sandbox/keychain permission boundary; "
+        "rerun through the user-approved unsandboxed path. Otherwise log in to the runner and rerun.\n"
+    )
+
+
 def enqueue(args: argparse.Namespace) -> int:
     project_root = resolve_project_root(args.project_root)
     registry = load_registry(args.registry)
@@ -248,8 +257,12 @@ def execute_once(args: argparse.Namespace) -> int:
         result = run_command_for_route(registry, route, command, external_request, external_response)
         stderr_text = result.stderr
         stdout_text = result.stdout
+        if result.returncode != 0 and stdout_text.strip():
+            stderr_text = (stderr_text + "\n" + stdout_text).strip() + "\n"
         if result.returncode != 0 and is_quota_error(registry, stderr_text):
             stderr_text = stderr_text + "\n" + quota_exhausted_message(registry, route)
+        if result.returncode != 0 and re.search(r"Not logged in|Please run /login|authentication required|login required", stderr_text, re.I):
+            stderr_text = stderr_text + "\n" + auth_unavailable_message(registry, route)
 
         write_text(external_stderr, redact(stderr_text))
         if result.returncode != 0:

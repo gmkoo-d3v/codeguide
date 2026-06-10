@@ -1230,6 +1230,15 @@ is_model_unavailable_or_access_blocked() {
   return 1
 }
 
+is_runner_auth_unavailable() {
+  local response_file="$1"
+  local stderr_file="$2"
+  if grep -Eqi "Not logged in|Please run /login|authentication required|login required" "$response_file" "$stderr_file" 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
 write_manual_command_file() {
   local reviewer_model="$1"
   local request_file="$2"
@@ -1348,6 +1357,12 @@ run_tool_prompt() {
     echo "[BLOCKED] Model unavailable or access blocked for route '${reviewer_model}'." >&2
     echo "Switch the globally selected model in runner '$(model_runner_for "$reviewer_model")' or update the reviewer route to an accessible model, then rerun." >&2
     return 66
+  fi
+
+  if is_runner_auth_unavailable "$output_capture_file" "$stderr_file"; then
+    echo "[BLOCKED] Runner authentication unavailable for route '${reviewer_model}'." >&2
+    echo "If the CLI works in a normal user Terminal, this is likely a sandbox/keychain permission boundary; rerun through the user-approved unsandboxed path. Otherwise log in to runner '$(model_runner_for "$reviewer_model")' and rerun." >&2
+    return 67
   fi
 
   return "$run_status"

@@ -1363,6 +1363,53 @@ exit 1'
   [ "$status" -eq 0 ]
 }
 
+@test "run_external_plan_reviews reports Claude auth unavailable with sandbox guidance" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-claude-auth-blocked-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-claude-auth-blocked-v1.0
+
+- task_id: ext-claude-auth-blocked
+- plan_version: v1.0
+- objective: classify Claude auth context blockers
+- scope: external review
+- assumptions: sandboxed CLI may not see the user terminal login context
+- risks: wrapper reports missing fields instead of auth remediation
+- acceptance_signals: auth unavailable blocker is reported
+- stop_conditions: retry is attempted
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Test auth blocker.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+echo "Not logged in · Please run /login"
+exit 1'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-claude-auth-blocked" \
+    --plan-version "v1.0" \
+    --primary-tool "claude" \
+    --reviewer "claude-opus-4.8" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-claude-auth-blocked" \
+    --approved-next-step "run external review ext-claude-auth-blocked"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Runner authentication unavailable for route 'claude:opus-4.8'"* ]]
+  [[ "$output" == *"sandbox/keychain permission boundary"* ]]
+  local handoff_dir
+  handoff_dir="$(external_handoff_dir "ext-claude-auth-blocked" "v1.0" "r01")"
+  [ -n "$handoff_dir" ]
+  run test ! -f "$handoff_dir/claude-opus-4.8.retry-request.md"
+  [ "$status" -eq 0 ]
+}
+
 @test "run_external_plan_reviews loads runner routes from registry override and still stops on quota" {
   local plan_file="$DOCS_ROOT/plan/PLAN-ext-registry-override-v1.0.md"
   cat > "$plan_file" <<'EOF'
@@ -1791,5 +1838,29 @@ EOF'
   run test -f "$DOCS_ROOT/orchestration/runner-codex-exec/current-task/responses/codex-current.response.md"
   [ "$status" -eq 0 ]
   run grep "^- model_selection: preconfigured_runtime" "$DOCS_ROOT/orchestration/runner-codex-exec/current-task/provenance/codex-current.provenance.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "external_review_runner preserves auth-unavailable stdout in stderr artifact" {
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+cat >/dev/null
+echo "Not logged in · Please run /login"
+exit 1'
+
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-claude-auth" --plan-version "v1.0" --review-round "r01" --task-phase "review" --coordinator "codex" --participant "claude-opus-4.8"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+
+  run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-claude-auth" --force
+  [ "$status" -ne 0 ]
+
+  local stderr_file="$DOCS_ROOT/orchestration/runner-claude-auth/external-cli/v1.0/r01/claude-opus-4.8.stderr.md"
+  run test -f "$stderr_file"
+  [ "$status" -eq 0 ]
+  run grep "Runner authentication unavailable for route 'claude:opus-4.8'" "$stderr_file"
+  [ "$status" -eq 0 ]
+  run grep "Not logged in" "$stderr_file"
   [ "$status" -eq 0 ]
 }
