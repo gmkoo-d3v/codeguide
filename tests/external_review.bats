@@ -571,7 +571,9 @@ exit 99'
   [ "$status" -eq 0 ]
   run grep "last-resort fallback" "$handoff_dir/gemini.manual-command.md"
   [ "$status" -eq 0 ]
-  run grep "do not drive Terminal UI" "$handoff_dir/claude.manual-command.md"
+  run grep "user-operated handoff" "$handoff_dir/claude.manual-command.md"
+  [ "$status" -eq 0 ]
+  run grep "<.*claude.request.md" "$handoff_dir/claude.manual-command.md"
   [ "$status" -eq 0 ]
 
   cat > "$handoff_dir/gemini.command-response.raw.md" <<'EOF'
@@ -1253,7 +1255,112 @@ EOF
   [[ "$output" == *"Switch the globally selected model in runner 'claude'"* ]]
   [[ "$output" != *"Registry fallback succeeded"* ]]
   run grep -E -- '(^|[[:space:]])--model([[:space:]]|$)' "$TEST_WORKSPACE/claude-calls-fail.log"
+  [ "$status" -eq 0 ]
+  run grep -- "opus-4.8" "$TEST_WORKSPACE/claude-calls-fail.log"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews sends Claude request on stdin and passes explicit registry model" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-claude-stdin-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-claude-stdin-v1.0
+
+- task_id: ext-claude-stdin
+- plan_version: v1.0
+- objective: verify Claude stdin request contract
+- scope: external review
+- assumptions: Claude runner receives request body on stdin
+- risks: file-read prompt fails when tools are disabled
+- acceptance_signals: mock Claude sees the plan payload on stdin
+- stop_conditions: no stdin payload
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Test Claude stdin.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-stdin-args.log"
+cat > "${TEST_WORKSPACE}/claude-stdin-payload.md"
+cat <<EOF
+- verdict: accept
+- summary: Mock Claude accepted the stdin-delivered review packet.
+- strengths: The request payload arrived without file-reading tools.
+- risks: None.
+- requested_changes: None.
+EOF'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-claude-stdin" \
+    --plan-version "v1.0" \
+    --primary-tool "claude" \
+    --reviewer "claude-opus-4.8" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-claude-stdin" \
+    --approved-next-step "run external review ext-claude-stdin"
+
+  [ "$status" -eq 0 ]
+  run grep -- "--model" "$TEST_WORKSPACE/claude-stdin-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "opus-4.8" "$TEST_WORKSPACE/claude-stdin-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "PLAN-ext-claude-stdin-v1.0" "$TEST_WORKSPACE/claude-stdin-payload.md"
+  [ "$status" -eq 0 ]
+  run grep -- "Review only the Markdown request provided on stdin" "$TEST_WORKSPACE/claude-stdin-payload.md"
+  [ "$status" -eq 0 ]
+  run test -f "$DOCS_ROOT/report/PLAN-ext-claude-stdin-v1.0-review-claude-opus-4.8-r01.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews stops on Claude model unavailable before parser retry" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-claude-model-blocked-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-claude-model-blocked-v1.0
+
+- task_id: ext-claude-model-blocked
+- plan_version: v1.0
+- objective: classify unavailable Claude model separately from malformed response
+- scope: external review
+- assumptions: model access errors are not parser retry candidates
+- risks: wrapper reports missing fields instead of access blocker
+- acceptance_signals: model_unavailable_or_access_blocked blocker is reported
+- stop_conditions: retry is attempted
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Test model blocker.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+echo "There'\''s an issue with the selected model (opus-4.8). It may not exist or you may not have access to it. Run --model to pick a different model."
+exit 1'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-claude-model-blocked" \
+    --plan-version "v1.0" \
+    --primary-tool "claude" \
+    --reviewer "claude-opus-4.8" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-claude-model-blocked" \
+    --approved-next-step "run external review ext-claude-model-blocked"
+
   [ "$status" -ne 0 ]
+  [[ "$output" == *"Model unavailable or access blocked for route 'claude:opus-4.8'"* ]]
+  local handoff_dir
+  handoff_dir="$(external_handoff_dir "ext-claude-model-blocked" "v1.0" "r01")"
+  [ -n "$handoff_dir" ]
+  run test ! -f "$handoff_dir/claude-opus-4.8.retry-request.md"
+  [ "$status" -eq 0 ]
 }
 
 @test "run_external_plan_reviews loads runner routes from registry override and still stops on quota" {

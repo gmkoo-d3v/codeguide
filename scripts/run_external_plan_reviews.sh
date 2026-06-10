@@ -1116,6 +1116,14 @@ build_tool_prompt_for() {
     "$request_file" "$output_capture_file" "$durable_response_file"
 }
 
+build_stdin_tool_prompt_for() {
+  local output_capture_file="$1"
+  local durable_response_file="$2"
+
+  printf "Review only the Markdown request provided on stdin. Return only the requested markdown bullet fields; do not write files. Command-level response path: %s. Sanitized response file: %s. The wrapper captures the command-level response path, sanitizes it, and deletes the raw capture. Do not claim the review was saved anywhere else." \
+    "$output_capture_file" "$durable_response_file"
+}
+
 append_quoted_command() {
   local command_file="$1"
   shift
@@ -1135,11 +1143,13 @@ build_tool_command() {
   local runner_id
   local command_kind
   local binary
+  local cli_model
   local prompt
 
   runner_id="$(model_runner_for "$reviewer_model")" || return 1
   command_kind="$(runner_command_kind_for "$runner_id")" || return 1
   binary="$(runner_binary_for "$runner_id")" || return 1
+  cli_model="$(model_cli_model_for "$reviewer_model")" || return 1
   prompt="$(build_tool_prompt_for "$reviewer_model" "$request_file" "$output_capture_file" "$durable_response_file")"
 
   case "$command_kind" in
@@ -1147,7 +1157,11 @@ build_tool_command() {
       TOOL_COMMAND=("$binary" --add-dir "$CONTEXT_ROOT" -p "$prompt")
       ;;
     claude_code)
-      TOOL_COMMAND=("$binary" -p "$prompt" --no-session-persistence --tools "" --add-dir "$CONTEXT_ROOT")
+      prompt="$(build_stdin_tool_prompt_for "$output_capture_file" "$durable_response_file")"
+      TOOL_COMMAND=("$binary" -p --input-format text --no-session-persistence --tools "")
+      if [[ "$cli_model" != "preconfigured-runtime" ]]; then
+        TOOL_COMMAND+=("--model" "$cli_model")
+      fi
       ;;
     codex_cli)
       TOOL_COMMAND=("$binary" exec --cd "$CONTEXT_ROOT" --sandbox read-only --ephemeral --output-last-message "$output_capture_file" "$prompt")
@@ -1192,6 +1206,30 @@ run_codex_tool_command() {
   return 0
 }
 
+run_claude_tool_command() {
+  local _model="$1"
+  local request_file="$2"
+  local output_capture_file="$3"
+  local model_stderr_file="$4"
+  local durable_response_file="$5"
+  local prompt
+
+  prompt="$(build_stdin_tool_prompt_for "$output_capture_file" "$durable_response_file")"
+  {
+    printf "%s\n\n" "$prompt"
+    cat "$request_file"
+  } | "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
+}
+
+is_model_unavailable_or_access_blocked() {
+  local response_file="$1"
+  local stderr_file="$2"
+  if grep -Eqi "selected model .*may not exist|may not have access|Run --model to pick a different model" "$response_file" "$stderr_file" 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
 write_manual_command_file() {
   local reviewer_model="$1"
   local request_file="$2"
@@ -1202,6 +1240,7 @@ write_manual_command_file() {
   local runner_id
   local cli_model
   local model_selection
+  local prompt
   local -a cmd
 
   runner_id="$(model_runner_for "$reviewer_model")"
@@ -1232,8 +1271,15 @@ Run this only as a last-resort fallback when the escalation layer blocks private
 cd $(printf "%q" "$CONTEXT_ROOT")
 EOF
 
-  append_quoted_command "$command_file" "${cmd[@]}"
-  printf ">%q 2>%q\n" "$output_capture_file" "$stderr_file" >> "$command_file"
+  if [[ "$runner_id" == "claude" ]]; then
+    prompt="$(build_stdin_tool_prompt_for "$output_capture_file" "$durable_response_file")"
+    printf "{ printf %%s\\\\n\\\\n %q; cat %q; } | " "$prompt" "$request_file" >> "$command_file"
+    append_quoted_command "$command_file" "${cmd[@]}"
+    printf ">%q 2>%q\n" "$output_capture_file" "$stderr_file" >> "$command_file"
+  else
+    append_quoted_command "$command_file" "${cmd[@]}"
+    printf ">%q 2>%q\n" "$output_capture_file" "$stderr_file" >> "$command_file"
+  fi
   cat >> "$command_file" <<EOF
 \`\`\`
 
@@ -1276,6 +1322,8 @@ run_tool_prompt() {
     fi
     if [[ "$runner_id" == "agy" ]]; then
       run_agy_tool_command "$model" "$output_capture_file" "$model_stderr_file"
+    elif [[ "$runner_id" == "claude" ]]; then
+      run_claude_tool_command "$model" "$request_file" "$output_capture_file" "$model_stderr_file" "$durable_response_file"
     elif [[ "$runner_id" == "codex" ]]; then
       run_codex_tool_command "$model" "$output_capture_file" "$model_stderr_file"
     else
@@ -1294,6 +1342,12 @@ run_tool_prompt() {
     quota_group="$(quota_group_for_model "$reviewer_model")"
     quota_exhausted_message "$reviewer_model" "$quota_group" >&2
     return 1
+  fi
+
+  if is_model_unavailable_or_access_blocked "$output_capture_file" "$stderr_file"; then
+    echo "[BLOCKED] Model unavailable or access blocked for route '${reviewer_model}'." >&2
+    echo "Switch the globally selected model in runner '$(model_runner_for "$reviewer_model")' or update the reviewer route to an accessible model, then rerun." >&2
+    return 66
   fi
 
   return "$run_status"

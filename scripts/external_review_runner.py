@@ -72,6 +72,7 @@ def current_task_dir(project_root: Path, task_id: str) -> Path:
 
 def command_for_route(registry: dict[str, Any], route: str, request_file: Path, response_file: Path, project_root: Path) -> list[str]:
     runner = runner_for_route(registry, route)
+    model = model_for_route(registry, route)
     binary = os.environ.get(runner.get("env_binary") or "", runner["binary"])
     prompt = (
         f"Read the Markdown request file at {request_file}. "
@@ -87,16 +88,18 @@ def command_for_route(registry: dict[str, Any], route: str, request_file: Path, 
             prompt,
         ]
     if runner["command_kind"] == "claude_code":
-        return [
+        command = [
             binary,
             "-p",
-            prompt,
+            "--input-format",
+            "text",
             "--no-session-persistence",
             "--tools",
             "",
-            "--add-dir",
-            str(project_root),
         ]
+        if model["cli_model"] != "preconfigured-runtime":
+            command.extend(["--model", model["cli_model"]])
+        return command
     if runner["command_kind"] == "codex_cli":
         return [
             binary,
@@ -113,9 +116,17 @@ def command_for_route(registry: dict[str, Any], route: str, request_file: Path, 
     raise ValueError(f"unsupported command_kind: {runner['command_kind']}")
 
 
-def run_command_for_route(registry: dict[str, Any], route: str, command: list[str], response_file: Path) -> subprocess.CompletedProcess[str]:
+def run_command_for_route(registry: dict[str, Any], route: str, command: list[str], request_file: Path, response_file: Path) -> subprocess.CompletedProcess[str]:
     runner = runner_for_route(registry, route)
-    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+    stdin_text = None
+    if runner["command_kind"] == "claude_code":
+        stdin_text = (
+            "Review only the Markdown request provided on stdin. "
+            "Return only the requested Markdown fields to stdout. "
+            f"Command-level response path: {response_file}.\n\n"
+            + read_text(request_file)
+        )
+    result = subprocess.run(command, input=stdin_text, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
     if runner["command_kind"] != "codex_cli" or result.returncode != 0:
         return result
     response_text = read_text(response_file) if response_file.exists() else ""
@@ -234,7 +245,7 @@ def execute_once(args: argparse.Namespace) -> int:
             print(" ".join(shlex.quote(part) for part in command))
             continue
 
-        result = run_command_for_route(registry, route, command, external_response)
+        result = run_command_for_route(registry, route, command, external_request, external_response)
         stderr_text = result.stderr
         stdout_text = result.stdout
         if result.returncode != 0 and is_quota_error(registry, stderr_text):
