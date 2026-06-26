@@ -21,6 +21,7 @@ Extracted verbatim from SKILL.md for Phase 3 navigator completion; SKILL.md reta
     - `--runtime-test-cmd`
     - `--runtime-lint-cmd`
     - `--runtime-e2e-cmd`
+  - if validation starts local servers, containers, watchers, or background jobs, track them and stop only the agent-started resources before task close unless the user explicitly asks to keep them running
 - Interpret `<project-root>` as the selected project root; when invoked from inside a git repository, resolve it to that repository root.
 - Resolve the documentation root inside the project root: `<project-root>/docs`.
 - Reusable skills projects are the narrow exception: when the selected root resolves to a skill package root with `SKILL.md` metadata, no local `docs/`, and an existing parent `docs/`, scripts may treat the parent as the system-of-record project root.

@@ -8,6 +8,8 @@ Use this reference when planning or evaluating local quality checks, CI gates, a
 - Run unit tests before integration/E2E tests.
 - Run the smallest command set that still proves correctness and safety.
 - Prefer deterministic, repeatable commands with pinned tool versions.
+- Before starting local servers, containers, watchers, or background jobs for validation, record ownership context such as command, PID/container name, port, and purpose when available.
+- After validation, terminate only the resources started for that validation unless the user explicitly asks to keep them running; do not stop pre-existing user or system processes.
 - Stop once the core request is answered with sufficient evidence and additional checks are unlikely to change the result materially.
 
 ## Recommended command matrix
@@ -80,5 +82,6 @@ Use `<skill-dir>` for the directory containing this skill package and `SKILL.md`
 
 ## Reporting format
 - Report command, scope, and result (`pass`/`fail`/`not run`).
+- Report cleanup status for validation resources that were started during the task.
 - Explain failures with root cause and next fix action.
 - State residual risk when any critical check is skipped.
