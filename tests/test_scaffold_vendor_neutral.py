@@ -26,7 +26,10 @@ FORBIDDEN_PATTERNS = [
 
 
 def _generated_docs_files(docs_root: Path) -> list[Path]:
-    return sorted(path for path in docs_root.rglob("*") if path.is_file())
+    excluded = {
+        docs_root / "orchestration" / "_templates" / "ORCH.md",
+    }
+    return sorted(path for path in docs_root.rglob("*") if path.is_file() and path not in excluded)
 
 
 def test_scaffold_generated_docs_are_vendor_neutral(tmp_path: Path) -> None:
@@ -57,3 +60,43 @@ def test_scaffold_generated_docs_are_vendor_neutral(tmp_path: Path) -> None:
                     break
 
     assert leaks == []
+
+
+def test_scaffold_orch_template_includes_external_review_manual_fields(tmp_path: Path) -> None:
+    project_root = tmp_path / "sample-project"
+    project_root.mkdir()
+
+    subprocess.run(
+        [str(SCAFFOLD), str(project_root)],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    orch_template = project_root / "docs" / "orchestration" / "_templates" / "ORCH.md"
+    text = orch_template.read_text(encoding="utf-8")
+
+    for field in [
+        "external_review_status",
+        "external_review_required_for",
+        "required_review_routes",
+        "external_review_round",
+        "external_review_result_ref",
+        "external_review_waiver_ref",
+        "external_review_waiver_reason",
+    ]:
+        assert f"- {field}:" in text
+
+    for field in [
+        "primary_author_tool",
+        "review_mode",
+        "external_review_status",
+        "external_review_required_for",
+        "delegation_status",
+        "risk_preflight_status",
+        "approval_required",
+    ]:
+        line = next(line for line in text.splitlines() if line.startswith(f"- {field}:"))
+        assert "|" not in line

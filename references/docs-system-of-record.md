@@ -87,13 +87,13 @@ Use one task capsule per delegated or externally reviewed task: `docs/orchestrat
 # ORCH-<task-id>
 
 - task_id:
-- execution_mode: supervisor_subagents | solo
-- primary_author_tool: antigravity | agy | claude | codex | human | external-runner
-- review_mode: external_cli | current_task_debate | agy_subagents
-- external_review_status: not_requested | requested | running | awaiting_response | ingested | blocked | waived
-- external_review_required_for: plan_acceptance | implementation_start | commit | close
-- required_review_routes: <colon route>, ...
-- external_review_round: rNN
+- execution_mode:
+- primary_author_tool:
+- review_mode:
+- external_review_status:
+- external_review_required_for:
+- required_review_routes:
+- external_review_round:
 - external_review_result_ref:
 - external_review_waiver_ref:
 - external_review_waiver_reason:
@@ -103,18 +103,24 @@ Use one task capsule per delegated or externally reviewed task: `docs/orchestrat
 - implementation_agents:
 - validation_agents:
 - owned_scopes:
-- delegation_status: planned | active | completed | blocked
+- delegation_status:
 - delegation_note:
-- risk_preflight_status: pass | approved | blocked | approval_required
+- risk_preflight_status:
 - risk_preflight_recorded_by:
 - risk_preflight_summary:
-- approval_required: true | false
+- approval_required:
 - approval_ref:
 - approved_next_step:
 - last_updated:
 ```
 
-Run and record main-thread risk preflight before spawning sub-agents, invoking external reviewers, or starting ping-pong. Default orchestration is `execution_mode: solo`; delegated fields, external review fields, or `execution_mode: supervisor_subagents` require explicit preflight. If preflight is `blocked` or `approval_required`, stop before delegation/external review. Continue only when the status is `pass`, or when the user approves the exact next step and the status is `approved` with `approval_required: true`, a concrete `approval_ref`, and a concrete `approved_next_step`. External CLI review requires the `approved` form because it crosses an external-service boundary. `risk_preflight_recorded_by` must identify the main-thread supervising lead architect, not evaluator/tool identities such as `antigravity`, `agy`, `claude`, `codex`, `gemini`, `external-review-wrapper`, or `external-cli*`.
+Allowed primary_author_tool values: antigravity | agy | claude | codex | human | external-runner.
+Allowed review_mode values: external_cli | current_task_debate | agy_subagents | codex_subagents.
+Allowed external_review_status values: not_requested | requested | running | awaiting_response | ingested | blocked | waived.
+Allowed external_review_required_for values: plan_acceptance | implementation_start | commit | close.
+Allowed orchestration lifecycle values: `execution_mode=supervisor_subagents|solo`, `delegation_status=planned|active|completed|blocked`, `risk_preflight_status=pass|approved|blocked|approval_required`, `approval_required=true|false`.
+
+Run and record main-thread risk preflight before spawning sub-agents, invoking external reviewers, or starting ping-pong. Default orchestration is `execution_mode: solo`; delegated fields, external review fields, or `execution_mode: supervisor_subagents` require explicit preflight. If preflight is `blocked` or `approval_required`, stop before delegation/external review. Continue only when the status is `pass`, or when the user approves the exact next step and the status is `approved` with `approval_required: true`, a concrete `approval_ref`, and a concrete `approved_next_step`. External CLI review requires the `approved` form because it crosses an external-service boundary. `risk_preflight_recorded_by` must identify the main-thread supervising lead architect, not evaluator/tool identities such as `antigravity`, `agy`, `claude`, `codex`, `gemini`, `external-runner`, `external-review-wrapper`, or `external-cli*`.
 
 External review await gate fields live in `ORCH.md`. `required_review_routes` uses registry colon routes such as `agy:current`; report and response file names use route slugs and must not be treated as canonical route ids. `external_review_result_ref` points at the round directory `docs/orchestration/<task-id>/external-cli/<plan-version>/<round>/`, whose `<plan-version>` must match the consumed plan version. For a plan-dependent transition, only `external_review_status: ingested` with a satisfied ingested guard, or `external_review_status: waived` with a satisfied waiver guard, passes; `not_requested`, `requested`, `running`, `awaiting_response`, `blocked`, missing, empty, or unknown status values warn in advisory mode. The ingested guard requires `required_review_routes` to be non-empty, comma-split parseable, non-placeholder, registry-resolvable, and for every listed route to have an inspectable accepted artifact with `verdict: accept` under the referenced round directory. Every "for every item" gate first proves the item set is non-empty, parseable, and well formed; empty, null, duplicate, placeholder, or unresolvable members fail the guard instead of satisfying it vacuously. The waiver guard requires non-placeholder `external_review_waiver_ref` and `external_review_waiver_reason`.
 

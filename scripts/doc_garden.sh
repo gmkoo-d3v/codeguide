@@ -31,8 +31,8 @@ Options:
   --axis-where "<text>"           Structural placement (MVC/Layered/Hexagonal/Clean)
   --axis-verify "<text>"          Verification strategy (TDD/pyramid/FIRST)
   --execution-mode <mode>         supervisor_subagents|solo (default: solo)
-  --primary-author-tool <tool>    antigravity|agy
-  --review-mode <mode>            external_cli|agy_subagents
+  --primary-author-tool <tool>    antigravity|agy|claude|codex|human|external-runner
+  --review-mode <mode>            external_cli|current_task_debate|agy_subagents|codex_subagents
   --risk-preflight-status <status> pass|approved|blocked|approval_required (required before delegated/external orchestration)
   --risk-preflight-recorded-by "<name>"
                                   Main-thread recorder identity (default: main-thread-supervising-lead-architect)
@@ -196,9 +196,9 @@ validate_execution_mode() {
 validate_primary_author_tool() {
   local value="$1"
   case "$value" in
-    antigravity|agy) ;;
+    antigravity|agy|claude|codex|human|external-runner) ;;
     *)
-      echo "[ERROR] Invalid --primary-author-tool: ${value} (use antigravity or agy)" >&2
+      echo "[ERROR] Invalid --primary-author-tool: ${value} (use antigravity, agy, claude, codex, human, or external-runner)" >&2
       exit 1
       ;;
   esac
@@ -207,9 +207,9 @@ validate_primary_author_tool() {
 validate_review_mode() {
   local value="$1"
   case "$value" in
-    external_cli|agy_subagents|codex_subagents) ;;
+    external_cli|current_task_debate|agy_subagents|codex_subagents) ;;
     *)
-      echo "[ERROR] Invalid --review-mode: ${value} (use external_cli, agy_subagents, or codex_subagents)" >&2
+      echo "[ERROR] Invalid --review-mode: ${value} (use external_cli, current_task_debate, agy_subagents, or codex_subagents)" >&2
       exit 1
       ;;
   esac
@@ -235,7 +235,7 @@ validate_risk_preflight_recorder() {
   fi
   normalized="$(printf "%s" "$value" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
   case "$normalized" in
-    antigravity|agy|claude|codex|gemini|external-review-wrapper|external-cli*)
+    antigravity|agy|claude|codex|gemini|external-runner|external-review-wrapper|external-cli*)
       echo "[ERROR] --risk-preflight-recorded-by must identify the main-thread supervising lead architect, not evaluator/tool identity: ${value}" >&2
       exit 1
       ;;
@@ -878,24 +878,36 @@ ensure_orchestration_file() {
 # ORCH-${TASK_ID}
 
 - task_id:
-- execution_mode: supervisor_subagents | solo
-- primary_author_tool: antigravity | agy
-- review_mode: external_cli | agy_subagents
+- execution_mode:
+- primary_author_tool:
+- review_mode:
+- external_review_status:
+- external_review_required_for:
+- required_review_routes:
+- external_review_round:
+- external_review_result_ref:
+- external_review_waiver_ref:
+- external_review_waiver_reason:
 - supervisor_agent:
 - planner_agents:
 - reviewer_agents:
 - implementation_agents:
 - validation_agents:
 - owned_scopes:
-- delegation_status: planned | active | completed | blocked
+- delegation_status:
 - delegation_note:
-- risk_preflight_status: pass | approved | blocked | approval_required
+- risk_preflight_status:
 - risk_preflight_recorded_by:
 - risk_preflight_summary:
-- approval_required: true | false
+- approval_required:
 - approval_ref:
 - approved_next_step:
 - last_updated:
+
+Allowed primary_author_tool values: antigravity | agy | claude | codex | human | external-runner.
+Allowed review_mode values: external_cli | current_task_debate | agy_subagents | codex_subagents.
+Allowed external_review_status values: not_requested | requested | running | awaiting_response | ingested | blocked | waived.
+Allowed external_review_required_for values: plan_acceptance | implementation_start | commit | close.
 EOF
     fi
   fi

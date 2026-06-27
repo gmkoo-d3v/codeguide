@@ -8,7 +8,7 @@ Extracted verbatim from SKILL.md for Phase 1 coverage audit; SKILL.md retains th
 - If risk preflight finds a safety, privacy, permission, destructive-action, external-side-effect, sensitive-data, scope, or user-decision gate, stop orchestration before delegation: do not spawn new sub-agents, do not invoke external CLIs, and pause or close any pending delegated work until the user explicitly approves the exact next step.
 - A single agent's unilateral refusal or risk judgment is not a valid ping-pong result. Ping-pong starts only after the supervising lead architect records the risk gate outcome and the user has approved proceeding when approval is required.
 - Default orchestration recording is `execution_mode: solo`; delegated agent fields, external review fields, or `execution_mode: supervisor_subagents` require an explicit risk preflight status before they may be recorded.
-- `risk_preflight_recorded_by` must identify the main-thread supervising lead architect; evaluator/tool identities such as `antigravity`, `agy`, `claude`, `codex`, `gemini`, `external-review-wrapper`, or `external-cli*` cannot record the preflight gate.
+- `risk_preflight_recorded_by` must identify the main-thread supervising lead architect; evaluator/tool identities such as `antigravity`, `agy`, `claude`, `codex`, `gemini`, `external-runner`, `external-review-wrapper`, or `external-cli*` cannot record the preflight gate.
 - `risk_preflight_status: approved` must pair with `approval_required: true`, a concrete `approval_ref`, and the exact `approved_next_step`; `risk_preflight_status: pass` must pair with `approval_required: false`.
 - Delegate only when the current runtime permits it, the user has explicitly requested sub-agents or external review, and the work is material, separable, and worth the coordination cost.
 - Keep simple, urgent, tightly coupled, or low-risk work in the main thread.
@@ -24,7 +24,7 @@ Extracted verbatim from SKILL.md for Phase 1 coverage audit; SKILL.md retains th
 - For solo work, create or update orchestration docs only when the docs lifecycle is already active or the task risk/traceability need justifies it.
 - Track plan authorship and review routing in orchestration docs:
   - `primary_author_tool`: `antigravity|agy|claude|codex|human|external-runner`
-  - `review_mode`: `external_cli|current_task_debate|agy_subagents`
+  - `review_mode`: `external_cli|current_task_debate|agy_subagents|codex_subagents`
 - Treat the following user phrases as the same sub-agent trigger: `서브에이전트`, `서브 에이전트`, `subagent`, `subagents`, `sub-agent`, `sub-agents`.
 - If delegation is skipped, record `execution_mode: solo` plus a non-empty `delegation_note` explaining the exception.
 

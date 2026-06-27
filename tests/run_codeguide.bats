@@ -264,7 +264,7 @@ exit 99'
 
 @test "run_codeguide and validate_docs reject evaluator identity recorders consistently" {
   local identity
-  for identity in antigravity agy claude codex gemini; do
+  for identity in antigravity agy claude codex gemini external-runner; do
     run "$RUN_CODEGUIDE" "$TEST_PROJECT" \
       --task-id "run-recorder-${identity}" \
       --mode advisory \
@@ -309,7 +309,7 @@ exit 99'
 EOF
 
   local orch_file="$DOCS_ROOT/orchestration/orch-recorder-01/ORCH.md"
-  for identity in antigravity agy claude codex gemini; do
+  for identity in antigravity agy claude codex gemini external-runner; do
     perl -0pi -e "s/^- risk_preflight_recorded_by: .+\$/- risk_preflight_recorded_by: ${identity}/m" "$orch_file"
 
     run "$VALIDATE" "$TEST_PROJECT" --mode strict
@@ -641,4 +641,3 @@ EOF
 }
 
 # ========== init_docs_scaffold edge cases ==========
-

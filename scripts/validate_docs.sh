@@ -1181,6 +1181,45 @@ check_enum_membership() {
   return 1
 }
 
+REPORT_FILE_TASK_ID=""
+REPORT_FILE_PLAN_VERSION=""
+REPORT_FILE_EVALUATOR=""
+REPORT_FILE_ROUND=""
+REPORT_FILE_PLAN_REF=""
+
+parse_evaluator_report_filename() {
+  local report_base="$1"
+
+  REPORT_FILE_TASK_ID=""
+  REPORT_FILE_PLAN_VERSION=""
+  REPORT_FILE_EVALUATOR=""
+  REPORT_FILE_ROUND=""
+  REPORT_FILE_PLAN_REF=""
+
+  if [[ "$report_base" =~ ^PLAN-([A-Za-z0-9._-]+)-(v[0-9]+\.[0-9]+)-review-([A-Za-z0-9._]+)(-[A-Za-z0-9._-]+)?-(r[0-9]{2})\.md$ ]]; then
+    REPORT_FILE_TASK_ID="${BASH_REMATCH[1]}"
+    REPORT_FILE_PLAN_VERSION="${BASH_REMATCH[2]}"
+    REPORT_FILE_EVALUATOR="${BASH_REMATCH[3]}"
+    REPORT_FILE_ROUND="${BASH_REMATCH[5]}"
+    REPORT_FILE_PLAN_REF="PLAN-${REPORT_FILE_TASK_ID}-${REPORT_FILE_PLAN_VERSION}"
+    return 0
+  fi
+
+  return 1
+}
+
+is_allowed_evaluator_slug() {
+  local value="$1"
+  case "$value" in
+    antigravity|agy|claude|codex|gemini|human)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 is_placeholder_approval_value() {
   local value="$1"
   local normalized
@@ -1878,6 +1917,8 @@ check_orchestration_file_for_task() {
   local doc_task_id
   local primary_author_tool
   local review_mode
+  local external_review_status
+  local external_review_required_for
   local risk_preflight_status
   local risk_preflight_recorded_by
   local approval_required
@@ -1933,6 +1974,8 @@ check_orchestration_file_for_task() {
   execution_mode="$(extract_field_value "$orchestration_file" "execution_mode")"
   primary_author_tool="$(extract_field_value "$orchestration_file" "primary_author_tool")"
   review_mode="$(extract_field_value "$orchestration_file" "review_mode")"
+  external_review_status="$(extract_field_value "$orchestration_file" "external_review_status")"
+  external_review_required_for="$(extract_field_value "$orchestration_file" "external_review_required_for")"
   delegation_status="$(extract_field_value "$orchestration_file" "delegation_status")"
   risk_preflight_status="$(extract_field_value "$orchestration_file" "risk_preflight_status")"
   risk_preflight_recorded_by="$(extract_field_value "$orchestration_file" "risk_preflight_recorded_by")"
@@ -1941,14 +1984,20 @@ check_orchestration_file_for_task() {
   approved_next_step="$(extract_field_value "$orchestration_file" "approved_next_step")"
   check_enum_membership "$execution_mode" "orchestration.execution_mode" "$orchestration_file" supervisor_subagents solo || true
   check_enum_membership "$primary_author_tool" "orchestration.primary_author_tool" "$orchestration_file" antigravity agy claude codex human external-runner || true
-  check_enum_membership "$review_mode" "orchestration.review_mode" "$orchestration_file" external_cli agy_subagents codex_subagents || true
+  check_enum_membership "$review_mode" "orchestration.review_mode" "$orchestration_file" external_cli current_task_debate agy_subagents codex_subagents || true
+  if [[ -n "$external_review_status" ]]; then
+    check_enum_membership "$external_review_status" "orchestration.external_review_status" "$orchestration_file" not_requested requested running awaiting_response ingested blocked waived || true
+  fi
+  if [[ -n "$external_review_required_for" ]]; then
+    check_enum_membership "$external_review_required_for" "orchestration.external_review_required_for" "$orchestration_file" plan_acceptance implementation_start commit close || true
+  fi
   check_enum_membership "$delegation_status" "orchestration.delegation_status" "$orchestration_file" planned active completed blocked || true
   check_enum_membership "$risk_preflight_status" "orchestration.risk_preflight_status" "$orchestration_file" pass approved blocked approval_required || true
   check_enum_membership "$approval_required" "orchestration.approval_required" "$orchestration_file" true false || true
 
   risk_preflight_recorded_by_normalized="$(printf "%s" "$risk_preflight_recorded_by" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
   case "$risk_preflight_recorded_by_normalized" in
-    antigravity|agy|claude|codex|gemini|external-review-wrapper|external-cli*)
+    antigravity|agy|claude|codex|gemini|external-runner|external-review-wrapper|external-cli*)
       fail "orchestration risk_preflight_recorded_by must identify the main-thread supervising lead architect, not evaluator/tool identity: ${orchestration_file}"
       ;;
   esac
@@ -1980,7 +2029,7 @@ check_orchestration_file_for_task() {
     fail "orchestration review_mode=external_cli requires risk_preflight_status=approved with concrete approval provenance: ${orchestration_file}"
   fi
 
-  if [[ "$execution_mode" != "solo" || "$review_mode" == "external_cli" || "$review_mode" == "codex_subagents" ]]; then
+  if [[ "$execution_mode" != "solo" || "$review_mode" == "external_cli" || "$review_mode" == "current_task_debate" || "$review_mode" == "codex_subagents" ]]; then
     if [[ "$MODE" == "strict" ]]; then
       check_field_non_empty "$orchestration_file" "primary_author_tool" "orchestration"
       check_field_non_empty "$orchestration_file" "review_mode" "orchestration"
@@ -2094,10 +2143,13 @@ check_evaluator_reports_for_task() {
   if compgen -G "$expected_report_glob" >/dev/null; then
     while IFS= read -r report_file; do
       report_base="$(basename "$report_file")"
-      # Format: PLAN-<task>-<version>-review-<runner>-<model-slug>-rNN.md
-      file_report_task_id="$(printf "%s" "$report_base" | sed -E 's/^PLAN-(.*)-v[0-9]+\.[0-9]+-review-[A-Za-z0-9._]+-[A-Za-z0-9._-]+-r[0-9]{2}\.md$/\1/')"
-      file_evaluator="$(printf "%s" "$report_base" | sed -E 's/^PLAN-.*-review-([A-Za-z0-9._]+)-[A-Za-z0-9._-]+-r[0-9]{2}\.md$/\1/')"
-      file_round="$(printf "%s" "$report_base" | sed -E 's/^.*-review-[A-Za-z0-9._]+-[A-Za-z0-9._-]+-(r[0-9]{2})\.md$/\1/')"
+      if ! parse_evaluator_report_filename "$report_base"; then
+        fail "evaluator report identity mismatch for active task gate: ${report_base}"
+        continue
+      fi
+      file_report_task_id="$REPORT_FILE_TASK_ID"
+      file_evaluator="$REPORT_FILE_EVALUATOR"
+      file_round="$REPORT_FILE_ROUND"
       report_task_id="$(extract_field_value "$report_file" "task_id")"
       report_plan_version="$(extract_field_value "$report_file" "plan_version")"
       report_evaluator="$(extract_field_value "$report_file" "evaluator")"
@@ -2666,7 +2718,21 @@ if [[ -d "$REPORT_DIR" ]]; then
     report_review_style=""
     check_line_limit "$report_file" "$MAX_REPORT_LINES" "evaluator report"
 
-    if [[ ! "$report_base" =~ ^PLAN-[A-Za-z0-9._-]+-v[0-9]+\.[0-9]+-review-[A-Za-z0-9._]+-[A-Za-z0-9._-]+-r[0-9]{2}\.md$ ]]; then
+    if parse_evaluator_report_filename "$report_base"; then
+      file_report_task_id="$REPORT_FILE_TASK_ID"
+      file_report_plan_version="$REPORT_FILE_PLAN_VERSION"
+      file_evaluator="$REPORT_FILE_EVALUATOR"
+      file_report_round="$REPORT_FILE_ROUND"
+      file_plan_ref="$REPORT_FILE_PLAN_REF"
+    else
+      fail "invalid evaluator report file name format: ${report_base}"
+      file_report_task_id=""
+      file_report_plan_version=""
+      file_evaluator=""
+      file_report_round=""
+      file_plan_ref=""
+    fi
+    if [[ -n "$file_evaluator" ]] && ! is_allowed_evaluator_slug "$file_evaluator"; then
       fail "invalid evaluator report file name format: ${report_base}"
     fi
 
@@ -2697,6 +2763,8 @@ if [[ -d "$REPORT_DIR" ]]; then
     report_evaluator="$(extract_field_value "$report_file" "evaluator")"
     if [[ -n "$report_evaluator" && ! "$report_evaluator" =~ ^[A-Za-z0-9._]+$ ]]; then
       fail "invalid evaluator in ${report_base}: ${report_evaluator} (expected runner slug)"
+    elif [[ -n "$report_evaluator" ]] && ! is_allowed_evaluator_slug "$report_evaluator"; then
+      fail "invalid evaluator in ${report_base}: ${report_evaluator} (expected registered runner slug)"
     fi
 
     report_review_style="$(extract_field_value "$report_file" "review_style")"
@@ -2714,33 +2782,26 @@ if [[ -d "$REPORT_DIR" ]]; then
       fail "invalid verdict in ${report_base}: ${report_verdict} (expected accept|revise|blocked)"
     fi
 
-    # File name format: PLAN-<task>-<version>-review-<runner>-<model-slug>-rNN.md
-    file_evaluator="$(printf "%s" "$report_base" | sed -E 's/^PLAN-.*-review-([A-Za-z0-9._]+)-[A-Za-z0-9._-]+-r[0-9]{2}\.md$/\1/')"
-    if [[ -n "$report_evaluator" && "$report_evaluator" != "$file_evaluator" ]]; then
+    if [[ -n "$file_evaluator" && -n "$report_evaluator" && "$report_evaluator" != "$file_evaluator" ]]; then
       fail "evaluator mismatch between file name and field in ${report_base}: ${file_evaluator} != ${report_evaluator}"
     fi
 
-    # Extract plan ref (everything up to -review-<runner>-...)
-    file_plan_ref="$(printf "%s" "$report_base" | sed -E 's/^(PLAN-.*)-review-[A-Za-z0-9._]+-[A-Za-z0-9._-]+-r[0-9]{2}\.md$/\1/')"
     expected_plan_file="${PLAN_DIR}/${file_plan_ref}.md"
-    if [[ ! -f "$expected_plan_file" ]]; then
+    if [[ -n "$file_plan_ref" && ! -f "$expected_plan_file" ]]; then
       fail "evaluator report references missing plan file: ${expected_plan_file}"
     fi
 
-    file_report_task_id="$(printf "%s" "$report_base" | sed -E 's/^PLAN-(.*)-v[0-9]+\.[0-9]+-review-[A-Za-z0-9._]+-[A-Za-z0-9._-]+-r[0-9]{2}\.md$/\1/')"
     report_task_id="$(extract_field_value "$report_file" "task_id")"
-    if [[ -n "$report_task_id" && "$report_task_id" != "$file_report_task_id" ]]; then
+    if [[ -n "$file_report_task_id" && -n "$report_task_id" && "$report_task_id" != "$file_report_task_id" ]]; then
       fail "task_id mismatch between file name and field in ${report_base}: ${file_report_task_id} != ${report_task_id}"
     fi
 
-    file_report_plan_version="$(printf "%s" "$report_base" | sed -E 's/^.*-(v[0-9]+\.[0-9]+)-review-[A-Za-z0-9._]+-[A-Za-z0-9._-]+-r[0-9]{2}\.md$/\1/')"
     report_plan_version="$(extract_field_value "$report_file" "plan_version")"
-    if [[ -n "$report_plan_version" && "$report_plan_version" != "$file_report_plan_version" ]]; then
+    if [[ -n "$file_report_plan_version" && -n "$report_plan_version" && "$report_plan_version" != "$file_report_plan_version" ]]; then
       fail "plan_version mismatch between file name and field in ${report_base}: ${file_report_plan_version} != ${report_plan_version}"
     fi
 
-    file_report_round="$(printf "%s" "$report_base" | sed -E 's/^.*-review-[A-Za-z0-9._]+-[A-Za-z0-9._-]+-(r[0-9]{2})\.md$/\1/')"
-    if [[ -n "$report_round" && "$report_round" != "$file_report_round" ]]; then
+    if [[ -n "$file_report_round" && -n "$report_round" && "$report_round" != "$file_report_round" ]]; then
       fail "review_round mismatch between file name and field in ${report_base}: ${file_report_round} != ${report_round}"
     fi
 

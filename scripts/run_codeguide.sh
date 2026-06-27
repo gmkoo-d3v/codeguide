@@ -341,7 +341,7 @@ fi
 
 RISK_PREFLIGHT_RECORDED_BY_NORMALIZED="$(printf "%s" "$RISK_PREFLIGHT_RECORDED_BY" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
 case "$RISK_PREFLIGHT_RECORDED_BY_NORMALIZED" in
-  antigravity|agy|claude|codex|gemini|external-review-wrapper|external-cli*)
+  antigravity|agy|claude|codex|gemini|external-runner|external-review-wrapper|external-cli*)
     echo "[ERROR] --risk-preflight-recorded-by must identify the main-thread supervising lead architect, not evaluator/tool identity: $RISK_PREFLIGHT_RECORDED_BY" >&2
     exit 1
     ;;

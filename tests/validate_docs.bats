@@ -218,6 +218,14 @@ EOF
   [[ "$output" == *"[WARN] external review await gate has invalid external_review_status for TASK-await-gate-invalid-status-01: skipped"* ]]
 }
 
+@test "validate_docs advisory warns when external_review_required_for is outside allowlist enum" {
+  write_await_gate_fixture "await-gate-invalid-required-for-01" "in_progress" "before_implementation" "PLAN-await-gate-invalid-required-for-01-v1.0" "not_requested" "agy:current" "" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] invalid orchestration.external_review_required_for value in "*": before_implementation (allowed: plan_acceptance|implementation_start|commit|close)"* ]]
+}
+
 @test "validate_docs advisory warns when ingested result_ref directory is absent" {
   write_await_gate_fixture "await-gate-missing-dir-01" "in_progress" "implementation_start" "PLAN-await-gate-missing-dir-01-v1.0" "ingested" "agy:current" "docs/orchestration/await-gate-missing-dir-01/external-cli/v1.0/r01" "" ""
 
