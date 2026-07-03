@@ -132,6 +132,16 @@ def validate_registry(registry: dict[str, Any]) -> None:
         quota_groups.add(quota_group)
         display_name = model.get("display_name", route)
         _scalar(display_name, f"models[{route!r}].display_name")
+        vendor = model.get("vendor")
+        if vendor is not None:
+            _scalar(vendor, f"models[{route!r}].vendor")
+        adversarial_peer = model.get("adversarial_peer")
+        if adversarial_peer is not None:
+            peer_route = _scalar(adversarial_peer, f"models[{route!r}].adversarial_peer")
+            if peer_route == route:
+                _fail(f"models[{route!r}].adversarial_peer must not reference itself")
+            if peer_route not in models:
+                _fail(f"models[{route!r}].adversarial_peer references unknown model route: {peer_route}")
 
     aliases = registry.get("aliases")
     if not isinstance(aliases, dict) or not aliases:
@@ -147,6 +157,16 @@ def validate_registry(registry: dict[str, Any]) -> None:
     for index, alias in enumerate(_string_list(registry.get("default_reviewer_aliases"), "default_reviewer_aliases")):
         if resolve_model_route(registry, alias) not in models:
             _fail(f"default_reviewer_aliases[{index}] must resolve to a known model route")
+
+    vendor_default_reviewers = registry.get("vendor_default_reviewers")
+    if vendor_default_reviewers is not None:
+        if not isinstance(vendor_default_reviewers, dict):
+            _fail("vendor_default_reviewers must be an object")
+        for vendor, alias in vendor_default_reviewers.items():
+            _scalar(vendor, "vendor_default_reviewers key")
+            alias_value = _scalar(alias, f"vendor_default_reviewers[{vendor!r}]")
+            if resolve_model_route(registry, alias_value) not in models:
+                _fail(f"vendor_default_reviewers[{vendor!r}] references unknown model route: {alias_value}")
 
     fallback_policy = registry.get("fallback_policy")
     if not isinstance(fallback_policy, dict):
@@ -190,6 +210,7 @@ def emit_shell(registry: dict[str, Any]) -> None:
             runner["command_kind"],
         )
     for route, model in registry["models"].items():
+        adversarial_peer = model.get("adversarial_peer")
         emit(
             "model",
             route,
@@ -197,9 +218,13 @@ def emit_shell(registry: dict[str, Any]) -> None:
             model["cli_model"],
             model["quota_group"],
             model.get("display_name", route),
+            model.get("vendor", ""),
+            resolve_model_route(registry, adversarial_peer) if adversarial_peer else "",
         )
     for alias in registry["default_reviewer_aliases"]:
         emit("default_reviewer", resolve_model_route(registry, alias))
+    for vendor, alias in registry.get("vendor_default_reviewers", {}).items():
+        emit("vendor_default_reviewer", vendor, resolve_model_route(registry, alias))
     for rule in registry["fallback_policy"]["on_quota_exhausted"]:
         target = resolve_model_route(registry, rule["to"])
         for phase in rule["phases"]:

@@ -257,16 +257,16 @@ else
 EOF
 fi'
 
-  # (claude mock replaced by agy)
-  # true #  '#!/usr/bin/env bash
-# printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
-  # cat <<EOF
-# - verdict: blocked
-# - summary: The flow is semi-automated in the right place, but report validation should remain strict because downstream handoff depends on it.
-# - strengths: It preserves old plan versions and keeps the user in control.
-# - risks: If reviewers return partial fields, the operator could mistake a weak report for a valid one.
-# - requested_changes: Make the failure summary explicit and ensure malformed responses never create report files.
-# EOF'
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
+cat >> "${TEST_WORKSPACE}/claude-args.log"
+cat <<EOF
+- verdict: blocked
+- summary: The flow is semi-automated in the right place, but report validation should remain strict because downstream handoff depends on it.
+- strengths: It preserves old plan versions and keeps the user in control.
+- risks: If reviewers return partial fields, the operator could mistake a weak report for a valid one.
+- requested_changes: Make the failure summary explicit and ensure malformed responses never create report files.
+EOF'
 
   write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
 echo "codex should not be called for primary=codex" >&2
@@ -282,15 +282,15 @@ exit 99'
     --approved-next-step "run external review ext-review-01 v1.0 r01"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[OK] evaluator=gemini"* ]]
+  [[ "$output" == *"[OK] evaluator=agy"* ]]
   [[ "$output" == *"[OK] evaluator=claude"* ]]
   [[ "$output" == *"No new plan version was created automatically."* ]]
 
-  run test -f "$DOCS_ROOT/report/PLAN-ext-review-01-v1.0-review-gemini-r01.md"
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-01-v1.0-review-agy-current-r01.md"
   [ "$status" -eq 0 ]
-  run test -f "$DOCS_ROOT/report/PLAN-ext-review-01-v1.0-review-claude-r01.md"
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-01-v1.0-review-claude-current-r01.md"
   [ "$status" -eq 0 ]
-  run grep "^- review_style: standard" "$DOCS_ROOT/report/PLAN-ext-review-01-v1.0-review-gemini-r01.md"
+  run grep "^- review_style: standard" "$DOCS_ROOT/report/PLAN-ext-review-01-v1.0-review-agy-current-r01.md"
   [ "$status" -eq 0 ]
   run grep "^- primary_author_tool: codex" "$DOCS_ROOT/orchestration/ext-review-01/ORCH.md"
   [ "$status" -eq 0 ]
@@ -302,7 +302,7 @@ exit 99'
   [ "$status" -eq 0 ]
   run grep "^- approval_ref: user-approval-ext-review-01" "$DOCS_ROOT/orchestration/ext-review-01/ORCH.md"
   [ "$status" -eq 0 ]
-  run grep "^- reviewer_agents: external-cli:gemini,claude" "$DOCS_ROOT/orchestration/ext-review-01/ORCH.md"
+  run grep "^- reviewer_agents: external-cli:agy:current,claude:current" "$DOCS_ROOT/orchestration/ext-review-01/ORCH.md"
   [ "$status" -eq 0 ]
 
   local after_plan
@@ -319,13 +319,7 @@ exit 99'
   [ "$status" -eq 0 ]
   run grep -- "$TEST_PROJECT" "$TEST_WORKSPACE/gemini-args.log"
   [ "$status" -eq 0 ]
-  run grep -- "--add-dir" "$TEST_WORKSPACE/claude-args.log"
-  [ "$status" -eq 0 ]
-  run grep -- "$TEST_PROJECT" "$TEST_WORKSPACE/claude-args.log"
-  [ "$status" -eq 0 ]
   run grep -- "--tools" "$TEST_WORKSPACE/claude-args.log"
-  [ "$status" -eq 0 ]
-  run grep -- "Read" "$TEST_WORKSPACE/claude-args.log"
   [ "$status" -eq 0 ]
   run grep -- "--bare" "$TEST_WORKSPACE/claude-args.log"
   [ "$status" -ne 0 ]
@@ -334,87 +328,87 @@ exit 99'
   handoff_dir="$(external_handoff_dir "ext-review-01" "v1.0" "r01")"
   [ -n "$handoff_dir" ]
   [[ "$handoff_dir" =~ /[A-Z][a-z]{2}[0-9]{2}_[0-9]{4}/ext-review-01/v1\.0/r01$ ]]
-  run test -f "$handoff_dir/gemini.request.md"
+  run test -f "$handoff_dir/agy-current.request.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/gemini.response.md"
+  run test -f "$handoff_dir/agy-current.response.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/gemini.retry-request.md"
+  run test -f "$handoff_dir/agy-current.retry-request.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/gemini.retry-response.md"
+  run test -f "$handoff_dir/agy-current.retry-response.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/claude.request.md"
+  run test -f "$handoff_dir/claude-current.request.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/claude.response.md"
+  run test -f "$handoff_dir/claude-current.response.md"
   [ "$status" -eq 0 ]
-  run test ! -f "$handoff_dir/claude.stderr.md"
+  run test ! -f "$handoff_dir/claude-current.stderr.md"
   [ "$status" -eq 0 ]
-  run grep "## Why" "$handoff_dir/gemini.request.md"
+  run grep "## Why" "$handoff_dir/agy-current.request.md"
   [ "$status" -eq 0 ]
-  run grep "## What" "$handoff_dir/gemini.request.md"
+  run grep "## What" "$handoff_dir/agy-current.request.md"
   [ "$status" -eq 0 ]
-  run grep "## How" "$handoff_dir/gemini.request.md"
+  run grep "## How" "$handoff_dir/agy-current.request.md"
   [ "$status" -eq 0 ]
-  run grep "## Where" "$handoff_dir/gemini.request.md"
+  run grep "## Where" "$handoff_dir/agy-current.request.md"
   [ "$status" -eq 0 ]
-  run grep "## Verify" "$handoff_dir/gemini.request.md"
+  run grep "## Verify" "$handoff_dir/agy-current.request.md"
   [ "$status" -eq 0 ]
-  run grep "## Payload" "$handoff_dir/gemini.request.md"
+  run grep "## Payload" "$handoff_dir/agy-current.request.md"
   [ "$status" -eq 0 ]
-  run grep "### Plan under review" "$handoff_dir/gemini.request.md"
+  run grep "### Plan under review" "$handoff_dir/agy-current.request.md"
   [ "$status" -eq 0 ]
-  run grep "# PLAN-ext-review-01-v1.0" "$handoff_dir/gemini.request.md"
+  run grep "# PLAN-ext-review-01-v1.0" "$handoff_dir/agy-current.request.md"
   [ "$status" -eq 0 ]
-  run grep "malformed first response" "$handoff_dir/gemini.response.md"
+  run grep "malformed first response" "$handoff_dir/agy-current.response.md"
   [ "$status" -ne 0 ]
-  run grep "/tmp/evil-plan.md" "$handoff_dir/gemini.response.md"
+  run grep "/tmp/evil-plan.md" "$handoff_dir/agy-current.response.md"
   [ "$status" -eq 0 ]
-  run grep "unsupported save-location claim" "$handoff_dir/gemini.stderr.md"
+  run grep "unsupported save-location claim" "$handoff_dir/agy-current.stderr.md"
   [ "$status" -eq 0 ]
-  run grep "review contract should be stricter" "$handoff_dir/gemini.retry-response.md"
+  run grep "review contract should be stricter" "$handoff_dir/agy-current.retry-response.md"
   [ "$status" -eq 0 ]
-  run grep -F "[REDACTED_SECRET]" "$handoff_dir/gemini.request.md"
+  run grep -F "[REDACTED_SECRET]" "$handoff_dir/agy-current.request.md"
   [ "$status" -eq 0 ]
-  run grep -F "[REDACTED_SECRET]" "$handoff_dir/gemini.retry-response.md"
+  run grep -F "[REDACTED_SECRET]" "$handoff_dir/agy-current.retry-response.md"
   [ "$status" -eq 0 ]
-  run grep "sk-12345678901234567890" "$handoff_dir/gemini.request.md"
+  run grep "sk-12345678901234567890" "$handoff_dir/agy-current.request.md"
   [ "$status" -ne 0 ]
-  run grep "sk-proj-12345678901234567890" "$handoff_dir/gemini.request.md"
+  run grep "sk-proj-12345678901234567890" "$handoff_dir/agy-current.request.md"
   [ "$status" -ne 0 ]
-  run grep "ghp_12345678901234567890" "$handoff_dir/gemini.retry-response.md"
+  run grep "ghp_12345678901234567890" "$handoff_dir/agy-current.retry-response.md"
   [ "$status" -ne 0 ]
-  run grep "sk-proj-12345678901234567890" "$handoff_dir/gemini.retry-response.md"
+  run grep "sk-proj-12345678901234567890" "$handoff_dir/agy-current.retry-response.md"
   [ "$status" -ne 0 ]
-  run grep "$handoff_dir/gemini.retry-request.md" "$TEST_WORKSPACE/gemini-args.log"
+  run grep "$handoff_dir/agy-current.retry-request.md" "$TEST_WORKSPACE/gemini-args.log"
   [ "$status" -eq 0 ]
-  run grep "$handoff_dir/gemini.retry-command-response.raw.md" "$TEST_WORKSPACE/gemini-args.log"
+  run grep "$handoff_dir/agy-current.retry-command-response.raw.md" "$TEST_WORKSPACE/gemini-args.log"
   [ "$status" -eq 0 ]
-  run grep "command_response_path: $handoff_dir/gemini.retry-command-response.raw.md" "$handoff_dir/gemini.retry-request.md"
+  run grep "command_response_path: $handoff_dir/agy-current.retry-command-response.raw.md" "$handoff_dir/agy-current.retry-request.md"
   [ "$status" -eq 0 ]
-  run grep "sanitized_response_file: $handoff_dir/gemini.retry-response.md" "$handoff_dir/gemini.retry-request.md"
+  run grep "sanitized_response_file: $handoff_dir/agy-current.retry-response.md" "$handoff_dir/agy-current.retry-request.md"
   [ "$status" -eq 0 ]
-  run test ! -f "$handoff_dir/gemini.retry-command-response.raw.md"
+  run test ! -f "$handoff_dir/agy-current.retry-command-response.raw.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/gemini.retry-response.provenance.md"
+  run test -f "$handoff_dir/agy-current.retry-response.provenance.md"
   [ "$status" -eq 0 ]
-  local gemini_retry_hash
-  gemini_retry_hash="$(sha256_file_ref "$handoff_dir/gemini.retry-response.md")"
-  run grep "artifact_kind: external_cli_review_response_provenance" "$handoff_dir/gemini.retry-response.provenance.md"
+  local agy_retry_hash
+  agy_retry_hash="$(sha256_file_ref "$handoff_dir/agy-current.retry-response.md")"
+  run grep "artifact_kind: external_cli_review_response_provenance" "$handoff_dir/agy-current.retry-response.provenance.md"
   [ "$status" -eq 0 ]
-  run grep "generated_by: run_external_plan_reviews.sh" "$handoff_dir/gemini.retry-response.provenance.md"
+  run grep "generated_by: run_external_plan_reviews.sh" "$handoff_dir/agy-current.retry-response.provenance.md"
   [ "$status" -eq 0 ]
-  run grep "response_file: $handoff_dir/gemini.retry-response.md" "$handoff_dir/gemini.retry-response.provenance.md"
+  run grep "response_file: $handoff_dir/agy-current.retry-response.md" "$handoff_dir/agy-current.retry-response.provenance.md"
   [ "$status" -eq 0 ]
-  run grep "response_sha256: $gemini_retry_hash" "$handoff_dir/gemini.retry-response.provenance.md"
+  run grep "response_sha256: $agy_retry_hash" "$handoff_dir/agy-current.retry-response.provenance.md"
   [ "$status" -eq 0 ]
-  run grep "command_response_path: $handoff_dir/gemini.retry-command-response.raw.md" "$handoff_dir/gemini.retry-response.provenance.md"
+  run grep "command_response_path: $handoff_dir/agy-current.retry-command-response.raw.md" "$handoff_dir/agy-current.retry-response.provenance.md"
   [ "$status" -eq 0 ]
-  run grep "raw_capture_deleted: true" "$handoff_dir/gemini.retry-response.provenance.md"
+  run grep "raw_capture_deleted: true" "$handoff_dir/agy-current.retry-response.provenance.md"
   [ "$status" -eq 0 ]
-  run grep "$handoff_dir/claude.command-response.raw.md" "$TEST_WORKSPACE/claude-args.log"
+  run grep "$handoff_dir/claude-current.command-response.raw.md" "$TEST_WORKSPACE/claude-args.log"
   [ "$status" -eq 0 ]
-  run test ! -f "$handoff_dir/claude.command-response.raw.md"
+  run test ! -f "$handoff_dir/claude-current.command-response.raw.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/claude.response.provenance.md"
+  run test -f "$handoff_dir/claude-current.response.provenance.md"
   [ "$status" -eq 0 ]
 }
 
@@ -448,16 +442,16 @@ touch "${TEST_WORKSPACE}/gemini-called"
 echo "gemini should not be called for selected reviewer claude" >&2
 exit 99'
 
-  # (claude mock replaced by agy)
-  # true #  '#!/usr/bin/env bash
-# printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
-# cat <<EOF
-# - verdict: accept
-# - summary: The selected reviewer path invokes only Claude and still writes the standard report artifacts.
-# - strengths: It preserves the normal request, response, report, and provenance flow.
-# - risks: Reviewer selection could hide missing multi-review coverage if operators use it for initial review rounds.
-# - requested_changes: Use targeted reviewer selection only for focused reruns or explicitly scoped review rounds.
-# EOF'
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
+cat >> "${TEST_WORKSPACE}/claude-args.log"
+cat <<EOF
+- verdict: accept
+- summary: The selected reviewer path invokes only Claude and still writes the standard report artifacts.
+- strengths: It preserves the normal request, response, report, and provenance flow.
+- risks: Reviewer selection could hide missing multi-review coverage if operators use it for initial review rounds.
+- requested_changes: Use targeted reviewer selection only for focused reruns or explicitly scoped review rounds.
+EOF'
 
   write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
 touch "${TEST_WORKSPACE}/codex-called"
@@ -479,25 +473,25 @@ exit 99'
   [[ "$output" != *"evaluator=gemini"* ]]
   [[ "$output" != *"evaluator=codex"* ]]
 
-  run test -f "$DOCS_ROOT/report/PLAN-ext-review-07-v1.0-review-claude-r07.md"
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-07-v1.0-review-claude-current-r07.md"
   [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/gemini-called"
   [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/codex-called"
   [ "$status" -eq 0 ]
-  run grep "^- reviewer_agents: external-cli:claude" "$DOCS_ROOT/orchestration/ext-review-07/ORCH.md"
+  run grep "^- reviewer_agents: external-cli:claude:current" "$DOCS_ROOT/orchestration/ext-review-07/ORCH.md"
   [ "$status" -eq 0 ]
 
   local handoff_dir
   handoff_dir="$(external_handoff_dir "ext-review-07" "v1.0" "r07")"
   [ -n "$handoff_dir" ]
-  run test -f "$handoff_dir/claude.request.md"
+  run test -f "$handoff_dir/claude-current.request.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/claude.response.md"
+  run test -f "$handoff_dir/claude-current.response.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/claude.response.provenance.md"
+  run test -f "$handoff_dir/claude-current.response.provenance.md"
   [ "$status" -eq 0 ]
-  run grep "$handoff_dir/claude.command-response.raw.md" "$TEST_WORKSPACE/claude-args.log"
+  run grep "$handoff_dir/claude-current.command-response.raw.md" "$TEST_WORKSPACE/claude-args.log"
   [ "$status" -eq 0 ]
 }
 
@@ -528,10 +522,9 @@ EOF
   write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
 touch "${TEST_WORKSPACE}/gemini-called"
 exit 99'
-  # (claude mock replaced by agy)
-  # true #  '#!/usr/bin/env bash
-# touch "${TEST_WORKSPACE}/claude-called"
-# exit 99'
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/claude-called"
+exit 99'
   write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
 touch "${TEST_WORKSPACE}/codex-called"
 exit 99'
@@ -547,7 +540,7 @@ exit 99'
     --manual-handoff-only
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[MANUAL] evaluator=gemini"* ]]
+  [[ "$output" == *"[MANUAL] evaluator=agy"* ]]
   [[ "$output" == *"[MANUAL] evaluator=claude"* ]]
   [[ "$output" == *"manual_handoff_only=true"* ]]
   [[ "$output" == *"--ingest-manual-responses"* ]]
@@ -561,29 +554,29 @@ exit 99'
   local handoff_dir
   handoff_dir="$(external_handoff_dir "ext-review-manual" "v1.0" "r01")"
   [ -n "$handoff_dir" ]
-  run test -f "$handoff_dir/gemini.request.md"
+  run test -f "$handoff_dir/agy-current.request.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/claude.request.md"
+  run test -f "$handoff_dir/claude-current.request.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/gemini.manual-command.md"
+  run test -f "$handoff_dir/agy-current.manual-command.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/claude.manual-command.md"
+  run test -f "$handoff_dir/claude-current.manual-command.md"
   [ "$status" -eq 0 ]
-  run grep "last-resort fallback" "$handoff_dir/gemini.manual-command.md"
+  run grep "last-resort fallback" "$handoff_dir/agy-current.manual-command.md"
   [ "$status" -eq 0 ]
-  run grep "user-operated handoff" "$handoff_dir/claude.manual-command.md"
+  run grep "user-operated handoff" "$handoff_dir/claude-current.manual-command.md"
   [ "$status" -eq 0 ]
-  run grep "<.*claude.request.md" "$handoff_dir/claude.manual-command.md"
+  run grep "cat.*claude-current.request.md" "$handoff_dir/claude-current.manual-command.md"
   [ "$status" -eq 0 ]
 
-  cat > "$handoff_dir/gemini.command-response.raw.md" <<'EOF'
+  cat > "$handoff_dir/agy-current.command-response.raw.md" <<'EOF'
 - verdict: accept
 - summary: Gemini manual raw response accepts the bounded external review fallback contract.
 - strengths: It preserves direct invocation as primary while keeping a recoverable user-operated fallback.
 - risks: Operators could still overuse manual mode if platform permission settings are not fixed.
 - requested_changes: Keep manual handoff documented as last-resort only.
 EOF
-  cat > "$handoff_dir/claude.command-response.raw.md" <<'EOF'
+  cat > "$handoff_dir/claude-current.command-response.raw.md" <<'EOF'
 - verdict: revise
 - summary: Claude manual raw response confirms ingest can normalize existing responses without invoking the CLI.
 - strengths: It produces the same report and provenance artifacts after user-operated execution.
@@ -602,27 +595,27 @@ EOF
     --ingest-manual-responses
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[OK] evaluator=gemini"* ]]
+  [[ "$output" == *"[OK] evaluator=agy"* ]]
   [[ "$output" == *"[OK] evaluator=claude"* ]]
   run test ! -e "$TEST_WORKSPACE/gemini-called"
   [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/claude-called"
   [ "$status" -eq 0 ]
-  run test -f "$DOCS_ROOT/report/PLAN-ext-review-manual-v1.0-review-gemini-r01.md"
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-manual-v1.0-review-agy-current-r01.md"
   [ "$status" -eq 0 ]
-  run test -f "$DOCS_ROOT/report/PLAN-ext-review-manual-v1.0-review-claude-r01.md"
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-manual-v1.0-review-claude-current-r01.md"
   [ "$status" -eq 0 ]
-  run test ! -f "$handoff_dir/gemini.command-response.raw.md"
+  run test ! -f "$handoff_dir/agy-current.command-response.raw.md"
   [ "$status" -eq 0 ]
-  run test ! -f "$handoff_dir/claude.command-response.raw.md"
+  run test ! -f "$handoff_dir/claude-current.command-response.raw.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/gemini.response.provenance.md"
+  run test -f "$handoff_dir/agy-current.response.provenance.md"
   [ "$status" -eq 0 ]
-  run grep "raw_capture_deleted: true" "$handoff_dir/gemini.response.provenance.md"
+  run grep "raw_capture_deleted: true" "$handoff_dir/agy-current.response.provenance.md"
   [ "$status" -eq 0 ]
 }
 
-@test "run_external_plan_reviews supports adversarial reviewer and optional model override with best-effort success" {
+@test "run_external_plan_reviews supports adversarial reviewer with best-effort success" {
   local plan_file="$DOCS_ROOT/plan/PLAN-ext-review-02-v1.0.md"
   cat > "$plan_file" <<'EOF'
 # PLAN-ext-review-02-v1.0
@@ -648,14 +641,14 @@ EOF
   mkdir -p "$mock_bin"
 
   write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
-echo "gemini should not be called for primary=gemini" >&2
+echo "agy should not be called for primary=agy" >&2
 exit 99'
 
-  # (claude mock replaced by agy)
-  # true #  '#!/usr/bin/env bash
-# printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
-# echo "mock claude failure with token=sk-proj-12345678901234567890" >&2
-# exit 7'
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
+cat >> "${TEST_WORKSPACE}/claude-args.log"
+echo "mock claude failure with token=sk-proj-12345678901234567890" >&2
+exit 7'
 
   write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
 printf "%s\n" "$@" > "${TEST_WORKSPACE}/codex-args.log"
@@ -686,26 +679,23 @@ EOF'
   run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
     --task-id "ext-review-02" \
     --plan-version "v1.0" \
-    --primary-tool "gemini" \
+    --primary-tool "agy" \
     --review-round "r02" \
     --risk-preflight-status "approved" \
     --approval-ref "user-approval-ext-review-02" \
     --approved-next-step "run external review ext-review-02 v1.0 r02" \
     --allow-partial-review \
-    --adversarial-evaluator "codex" \
-    --codex-model "gpt-5.4"
+    --adversarial-evaluator "codex"
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"[FAIL] evaluator=claude"* ]]
   [[ "$output" == *"[OK] evaluator=codex style=adversarial"* ]]
 
-  run test -f "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-r02.md"
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-current-r02.md"
   [ "$status" -eq 0 ]
-  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-r02.md"
+  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-current-r02.md"
   [ "$status" -eq 0 ]
-  run grep "^- objection:" "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-r02.md"
-  [ "$status" -eq 0 ]
-  run grep -- "gpt-5.4" "$TEST_WORKSPACE/codex-args.log"
+  run grep "^- objection:" "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-current-r02.md"
   [ "$status" -eq 0 ]
   run grep -- "--sandbox" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
@@ -715,7 +705,7 @@ EOF'
   [ "$status" -eq 0 ]
   run grep -- "--output-last-message" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
-  run grep -F -- "-C" "$TEST_WORKSPACE/codex-args.log"
+  run grep -F -- "--cd" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
   run grep -- "$TEST_PROJECT" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
@@ -724,23 +714,23 @@ EOF'
   handoff_dir="$(external_handoff_dir "ext-review-02" "v1.0" "r02")"
   [ -n "$handoff_dir" ]
   [[ "$handoff_dir" =~ /[A-Z][a-z]{2}[0-9]{2}_[0-9]{4}/ext-review-02/v1\.0/r02$ ]]
-  run test -f "$handoff_dir/codex.request.md"
+  run test -f "$handoff_dir/codex-current.request.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/codex.response.md"
+  run test -f "$handoff_dir/codex-current.response.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/claude.stderr.md"
+  run test -f "$handoff_dir/claude-current.stderr.md"
   [ "$status" -eq 0 ]
-  run grep "# PLAN-ext-review-02-v1.0" "$handoff_dir/codex.request.md"
+  run grep "# PLAN-ext-review-02-v1.0" "$handoff_dir/codex-current.request.md"
   [ "$status" -eq 0 ]
-  run grep "$handoff_dir/codex.request.md" "$TEST_WORKSPACE/codex-args.log"
+  run grep "$handoff_dir/codex-current.request.md" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
-  run grep "$handoff_dir/codex.command-response.raw.md" "$TEST_WORKSPACE/codex-args.log"
+  run grep "$handoff_dir/codex-current.command-response.raw.md" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
-  run test ! -f "$handoff_dir/codex.command-response.raw.md"
+  run test ! -f "$handoff_dir/codex-current.command-response.raw.md"
   [ "$status" -eq 0 ]
-  run grep -F "[REDACTED_SECRET]" "$handoff_dir/claude.stderr.md"
+  run grep -F "[REDACTED_SECRET]" "$handoff_dir/claude-current.stderr.md"
   [ "$status" -eq 0 ]
-  run grep "sk-proj-12345678901234567890" "$handoff_dir/claude.stderr.md"
+  run grep "sk-proj-12345678901234567890" "$handoff_dir/claude-current.stderr.md"
   [ "$status" -ne 0 ]
 }
 
@@ -836,32 +826,32 @@ EOF'
     --approved-next-step "run external review ext-review-04 v1.0 r04"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"auto-selecting adversarial evaluator=gemini"* ]]
-  [[ "$output" == *"[OK] evaluator=gemini style=adversarial"* ]]
+  [[ "$output" == *"auto-selecting adversarial evaluator=agy:current"* ]]
+  [[ "$output" == *"[OK] evaluator=agy style=adversarial"* ]]
   [[ "$output" == *"[OK] evaluator=codex style=standard"* ]]
 
-  run test -f "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-gemini-r04.md"
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-agy-current-r04.md"
   [ "$status" -eq 0 ]
-  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-gemini-r04.md"
+  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-agy-current-r04.md"
   [ "$status" -eq 0 ]
-  run test -f "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-codex-r04.md"
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-codex-current-r04.md"
   [ "$status" -eq 0 ]
 
   local handoff_dir
   handoff_dir="$(external_handoff_dir "ext-review-04" "v1.0" "r04")"
   [ -n "$handoff_dir" ]
   [[ "$handoff_dir" =~ /[A-Z][a-z]{2}[0-9]{2}_[0-9]{4}/ext-review-04/v1\.0/r04$ ]]
-  run test -f "$handoff_dir/gemini.request.md"
+  run test -f "$handoff_dir/agy-current.request.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/gemini.response.md"
+  run test -f "$handoff_dir/agy-current.response.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/codex.request.md"
+  run test -f "$handoff_dir/codex-current.request.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/codex.response.md"
+  run test -f "$handoff_dir/codex-current.response.md"
   [ "$status" -eq 0 ]
-  run grep "$handoff_dir/gemini.command-response.raw.md" "$TEST_WORKSPACE/gemini-args.log"
+  run grep "$handoff_dir/agy-current.command-response.raw.md" "$TEST_WORKSPACE/gemini-args.log"
   [ "$status" -eq 0 ]
-  run grep "$handoff_dir/codex.command-response.raw.md" "$TEST_WORKSPACE/codex-args.log"
+  run grep "$handoff_dir/codex-current.command-response.raw.md" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
 }
 
@@ -887,12 +877,12 @@ EOF'
 3. Stop.
 EOF
 
-  cat > "$DOCS_ROOT/report/PLAN-ext-review-03-v1.0-review-gemini-r03.md" <<'EOF'
-# PLAN-ext-review-03-v1.0 review (gemini)
+  cat > "$DOCS_ROOT/report/PLAN-ext-review-03-v1.0-review-agy-current-r03.md" <<'EOF'
+# PLAN-ext-review-03-v1.0 review (agy)
 
 - task_id: ext-review-03
 - plan_version: v1.0
-- evaluator: gemini
+- evaluator: agy
 - review_style: standard
 - review_round: r03
 - verdict: revise
@@ -933,13 +923,13 @@ exit 4'
     --approved-next-step "run external review ext-review-03 v1.0 r03"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"[FAIL] evaluator=gemini"* ]]
+  [[ "$output" == *"[FAIL] evaluator=agy"* ]]
   [[ "$output" == *"[FAIL] evaluator=codex"* ]]
-  run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-03-v1.0-review-gemini-r03.md"
+  run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-03-v1.0-review-agy-current-r03.md"
   [ "$status" -eq 0 ]
-  run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-03-v1.0-review-codex-r03.md"
+  run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-03-v1.0-review-codex-current-r03.md"
   [ "$status" -eq 0 ]
-  run find "$DOCS_ROOT/report" -maxdepth 1 -type f -name 'PLAN-ext-review-03-v1.0-review-gemini-r03.md.stale-*'
+  run find "$DOCS_ROOT/report" -maxdepth 1 -type f -name 'PLAN-ext-review-03-v1.0-review-agy-current-r03.md.stale-*'
   [ "$status" -eq 0 ]
 }
 
@@ -1025,7 +1015,7 @@ EOF'
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"Required adversarial review did not complete successfully"* ]]
-  run test -f "$DOCS_ROOT/report/PLAN-ext-review-05-v1.0-review-codex-r05.md"
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-05-v1.0-review-codex-current-r05.md"
   [ "$status" -eq 0 ]
 }
 
@@ -1055,13 +1045,18 @@ EOF
   mkdir -p "$mock_bin"
 
   write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
-echo "gemini should not be called for primary=gemini" >&2
+echo "agy should not be called for primary=agy" >&2
 exit 99'
 
-  # (claude mock replaced by agy)
-  # true #  '#!/usr/bin/env bash
-# echo "mock claude failure" >&2
-# exit 7'
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+cat >/dev/null
+cat <<EOF
+- verdict: accept
+- summary: Mock Claude accepts the review packet.
+- strengths: none in particular.
+- risks: none.
+- requested_changes: none.
+EOF'
 
   write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
 printf "%s\n" "$@" > "${TEST_WORKSPACE}/codex-args.log"
@@ -1071,7 +1066,7 @@ exit 0'
   run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
     --task-id "ext-review-06" \
     --plan-version "v1.0" \
-    --primary-tool "gemini" \
+    --primary-tool "agy" \
     --review-round "r06" \
     --risk-preflight-status "approved" \
     --approval-ref "user-approval-ext-review-06" \
@@ -1079,15 +1074,15 @@ exit 0'
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"[FAIL] evaluator=codex"* ]]
-  run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-06-v1.0-review-codex-r06.md"
+  run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-06-v1.0-review-codex-current-r06.md"
   [ "$status" -eq 0 ]
 
   local handoff_dir
   handoff_dir="$(external_handoff_dir "ext-review-06" "v1.0" "r06")"
   [ -n "$handoff_dir" ]
-  run grep "codex final message file was empty" "$handoff_dir/codex.stderr.md"
+  run grep "codex final message file was empty" "$handoff_dir/codex-current.stderr.md"
   [ "$status" -eq 0 ]
-  run grep "codex runtime log only" "$handoff_dir/codex.stderr.md"
+  run grep "codex runtime log only" "$handoff_dir/codex-current.stderr.md"
   [ "$status" -eq 0 ]
 }
 
@@ -1363,7 +1358,7 @@ exit 1'
   [ "$status" -eq 0 ]
 }
 
-@test "run_external_plan_reviews reports Claude auth unavailable with sandbox guidance" {
+@test "run_external_plan_reviews reports Claude 401 auth unavailable with sandbox guidance" {
   local plan_file="$DOCS_ROOT/plan/PLAN-ext-claude-auth-blocked-v1.0.md"
   cat > "$plan_file" <<'EOF'
 # PLAN-ext-claude-auth-blocked-v1.0
@@ -1387,7 +1382,7 @@ EOF
   mkdir -p "$mock_bin"
 
   write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
-echo "Not logged in · Please run /login"
+echo "Failed to authenticate. API Error: 401 Invalid authentication credentials"
 exit 1'
 
   run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
@@ -1403,6 +1398,7 @@ exit 1'
   [ "$status" -ne 0 ]
   [[ "$output" == *"Runner authentication unavailable for route 'claude:opus-4.8'"* ]]
   [[ "$output" == *"sandbox/keychain permission boundary"* ]]
+  [[ "$output" == *"user-approved unsandboxed path"* ]]
   local handoff_dir
   handoff_dir="$(external_handoff_dir "ext-claude-auth-blocked" "v1.0" "r01")"
   [ -n "$handoff_dir" ]
@@ -1862,5 +1858,389 @@ exit 1'
   run grep "Runner authentication unavailable for route 'claude:opus-4.8'" "$stderr_file"
   [ "$status" -eq 0 ]
   run grep "Not logged in" "$stderr_file"
+  [ "$status" -eq 0 ]
+}
+
+@test "external_review_runner classifies Claude 401 auth failure as auth unavailable" {
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+cat >/dev/null
+echo "Failed to authenticate. API Error: 401 Invalid authentication credentials"
+exit 1'
+
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-claude-auth-401" --plan-version "v1.0" --review-round "r01" --task-phase "review" --coordinator "codex" --participant "claude-opus-4.8"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+
+  run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-claude-auth-401" --force
+  [ "$status" -ne 0 ]
+
+  local stderr_file="$DOCS_ROOT/orchestration/runner-claude-auth-401/external-cli/v1.0/r01/claude-opus-4.8.stderr.md"
+  run test -f "$stderr_file"
+  [ "$status" -eq 0 ]
+  run grep "Runner authentication unavailable for route 'claude:opus-4.8'" "$stderr_file"
+  [ "$status" -eq 0 ]
+  run grep "Invalid authentication credentials" "$stderr_file"
+  [ "$status" -eq 0 ]
+  run grep "user-approved unsandboxed path" "$stderr_file"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews --adversarial-all runs same-vendor peer and cross-vendor reviewers adversarially" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-adv-all-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-adv-all-v1.0
+
+- task_id: ext-adv-all
+- plan_version: v1.0
+- objective: validate all-adversarial cross-vendor review rounds
+- scope: external review wrapper adversarial routing
+- assumptions: author vendor peer model differs from the author model
+- risks: same-vendor agreement bias could overfit the review
+- acceptance_signals: three adversarial reports exist
+- stop_conditions: operator reviews the reports
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Run one same-vendor peer and two cross-vendor reviewers.
+2. Require adversarial style from all of them.
+3. Stop.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
+cat <<EOF
+- verdict: revise
+- summary: Gemini adversarial pass finds sequencing gaps.
+- strengths: Bounded review flow.
+- risks: Sequencing gaps remain.
+- requested_changes: Tighten step ordering.
+- objection: The rollout order is unproven.
+- counterproposal: Stage the rollout behind a validation gate.
+- rebuttal: The current draft still isolates review from mutation.
+- residual_risk: Operators may skip the staged gate.
+EOF'
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
+cat >> "${TEST_WORKSPACE}/claude-args.log"
+cat <<EOF
+- verdict: revise
+- summary: Same-vendor peer adversarial pass challenges the assumptions.
+- strengths: The plan keeps the operator in control.
+- risks: Assumption coverage is thin.
+- requested_changes: Add explicit assumption checks.
+- objection: The primary author may share blind spots with this reviewer.
+- counterproposal: Weight cross-vendor findings higher on conflict.
+- rebuttal: A same-vendor peer still catches model-family-specific drift.
+- residual_risk: Vendor-shared training bias is not fully eliminated.
+EOF'
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+output_file=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-last-message" ]]; then
+    output_file="${2:-}"
+    shift 2
+  else
+    shift
+  fi
+done
+if [[ -z "$output_file" ]]; then
+  output_file="/dev/stdout"
+fi
+cat > "$output_file" <<EOF
+- verdict: revise
+- summary: OpenAI adversarial pass questions verification depth.
+- strengths: Artifacts are durable.
+- risks: Verification is shallow.
+- requested_changes: Add negative-path checks.
+- objection: The stop conditions are underspecified.
+- counterproposal: Enumerate explicit failure stop conditions.
+- rebuttal: The draft still blocks silent auto-versioning.
+- residual_risk: Manual convergence may miss one reviewer objection.
+EOF'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-adv-all" \
+    --plan-version "v1.0" \
+    --primary-tool "claude" \
+    --primary-model "claude-fable-5" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-adv-all" \
+    --approved-next-step "run external review ext-adv-all v1.0 r01" \
+    --reviewer "claude-sonnet-5" \
+    --reviewer "agy-current" \
+    --reviewer "codex-current" \
+    --adversarial-all
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[OK] evaluator=claude"*"style=adversarial"* ]]
+  [[ "$output" == *"[OK] evaluator=agy"*"style=adversarial"* ]]
+  [[ "$output" == *"[OK] evaluator=codex"*"style=adversarial"* ]]
+  [[ "$output" != *"style=standard"* ]]
+
+  run grep -- "--model" "$TEST_WORKSPACE/claude-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "claude-sonnet-5" "$TEST_WORKSPACE/claude-args.log"
+  [ "$status" -eq 0 ]
+
+  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-adv-all-v1.0-review-claude-sonnet-5-r01.md"
+  [ "$status" -eq 0 ]
+  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-adv-all-v1.0-review-agy-current-r01.md"
+  [ "$status" -eq 0 ]
+  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-adv-all-v1.0-review-codex-current-r01.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews repeatable adversarial evaluators fail closed even with allow-partial-review" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-adv-multi-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-adv-multi-v1.0
+
+- task_id: ext-adv-multi
+- plan_version: v1.0
+- objective: verify multi-adversarial failure blocks partial acceptance
+- scope: external review wrapper adversarial gating
+- assumptions: one adversarial reviewer may fail
+- risks: partial acceptance could mask a missing adversarial pass
+- acceptance_signals: wrapper exits non-zero when any adversarial reviewer fails
+- stop_conditions: failure is surfaced
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Mark two reviewers adversarial.
+2. Let one adversarial reviewer fail.
+3. Expect non-zero exit despite --allow-partial-review.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
+echo "forced agy adversarial failure" >&2
+exit 8'
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+cat >/dev/null
+cat <<EOF
+- verdict: revise
+- summary: Claude adversarial pass succeeded.
+- strengths: Bounded handoff.
+- risks: One adversarial peer is missing.
+- requested_changes: Rerun the failed adversarial reviewer.
+- objection: Partial adversarial coverage is not sufficient.
+- counterproposal: Block acceptance until every adversarial pass lands.
+- rebuttal: The successful passes still carry signal.
+- residual_risk: Convergence may proceed on incomplete objections.
+EOF'
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+output_file=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-last-message" ]]; then
+    output_file="${2:-}"
+    shift 2
+  else
+    shift
+  fi
+done
+if [[ -z "$output_file" ]]; then
+  output_file="/dev/stdout"
+fi
+cat > "$output_file" <<EOF
+- verdict: revise
+- summary: Codex standard pass succeeded.
+- strengths: Reports are durable.
+- risks: None noted.
+- requested_changes: None.
+EOF'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-adv-multi" \
+    --plan-version "v1.0" \
+    --primary-tool "codex" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-adv-multi" \
+    --approved-next-step "run external review ext-adv-multi v1.0 r01" \
+    --adversarial-evaluator "agy-current" \
+    --adversarial-evaluator "claude-current" \
+    --allow-partial-review
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"[FAIL] evaluator=agy"*"style=adversarial"* ]]
+  [[ "$output" == *"[OK] evaluator=claude"*"style=adversarial"* ]]
+  [[ "$output" == *"Required adversarial review did not complete successfully"* ]]
+  [[ "$output" == *"agy:current"* ]]
+}
+
+@test "run_external_plan_reviews --adversarial-cross-check auto-selects registry vendor peer and cross-vendor reviewers" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-cross-check-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-cross-check-v1.0
+
+- task_id: ext-cross-check
+- plan_version: v1.0
+- objective: validate registry-driven cross-vendor adversarial auto-selection
+- scope: external review wrapper vendor automation
+- assumptions: primary author is a direct Anthropic model
+- risks: same-model-family review could overfit and miss defects
+- acceptance_signals: a same-vendor peer plus every other vendor reviews adversarially
+- stop_conditions: operator reviews the reports
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Run with --adversarial-cross-check and no manual reviewer selection.
+2. Confirm the registry adversarial_peer and vendor_default_reviewers drove selection.
+3. Confirm every selected reviewer ran in adversarial style.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
+cat <<EOF
+- verdict: revise
+- summary: Gemini cross-vendor adversarial pass finds sequencing gaps.
+- strengths: Bounded review flow.
+- risks: Sequencing gaps remain.
+- requested_changes: Tighten step ordering.
+- objection: The rollout order is unproven.
+- counterproposal: Stage the rollout behind a validation gate.
+- rebuttal: The current draft still isolates review from mutation.
+- residual_risk: Operators may skip the staged gate.
+EOF'
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/claude-args.log"
+cat >> "${TEST_WORKSPACE}/claude-args.log"
+cat <<EOF
+- verdict: revise
+- summary: Same-vendor peer adversarial pass challenges shared assumptions.
+- strengths: The plan keeps the operator in control.
+- risks: Assumption coverage is thin.
+- requested_changes: Add explicit assumption checks.
+- objection: The primary author may share blind spots with this reviewer.
+- counterproposal: Weight cross-vendor findings higher on conflict.
+- rebuttal: A same-vendor peer still catches model-family-specific drift.
+- residual_risk: Vendor-shared training bias is not fully eliminated.
+EOF'
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+output_file=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-last-message" ]]; then
+    output_file="${2:-}"
+    shift 2
+  else
+    shift
+  fi
+done
+if [[ -z "$output_file" ]]; then
+  output_file="/dev/stdout"
+fi
+cat > "$output_file" <<EOF
+- verdict: revise
+- summary: OpenAI cross-vendor adversarial pass questions verification depth.
+- strengths: Artifacts are durable.
+- risks: Verification is shallow.
+- requested_changes: Add negative-path checks.
+- objection: The stop conditions are underspecified.
+- counterproposal: Enumerate explicit failure stop conditions.
+- rebuttal: The draft still blocks silent auto-versioning.
+- residual_risk: Manual convergence may miss one reviewer objection.
+EOF'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-cross-check" \
+    --plan-version "v1.0" \
+    --primary-tool "claude" \
+    --primary-model "claude-fable-5" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-cross-check" \
+    --approved-next-step "run external review ext-cross-check v1.0 r01" \
+    --adversarial-cross-check
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"auto-selected reviewers=claude:sonnet-5 agy:current codex:current"* ]]
+  [[ "$output" == *"[OK] evaluator=claude"*"style=adversarial"* ]]
+  [[ "$output" == *"[OK] evaluator=agy"*"style=adversarial"* ]]
+  [[ "$output" == *"[OK] evaluator=codex"*"style=adversarial"* ]]
+  [[ "$output" != *"style=standard"* ]]
+
+  run grep -- "--model" "$TEST_WORKSPACE/claude-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "claude-sonnet-5" "$TEST_WORKSPACE/claude-args.log"
+  [ "$status" -eq 0 ]
+
+  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-cross-check-v1.0-review-claude-sonnet-5-r01.md"
+  [ "$status" -eq 0 ]
+  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-cross-check-v1.0-review-agy-current-r01.md"
+  [ "$status" -eq 0 ]
+  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-cross-check-v1.0-review-codex-current-r01.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews --adversarial-cross-check rejects combination with --reviewer" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-cross-check-conflict-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-cross-check-conflict-v1.0
+
+- task_id: ext-cross-check-conflict
+- plan_version: v1.0
+- objective: verify cross-check auto-selection cannot be mixed with manual reviewer selection
+- scope: external review wrapper vendor automation
+- assumptions: operators should not partially override registry-driven selection
+- risks: silently merged manual and automatic reviewer sets could hide missing coverage
+- acceptance_signals: wrapper fails closed before invoking any reviewer
+- stop_conditions: conflicting options are rejected
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Pass --adversarial-cross-check together with --reviewer.
+2. Expect an immediate error before any CLI is invoked.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/agy-called"
+exit 99'
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/claude-called"
+exit 99'
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/codex-called"
+exit 99'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-cross-check-conflict" \
+    --plan-version "v1.0" \
+    --primary-tool "codex" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-cross-check-conflict" \
+    --approved-next-step "run external review ext-cross-check-conflict v1.0 r01" \
+    --reviewer "agy-current" \
+    --adversarial-cross-check
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--adversarial-cross-check cannot be combined with --reviewer"* ]]
+  run test ! -e "$TEST_WORKSPACE/agy-called"
+  [ "$status" -eq 0 ]
+  run test ! -e "$TEST_WORKSPACE/claude-called"
+  [ "$status" -eq 0 ]
+  run test ! -e "$TEST_WORKSPACE/codex-called"
   [ "$status" -eq 0 ]
 }

@@ -26,6 +26,13 @@ REDACTIONS = [
     re.compile(r"ghp_[A-Za-z0-9_]{16,}"),
 ]
 
+AUTH_UNAVAILABLE_PATTERN = re.compile(
+    r"Not logged in|Please run /login|authentication required|login required|"
+    r"Failed to authenticate|Invalid authentication credentials|API Error:\s*401|"
+    r"HTTP\s*401|401 Unauthorized|UNAUTHENTICATED",
+    re.I,
+)
+
 
 def utc_now() -> str:
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -158,8 +165,9 @@ def auth_unavailable_message(registry: dict[str, Any], route: str) -> str:
     model = model_for_route(registry, route)
     return (
         f"[BLOCKED] Runner authentication unavailable for route '{route}' (runner={model['runner']}).\n"
-        "If the CLI works in a normal user Terminal, this is likely a sandbox/keychain permission boundary; "
-        "rerun through the user-approved unsandboxed path. Otherwise log in to the runner and rerun.\n"
+        "If this was run inside a Codex/app sandbox, rerun the same command through the user-approved "
+        "unsandboxed path before asking the user to operate a terminal manually. If it still fails "
+        "unsandboxed, log in to the runner and rerun.\n"
     )
 
 
@@ -261,7 +269,7 @@ def execute_once(args: argparse.Namespace) -> int:
             stderr_text = (stderr_text + "\n" + stdout_text).strip() + "\n"
         if result.returncode != 0 and is_quota_error(registry, stderr_text):
             stderr_text = stderr_text + "\n" + quota_exhausted_message(registry, route)
-        if result.returncode != 0 and re.search(r"Not logged in|Please run /login|authentication required|login required", stderr_text, re.I):
+        if result.returncode != 0 and AUTH_UNAVAILABLE_PATTERN.search(stderr_text):
             stderr_text = stderr_text + "\n" + auth_unavailable_message(registry, route)
 
         write_text(external_stderr, redact(stderr_text))

@@ -21,7 +21,12 @@ Options:
   --approval-ref <ref>              Required when risk-preflight-status=approved
   --approved-next-step "<text>"     Exact approved step when approval was required
   --reviewer <model>                Optional reviewer model alias to invoke; repeatable, default is all non-primary models
-  --adversarial-evaluator <model>   Optional reviewer model to run in adversarial mode
+  --adversarial-evaluator <model>   Reviewer model to run in adversarial mode; repeatable for multiple reviewers
+  --adversarial-all                 Run every selected reviewer in adversarial mode (cross-vendor anti-overfit rounds)
+  --adversarial-cross-check         Auto-select reviewers from the registry: the primary model's registered
+                                     same-vendor adversarial_peer (if any) plus one default reviewer per other
+                                     vendor from vendor_default_reviewers, all run adversarially. Cannot be
+                                     combined with --reviewer, --adversarial-evaluator, or --adversarial-all.
   --allow-partial-review            Allow success when only one non-required reviewer succeeds
   --manual-handoff-only             Write request files and manual command files, then stop without invoking external CLIs
   --ingest-manual-responses         Parse existing manual raw/response files into reports and provenance without invoking external CLIs
@@ -75,7 +80,9 @@ RISK_PREFLIGHT_RECORDED_BY="main-thread-supervising-lead-architect"
 RISK_PREFLIGHT_SUMMARY=""
 APPROVAL_REF=""
 APPROVED_NEXT_STEP=""
-ADVERSARIAL_EVALUATOR=""
+ADVERSARIAL_EVALUATORS=()
+ADVERSARIAL_ALL="false"
+ADVERSARIAL_CROSS_CHECK="false"
 ALLOW_PARTIAL_REVIEW="false"
 MANUAL_HANDOFF_ONLY="false"
 INGEST_MANUAL_RESPONSES="false"
@@ -102,6 +109,7 @@ DEFAULT_REVIEWER_ALIASES=()
 QUOTA_ERROR_PATTERNS=()
 PRIMARY_MODEL=""
 TASK_PHASE=""
+AUTH_UNAVAILABLE_PATTERN="Not logged in|Please run /login|authentication required|login required|Failed to authenticate|Invalid authentication credentials|API Error:[[:space:]]*401|HTTP[[:space:]]*401|401 Unauthorized|UNAUTHENTICATED"
 
 
 TMP_FILES=()
@@ -153,7 +161,7 @@ validate_tool() {
 load_model_registry() {
   local registry_file="$1"
   local registry_output
-  local kind first second third fourth fifth
+  local kind first second third fourth fifth sixth seventh
 
   if [[ ! -f "$registry_file" ]]; then
     echo "[ERROR] Model registry not found: $registry_file" >&2
@@ -175,13 +183,17 @@ load_model_registry() {
   MODEL_CLI_MODELS=()
   MODEL_QUOTA_GROUPS=()
   MODEL_DISPLAY_NAMES=()
+  MODEL_VENDORS=()
+  MODEL_ADVERSARIAL_PEERS=()
   FALLBACK_FROM_GROUPS=()
   FALLBACK_PHASES=()
   FALLBACK_TARGETS=()
   DEFAULT_REVIEWER_ALIASES=()
   QUOTA_ERROR_PATTERNS=()
+  VENDOR_DEFAULT_REVIEWER_VENDORS=()
+  VENDOR_DEFAULT_REVIEWER_ROUTES=()
 
-  while IFS=$'\t' read -r kind first second third fourth fifth; do
+  while IFS=$'\t' read -r kind first second third fourth fifth sixth seventh; do
     case "$kind" in
       default_model)
         DEFAULT_MODEL_ALIAS="$first"
@@ -205,6 +217,8 @@ load_model_registry() {
         MODEL_CLI_MODELS+=("$third")
         MODEL_QUOTA_GROUPS+=("$fourth")
         MODEL_DISPLAY_NAMES+=("$fifth")
+        MODEL_VENDORS+=("$sixth")
+        MODEL_ADVERSARIAL_PEERS+=("$seventh")
         ;;
       fallback)
         FALLBACK_FROM_GROUPS+=("$first")
@@ -216,6 +230,10 @@ load_model_registry() {
         ;;
       quota_pattern)
         QUOTA_ERROR_PATTERNS+=("$first")
+        ;;
+      vendor_default_reviewer)
+        VENDOR_DEFAULT_REVIEWER_VENDORS+=("$first")
+        VENDOR_DEFAULT_REVIEWER_ROUTES+=("$second")
         ;;
       "")
         ;;
@@ -312,6 +330,38 @@ model_display_name_for() {
     printf "%s" "${MODEL_DISPLAY_NAMES[$index]}"
     return
   fi
+  return 1
+}
+
+model_vendor_for() {
+  local route="$1"
+  local index
+  if index="$(model_index_for "$route")"; then
+    printf "%s" "${MODEL_VENDORS[$index]}"
+    return
+  fi
+  return 1
+}
+
+model_adversarial_peer_for() {
+  local route="$1"
+  local index
+  if index="$(model_index_for "$route")"; then
+    printf "%s" "${MODEL_ADVERSARIAL_PEERS[$index]}"
+    return
+  fi
+  return 1
+}
+
+vendor_default_reviewer_for() {
+  local vendor="$1"
+  local index
+  for (( index=0; index<${#VENDOR_DEFAULT_REVIEWER_VENDORS[@]}; index++ )); do
+    if [[ "${VENDOR_DEFAULT_REVIEWER_VENDORS[$index]}" == "$vendor" ]]; then
+      printf "%s" "${VENDOR_DEFAULT_REVIEWER_ROUTES[$index]}"
+      return
+    fi
+  done
   return 1
 }
 
@@ -547,8 +597,16 @@ while [[ $# -gt 0 ]]; do
       ;;
     --adversarial-evaluator)
       require_option_value "$1" "$#"
-      ADVERSARIAL_EVALUATOR="${2:-}"
+      ADVERSARIAL_EVALUATORS+=("${2:-}")
       shift 2
+      ;;
+    --adversarial-all)
+      ADVERSARIAL_ALL="true"
+      shift
+      ;;
+    --adversarial-cross-check)
+      ADVERSARIAL_CROSS_CHECK="true"
+      shift
       ;;
     --allow-partial-review)
       ALLOW_PARTIAL_REVIEW="true"
@@ -589,6 +647,11 @@ case "$TASK_PHASE_NORM" in
     exit 1
     ;;
 esac
+
+if [[ "$ADVERSARIAL_CROSS_CHECK" == "true" ]] && { (( ${#SELECTED_REVIEWERS[@]} > 0 )) || (( ${#ADVERSARIAL_EVALUATORS[@]} > 0 )) || [[ "$ADVERSARIAL_ALL" == "true" ]]; }; then
+  echo "[ERROR] --adversarial-cross-check cannot be combined with --reviewer, --adversarial-evaluator, or --adversarial-all" >&2
+  exit 1
+fi
 
 if [[ ! -d "$PROJECT_ROOT" ]]; then
   echo "[ERROR] Project root does not exist: $PROJECT_ROOT" >&2
@@ -918,7 +981,37 @@ PRIMARY_RESOLVED="$(require_registered_model "primary_model" "$PRIMARY_MODEL")"
 
 REVIEWERS=()
 REVIEWER_COUNT=0
-if (( ${#SELECTED_REVIEWERS[@]} > 0 )); then
+if [[ "$ADVERSARIAL_CROSS_CHECK" == "true" ]]; then
+  primary_vendor="$(model_vendor_for "$PRIMARY_RESOLVED" || true)"
+  peer_route="$(model_adversarial_peer_for "$PRIMARY_RESOLVED" || true)"
+  if [[ -n "$peer_route" && "$peer_route" != "$PRIMARY_RESOLVED" ]]; then
+    REVIEWERS+=("$peer_route")
+    REVIEWER_COUNT=$((REVIEWER_COUNT + 1))
+  fi
+  for (( vendor_index=0; vendor_index<${#VENDOR_DEFAULT_REVIEWER_VENDORS[@]}; vendor_index++ )); do
+    candidate_vendor="${VENDOR_DEFAULT_REVIEWER_VENDORS[$vendor_index]}"
+    if [[ -n "$primary_vendor" && "$candidate_vendor" == "$primary_vendor" ]]; then
+      continue
+    fi
+    candidate_route="${VENDOR_DEFAULT_REVIEWER_ROUTES[$vendor_index]}"
+    if [[ "$candidate_route" == "$PRIMARY_RESOLVED" ]]; then
+      continue
+    fi
+    already_selected="false"
+    for (( reviewer_index=0; reviewer_index<REVIEWER_COUNT; reviewer_index++ )); do
+      if [[ "${REVIEWERS[$reviewer_index]}" == "$candidate_route" ]]; then
+        already_selected="true"
+        break
+      fi
+    done
+    if [[ "$already_selected" == "false" ]]; then
+      REVIEWERS+=("$candidate_route")
+      REVIEWER_COUNT=$((REVIEWER_COUNT + 1))
+    fi
+  done
+  ADVERSARIAL_ALL="true"
+  echo "[INFO] --adversarial-cross-check auto-selected reviewers=${REVIEWERS[*]:-none} (primary_vendor=${primary_vendor:-unknown})"
+elif (( ${#SELECTED_REVIEWERS[@]} > 0 )); then
   for alias in "${SELECTED_REVIEWERS[@]}"; do
     resolved="$(require_registered_model "reviewer" "$alias")"
     if [[ "$resolved" == "$PRIMARY_RESOLVED" ]]; then
@@ -960,25 +1053,42 @@ upsert_field_if_blank "$ORCHESTRATION_FILE" "owned_scopes" "planner: docs/plan; 
 upsert_field_if_blank "$ORCHESTRATION_FILE" "delegation_status" "active"
 
 HIGH_RISK_SOURCE="$(high_risk_source_for_task || true)"
-if [[ -n "$HIGH_RISK_SOURCE" && -z "$ADVERSARIAL_EVALUATOR" ]]; then
-  ADVERSARIAL_EVALUATOR="${REVIEWERS[0]}"
-  echo "[INFO] High-risk task detected (${HIGH_RISK_SOURCE}); auto-selecting adversarial evaluator=${ADVERSARIAL_EVALUATOR}"
+if [[ -n "$HIGH_RISK_SOURCE" && "$ADVERSARIAL_ALL" != "true" ]] && (( ${#ADVERSARIAL_EVALUATORS[@]} == 0 )); then
+  ADVERSARIAL_EVALUATORS=("${REVIEWERS[0]}")
+  echo "[INFO] High-risk task detected (${HIGH_RISK_SOURCE}); auto-selecting adversarial evaluator=${REVIEWERS[0]}"
 fi
 
-if [[ -n "$ADVERSARIAL_EVALUATOR" ]]; then
-  found="false"
-  adversarial_resolved="$(require_registered_model "adversarial_evaluator" "$ADVERSARIAL_EVALUATOR")"
-  for tool in "${REVIEWERS[@]}"; do
-    if [[ "$tool" == "$adversarial_resolved" ]]; then
-      found="true"
-      break
+ADVERSARIAL_ROUTES=()
+ADVERSARIAL_ROUTE_COUNT=0
+if [[ "$ADVERSARIAL_ALL" == "true" ]]; then
+  ADVERSARIAL_ROUTES=("${REVIEWERS[@]}")
+  ADVERSARIAL_ROUTE_COUNT=$REVIEWER_COUNT
+elif (( ${#ADVERSARIAL_EVALUATORS[@]} > 0 )); then
+  for adversarial_alias in "${ADVERSARIAL_EVALUATORS[@]}"; do
+    found="false"
+    adversarial_resolved="$(require_registered_model "adversarial_evaluator" "$adversarial_alias")"
+    for tool in "${REVIEWERS[@]}"; do
+      if [[ "$tool" == "$adversarial_resolved" ]]; then
+        found="true"
+        break
+      fi
+    done
+    if [[ "$found" != "true" ]]; then
+      echo "[ERROR] adversarial evaluator must be one of the non-primary reviewers: ${REVIEWERS[*]}" >&2
+      exit 1
+    fi
+    already_marked="false"
+    for (( adversarial_index=0; adversarial_index<ADVERSARIAL_ROUTE_COUNT; adversarial_index++ )); do
+      if [[ "${ADVERSARIAL_ROUTES[$adversarial_index]}" == "$adversarial_resolved" ]]; then
+        already_marked="true"
+        break
+      fi
+    done
+    if [[ "$already_marked" == "false" ]]; then
+      ADVERSARIAL_ROUTES+=("$adversarial_resolved")
+      ADVERSARIAL_ROUTE_COUNT=$((ADVERSARIAL_ROUTE_COUNT + 1))
     fi
   done
-  if [[ "$found" != "true" ]]; then
-    echo "[ERROR] adversarial evaluator must be one of the non-primary reviewers: ${REVIEWERS[*]}" >&2
-    exit 1
-  fi
-  ADVERSARIAL_EVALUATOR="$adversarial_resolved"
 fi
 
 PROMPT_TEMPLATE="$(cat "$PROMPT_TEMPLATE_FILE")"
@@ -1245,7 +1355,7 @@ is_model_unavailable_or_access_blocked() {
 is_runner_auth_unavailable() {
   local response_file="$1"
   local stderr_file="$2"
-  if grep -Eqi "Not logged in|Please run /login|authentication required|login required" "$response_file" "$stderr_file" 2>/dev/null; then
+  if grep -Eqi "$AUTH_UNAVAILABLE_PATTERN" "$response_file" "$stderr_file" 2>/dev/null; then
     return 0
   fi
   return 1
@@ -1373,7 +1483,7 @@ run_tool_prompt() {
 
   if is_runner_auth_unavailable "$output_capture_file" "$stderr_file"; then
     echo "[BLOCKED] Runner authentication unavailable for route '${reviewer_model}'." >&2
-    echo "If the CLI works in a normal user Terminal, this is likely a sandbox/keychain permission boundary; rerun through the user-approved unsandboxed path. Otherwise log in to runner '$(model_runner_for "$reviewer_model")' and rerun." >&2
+    echo "If this was run inside a Codex/app sandbox, rerun the same command through the user-approved unsandboxed path before asking the user to operate a terminal manually. If it still fails unsandboxed, log in to runner '$(model_runner_for "$reviewer_model")' and rerun." >&2
     return 67
   fi
 
@@ -1549,7 +1659,7 @@ EOF
 SUCCESS_COUNT=0
 FAIL_COUNT=0
 STATUS_LINES=()
-ADVERSARIAL_SUCCESS="false"
+ADVERSARIAL_FAILED_ROUTES=()
 
 for reviewer in "${REVIEWERS[@]}"; do
   # reviewer is already a registry-resolved runner-qualified model route.
@@ -1557,11 +1667,13 @@ for reviewer in "${REVIEWERS[@]}"; do
   reviewer_runner="$(model_runner_for "$reviewer")"
   reviewer_slug="$(printf "%s" "$reviewer" | sed 's/[^A-Za-z0-9._-]/-/g')"
   review_style="standard"
-  if [[ -n "$ADVERSARIAL_EVALUATOR" ]]; then
-    adversarial_resolved="$(resolve_model_name "$ADVERSARIAL_EVALUATOR")"
-    if [[ "$reviewer" == "$adversarial_resolved" ]]; then
-      review_style="adversarial"
-    fi
+  if (( ADVERSARIAL_ROUTE_COUNT > 0 )); then
+    for adversarial_route in "${ADVERSARIAL_ROUTES[@]}"; do
+      if [[ "$reviewer" == "$adversarial_route" ]]; then
+        review_style="adversarial"
+        break
+      fi
+    done
   fi
 
   report_file="$REPORT_DIR/PLAN-${TASK_ID}-${PLAN_VERSION}-review-${reviewer_slug}-${REVIEW_ROUND}.md"
@@ -1608,12 +1720,12 @@ for reviewer in "${REVIEWERS[@]}"; do
       write_response_provenance_file "$reviewer" "$review_style" "$response_file" "$effective_request_file" "$effective_response_raw_file" "$reviewer" "false"
       write_report_file "$reviewer" "$review_style" "$report_file" "$reviewer" "false"
       SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-      if [[ "$review_style" == "adversarial" ]]; then
-        ADVERSARIAL_SUCCESS="true"
-      fi
       STATUS_LINES+=("[OK] evaluator=${reviewer_runner} route=${reviewer} style=${review_style} verdict=${PARSED_VERDICT} file=${report_file} summary=$(normalize_one_line "$PARSED_SUMMARY")")
     else
       FAIL_COUNT=$((FAIL_COUNT + 1))
+      if [[ "$review_style" == "adversarial" ]]; then
+        ADVERSARIAL_FAILED_ROUTES+=("$reviewer")
+      fi
       failure_reason="$(normalize_one_line "$(cat "$active_stderr_durable_file" 2>/dev/null || cat "$stderr_file" 2>/dev/null || true)")"
       if [[ -z "$failure_reason" ]]; then
         failure_reason="manual response missing required fields"
@@ -1716,12 +1828,12 @@ for reviewer in "${REVIEWERS[@]}"; do
     write_response_provenance_file "$reviewer" "$review_style" "$response_file" "$effective_request_file" "$effective_response_raw_file" "$ACTUAL_MODEL" "$QUOTA_FALLBACK_TRIGGERED"
     write_report_file "$reviewer" "$review_style" "$report_file" "$ACTUAL_MODEL" "$QUOTA_FALLBACK_TRIGGERED"
     SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-    if [[ "$review_style" == "adversarial" ]]; then
-      ADVERSARIAL_SUCCESS="true"
-    fi
     STATUS_LINES+=("[OK] evaluator=${actual_runner} requested_route=${reviewer} actual_route=${ACTUAL_MODEL} quota_fallback=${QUOTA_FALLBACK_TRIGGERED} style=${review_style} verdict=${PARSED_VERDICT} file=${report_file} summary=$(normalize_one_line "$PARSED_SUMMARY")")
   else
     FAIL_COUNT=$((FAIL_COUNT + 1))
+    if [[ "$review_style" == "adversarial" ]]; then
+      ADVERSARIAL_FAILED_ROUTES+=("$reviewer")
+    fi
     failure_reason="$(normalize_one_line "$(cat "$active_stderr_durable_file" 2>/dev/null || cat "$stderr_file" 2>/dev/null || true)")"
     if [[ -z "$failure_reason" ]]; then
       failure_reason="response missing required fields"
@@ -1740,8 +1852,8 @@ if [[ "$MANUAL_HANDOFF_ONLY" == "true" ]]; then
   exit 0
 fi
 
-if [[ -n "$ADVERSARIAL_EVALUATOR" && "$ADVERSARIAL_SUCCESS" != "true" ]]; then
-  echo "[ERROR] Required adversarial review did not complete successfully for evaluator=${ADVERSARIAL_EVALUATOR}" >&2
+if (( ${#ADVERSARIAL_FAILED_ROUTES[@]} > 0 )); then
+  echo "[ERROR] Required adversarial review did not complete successfully for evaluator=${ADVERSARIAL_FAILED_ROUTES[*]}" >&2
   exit 1
 fi
 
