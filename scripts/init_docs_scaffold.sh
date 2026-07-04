@@ -52,11 +52,13 @@ REPORT_DIR="${DOCS_DIR}/report"
 ORCHESTRATION_DIR="$(codeguide_orchestration_root "$PROJECT_ROOT_ABS")"
 ORCHESTRATION_TEMPLATES_DIR="$(codeguide_orchestration_templates_dir "$PROJECT_ROOT_ABS")"
 POLICY_DIR="${DOCS_DIR}/policy"
+ISSUES_DIR="${DOCS_DIR}/issues"
 SHADOW_BUCKETS=(apps services packages infra data)
 SHADOW_ARCHIVE_DIRS=(_deprecated _obsolete)
 NOW_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
-mkdir -p "${TASK_DIR}" "${SHADOW_DIR}" "${DECISIONS_DIR}" "${PLAN_DIR}" "${REPORT_DIR}" "${ORCHESTRATION_DIR}" "${ORCHESTRATION_TEMPLATES_DIR}" "${POLICY_DIR}"
+mkdir -p "${TASK_DIR}" "${SHADOW_DIR}" "${DECISIONS_DIR}" "${PLAN_DIR}" "${REPORT_DIR}" "${ORCHESTRATION_DIR}" "${ORCHESTRATION_TEMPLATES_DIR}" "${POLICY_DIR}" \
+  "${ISSUES_DIR}/current" "${ISSUES_DIR}/resolved" "${ISSUES_DIR}/templates"
 
 for bucket in "${SHADOW_BUCKETS[@]}"; do
   mkdir -p "${SHADOW_DIR}/${bucket}"
@@ -597,6 +599,190 @@ write_if_missing "${DOCS_DIR}/SECURITY-NOTES.md" '# Documentation Security Notes
 - Redact sensitive values immediately if found.
 '
 
+write_if_missing "${ISSUES_DIR}/README.md" '# Runtime Issue Tracker
+
+- purpose: Track runtime bugs and operational defects like GitHub issues, with a PR-like resolution record.
+- owner: project maintainers.
+- current_issues: `docs/issues/current/`
+- resolved_issues: `docs/issues/resolved/`
+- templates: `docs/issues/templates/`
+
+## Roles
+
+- auditor: the full-sweep inspection side. Finds defects, files issues, and verifies fixes. Does not implement fixes for issues it filed in the same pass.
+- fixer: the implementation side. Picks up open issues, implements the fix, and writes the resolution document.
+- One person or agent may hold different roles on different issues, but the fixer must not self-verify: verification evidence is produced against the running stack and checked by the auditor (or another verifier) before the issue is closed.
+
+## Lifecycle (GitHub-issue / PR style)
+
+1. **File** (auditor): create one markdown file per defect under `docs/issues/current/` from `templates/ISSUE-template.md`.
+   - Use a stable ID: `ISSUE-YYYYMMDD-short-slug.md`. The ID never changes after filing.
+   - Add one row to the index table in `current/README.md`.
+   - Set `status: open`.
+2. **Pick up** (fixer): set `owner:` to yourself and `status: investigating`. Record findings in `Current Hypothesis` as you go.
+3. **Fix** (fixer): implement the fix, fill in `Resolution Notes`, set `status: fixed_pending_verify`.
+4. **Verify** (auditor/verifier): run the commands in the `Verification` section against a running local stack. Record command output and evidence in the issue file.
+5. **Close** (fixer, after verification passes):
+   - Write `docs/issues/resolved/RESOLUTION-<same-id-without-ISSUE-prefix>.md` from `templates/RESOLUTION-template.md`. This is the PR-equivalent record: root cause, change summary, files changed, commits, verification evidence, residual risks.
+   - Move the issue file from `current/` to `resolved/`, set `status: resolved`, fill `resolved_at:` and `resolution_doc:`.
+   - Remove the issue row from `current/README.md` and add a row to `resolved/README.md`.
+6. **Reopen** (anyone): if the defect recurs, move the issue file back to `current/`, set `status: reopened`, add a row back to `current/README.md`, and add a `Superseded` note at the top of the old resolution doc. File follow-up fixes as a new resolution doc revision (`-r02` suffix).
+
+An issue is not resolved until both files exist in `resolved/`: the moved issue file and its resolution doc. Moving the issue without a resolution doc, or writing a resolution doc without verification evidence, is an incomplete close.
+
+## Rules
+
+- One defect per issue file. Split multi-defect findings into separate issues.
+- Do not store secrets, raw API keys, account numbers, bearer tokens, cookies, or full environment dumps.
+- Do not delete issue files. History lives in `resolved/`, not in deletion.
+- Do not weaken safety gates to make a verification pass.
+- Keep every status transition inside the issue file (`status:` field), and keep both index tables in sync with the folders.
+
+## Status Values
+
+- `open`: filed, no owner yet.
+- `investigating`: fixer assigned and actively working.
+- `blocked`: progress stopped; the blocker must be named in the issue body.
+- `fixed_pending_verify`: fix landed, verification evidence not yet accepted.
+- `resolved`: verified and closed; file lives in `resolved/`.
+- `reopened`: defect recurred after a resolution; file is back in `current/`.
+
+## Severity Guide
+
+- critical: can cause destructive actions, data corruption, or secret exposure.
+- high: blocks a core product path or causes materially wrong behavior.
+- medium: degrades workflow, observability, or non-critical feature behavior.
+- low: cosmetic, docs-only, or minor ergonomics.
+'
+
+write_if_missing "${ISSUES_DIR}/current/README.md" '# Current Runtime Issues
+
+Open defects that must remain visible during development.
+
+Index rules:
+
+- Every file in this folder (except this README) has exactly one row here, and every row points at a file in this folder.
+- The auditor adds the row when filing the issue; the fixer removes it when closing (the row moves to `../resolved/README.md`).
+- Keep `Status` in sync with the `status:` field inside the issue file.
+
+| ID | Severity | Status | Area | Title |
+| --- | --- | --- | --- | --- |
+'
+
+write_if_missing "${ISSUES_DIR}/resolved/README.md" '# Resolved Runtime Issues
+
+Closed defects with their PR-style resolution records.
+
+Index rules:
+
+- Every resolved issue appears here as one row, added by the fixer at close time.
+- A close is complete only when this folder holds both files: the moved `ISSUE-*.md` (with `status: resolved`, `resolved_at:`, `resolution_doc:` filled) and its `RESOLUTION-*.md`.
+- If an issue is reopened, remove its row from this table, move the issue file back to `../current/`, and mark the resolution doc as superseded; keep the resolution doc here for history.
+
+| ID | Severity | Area | Resolved At | Resolution Doc | Title |
+| --- | --- | --- | --- | --- | --- |
+'
+
+write_if_missing "${ISSUES_DIR}/templates/ISSUE-template.md" '# ISSUE-YYYYMMDD-short-slug
+
+- title:
+- status: open | investigating | blocked | fixed_pending_verify | resolved | reopened
+- severity: critical | high | medium | low
+- area:
+- owner:
+- created_at:
+- last_seen_at:
+- detected_by:
+- related_files:
+- related_endpoints:
+- security_note:
+- resolved_at: (fill at close)
+- resolution_doc: (fill at close, e.g. RESOLUTION-YYYYMMDD-short-slug.md)
+
+## Problem
+
+Describe the user-visible failure and the exact system behavior.
+
+## Evidence
+
+- command:
+- result:
+- log_excerpt:
+- screenshot:
+
+## Impact
+
+Describe affected workflows, data quality, and operational risk.
+
+## Current Hypothesis
+
+State what is believed to be wrong. Mark uncertain claims with `[uncertain]`.
+
+## Non-Goals
+
+State what should not be implemented while fixing this issue.
+
+## Next Actions
+
+- [ ] Reproduce on the running local stack.
+- [ ] Isolate owner: config, network, dependency, backend, frontend, or data.
+- [ ] Fix the root cause without weakening safety gates.
+- [ ] Verify with real calls and user-visible flow.
+- [ ] Update this issue with final evidence.
+
+## Verification
+
+Commands and user-visible checks required before resolving the issue.
+
+## Resolution Notes
+
+Fill after the fix lands.
+'
+
+write_if_missing "${ISSUES_DIR}/templates/RESOLUTION-template.md" '# RESOLUTION-YYYYMMDD-short-slug
+
+- issue: ../resolved/ISSUE-YYYYMMDD-short-slug.md
+- title:
+- resolved_at:
+- fixed_by:
+- verified_by:
+- commits:
+- revision: r01
+
+## Root Cause
+
+State the actual defect that was fixed, not the symptom. If it differs from the Current Hypothesis in the issue, say how.
+
+## Change Summary
+
+Describe what was changed and why this fixes the root cause, like a PR description.
+
+## Files Changed
+
+- `path/to/file` - what changed and why.
+
+## Verification Evidence
+
+Copy the verification commands from the issue and their actual passing results on the running local stack.
+
+- command:
+- result:
+- user_visible_check:
+- screenshot:
+
+## What Was Not Changed
+
+Scope deliberately left out (matches the Non-Goals of the issue, plus anything discovered during the fix).
+
+## Residual Risks
+
+Remaining weaknesses, follow-up candidates, and any new issues filed as a result of this fix.
+
+## Rollback
+
+How to revert this fix if it causes a regression (commits to revert, config to restore).
+'
+
 write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 
 ## Required commands
@@ -674,6 +860,14 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 - Secret scan supports known key formats, quoted assignments, and yaml/env-style assignments.
 - Add custom secret scan exclusions with --secret-scan-exclude-glob.
 
+## Issue tracker contract
+
+- Runtime defects are tracked like GitHub issues under `docs/issues/` (see `docs/issues/README.md` for the full lifecycle).
+- The auditor (full-sweep inspection side) files issues in `docs/issues/current/` from `docs/issues/templates/ISSUE-template.md`; the fixer resolves them; the fixer must not self-verify.
+- Closing an issue is PR-like: move the issue file to `docs/issues/resolved/`, write a paired `RESOLUTION-*.md` from `docs/issues/templates/RESOLUTION-template.md` with root cause, change summary, files changed, and verification evidence, and update both index READMEs.
+- A close without a resolution doc, or a resolution doc without verification evidence from the running stack, is incomplete.
+- Issue files are never deleted; history lives in `docs/issues/resolved/`. Recurred defects move back to `current/` with `status: reopened`.
+
 ## Plan orchestration loop
 
 - Create plan file first: project docs `plan/PLAN-<task-id>-v1.0.md`.
@@ -728,4 +922,5 @@ echo "  - ${DECISIONS_DIR}"
 echo "  - ${PLAN_DIR}"
 echo "  - ${REPORT_DIR}"
 echo "  - ${ORCHESTRATION_DIR}"
+echo "  - ${ISSUES_DIR}"
 echo "Template files are created only when missing."

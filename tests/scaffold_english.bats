@@ -316,3 +316,60 @@ EOF
   rm -rf "$workspace"
 }
 
+
+@test "init_docs_scaffold creates issue tracker scaffold" {
+  local workspace
+  local proj
+  local docs_root
+  workspace="$(mktemp -d)"
+  proj="$workspace/repo"
+  mkdir -p "$proj"
+  "$INIT_SCAFFOLD" "$proj"
+  docs_root="$(docs_root_for_project "$proj")"
+
+  run test -d "$docs_root/issues/current"
+  [ "$status" -eq 0 ]
+  run test -d "$docs_root/issues/resolved"
+  [ "$status" -eq 0 ]
+  run test -d "$docs_root/issues/templates"
+  [ "$status" -eq 0 ]
+  run test -f "$docs_root/issues/README.md"
+  [ "$status" -eq 0 ]
+  run test -f "$docs_root/issues/current/README.md"
+  [ "$status" -eq 0 ]
+  run test -f "$docs_root/issues/resolved/README.md"
+  [ "$status" -eq 0 ]
+  run test -f "$docs_root/issues/templates/ISSUE-template.md"
+  [ "$status" -eq 0 ]
+  run test -f "$docs_root/issues/templates/RESOLUTION-template.md"
+  [ "$status" -eq 0 ]
+
+  run grep "Lifecycle (GitHub-issue / PR style)" "$docs_root/issues/README.md"
+  [ "$status" -eq 0 ]
+  run grep "the fixer must not self-verify" "$docs_root/issues/README.md"
+  [ "$status" -eq 0 ]
+  run grep "| ID | Severity | Status | Area | Title |" "$docs_root/issues/current/README.md"
+  [ "$status" -eq 0 ]
+  run grep "| ID | Severity | Area | Resolved At | Resolution Doc | Title |" "$docs_root/issues/resolved/README.md"
+  [ "$status" -eq 0 ]
+  run grep "status: open | investigating | blocked | fixed_pending_verify | resolved | reopened" "$docs_root/issues/templates/ISSUE-template.md"
+  [ "$status" -eq 0 ]
+  run grep "resolution_doc:" "$docs_root/issues/templates/ISSUE-template.md"
+  [ "$status" -eq 0 ]
+  run grep "## Root Cause" "$docs_root/issues/templates/RESOLUTION-template.md"
+  [ "$status" -eq 0 ]
+  run grep "## Verification Evidence" "$docs_root/issues/templates/RESOLUTION-template.md"
+  [ "$status" -eq 0 ]
+  run grep "## Rollback" "$docs_root/issues/templates/RESOLUTION-template.md"
+  [ "$status" -eq 0 ]
+  run grep "Issue tracker contract" "$docs_root/DOC-GOVERNANCE.md"
+  [ "$status" -eq 0 ]
+
+  # Idempotency: templates must not be overwritten on rerun
+  echo "custom issue marker" >> "$docs_root/issues/README.md"
+  "$INIT_SCAFFOLD" "$proj"
+  run grep "custom issue marker" "$docs_root/issues/README.md"
+  [ "$status" -eq 0 ]
+
+  rm -rf "$workspace"
+}
