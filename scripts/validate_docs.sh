@@ -176,6 +176,7 @@ source "$SCRIPT_DIR/codeguide_paths.sh"
 PROJECT_ROOT_ABS="$(codeguide_resolve_project_root "$PROJECT_ROOT")"
 DOCS_DIR="$(codeguide_docs_root "$PROJECT_ROOT_ABS")"
 TASK_DIR="$DOCS_DIR/task"
+TASK_CLAIMS_DIR="$TASK_DIR/.claims"
 SHADOW_DIR="$DOCS_DIR/shadow"
 SHADOW_GLOBAL_FILE="$SHADOW_DIR/_global.md"
 SHADOW_BUCKETS=(apps services packages infra data)
@@ -2756,6 +2757,24 @@ if [[ -d "$TASK_DIR" ]]; then
       check_freshness_days "$task_file" "$MAX_TASK_AGE_DAYS" "in-progress task"
     fi
 
+    # Concurrent session claim contract: recommended (not required) so existing
+    # task corpora predating this contract are not broken. See DOC-GOVERNANCE.md
+    # "Concurrent session claim contract".
+    task_status_primary="${task_status%% *}"
+    if [[ "$task_status_primary" == "in_progress" ]]; then
+      task_owner="$(extract_field_value "$task_file" "owner")"
+      task_claimed_at="$(extract_field_value "$task_file" "claimed_at")"
+      if [[ "$MODE" != "strict" && -z "$task_owner" ]]; then
+        fail "owner is recommended for in_progress task ${task_ref}: set a session-identifying owner so concurrent sessions do not claim the same task"
+      fi
+      if [[ "$MODE" != "strict" && -z "$task_claimed_at" ]]; then
+        fail "claimed_at is recommended for in_progress task ${task_ref}: record when the task was atomically claimed"
+      fi
+      if [[ "$MODE" != "strict" && ! -d "$TASK_CLAIMS_DIR/${task_id}" ]]; then
+        fail "claim directory is recommended for in_progress task ${task_ref}: mkdir ${TASK_CLAIMS_DIR}/${task_id}/ atomically before setting status: in_progress so two concurrent sessions cannot claim the same task"
+      fi
+    fi
+
     # Active tasks must have at least one versioned plan file
     if is_active_task_status "$task_status"; then
       if [[ "$MODE" != "strict" && -z "$task_risk_level" ]]; then
@@ -2784,6 +2803,25 @@ if [[ -d "$TASK_DIR" ]]; then
 
   if [[ -f "$TASK_DIR/task-index.md" ]]; then
     check_task_index_integrity "$TASK_DIR/task-index.md"
+  fi
+
+  # Orphaned/stale claim directories: unlike the recommended owner/claimed_at
+  # fields above, this always fails because it only ever fires once a project
+  # has adopted docs/task/.claims/, so it cannot break pre-existing corpora.
+  if [[ -d "$TASK_CLAIMS_DIR" ]]; then
+    while IFS= read -r claim_dir; do
+      claim_task_id="$(basename "$claim_dir")"
+      claim_task_file="$TASK_DIR/TASK-${claim_task_id}.md"
+      if [[ ! -f "$claim_task_file" ]]; then
+        fail "orphaned claim directory with no matching task file: ${claim_dir} (expected ${claim_task_file})"
+        continue
+      fi
+      claim_task_status="$(extract_field_value "$claim_task_file" "status")"
+      claim_task_status_primary="${claim_task_status%% *}"
+      if [[ "$claim_task_status_primary" != "in_progress" ]]; then
+        fail "stale claim directory for TASK-${claim_task_id} (status=${claim_task_status}): remove ${claim_dir} when releasing the task"
+      fi
+    done < <(find "$TASK_CLAIMS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
   fi
 fi
 

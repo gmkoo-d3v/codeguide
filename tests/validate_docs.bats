@@ -2377,3 +2377,72 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -eq 0 ]
 }
+
+# ========== Concurrent session claim contract ==========
+
+@test "validate_docs advisory warns when an in_progress task is missing owner" {
+  write_await_gate_fixture "claim-owner-01" "in_progress" "not_requested" "" "not_requested" "" "" "" ""
+  printf '%s\n' "- claimed_at: 2026-01-01T00:00:00Z" >> "$DOCS_ROOT/task/TASK-claim-owner-01.md"
+  mkdir -p "$DOCS_ROOT/task/.claims/claim-owner-01"
+  sed -i.bak 's/^- owner: test/- owner:/' "$DOCS_ROOT/task/TASK-claim-owner-01.md"
+  rm -f "$DOCS_ROOT/task/TASK-claim-owner-01.md.bak"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"owner is recommended for in_progress task TASK-claim-owner-01"* ]]
+  [[ "$output" != *"claimed_at is recommended for in_progress task"* ]]
+  [[ "$output" != *"claim directory is recommended for in_progress task"* ]]
+}
+
+@test "validate_docs advisory warns when an in_progress task is missing claimed_at" {
+  write_await_gate_fixture "claim-time-01" "in_progress" "not_requested" "" "not_requested" "" "" "" ""
+  mkdir -p "$DOCS_ROOT/task/.claims/claim-time-01"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"claimed_at is recommended for in_progress task TASK-claim-time-01"* ]]
+  [[ "$output" != *"owner is recommended for in_progress task"* ]]
+  [[ "$output" != *"claim directory is recommended for in_progress task"* ]]
+}
+
+@test "validate_docs advisory warns when an in_progress task has no claim directory" {
+  write_await_gate_fixture "claim-dir-01" "in_progress" "not_requested" "" "not_requested" "" "" "" ""
+  printf '%s\n' "- claimed_at: 2026-01-01T00:00:00Z" >> "$DOCS_ROOT/task/TASK-claim-dir-01.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"claim directory is recommended for in_progress task TASK-claim-dir-01: mkdir"* ]]
+  [[ "$output" == *"docs/task/.claims/claim-dir-01/"* ]]
+  [[ "$output" != *"owner is recommended for in_progress task"* ]]
+  [[ "$output" != *"claimed_at is recommended for in_progress task"* ]]
+}
+
+@test "validate_docs advisory does not warn when the claim contract is fully satisfied" {
+  write_await_gate_fixture "claim-ok-01" "in_progress" "not_requested" "" "not_requested" "" "" "" ""
+  printf '%s\n' "- claimed_at: 2026-01-01T00:00:00Z" >> "$DOCS_ROOT/task/TASK-claim-ok-01.md"
+  mkdir -p "$DOCS_ROOT/task/.claims/claim-ok-01"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"owner is recommended for in_progress task"* ]]
+  [[ "$output" != *"claimed_at is recommended for in_progress task"* ]]
+  [[ "$output" != *"claim directory is recommended for in_progress task"* ]]
+}
+
+@test "validate_docs strict fails on a stale claim directory whose task already left in_progress" {
+  write_await_gate_fixture "claim-stale-01" "done" "not_requested" "" "not_requested" "" "" "" ""
+  mkdir -p "$DOCS_ROOT/task/.claims/claim-stale-01"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"stale claim directory for TASK-claim-stale-01 (status=done): remove"* ]]
+}
+
+@test "validate_docs strict fails on an orphaned claim directory with no matching task file" {
+  mkdir -p "$DOCS_ROOT/task/.claims/claim-ghost-01"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"orphaned claim directory with no matching task file"* ]]
+  [[ "$output" == *"docs/task/.claims/claim-ghost-01"* ]]
+}

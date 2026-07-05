@@ -42,7 +42,7 @@ Recommended command flow:
 ## Zero-command execution contract
 - Trigger condition: user invokes this skill for material architecture, multi-file, cross-service, delegated, or durable planning work.
 - Agent action:
-  - supervising lead architect runs start sync automatically with `--task-status in_progress`
+  - if other Claude Code sessions may be working the same project concurrently, atomically claim the task first (`mkdir docs/task/.claims/<task-id>/`; abort and pick another task if it already exists) before running start sync with `--task-status in_progress` (see `references/docs-system-of-record.md` Concurrent session claim contract)
   - supervising lead architect runs risk preflight before sub-agents, external reviewers, or ping-pong loops
   - if preflight finds a safety, privacy, permission, destructive-action, external-side-effect, sensitive-data, scope, or user-decision gate, stop before delegation/external review until the user approves the exact next step
   - default `execution_mode` is `solo`; delegated agent fields, external review fields, or `supervisor_subagents` require explicit `risk_preflight_status`
@@ -70,6 +70,7 @@ Recommended command flow:
 - `docs/task`:
   - update task status, scope, touched modules, tests, and residual risks
   - never move or archive `TASK-*.md`; `task-index.md` is the single source of truth for lifecycle state, done tasks stay flat
+  - remove `docs/task/.claims/<task-id>/` when a task leaves `in_progress` (finish sync)
 - `docs/decisions`:
   - create/update `decision-<id>.md` with selected option and plan
   - include `scope_type`, `chosen_by`, and links (`linked_pr`, `linked_hotfix`) when applicable

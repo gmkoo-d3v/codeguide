@@ -168,6 +168,7 @@ Use one file per task: `docs/task/TASK-<id>.md`
 - consumes_plan_ref:
 - status: planned | in_progress | blocked | done
 - owner:
+- claimed_at:
 - due_date:
 - axis_why: # principles applied (SOLID/DRY/KISS/YAGNI/LoD/SoC/CQS/POLA)
 - axis_where: # structure and boundary choice
@@ -187,6 +188,18 @@ Never physically move or archive `docs/task/TASK-*.md`, `docs/plan/PLAN-*.md`, o
 - `scripts/validate_docs.sh` enforces `task-index.md` accuracy in both directions: every `TASK-*.md` must have a row, every row must point at an existing task file listed under the section matching its actual `status:` field, and no task_id may appear more than once.
 - `docs/issues/` (see `docs/issues/README.md` when a project has one) is the one exception that does physically move files, between `current/` and `resolved/`, because closing an issue produces a new `RESOLUTION-*.md` at that same moment — the move is a natural lifecycle event, not a later cleanup pass. `validate_docs.sh` enforces that pairing and index consistency the same way.
 - Rationale: task/plan/orchestration files are cross-referenced by concrete literal paths from other docs (evaluator report rounds, `ORCH.md` fields such as `external_review_result_ref`, prose citations of prior round files by name). Physically moving them at scale silently breaks those citations in ways no validator catches. A folder growing large and looking cluttered is an accepted tradeoff — the goal of docs governance is that work stays tracked and auditable, not that directories look tidy.
+
+## Concurrent session claim contract
+
+When multiple Claude Code sessions run against the same project at once, use an atomic filesystem claim so two sessions cannot pick up the same task:
+
+- Before setting `status: in_progress`, atomically claim the task: `mkdir docs/task/.claims/<task-id>/` (a bare directory, no contents required). `mkdir` fails if the directory already exists, so only one concurrent session ever wins the claim.
+- If the `mkdir` fails, the task is already claimed by another session; pick a different task instead of starting work on it.
+- After a successful claim, set `owner:` (a session-identifying value) and `claimed_at:` (ISO timestamp) on the task file, then move its `task-index.md` row to `In Progress`.
+- On completing or abandoning the task, remove `docs/task/.claims/<task-id>/` in the same step that changes `status` away from `in_progress`.
+- A stale claim (session crashed without releasing it) is detected the same way any stale in_progress task is: `last_updated` ages past the freshness threshold. Do not auto-release a stale claim; surface it to the user first.
+- Sub-agents spawned within a session inherit that session claim; they do not need their own claim directories.
+- `scripts/validate_docs.sh` treats `owner`, `claimed_at`, and the claim directory as recommended (advisory-mode warning) for `in_progress` tasks, the same tier as `risk_level`, so existing task corpora are not broken by adopting this contract. It always flags (strict-mode failure) a claim directory with no matching task file, or one that survives after its task leaves `in_progress`.
 
 ## Anti-dump policy (default recommended, strict in CI)
 - Keep shadow docs close to 200 lines and preferably at or below 300 lines.

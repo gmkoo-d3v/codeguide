@@ -813,6 +813,7 @@ ensure_task_file() {
 - risk_level:
 - status: planned | in_progress | blocked | done
 - owner:
+- claimed_at:
 - due_date:
 - axis_why:
 - axis_where:
