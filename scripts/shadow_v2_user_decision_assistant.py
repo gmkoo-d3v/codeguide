@@ -567,7 +567,7 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]]:
         "task_id": args.task_id,
         "writes_shadow_docs": False,
         "auto_promotes_facts": False,
-        "default_review_route": "codex_subagent_md_handoff",
+        "default_review_route": "internal_subagent_md_handoff",
         "scope": scope,
         "stats": {
             **stats,

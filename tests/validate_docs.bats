@@ -2167,3 +2167,213 @@ EOF
   [ "$status" -ne 0 ]
   [[ "$output" == *"decision index missing row for decision-dot.a.md"* ]]
 }
+
+# ========== Task-index reverse integrity (no physical archive policy) ==========
+
+@test "validate_docs strict fails on a stale task-index row with no matching task file" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "idx-stale-01" \
+    --task-title "Stale row fixture" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --no-init
+
+  rm -f "$DOCS_ROOT/task/TASK-idx-stale-01.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"task-index row for TASK-idx-stale-01 has no matching task file"* ]]
+}
+
+@test "validate_docs strict fails when a task-index row sits under the wrong status section" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "idx-mismatch-01" \
+    --task-title "Section mismatch fixture" \
+    --task-status planned \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --no-init
+
+  sed -i.bak 's/^- status: planned/- status: done/' "$DOCS_ROOT/task/TASK-idx-mismatch-01.md"
+  rm -f "$DOCS_ROOT/task/TASK-idx-mismatch-01.md.bak"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"task-index section mismatch for TASK-idx-mismatch-01: task file status is done but row is listed under Planned"* ]]
+}
+
+@test "validate_docs strict fails on duplicate task-index rows for the same task" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "idx-dup-01" \
+    --task-title "Duplicate row fixture" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --no-init
+
+  printf '%s\n' "- TASK-idx-dup-01 | in_progress | Duplicate row fixture" >> "$DOCS_ROOT/task/task-index.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"task-index has duplicate rows for TASK-idx-dup-01"* ]]
+}
+
+# ========== Issue tracker current/resolved consistency ==========
+
+@test "validate_docs strict fails when a current issue is marked resolved" {
+  cat > "$DOCS_ROOT/issues/current/ISSUE-20260101-stuck-status.md" <<'EOF'
+# ISSUE-20260101-stuck-status
+
+- title: Stuck status fixture
+- status: resolved
+- severity: low
+- area: docs
+- owner: test
+- created_at: 2026-01-01
+- last_seen_at: 2026-01-01
+- detected_by: test
+- related_files:
+- related_endpoints:
+- security_note:
+- resolved_at:
+- resolution_doc:
+EOF
+  printf '%s\n' "| ISSUE-20260101-stuck-status | low | resolved | docs | Stuck status fixture |" >> "$DOCS_ROOT/issues/current/README.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"is status: resolved but still lives in docs/issues/current/"* ]]
+}
+
+@test "validate_docs strict fails on a current issue missing its current/README index row" {
+  cat > "$DOCS_ROOT/issues/current/ISSUE-20260101-no-row.md" <<'EOF'
+# ISSUE-20260101-no-row
+
+- title: No index row fixture
+- status: open
+- severity: low
+- area: docs
+- owner: test
+- created_at: 2026-01-01
+- last_seen_at: 2026-01-01
+- detected_by: test
+- related_files:
+- related_endpoints:
+- security_note:
+- resolved_at:
+- resolution_doc:
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"docs/issues/current/README.md missing index row for ISSUE-20260101-no-row.md"* ]]
+}
+
+@test "validate_docs strict fails when a resolved issue has no paired resolution doc" {
+  cat > "$DOCS_ROOT/issues/resolved/ISSUE-20260101-missing-resolution.md" <<'EOF'
+# ISSUE-20260101-missing-resolution
+
+- title: Missing resolution fixture
+- status: resolved
+- severity: low
+- area: docs
+- owner: test
+- created_at: 2026-01-01
+- last_seen_at: 2026-01-01
+- detected_by: test
+- related_files:
+- related_endpoints:
+- security_note:
+- resolved_at: 2026-01-02T00:00:00Z
+- resolution_doc: RESOLUTION-20260101-missing-resolution.md
+EOF
+  printf '%s\n' "| ISSUE-20260101-missing-resolution | low | docs | 2026-01-02 | RESOLUTION-20260101-missing-resolution.md | Missing resolution fixture |" >> "$DOCS_ROOT/issues/resolved/README.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"resolved issue ISSUE-20260101-missing-resolution.md has no paired resolution doc"* ]]
+}
+
+@test "validate_docs strict fails on an orphaned resolution doc with no paired issue file" {
+  cat > "$DOCS_ROOT/issues/resolved/RESOLUTION-20260101-orphan.md" <<'EOF'
+# RESOLUTION-20260101-orphan
+
+- issue: ../resolved/ISSUE-20260101-orphan.md
+- title: Orphan resolution fixture
+- resolved_at: 2026-01-02T00:00:00Z
+- fixed_by: test
+- verified_by: test
+- commits:
+- revision: r01
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"resolution doc RESOLUTION-20260101-orphan.md has no paired issue file"* ]]
+}
+
+@test "validate_docs strict tolerates a status field with trailing parenthetical notes for task-index section match" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "idx-decorated-01" \
+    --task-title "Decorated status fixture" \
+    --task-status planned \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --no-init
+
+  sed -i.bak 's/^- status: planned/- status: planned (Phase 1 r02 notes)/' "$DOCS_ROOT/task/TASK-idx-decorated-01.md"
+  rm -f "$DOCS_ROOT/task/TASK-idx-decorated-01.md.bak"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [[ "$output" != *"task-index section mismatch"* ]]
+}
+
+@test "validate_docs advisory continues past a missing orchestration field instead of aborting" {
+  write_await_gate_fixture "orch-abort-01" "in_progress" "implementation_start" "PLAN-orch-abort-01-v1.0" "not_requested" "" "" "" ""
+
+  sed -i.bak '/^- primary_author_tool:/d' "$DOCS_ROOT/orchestration/orch-abort-01/ORCH.md"
+  rm -f "$DOCS_ROOT/orchestration/orch-abort-01/ORCH.md.bak"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[RESULT]"* ]]
+  [[ "$output" == *"primary_author_tool is missing"* ]]
+}
+
+@test "validate_docs strict passes with a well-formed resolved issue and paired resolution doc" {
+  cat > "$DOCS_ROOT/issues/resolved/ISSUE-20260101-clean-pair.md" <<'EOF'
+# ISSUE-20260101-clean-pair
+
+- title: Clean pair fixture
+- status: resolved
+- severity: low
+- area: docs
+- owner: test
+- created_at: 2026-01-01
+- last_seen_at: 2026-01-01
+- detected_by: test
+- related_files:
+- related_endpoints:
+- security_note:
+- resolved_at: 2026-01-02T00:00:00Z
+- resolution_doc: RESOLUTION-20260101-clean-pair.md
+EOF
+  cat > "$DOCS_ROOT/issues/resolved/RESOLUTION-20260101-clean-pair.md" <<'EOF'
+# RESOLUTION-20260101-clean-pair
+
+- issue: ../resolved/ISSUE-20260101-clean-pair.md
+- title: Clean pair fixture
+- resolved_at: 2026-01-02T00:00:00Z
+- fixed_by: test
+- verified_by: test
+- commits:
+- revision: r01
+EOF
+  printf '%s\n' "| ISSUE-20260101-clean-pair | low | docs | 2026-01-02 | RESOLUTION-20260101-clean-pair.md | Clean pair fixture |" >> "$DOCS_ROOT/issues/resolved/README.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -eq 0 ]
+}

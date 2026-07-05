@@ -69,6 +69,7 @@ Recommended command flow:
 ## Update actions
 - `docs/task`:
   - update task status, scope, touched modules, tests, and residual risks
+  - never move or archive `TASK-*.md`; `task-index.md` is the single source of truth for lifecycle state, done tasks stay flat
 - `docs/decisions`:
   - create/update `decision-<id>.md` with selected option and plan
   - include `scope_type`, `chosen_by`, and links (`linked_pr`, `linked_hotfix`) when applicable
@@ -77,6 +78,7 @@ Recommended command flow:
   - create initial `PLAN-<task-id>-v1.0.md` before implementation
   - when plan changes, create next version file (`v1.1`, `v1.2`, ...)
   - preserve previous versions for audit and orchestration traceability
+  - never move plan files to an archive folder and never create a separate `plan-index.md`; they stay discoverable via `task_id` filename globbing
 - `docs/report`:
   - write one evaluator report per feedback per round
   - external CLI evaluator label is the actual runner (`agy`, `claude`, etc.); model identity belongs in requested/actual route and CLI model fields
@@ -91,6 +93,8 @@ Recommended command flow:
   - keep concern leaf docs factual and concrete
 - `docs/orchestration`:
   - record supervising lead architect identity, delegated agent roles, owned scopes, risk preflight status, approval refs, and exception notes
+  - never move a task's `orchestration/<task-id>/` capsule to an archive folder; other docs cite its round files by literal path, so relocating it silently breaks those citations
+- `docs/issues/` (when a project has one): this is the one series that DOES physically move files, from `current/` to `resolved/`, at close time — see the Issue tracker contract in `DOC-GOVERNANCE.md`
 
 ## Quality checks
 - Check that every user decision is traceable to a decision file.

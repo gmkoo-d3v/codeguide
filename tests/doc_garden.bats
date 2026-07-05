@@ -122,11 +122,36 @@ load codeguide_helper
   [ "$status" -eq 0 ]
 }
 
+@test "doc_garden accepts canonical claude native subagent orchestration fields" {
+  run "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "orch-claude-subagents-01" \
+    --task-title "Claude native subagents enum test" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "pass" \
+    --primary-author-tool "claude" \
+    --review-mode "claude_subagents" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "reviewer-1" \
+    --owned-scopes "planner:docs/plan; reviewer:docs/report" \
+    --no-init
+
+  [ "$status" -eq 0 ]
+  local orch_file="$DOCS_ROOT/orchestration/orch-claude-subagents-01/ORCH.md"
+  run grep "^- primary_author_tool: claude" "$orch_file"
+  [ "$status" -eq 0 ]
+  run grep "^- review_mode: claude_subagents" "$orch_file"
+  [ "$status" -eq 0 ]
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"invalid orchestration.review_mode"* ]]
+}
+
 @test "orchestration enum contract stays aligned across references and producers" {
   local repo_root
   repo_root="$(cd "$SCRIPTS_DIR/.." && pwd)"
   local canonical_primary="Allowed primary_author_tool values: antigravity | agy | claude | codex | human | external-runner."
-  local canonical_review="Allowed review_mode values: external_cli | current_task_debate | agy_subagents | codex_subagents."
+  local canonical_review="Allowed review_mode values: external_cli | current_task_debate | agy_subagents | claude_subagents | codex_subagents."
   local canonical_external_status="Allowed external_review_status values: not_requested | requested | running | awaiting_response | ingested | blocked | waived."
   local canonical_required_for="Allowed external_review_required_for values: plan_acceptance | implementation_start | commit | close."
 
@@ -147,12 +172,12 @@ load codeguide_helper
 
   run grep -F -- '`primary_author_tool`: `antigravity|agy|claude|codex|human|external-runner`' "$repo_root/references/orchestration-contract.md"
   [ "$status" -eq 0 ]
-  run grep -F -- '`review_mode`: `external_cli|current_task_debate|agy_subagents|codex_subagents`' "$repo_root/references/orchestration-contract.md"
+  run grep -F -- '`review_mode`: `external_cli|current_task_debate|agy_subagents|claude_subagents|codex_subagents`' "$repo_root/references/orchestration-contract.md"
   [ "$status" -eq 0 ]
 
   run grep -F "check_enum_membership \"\$review_mode\" \"orchestration.review_mode\"" "$repo_root/scripts/validate_docs.sh"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"external_cli current_task_debate agy_subagents codex_subagents"* ]]
+  [[ "$output" == *"external_cli current_task_debate agy_subagents claude_subagents codex_subagents"* ]]
 }
 
 @test "doc_garden scaffold orchestration validates without enum template warnings" {

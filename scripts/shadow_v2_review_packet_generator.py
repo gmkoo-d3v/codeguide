@@ -361,7 +361,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--project-root", required=True)
     parser.add_argument("--project-id")
     parser.add_argument("--task-id", default="shadow-effect-map-01")
-    parser.add_argument("--review-route", default="codex_subagent_md_handoff", choices=sorted(REVIEW_ROUTES))
+    parser.add_argument("--review-route", default="internal_subagent_md_handoff", choices=sorted(REVIEW_ROUTES))
     parser.add_argument("--external-review-requested", action="store_true")
     parser.add_argument("--external-review-approval-ref")
     parser.add_argument("--external-review-approved-next-step")

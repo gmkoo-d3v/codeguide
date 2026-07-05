@@ -28,7 +28,7 @@ Use this reference when defining team process for agentic software development.
 
 ### 2) Repository as memory
 - Keep durable knowledge in project `docs/task`, `docs/shadow`, `docs/decisions`.
-- Keep `AGENTS.md` as a concise map to standards and key references.
+- Keep the active runtime's own repo-instructions file (`CLAUDE.md`, `AGENTS.md`, or equivalent) as a concise map to standards and key references.
 - Avoid hidden decisions in chat-only history.
 - Treat `docs/shadow/project-shadow.md` as the top router into the shadow graph for agent onboarding.
 - Use `_global.md`, bucket `_index.md`, unit `overview.md`, and concern leaves to keep cross-unit rules, membership, routing, and concrete facts in their proper homes.

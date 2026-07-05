@@ -185,6 +185,9 @@ REPORT_DIR="$DOCS_DIR/report"
 ORCHESTRATION_DIR="$(codeguide_orchestration_root "$PROJECT_ROOT_ABS")"
 ORCHESTRATION_TEMPLATES_DIR="$(codeguide_orchestration_templates_dir "$PROJECT_ROOT_ABS")"
 POLICY_DIR="$DOCS_DIR/policy"
+ISSUE_TRACKER_DIR="$DOCS_DIR/issues"
+ISSUE_TRACKER_CURRENT_DIR="$ISSUE_TRACKER_DIR/current"
+ISSUE_TRACKER_RESOLVED_DIR="$ISSUE_TRACKER_DIR/resolved"
 
 ISSUE_COUNT=0
 
@@ -415,22 +418,22 @@ check_redirect_shim_file() {
   local file_path="$1"
   local label="$2"
 
-  check_field_value_equals "$file_path" "doc_role" "redirect_shim" "$label"
-  check_field_exists "$file_path" "legacy_path" "$label"
-  check_field_exists "$file_path" "canonical_path" "$label"
-  check_field_exists "$file_path" "redirects_fact_scope" "$label"
-  check_field_exists "$file_path" "deprecated_since" "$label"
-  check_field_value_equals "$file_path" "status" "redirected" "$label"
-  check_field_value_equals "$file_path" "edit_policy" "read_only" "$label"
-  check_field_exists "$file_path" "replacement_reason" "$label"
-  check_field_exists "$file_path" "last_updated" "$label"
+  check_field_value_equals "$file_path" "doc_role" "redirect_shim" "$label" || true
+  check_field_exists "$file_path" "legacy_path" "$label" || true
+  check_field_exists "$file_path" "canonical_path" "$label" || true
+  check_field_exists "$file_path" "redirects_fact_scope" "$label" || true
+  check_field_exists "$file_path" "deprecated_since" "$label" || true
+  check_field_value_equals "$file_path" "status" "redirected" "$label" || true
+  check_field_value_equals "$file_path" "edit_policy" "read_only" "$label" || true
+  check_field_exists "$file_path" "replacement_reason" "$label" || true
+  check_field_exists "$file_path" "last_updated" "$label" || true
 }
 
 check_effect_map_file() {
   local file_path="$1"
   local issue_output
 
-  check_field_value_equals "$file_path" "doc_role" "effect_map" "shadow effect_map"
+  check_field_value_equals "$file_path" "doc_role" "effect_map" "shadow effect_map" || true
   issue_output="$(python3 - "$file_path" "$POLICY_DIR" "$PROJECT_ROOT_ABS" "$SCRIPT_DIR" <<'PY'
 from __future__ import annotations
 
@@ -958,13 +961,13 @@ check_review_queue_file() {
   local file_path="$1"
   local issue_output
 
-  check_field_value_equals "$file_path" "doc_role" "review_queue" "shadow review_queue"
-  check_field_non_empty "$file_path" "task_id" "shadow review_queue"
-  check_field_value_equals "$file_path" "generated_by" "shadow_review_queue.py" "shadow review_queue"
-  check_field_non_empty "$file_path" "generated_at" "shadow review_queue"
-  check_field_non_empty "$file_path" "ttl_days" "shadow review_queue"
-  check_field_value_equals "$file_path" "writes_shadow_docs" "false" "shadow review_queue"
-  check_field_value_equals "$file_path" "auto_promotes_facts" "false" "shadow review_queue"
+  check_field_value_equals "$file_path" "doc_role" "review_queue" "shadow review_queue" || true
+  check_field_non_empty "$file_path" "task_id" "shadow review_queue" || true
+  check_field_value_equals "$file_path" "generated_by" "shadow_review_queue.py" "shadow review_queue" || true
+  check_field_non_empty "$file_path" "generated_at" "shadow review_queue" || true
+  check_field_non_empty "$file_path" "ttl_days" "shadow review_queue" || true
+  check_field_value_equals "$file_path" "writes_shadow_docs" "false" "shadow review_queue" || true
+  check_field_value_equals "$file_path" "auto_promotes_facts" "false" "shadow review_queue" || true
 
   issue_output="$(python3 - "$file_path" <<'PY'
 import sys
@@ -1798,29 +1801,29 @@ check_shadow_policy_files() {
   check_line_limit "$regex_file" "$MAX_POLICY_LINES" "shadow regex pattern registry"
   check_line_limit "$rule_file" "$MAX_POLICY_LINES" "shadow rule registry"
 
-  check_field_non_empty "$catalog_file" "catalog_id" "shadow validator catalog"
-  check_field_non_empty "$catalog_file" "catalog_version" "shadow validator catalog"
-  check_field_non_empty "$catalog_file" "status" "shadow validator catalog"
-  check_any_field_non_empty "$catalog_file" "shadow validator catalog" "linked_task" "template_linked_task"
-  check_any_field_non_empty "$catalog_file" "shadow validator catalog" "linked_decision" "template_linked_decision"
-  check_field_non_empty "$catalog_file" "purpose" "shadow validator catalog"
-  check_field_non_empty "$catalog_file" "last_updated" "shadow validator catalog"
+  check_field_non_empty "$catalog_file" "catalog_id" "shadow validator catalog" || true
+  check_field_non_empty "$catalog_file" "catalog_version" "shadow validator catalog" || true
+  check_field_non_empty "$catalog_file" "status" "shadow validator catalog" || true
+  check_any_field_non_empty "$catalog_file" "shadow validator catalog" "linked_task" "template_linked_task" || true
+  check_any_field_non_empty "$catalog_file" "shadow validator catalog" "linked_decision" "template_linked_decision" || true
+  check_field_non_empty "$catalog_file" "purpose" "shadow validator catalog" || true
+  check_field_non_empty "$catalog_file" "last_updated" "shadow validator catalog" || true
 
-  check_field_non_empty "$regex_file" "registry_id" "shadow regex pattern registry"
-  check_field_non_empty "$regex_file" "registry_version" "shadow regex pattern registry"
-  check_field_non_empty "$regex_file" "status" "shadow regex pattern registry"
-  check_any_field_non_empty "$regex_file" "shadow regex pattern registry" "linked_task" "template_linked_task"
-  check_any_field_non_empty "$regex_file" "shadow regex pattern registry" "linked_decision" "template_linked_decision"
-  check_field_non_empty "$regex_file" "purpose" "shadow regex pattern registry"
-  check_field_non_empty "$regex_file" "last_updated" "shadow regex pattern registry"
+  check_field_non_empty "$regex_file" "registry_id" "shadow regex pattern registry" || true
+  check_field_non_empty "$regex_file" "registry_version" "shadow regex pattern registry" || true
+  check_field_non_empty "$regex_file" "status" "shadow regex pattern registry" || true
+  check_any_field_non_empty "$regex_file" "shadow regex pattern registry" "linked_task" "template_linked_task" || true
+  check_any_field_non_empty "$regex_file" "shadow regex pattern registry" "linked_decision" "template_linked_decision" || true
+  check_field_non_empty "$regex_file" "purpose" "shadow regex pattern registry" || true
+  check_field_non_empty "$regex_file" "last_updated" "shadow regex pattern registry" || true
 
-  check_field_non_empty "$rule_file" "registry_id" "shadow rule registry"
-  check_field_non_empty "$rule_file" "registry_version" "shadow rule registry"
-  check_field_non_empty "$rule_file" "status" "shadow rule registry"
-  check_any_field_non_empty "$rule_file" "shadow rule registry" "linked_task" "template_linked_task"
-  check_any_field_non_empty "$rule_file" "shadow rule registry" "linked_decisions" "template_linked_decisions"
-  check_field_non_empty "$rule_file" "purpose" "shadow rule registry"
-  check_field_non_empty "$rule_file" "last_updated" "shadow rule registry"
+  check_field_non_empty "$rule_file" "registry_id" "shadow rule registry" || true
+  check_field_non_empty "$rule_file" "registry_version" "shadow rule registry" || true
+  check_field_non_empty "$rule_file" "status" "shadow rule registry" || true
+  check_any_field_non_empty "$rule_file" "shadow rule registry" "linked_task" "template_linked_task" || true
+  check_any_field_non_empty "$rule_file" "shadow rule registry" "linked_decisions" "template_linked_decisions" || true
+  check_field_non_empty "$rule_file" "purpose" "shadow rule registry" || true
+  check_field_non_empty "$rule_file" "last_updated" "shadow rule registry" || true
 
   for required_prefix in any java js ts py spring_boot express react fastapi jpa sql; do
     check_file_contains_pattern \
@@ -1937,33 +1940,33 @@ check_orchestration_file_for_task() {
   check_line_limit "$orchestration_file" "$MAX_ORCHESTRATION_LINES" "orchestration document"
 
   if [[ "$MODE" == "strict" ]]; then
-    check_field_non_empty "$orchestration_file" "task_id" "orchestration"
-    check_field_non_empty "$orchestration_file" "execution_mode" "orchestration"
-    check_field_exists "$orchestration_file" "primary_author_tool" "orchestration"
-    check_field_exists "$orchestration_file" "review_mode" "orchestration"
-    check_field_non_empty "$orchestration_file" "supervisor_agent" "orchestration"
-    check_field_non_empty "$orchestration_file" "delegation_status" "orchestration"
-    check_field_non_empty "$orchestration_file" "risk_preflight_status" "orchestration"
-    check_field_non_empty "$orchestration_file" "risk_preflight_recorded_by" "orchestration"
-    check_field_non_empty "$orchestration_file" "risk_preflight_summary" "orchestration"
-    check_field_non_empty "$orchestration_file" "approval_required" "orchestration"
-    check_field_non_empty "$orchestration_file" "approval_ref" "orchestration"
-    check_field_non_empty "$orchestration_file" "approved_next_step" "orchestration"
-    check_field_non_empty "$orchestration_file" "last_updated" "orchestration"
+    check_field_non_empty "$orchestration_file" "task_id" "orchestration" || true
+    check_field_non_empty "$orchestration_file" "execution_mode" "orchestration" || true
+    check_field_exists "$orchestration_file" "primary_author_tool" "orchestration" || true
+    check_field_exists "$orchestration_file" "review_mode" "orchestration" || true
+    check_field_non_empty "$orchestration_file" "supervisor_agent" "orchestration" || true
+    check_field_non_empty "$orchestration_file" "delegation_status" "orchestration" || true
+    check_field_non_empty "$orchestration_file" "risk_preflight_status" "orchestration" || true
+    check_field_non_empty "$orchestration_file" "risk_preflight_recorded_by" "orchestration" || true
+    check_field_non_empty "$orchestration_file" "risk_preflight_summary" "orchestration" || true
+    check_field_non_empty "$orchestration_file" "approval_required" "orchestration" || true
+    check_field_non_empty "$orchestration_file" "approval_ref" "orchestration" || true
+    check_field_non_empty "$orchestration_file" "approved_next_step" "orchestration" || true
+    check_field_non_empty "$orchestration_file" "last_updated" "orchestration" || true
   else
-    check_field_exists "$orchestration_file" "task_id" "orchestration"
-    check_field_exists "$orchestration_file" "execution_mode" "orchestration"
-    check_field_exists "$orchestration_file" "primary_author_tool" "orchestration"
-    check_field_exists "$orchestration_file" "review_mode" "orchestration"
-    check_field_exists "$orchestration_file" "supervisor_agent" "orchestration"
-    check_field_exists "$orchestration_file" "delegation_status" "orchestration"
-    check_field_exists "$orchestration_file" "risk_preflight_status" "orchestration"
-    check_field_exists "$orchestration_file" "risk_preflight_recorded_by" "orchestration"
-    check_field_exists "$orchestration_file" "risk_preflight_summary" "orchestration"
-    check_field_exists "$orchestration_file" "approval_required" "orchestration"
-    check_field_exists "$orchestration_file" "approval_ref" "orchestration"
-    check_field_exists "$orchestration_file" "approved_next_step" "orchestration"
-    check_field_exists "$orchestration_file" "last_updated" "orchestration"
+    check_field_exists "$orchestration_file" "task_id" "orchestration" || true
+    check_field_exists "$orchestration_file" "execution_mode" "orchestration" || true
+    check_field_exists "$orchestration_file" "primary_author_tool" "orchestration" || true
+    check_field_exists "$orchestration_file" "review_mode" "orchestration" || true
+    check_field_exists "$orchestration_file" "supervisor_agent" "orchestration" || true
+    check_field_exists "$orchestration_file" "delegation_status" "orchestration" || true
+    check_field_exists "$orchestration_file" "risk_preflight_status" "orchestration" || true
+    check_field_exists "$orchestration_file" "risk_preflight_recorded_by" "orchestration" || true
+    check_field_exists "$orchestration_file" "risk_preflight_summary" "orchestration" || true
+    check_field_exists "$orchestration_file" "approval_required" "orchestration" || true
+    check_field_exists "$orchestration_file" "approval_ref" "orchestration" || true
+    check_field_exists "$orchestration_file" "approved_next_step" "orchestration" || true
+    check_field_exists "$orchestration_file" "last_updated" "orchestration" || true
   fi
 
   doc_task_id="$(extract_field_value "$orchestration_file" "task_id")"
@@ -1984,7 +1987,7 @@ check_orchestration_file_for_task() {
   approved_next_step="$(extract_field_value "$orchestration_file" "approved_next_step")"
   check_enum_membership "$execution_mode" "orchestration.execution_mode" "$orchestration_file" supervisor_subagents solo || true
   check_enum_membership "$primary_author_tool" "orchestration.primary_author_tool" "$orchestration_file" antigravity agy claude codex human external-runner || true
-  check_enum_membership "$review_mode" "orchestration.review_mode" "$orchestration_file" external_cli current_task_debate agy_subagents codex_subagents || true
+  check_enum_membership "$review_mode" "orchestration.review_mode" "$orchestration_file" external_cli current_task_debate agy_subagents claude_subagents codex_subagents || true
   if [[ -n "$external_review_status" ]]; then
     check_enum_membership "$external_review_status" "orchestration.external_review_status" "$orchestration_file" not_requested requested running awaiting_response ingested blocked waived || true
   fi
@@ -2029,10 +2032,10 @@ check_orchestration_file_for_task() {
     fail "orchestration review_mode=external_cli requires risk_preflight_status=approved with concrete approval provenance: ${orchestration_file}"
   fi
 
-  if [[ "$execution_mode" != "solo" || "$review_mode" == "external_cli" || "$review_mode" == "current_task_debate" || "$review_mode" == "codex_subagents" ]]; then
+  if [[ "$execution_mode" != "solo" || "$review_mode" == "external_cli" || "$review_mode" == "current_task_debate" || "$review_mode" == "agy_subagents" || "$review_mode" == "claude_subagents" || "$review_mode" == "codex_subagents" ]]; then
     if [[ "$MODE" == "strict" ]]; then
-      check_field_non_empty "$orchestration_file" "primary_author_tool" "orchestration"
-      check_field_non_empty "$orchestration_file" "review_mode" "orchestration"
+      check_field_non_empty "$orchestration_file" "primary_author_tool" "orchestration" || true
+      check_field_non_empty "$orchestration_file" "review_mode" "orchestration" || true
     fi
     if [[ "$risk_preflight_status" == "blocked" || "$risk_preflight_status" == "approval_required" ]]; then
       fail "orchestration risk preflight must be pass or approved before delegated/external review: ${orchestration_file}"
@@ -2041,25 +2044,25 @@ check_orchestration_file_for_task() {
 
   if [[ "$execution_mode" == "solo" ]]; then
     if [[ "$MODE" == "strict" ]]; then
-      check_field_non_empty "$orchestration_file" "delegation_note" "orchestration"
+      check_field_non_empty "$orchestration_file" "delegation_note" "orchestration" || true
     else
-      check_field_exists "$orchestration_file" "delegation_note" "orchestration"
+      check_field_exists "$orchestration_file" "delegation_note" "orchestration" || true
     fi
     return
   fi
 
   if [[ "$MODE" == "strict" ]]; then
-    check_field_non_empty "$orchestration_file" "planner_agents" "orchestration"
-    check_field_non_empty "$orchestration_file" "reviewer_agents" "orchestration"
-    check_field_non_empty "$orchestration_file" "implementation_agents" "orchestration"
-    check_field_non_empty "$orchestration_file" "validation_agents" "orchestration"
-    check_field_non_empty "$orchestration_file" "owned_scopes" "orchestration"
+    check_field_non_empty "$orchestration_file" "planner_agents" "orchestration" || true
+    check_field_non_empty "$orchestration_file" "reviewer_agents" "orchestration" || true
+    check_field_non_empty "$orchestration_file" "implementation_agents" "orchestration" || true
+    check_field_non_empty "$orchestration_file" "validation_agents" "orchestration" || true
+    check_field_non_empty "$orchestration_file" "owned_scopes" "orchestration" || true
   else
-    check_field_exists "$orchestration_file" "planner_agents" "orchestration"
-    check_field_exists "$orchestration_file" "reviewer_agents" "orchestration"
-    check_field_exists "$orchestration_file" "implementation_agents" "orchestration"
-    check_field_exists "$orchestration_file" "validation_agents" "orchestration"
-    check_field_exists "$orchestration_file" "owned_scopes" "orchestration"
+    check_field_exists "$orchestration_file" "planner_agents" "orchestration" || true
+    check_field_exists "$orchestration_file" "reviewer_agents" "orchestration" || true
+    check_field_exists "$orchestration_file" "implementation_agents" "orchestration" || true
+    check_field_exists "$orchestration_file" "validation_agents" "orchestration" || true
+    check_field_exists "$orchestration_file" "owned_scopes" "orchestration" || true
   fi
 }
 
@@ -2206,6 +2209,161 @@ is_active_task_status() {
     in_progress|blocked|done) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# Maps a task-index.md "## <Section>" header to the task.status enum value
+# shown under it (mirrors status_to_section in doc_garden.sh, inverted).
+task_index_section_status() {
+  case "$1" in
+    "## Planned")     printf "planned" ;;
+    "## In Progress") printf "in_progress" ;;
+    "## Blocked")     printf "blocked" ;;
+    "## Done")        printf "done" ;;
+    *)                printf "" ;;
+  esac
+}
+
+# Reverse-direction task-index check (the per-task loop already checks that
+# every TASK-*.md has a row; this checks every row back against reality):
+# every row must reference an existing task file, sit under the section
+# matching that file's actual status, and appear only once in the index.
+# This is the enforcement mechanism for keeping task-index.md trustworthy
+# without physically archiving/moving TASK-*.md files.
+check_task_index_integrity() {
+  local index_file="$1"
+  local all_refs_file
+  local section=""
+  local expected_status
+  local task_ref
+  local task_file
+  local file_status
+  local file_status_primary
+  local dup_ref
+
+  all_refs_file="$(mktemp)"
+
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^\#\#\  ]]; then
+      section="$line"
+      continue
+    fi
+    if [[ "$line" =~ ^-\ (TASK-[A-Za-z0-9._-]+) ]]; then
+      task_ref="${BASH_REMATCH[1]}"
+      printf "%s\n" "$task_ref" >> "$all_refs_file"
+      task_file="$TASK_DIR/${task_ref}.md"
+
+      if [[ ! -f "$task_file" ]]; then
+        fail "task-index row for ${task_ref} has no matching task file: expected ${task_file}"
+        continue
+      fi
+
+      expected_status="$(task_index_section_status "$section")"
+      if [[ -n "$expected_status" ]]; then
+        file_status="$(extract_field_value "$task_file" "status")"
+        # Compare only the first token: some task files append a trailing
+        # parenthetical note after the enum value (e.g. "done (Phase 1 r02...)").
+        file_status_primary="${file_status%% *}"
+        if [[ -n "$file_status_primary" && "$file_status_primary" != "$expected_status" ]]; then
+          fail "task-index section mismatch for ${task_ref}: task file status is ${file_status} but row is listed under ${section#"## "}"
+        fi
+      fi
+    fi
+  done < "$index_file"
+
+  if [[ -s "$all_refs_file" ]]; then
+    while IFS= read -r dup_ref; do
+      [[ -n "$dup_ref" ]] && fail "task-index has duplicate rows for ${dup_ref}"
+    done < <(sort "$all_refs_file" | uniq -d)
+  fi
+
+  rm -f "$all_refs_file"
+}
+
+# Runtime issue tracker (docs/issues/current <-> docs/issues/resolved) consistency.
+# This tracker is the one docs series that DOES physically move files as part of
+# its normal lifecycle (unlike task/plan/orchestration, which stay flat and rely
+# on check_task_index_integrity instead), because closing an issue creates a new
+# RESOLUTION doc at the same moment, making the move a natural lifecycle event.
+check_issue_tracker_integrity() {
+  local issue_file
+  local issue_base
+  local issue_id
+  local issue_status
+  local resolved_at
+  local resolution_doc_field
+  local expected_resolution_base
+  local resolution_file
+  local resolution_base
+  local expected_issue_base
+  local all_ids_file
+  local dup_id
+
+  all_ids_file="$(mktemp)"
+
+  if [[ -d "$ISSUE_TRACKER_CURRENT_DIR" ]]; then
+    while IFS= read -r issue_file; do
+      issue_base="$(basename "$issue_file")"
+      issue_id="${issue_base%.md}"
+      printf "%s\n" "$issue_base" >> "$all_ids_file"
+      issue_status="$(extract_field_value "$issue_file" "status")"
+
+      check_enum_membership "$issue_status" "issue.status" "$issue_file" open investigating blocked fixed_pending_verify reopened || true
+      if [[ "$issue_status" == "resolved" ]]; then
+        fail "issue ${issue_base} is status: resolved but still lives in docs/issues/current/ (move it to docs/issues/resolved/ with a paired RESOLUTION doc)"
+      fi
+
+      if [[ -f "$ISSUE_TRACKER_CURRENT_DIR/README.md" ]] && ! grep -qE "\|[[:space:]]*${issue_id}(\.md)?[[:space:]]*\|" "$ISSUE_TRACKER_CURRENT_DIR/README.md" 2>/dev/null; then
+        fail "docs/issues/current/README.md missing index row for ${issue_base}"
+      fi
+    done < <(find "$ISSUE_TRACKER_CURRENT_DIR" -maxdepth 1 -type f -name 'ISSUE-*.md' | sort)
+  fi
+
+  if [[ -d "$ISSUE_TRACKER_RESOLVED_DIR" ]]; then
+    while IFS= read -r issue_file; do
+      issue_base="$(basename "$issue_file")"
+      issue_id="${issue_base%.md}"
+      printf "%s\n" "$issue_base" >> "$all_ids_file"
+      issue_status="$(extract_field_value "$issue_file" "status")"
+      resolved_at="$(extract_field_value "$issue_file" "resolved_at")"
+      resolution_doc_field="$(extract_field_value "$issue_file" "resolution_doc")"
+
+      if [[ "$issue_status" != "resolved" ]]; then
+        fail "issue ${issue_base} lives in docs/issues/resolved/ but status is '${issue_status}' (expected resolved)"
+      fi
+      if [[ -z "$resolved_at" ]]; then
+        fail "resolved_at is missing in resolved issue ${issue_base}"
+      fi
+      if [[ -z "$resolution_doc_field" ]]; then
+        fail "resolution_doc is missing in resolved issue ${issue_base}"
+      fi
+
+      expected_resolution_base="RESOLUTION-${issue_base#ISSUE-}"
+      resolution_file="$ISSUE_TRACKER_RESOLVED_DIR/${expected_resolution_base}"
+      if [[ ! -f "$resolution_file" ]]; then
+        fail "resolved issue ${issue_base} has no paired resolution doc: expected ${resolution_file}"
+      fi
+
+      if [[ -f "$ISSUE_TRACKER_RESOLVED_DIR/README.md" ]] && ! grep -qE "\|[[:space:]]*${issue_id}(\.md)?[[:space:]]*\|" "$ISSUE_TRACKER_RESOLVED_DIR/README.md" 2>/dev/null; then
+        fail "docs/issues/resolved/README.md missing index row for ${issue_base}"
+      fi
+    done < <(find "$ISSUE_TRACKER_RESOLVED_DIR" -maxdepth 1 -type f -name 'ISSUE-*.md' | sort)
+
+    while IFS= read -r resolution_file; do
+      resolution_base="$(basename "$resolution_file")"
+      expected_issue_base="ISSUE-${resolution_base#RESOLUTION-}"
+      if [[ ! -f "$ISSUE_TRACKER_RESOLVED_DIR/${expected_issue_base}" ]]; then
+        fail "resolution doc ${resolution_base} has no paired issue file: expected ${ISSUE_TRACKER_RESOLVED_DIR}/${expected_issue_base}"
+      fi
+    done < <(find "$ISSUE_TRACKER_RESOLVED_DIR" -maxdepth 1 -type f -name 'RESOLUTION-*.md' | sort)
+  fi
+
+  if [[ -s "$all_ids_file" ]]; then
+    while IFS= read -r dup_id; do
+      [[ -n "$dup_id" ]] && fail "issue id ${dup_id} exists in both docs/issues/current/ and docs/issues/resolved/ (or is duplicated)"
+    done < <(sort "$all_ids_file" | uniq -d)
+  fi
+
+  rm -f "$all_ids_file"
 }
 
 trim_value() {
@@ -2519,27 +2677,27 @@ fi
 
 if [[ -f "$SHADOW_DIR/project-shadow.md" ]]; then
   SHADOW_TRACKED_FILES+=("$SHADOW_DIR/project-shadow.md")
-  check_field_value_equals "$SHADOW_DIR/project-shadow.md" "doc_role" "router" "shadow router"
-  check_field_exists "$SHADOW_DIR/project-shadow.md" "read_path" "shadow router"
-  check_field_exists "$SHADOW_DIR/project-shadow.md" "bucket_links" "shadow router"
-  check_field_exists "$SHADOW_DIR/project-shadow.md" "global_doc" "shadow router"
-  check_field_exists "$SHADOW_DIR/project-shadow.md" "updated_by_task" "shadow router"
-  check_field_exists "$SHADOW_DIR/project-shadow.md" "latest_change_note" "shadow router"
+  check_field_value_equals "$SHADOW_DIR/project-shadow.md" "doc_role" "router" "shadow router" || true
+  check_field_exists "$SHADOW_DIR/project-shadow.md" "read_path" "shadow router" || true
+  check_field_exists "$SHADOW_DIR/project-shadow.md" "bucket_links" "shadow router" || true
+  check_field_exists "$SHADOW_DIR/project-shadow.md" "global_doc" "shadow router" || true
+  check_field_exists "$SHADOW_DIR/project-shadow.md" "updated_by_task" "shadow router" || true
+  check_field_exists "$SHADOW_DIR/project-shadow.md" "latest_change_note" "shadow router" || true
   if [[ "$MODE" == "strict" ]]; then
-    check_timestamp_field_valid_non_future "$SHADOW_DIR/project-shadow.md" "last_updated" "shadow router"
+    check_timestamp_field_valid_non_future "$SHADOW_DIR/project-shadow.md" "last_updated" "shadow router" || true
   else
-    check_field_exists "$SHADOW_DIR/project-shadow.md" "last_updated" "shadow router"
+    check_field_exists "$SHADOW_DIR/project-shadow.md" "last_updated" "shadow router" || true
   fi
   check_freshness_days "$SHADOW_DIR/project-shadow.md" "$MAX_SHADOW_AGE_DAYS" "shadow router"
 fi
 
 if [[ -f "$SHADOW_GLOBAL_FILE" ]]; then
   SHADOW_TRACKED_FILES+=("$SHADOW_GLOBAL_FILE")
-  check_field_value_equals "$SHADOW_GLOBAL_FILE" "doc_role" "global" "shadow global"
+  check_field_value_equals "$SHADOW_GLOBAL_FILE" "doc_role" "global" "shadow global" || true
   if [[ "$MODE" == "strict" ]]; then
-    check_timestamp_field_valid_non_future "$SHADOW_GLOBAL_FILE" "last_updated" "shadow global"
+    check_timestamp_field_valid_non_future "$SHADOW_GLOBAL_FILE" "last_updated" "shadow global" || true
   else
-    check_field_exists "$SHADOW_GLOBAL_FILE" "last_updated" "shadow global"
+    check_field_exists "$SHADOW_GLOBAL_FILE" "last_updated" "shadow global" || true
   fi
   check_freshness_days "$SHADOW_GLOBAL_FILE" "$MAX_SHADOW_AGE_DAYS" "shadow global"
 fi
@@ -2548,12 +2706,12 @@ for shadow_bucket in "${SHADOW_BUCKETS[@]}"; do
   shadow_bucket_file="$SHADOW_DIR/${shadow_bucket}/_index.md"
   if [[ -f "$shadow_bucket_file" ]]; then
     SHADOW_TRACKED_FILES+=("$shadow_bucket_file")
-    check_field_value_equals "$shadow_bucket_file" "doc_role" "bucket_index" "shadow bucket index (${shadow_bucket})"
-    check_field_value_equals "$shadow_bucket_file" "bucket" "$shadow_bucket" "shadow bucket index (${shadow_bucket})"
+    check_field_value_equals "$shadow_bucket_file" "doc_role" "bucket_index" "shadow bucket index (${shadow_bucket})" || true
+    check_field_value_equals "$shadow_bucket_file" "bucket" "$shadow_bucket" "shadow bucket index (${shadow_bucket})" || true
     if [[ "$MODE" == "strict" ]]; then
-      check_timestamp_field_valid_non_future "$shadow_bucket_file" "last_updated" "shadow bucket index (${shadow_bucket})"
+      check_timestamp_field_valid_non_future "$shadow_bucket_file" "last_updated" "shadow bucket index (${shadow_bucket})" || true
     else
-      check_field_exists "$shadow_bucket_file" "last_updated" "shadow bucket index (${shadow_bucket})"
+      check_field_exists "$shadow_bucket_file" "last_updated" "shadow bucket index (${shadow_bucket})" || true
     fi
     check_freshness_days "$shadow_bucket_file" "$MAX_SHADOW_AGE_DAYS" "shadow bucket index (${shadow_bucket})"
   fi
@@ -2578,16 +2736,16 @@ if [[ -d "$TASK_DIR" ]]; then
 
     # In strict mode: check non-empty values; in advisory: check existence only
     if [[ "$MODE" == "strict" ]]; then
-      check_field_non_empty "$task_file" "axis_why" "task file"
-      check_field_non_empty "$task_file" "axis_where" "task file"
-      check_field_non_empty "$task_file" "axis_verify" "task file"
-      check_field_non_empty "$task_file" "title" "task file"
-      check_field_non_empty "$task_file" "status" "task file"
+      check_field_non_empty "$task_file" "axis_why" "task file" || true
+      check_field_non_empty "$task_file" "axis_where" "task file" || true
+      check_field_non_empty "$task_file" "axis_verify" "task file" || true
+      check_field_non_empty "$task_file" "title" "task file" || true
+      check_field_non_empty "$task_file" "status" "task file" || true
     else
-      check_field_exists "$task_file" "axis_why" "task file"
-      check_field_exists "$task_file" "axis_where" "task file"
-      check_field_exists "$task_file" "axis_verify" "task file"
-      check_field_exists "$task_file" "status" "task file"
+      check_field_exists "$task_file" "axis_why" "task file" || true
+      check_field_exists "$task_file" "axis_where" "task file" || true
+      check_field_exists "$task_file" "axis_verify" "task file" || true
+      check_field_exists "$task_file" "status" "task file" || true
     fi
 
     check_enum_membership "$task_status" "task.status" "$task_file" planned in_progress blocked done || true
@@ -2623,6 +2781,15 @@ if [[ -d "$TASK_DIR" ]]; then
       fi
     fi
   done < <(find "$TASK_DIR" -maxdepth 1 -type f -name 'TASK-*.md' | sort)
+
+  if [[ -f "$TASK_DIR/task-index.md" ]]; then
+    check_task_index_integrity "$TASK_DIR/task-index.md"
+  fi
+fi
+
+# --- Issue tracker checks (docs/issues/ is optional; only validated when present) ---
+if [[ -d "$ISSUE_TRACKER_DIR" ]]; then
+  check_issue_tracker_integrity
 fi
 
 # --- Decision file checks ---
@@ -2636,25 +2803,25 @@ if [[ -d "$DECISIONS_DIR" ]]; then
     check_line_limit "$decision_file" "$MAX_DECISION_LINES" "decision document"
 
     if [[ "$MODE" == "strict" ]]; then
-      check_field_non_empty "$decision_file" "decision_id" "decision"
-      check_field_non_empty "$decision_file" "scope_type" "decision"
-      check_field_non_empty "$decision_file" "status" "decision"
-      check_field_non_empty "$decision_file" "selected_option" "decision"
-      check_field_non_empty "$decision_file" "axis_why" "decision"
-      check_field_non_empty "$decision_file" "axis_what" "decision"
-      check_field_non_empty "$decision_file" "axis_how" "decision"
-      check_field_non_empty "$decision_file" "axis_where" "decision"
-      check_field_non_empty "$decision_file" "axis_verify" "decision"
+      check_field_non_empty "$decision_file" "decision_id" "decision" || true
+      check_field_non_empty "$decision_file" "scope_type" "decision" || true
+      check_field_non_empty "$decision_file" "status" "decision" || true
+      check_field_non_empty "$decision_file" "selected_option" "decision" || true
+      check_field_non_empty "$decision_file" "axis_why" "decision" || true
+      check_field_non_empty "$decision_file" "axis_what" "decision" || true
+      check_field_non_empty "$decision_file" "axis_how" "decision" || true
+      check_field_non_empty "$decision_file" "axis_where" "decision" || true
+      check_field_non_empty "$decision_file" "axis_verify" "decision" || true
     else
-      check_field_exists "$decision_file" "decision_id" "decision"
-      check_field_exists "$decision_file" "scope_type" "decision"
-      check_field_exists "$decision_file" "status" "decision"
-      check_field_exists "$decision_file" "selected_option" "decision"
-      check_field_exists "$decision_file" "axis_why" "decision"
-      check_field_exists "$decision_file" "axis_what" "decision"
-      check_field_exists "$decision_file" "axis_how" "decision"
-      check_field_exists "$decision_file" "axis_where" "decision"
-      check_field_exists "$decision_file" "axis_verify" "decision"
+      check_field_exists "$decision_file" "decision_id" "decision" || true
+      check_field_exists "$decision_file" "scope_type" "decision" || true
+      check_field_exists "$decision_file" "status" "decision" || true
+      check_field_exists "$decision_file" "selected_option" "decision" || true
+      check_field_exists "$decision_file" "axis_why" "decision" || true
+      check_field_exists "$decision_file" "axis_what" "decision" || true
+      check_field_exists "$decision_file" "axis_how" "decision" || true
+      check_field_exists "$decision_file" "axis_where" "decision" || true
+      check_field_exists "$decision_file" "axis_verify" "decision" || true
     fi
 
     check_enum_membership "$decision_scope_type" "decision.scope_type" "$decision_file" task hotfix pr release incident ops other || true
@@ -2681,17 +2848,17 @@ if [[ -d "$PLAN_DIR" ]]; then
     fi
 
     if [[ "$MODE" == "strict" ]]; then
-      check_field_non_empty "$plan_file" "task_id" "plan"
-      check_field_non_empty "$plan_file" "plan_version" "plan"
-      check_field_non_empty "$plan_file" "objective" "plan"
-      check_field_non_empty "$plan_file" "scope" "plan"
-      check_field_non_empty "$plan_file" "last_updated" "plan"
+      check_field_non_empty "$plan_file" "task_id" "plan" || true
+      check_field_non_empty "$plan_file" "plan_version" "plan" || true
+      check_field_non_empty "$plan_file" "objective" "plan" || true
+      check_field_non_empty "$plan_file" "scope" "plan" || true
+      check_field_non_empty "$plan_file" "last_updated" "plan" || true
     else
-      check_field_exists "$plan_file" "task_id" "plan"
-      check_field_exists "$plan_file" "plan_version" "plan"
-      check_field_exists "$plan_file" "objective" "plan"
-      check_field_exists "$plan_file" "scope" "plan"
-      check_field_exists "$plan_file" "last_updated" "plan"
+      check_field_exists "$plan_file" "task_id" "plan" || true
+      check_field_exists "$plan_file" "plan_version" "plan" || true
+      check_field_exists "$plan_file" "objective" "plan" || true
+      check_field_exists "$plan_file" "scope" "plan" || true
+      check_field_exists "$plan_file" "last_updated" "plan" || true
     fi
 
     file_plan_version="$(printf "%s" "$plan_base" | sed -E 's/^.*-(v[0-9]+\.[0-9]+)\.md$/\1/')"
@@ -2737,27 +2904,27 @@ if [[ -d "$REPORT_DIR" ]]; then
     fi
 
     if [[ "$MODE" == "strict" ]]; then
-      check_field_non_empty "$report_file" "task_id" "evaluator report"
-      check_field_non_empty "$report_file" "plan_version" "evaluator report"
-      check_field_non_empty "$report_file" "evaluator" "evaluator report"
-      check_field_non_empty "$report_file" "review_round" "evaluator report"
-      check_field_non_empty "$report_file" "verdict" "evaluator report"
-      check_field_non_empty "$report_file" "summary" "evaluator report"
-      check_field_non_empty "$report_file" "strengths" "evaluator report"
-      check_field_non_empty "$report_file" "risks" "evaluator report"
-      check_field_non_empty "$report_file" "requested_changes" "evaluator report"
-      check_field_non_empty "$report_file" "last_updated" "evaluator report"
+      check_field_non_empty "$report_file" "task_id" "evaluator report" || true
+      check_field_non_empty "$report_file" "plan_version" "evaluator report" || true
+      check_field_non_empty "$report_file" "evaluator" "evaluator report" || true
+      check_field_non_empty "$report_file" "review_round" "evaluator report" || true
+      check_field_non_empty "$report_file" "verdict" "evaluator report" || true
+      check_field_non_empty "$report_file" "summary" "evaluator report" || true
+      check_field_non_empty "$report_file" "strengths" "evaluator report" || true
+      check_field_non_empty "$report_file" "risks" "evaluator report" || true
+      check_field_non_empty "$report_file" "requested_changes" "evaluator report" || true
+      check_field_non_empty "$report_file" "last_updated" "evaluator report" || true
     else
-      check_field_exists "$report_file" "task_id" "evaluator report"
-      check_field_exists "$report_file" "plan_version" "evaluator report"
-      check_field_exists "$report_file" "evaluator" "evaluator report"
-      check_field_exists "$report_file" "review_round" "evaluator report"
-      check_field_exists "$report_file" "verdict" "evaluator report"
-      check_field_exists "$report_file" "summary" "evaluator report"
-      check_field_exists "$report_file" "strengths" "evaluator report"
-      check_field_exists "$report_file" "risks" "evaluator report"
-      check_field_exists "$report_file" "requested_changes" "evaluator report"
-      check_field_exists "$report_file" "last_updated" "evaluator report"
+      check_field_exists "$report_file" "task_id" "evaluator report" || true
+      check_field_exists "$report_file" "plan_version" "evaluator report" || true
+      check_field_exists "$report_file" "evaluator" "evaluator report" || true
+      check_field_exists "$report_file" "review_round" "evaluator report" || true
+      check_field_exists "$report_file" "verdict" "evaluator report" || true
+      check_field_exists "$report_file" "summary" "evaluator report" || true
+      check_field_exists "$report_file" "strengths" "evaluator report" || true
+      check_field_exists "$report_file" "risks" "evaluator report" || true
+      check_field_exists "$report_file" "requested_changes" "evaluator report" || true
+      check_field_exists "$report_file" "last_updated" "evaluator report" || true
     fi
 
     report_evaluator="$(extract_field_value "$report_file" "evaluator")"
@@ -2807,15 +2974,15 @@ if [[ -d "$REPORT_DIR" ]]; then
 
     if [[ "$report_review_style" == "adversarial" ]]; then
       if [[ "$MODE" == "strict" ]]; then
-        check_field_non_empty "$report_file" "objection" "adversarial evaluator report"
-        check_field_non_empty "$report_file" "counterproposal" "adversarial evaluator report"
-        check_field_non_empty "$report_file" "rebuttal" "adversarial evaluator report"
-        check_field_non_empty "$report_file" "residual_risk" "adversarial evaluator report"
+        check_field_non_empty "$report_file" "objection" "adversarial evaluator report" || true
+        check_field_non_empty "$report_file" "counterproposal" "adversarial evaluator report" || true
+        check_field_non_empty "$report_file" "rebuttal" "adversarial evaluator report" || true
+        check_field_non_empty "$report_file" "residual_risk" "adversarial evaluator report" || true
       else
-        check_field_exists "$report_file" "objection" "adversarial evaluator report"
-        check_field_exists "$report_file" "counterproposal" "adversarial evaluator report"
-        check_field_exists "$report_file" "rebuttal" "adversarial evaluator report"
-        check_field_exists "$report_file" "residual_risk" "adversarial evaluator report"
+        check_field_exists "$report_file" "objection" "adversarial evaluator report" || true
+        check_field_exists "$report_file" "counterproposal" "adversarial evaluator report" || true
+        check_field_exists "$report_file" "rebuttal" "adversarial evaluator report" || true
+        check_field_exists "$report_file" "residual_risk" "adversarial evaluator report" || true
       fi
     fi
   done < <(find "$REPORT_DIR" -maxdepth 1 -type f -name 'PLAN-*-review-*.md' ! -name 'LLM-REVIEW-template.md' | sort)

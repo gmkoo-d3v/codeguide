@@ -32,7 +32,7 @@ Options:
   --axis-verify "<text>"          Verification strategy (TDD/pyramid/FIRST)
   --execution-mode <mode>         supervisor_subagents|solo (default: solo)
   --primary-author-tool <tool>    antigravity|agy|claude|codex|human|external-runner
-  --review-mode <mode>            external_cli|current_task_debate|agy_subagents|codex_subagents
+  --review-mode <mode>            external_cli|current_task_debate|agy_subagents|claude_subagents|codex_subagents
   --risk-preflight-status <status> pass|approved|blocked|approval_required (required before delegated/external orchestration)
   --risk-preflight-recorded-by "<name>"
                                   Main-thread recorder identity (default: main-thread-supervising-lead-architect)
@@ -207,9 +207,9 @@ validate_primary_author_tool() {
 validate_review_mode() {
   local value="$1"
   case "$value" in
-    external_cli|current_task_debate|agy_subagents|codex_subagents) ;;
+    external_cli|current_task_debate|agy_subagents|claude_subagents|codex_subagents) ;;
     *)
-      echo "[ERROR] Invalid --review-mode: ${value} (use external_cli, current_task_debate, agy_subagents, or codex_subagents)" >&2
+      echo "[ERROR] Invalid --review-mode: ${value} (use external_cli, current_task_debate, agy_subagents, claude_subagents, or codex_subagents)" >&2
       exit 1
       ;;
   esac
@@ -905,7 +905,7 @@ ensure_orchestration_file() {
 - last_updated:
 
 Allowed primary_author_tool values: antigravity | agy | claude | codex | human | external-runner.
-Allowed review_mode values: external_cli | current_task_debate | agy_subagents | codex_subagents.
+Allowed review_mode values: external_cli | current_task_debate | agy_subagents | claude_subagents | codex_subagents.
 Allowed external_review_status values: not_requested | requested | running | awaiting_response | ingested | blocked | waived.
 Allowed external_review_required_for values: plan_acceptance | implementation_start | commit | close.
 EOF

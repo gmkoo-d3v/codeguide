@@ -1764,6 +1764,26 @@ EOF'
   [[ "$output" != *" -m "* ]]
 }
 
+@test "external_review_runner treats any coordinator's own current route as manual/current-thread, not only codex" {
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-coordinator-neutral" --plan-version "v1.0" --review-round "r01" --task-phase "planning" --coordinator "claude" --participant "claude:current" --participant "agy-current"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
+
+  [ "$status" -eq 0 ]
+  run grep '"coordinator": "claude"' "$DOCS_ROOT/orchestration/runner-coordinator-neutral/current-task/debate.json"
+  [ "$status" -eq 0 ]
+  run grep -A2 '"id": "claude:current"' "$DOCS_ROOT/orchestration/runner-coordinator-neutral/current-task/debate.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"role": "participant"'* ]]
+  [[ "$output" == *'"runner_route": "manual/current-thread"'* ]]
+  run grep '"runner_route": "agy:current"' "$DOCS_ROOT/orchestration/runner-coordinator-neutral/current-task/debate.json"
+  [ "$status" -eq 0 ]
+
+  run python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-coordinator-neutral" --dry-run
+
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"claude -p"* ]]
+  [[ "$output" == *"agy --add-dir"* ]]
+}
+
 @test "external_review_runner executes agy with current CLI flags and preconfigured model selection" {
   local mock_bin="$TEST_WORKSPACE/mock-bin"
   mkdir -p "$mock_bin"

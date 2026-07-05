@@ -569,7 +569,7 @@ write_if_missing "${ORCHESTRATION_TEMPLATES_DIR}/ORCH.md" '# ORCH-<task-id>
 - last_updated:
 
 Allowed primary_author_tool values: antigravity | agy | claude | codex | human | external-runner.
-Allowed review_mode values: external_cli | current_task_debate | agy_subagents | codex_subagents.
+Allowed review_mode values: external_cli | current_task_debate | agy_subagents | claude_subagents | codex_subagents.
 Allowed external_review_status values: not_requested | requested | running | awaiting_response | ingested | blocked | waived.
 Allowed external_review_required_for values: plan_acceptance | implementation_start | commit | close.
 '
@@ -867,6 +867,15 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 - Closing an issue is PR-like: move the issue file to `docs/issues/resolved/`, write a paired `RESOLUTION-*.md` from `docs/issues/templates/RESOLUTION-template.md` with root cause, change summary, files changed, and verification evidence, and update both index READMEs.
 - A close without a resolution doc, or a resolution doc without verification evidence from the running stack, is incomplete.
 - Issue files are never deleted; history lives in `docs/issues/resolved/`. Recurred defects move back to `current/` with `status: reopened`.
+
+## Docs lifecycle (no physical archive for task/plan/orchestration)
+
+- Never physically move or archive `docs/task/TASK-*.md`, `docs/plan/PLAN-*.md`, or `docs/orchestration/<task-id>/`. Keep them flat under their project-root directories permanently, even after a task reaches `status: done`.
+- `docs/task/task-index.md` is the single source of truth for task/plan/orchestration lifecycle state. A completed task is managed, not archived: its row stays under the correct status section (Planned/In Progress/Blocked/Done) and its `TASK-*.md`, `PLAN-*.md`, and `orchestration/<task-id>/ORCH.md` files stay exactly where they are.
+- Do not create `plan-index.md` or any second ledger for plan files. Plan files are already keyed by `task_id` in their filename (`PLAN-<task-id>-vX.Y.md`), so `task-index.md` plus filename globbing is sufficient; a second index would drift from the first.
+- `validate_docs.sh` enforces `task-index.md` accuracy in both directions: every `TASK-*.md` must have a row, every row must point at an existing task file listed under the section matching its actual `status:`, and no task_id may have duplicate rows.
+- `docs/issues/` is the one exception: it physically moves files between `current/` and `resolved/` as part of its normal lifecycle (see Issue tracker contract above), because closing an issue produces a new `RESOLUTION-*.md` at that same moment. `validate_docs.sh` enforces `current/`<->`resolved/` pairing and index consistency the same way.
+- Rationale: task/plan/orchestration files are cross-referenced by concrete literal paths from other docs (evaluator report rounds, `ORCH.md` fields such as `external_review_result_ref`, prose citations of prior round files). Physically moving them at scale silently breaks those citations in ways no validator catches. Keeping them flat and relying on index accuracy avoids that risk. A folder growing large is an accepted tradeoff; the goal is that work stays tracked and auditable, not that directories look tidy.
 
 ## Plan orchestration loop
 

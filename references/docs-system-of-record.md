@@ -115,7 +115,7 @@ Use one task capsule per delegated or externally reviewed task: `docs/orchestrat
 ```
 
 Allowed primary_author_tool values: antigravity | agy | claude | codex | human | external-runner.
-Allowed review_mode values: external_cli | current_task_debate | agy_subagents | codex_subagents.
+Allowed review_mode values: external_cli | current_task_debate | agy_subagents | claude_subagents | codex_subagents.
 Allowed external_review_status values: not_requested | requested | running | awaiting_response | ingested | blocked | waived.
 Allowed external_review_required_for values: plan_acceptance | implementation_start | commit | close.
 Allowed orchestration lifecycle values: `execution_mode=supervisor_subagents|solo`, `delegation_status=planned|active|completed|blocked`, `risk_preflight_status=pass|approved|blocked|approval_required`, `approval_required=true|false`.
@@ -177,6 +177,16 @@ Use one file per task: `docs/task/TASK-<id>.md`
 `<project-root>/docs/task/task-index.md` should list task ids organized by status section (Planned/In Progress/Blocked/Done). Rows are automatically moved between sections when task status changes.
 
 `consumes_plan_ref` is required when the matching ORCH capsule sets `external_review_required_for: implementation_start` and the task is `in_progress` or `done`. It must reference a same-task plan in the form `PLAN-<task-id>-vX.Y`; cross-task plan consumption is out of scope for this gate and warns instead of being treated as independent.
+
+## Docs lifecycle (no physical archive for task/plan/orchestration)
+
+Never physically move or archive `docs/task/TASK-*.md`, `docs/plan/PLAN-*.md`, or `docs/orchestration/<task-id>/`, even after a task reaches `status: done`. Keep them flat permanently.
+
+- `docs/task/task-index.md` is the single source of truth for task/plan/orchestration lifecycle state. A completed task is managed, not archived: its row stays under the correct status section and its `TASK-*.md`/`PLAN-*.md`/`orchestration/<task-id>/ORCH.md` files stay exactly where they are.
+- Do not create `plan-index.md` or any second ledger for plan files. Plan files are already keyed by `task_id` via filename (`PLAN-<task-id>-vX.Y.md`), so `task-index.md` plus filename globbing is sufficient; a second index would drift from the first, reintroducing the exact staleness problem an index is meant to solve.
+- `scripts/validate_docs.sh` enforces `task-index.md` accuracy in both directions: every `TASK-*.md` must have a row, every row must point at an existing task file listed under the section matching its actual `status:` field, and no task_id may appear more than once.
+- `docs/issues/` (see `docs/issues/README.md` when a project has one) is the one exception that does physically move files, between `current/` and `resolved/`, because closing an issue produces a new `RESOLUTION-*.md` at that same moment — the move is a natural lifecycle event, not a later cleanup pass. `validate_docs.sh` enforces that pairing and index consistency the same way.
+- Rationale: task/plan/orchestration files are cross-referenced by concrete literal paths from other docs (evaluator report rounds, `ORCH.md` fields such as `external_review_result_ref`, prose citations of prior round files by name). Physically moving them at scale silently breaks those citations in ways no validator catches. A folder growing large and looking cluttered is an accepted tradeoff — the goal of docs governance is that work stays tracked and auditable, not that directories look tidy.
 
 ## Anti-dump policy (default recommended, strict in CI)
 - Keep shadow docs close to 200 lines and preferably at or below 300 lines.

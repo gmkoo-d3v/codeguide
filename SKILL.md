@@ -26,6 +26,7 @@ Outcome-first governance skill for architecture, code quality, documentation lif
 - Report language: report in Korean by default; reason in English internally; change only on explicit request. → `references/operating-model.md`
 - Defect-seeking review: Reviewer and evaluator roles should both assume defects are likely until checked, especially for code-related work where API contracts, team conventions, integration boundaries, validation rules, and regression exposure are commonly missed. For code review, prefer surfacing contract violations, convention drift, missing validation, integration risk, and weak verification before style-level praise. → `references/review-checklist.md`
 - Docs = system of record: material work uses project docs as the system of record; keep code and docs synchronized. → `references/docs-system-of-record.md`
+- File-first LLM handoff: when delegating non-trivial instructions to an external LLM CLI or a sub-agent, write the full request into a durable Markdown handoff file first, then pass only a short instruction plus the absolute file path; never inline long prompts as shell arguments. If a runner's safe mode cannot read files, stream the already-written file on stdin and keep the file as the durable record. Output capture requires a command-level path (stdout redirection or a runner output flag); a path mentioned only inside the prompt is not a contract. → `references/external-cli-handoff.md`
 
 ## Navigation
 | Need | Reference |

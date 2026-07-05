@@ -1,6 +1,6 @@
 # External CLI File Handoff Contract
 
-Extracted from SKILL.md for Phase 1 coverage audit; updated in Phase 6 to keep command-template policy runner-neutral.
+Extracted from SKILL.md for Phase 1 coverage audit; updated in Phase 6 to keep command-template policy runner-neutral. This is the external-CLI-specific instance of the general delegation-handoff rule in `references/orchestration-contract.md` (durable Markdown handoff file first, short instruction plus absolute path second) — the mechanics below (output-capture path, sanitization, provenance) are the additional constraints that apply when the delegate runs as a separate process rather than an in-session sub-agent.
 
 ## External CLI File Handoff Contract
 - External LLM reviews are runner-neutral. `config/ai_model_registry.json` declares runners, route-qualified model ids, aliases, quota groups, default reviewers, quota-error patterns, and quota-stop policy.

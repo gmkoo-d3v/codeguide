@@ -21,7 +21,7 @@ Use this reference when planning or implementing the next automation layer for t
 - External Gemini/Claude review is user-requested only by default.
 - Normal independent review uses sub-agents with durable Markdown request/response handoff artifacts in project docs.
 - Separate-session critique is a future/runtime-dependent option; use it only when the active tool supports a true independent non-sub-agent session.
-- Claude-style non-sub-agent critique remains an external/user-requested review route, not the Codex default.
+- A separate non-sub-agent session from a different tool remains an external/user-requested review route, not the internal-runtime default.
 - Unknown/stale escalation uses the default operating policy in this plan unless the user later overrides it.
 
 ## User Choice Boundary
@@ -34,7 +34,7 @@ Already selected defaults:
 - implement the user-decision assistant first, then review packets, pipeline wrapper, and parser-backed expansion
 - start parser-backed expansion with Java
 - activate automatic hint lookup only after project scope is verified
-- use Codex sub-agent Markdown review as the default independent review route
+- use the active runtime's own sub-agent Markdown review as the default independent review route
 - use Gemini/Claude external review only when the user explicitly requests it
 - keep external review provenance at local request/response/provenance hash consistency; do not require stronger tamper resistance in v2
 - keep supervised apply as one record per explicit final-apply decision; do not enable batch apply by default
@@ -110,7 +110,7 @@ Phase 0 verification:
 - project-scope checking blocks hint activation until `docs/`, `docs/shadow/`, and `docs/policy/` exist
 - external Gemini/Claude review is blocked unless explicitly requested
 - completed external Gemini/Claude review is blocked unless a durable accepted response artifact under `docs/orchestration/<task-id>/external-cli/<plan-version>/<round>/` is supplied with a matching companion request file, wrapper-generated provenance manifest, evaluator, `verdict: accept`, parser-compatible review fields, command-response path, response path, bytes, and sha256 provenance
-- completed internal Codex sub-agent or runtime-independent-session review is blocked unless a durable accepted `.md` Markdown response artifact under `docs/report/` or `docs/orchestration/` is supplied with `verdict: accept`, `priority_findings`, `contract_mismatches`, `missing_evidence`, `residual_risks`, bytes, and sha256 provenance
+- completed internal sub-agent or runtime-independent-session review is blocked unless a durable accepted `.md` Markdown response artifact under `docs/report/` or `docs/orchestration/` is supplied with `verdict: accept`, `priority_findings`, `contract_mismatches`, `missing_evidence`, `residual_risks`, bytes, and sha256 provenance
 - batch apply is disabled
 - non-confirming evidence types cannot confirm facts
 - generic `user_decision` and `final_shadow_apply` cannot confirm facts; user fact evidence must declare an allowed fact-decision type
@@ -195,7 +195,7 @@ Inputs:
 Outputs:
 
 - Markdown or JSON review packet
-- review route, usually `codex_subagent_md_handoff`
+- review route, usually `internal_subagent_md_handoff`
 - privacy boundary
 - unsupported-by-packet context marker
 - route-specific expected response fields: internal packets use `priority_findings`, `contract_mismatches`, `missing_evidence`, and `residual_risks`; external packets use `summary`, `strengths`, `risks`, and `requested_changes`
@@ -224,7 +224,7 @@ Must not:
 
 Default review route:
 
-- internal reviewer: Codex sub-agent with durable Markdown request/response handoff artifacts
+- internal reviewer: the active runtime's own sub-agent with durable Markdown request/response handoff artifacts
 - separate session reviewer: only when the active runtime supports a true independent non-sub-agent session
 - handoff medium: Markdown request/response files
 - purpose: reduce shared-memory coupling and prompt anchoring bias
@@ -395,7 +395,7 @@ These are not chosen yet and should be asked later only when needed:
 - External Gemini/Claude review is not mandatory and is used only when the user explicitly requests it.
 - If the user makes external CLI review part of the close condition, blocked or missing external review is a hard stop. The workflow must report `blocked` and wait; it must not continue by treating sub-agent review as equivalent.
 - External close-review provenance is a local consistency gate, not tamper-proof attestation. Matching response/request/provenance files reduce accidental or label-only acceptance, but a writable workspace can still forge them; true tamper resistance requires a separate signing or audit mechanism and is out of v2 scope.
-- Default independent review uses Codex sub-agents with Markdown request/response handoffs.
+- Default independent review uses the active runtime's own sub-agents with Markdown request/response handoffs.
 - Separate-session review is not assumed available in Codex; keep it as a future/runtime-dependent option.
 - Java parser-backed expansion currently starts with the narrow `java.ast.call_match@v1` token matcher only; annotation and JPA repository-save semantics remain source-probe-only until separate parser-backed adapters are implemented.
 - Supervised apply starts as one record per explicit final-apply decision; batch apply remains a later option.

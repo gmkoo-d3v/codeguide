@@ -194,9 +194,10 @@ def enqueue(args: argparse.Namespace) -> int:
     write_text(request_file, redact(request_text))
 
     participant_values = args.participant or registry["default_reviewer_aliases"]
+    coordinator_current_route = f"{args.coordinator}:current"
     participants = []
     for value in participant_values:
-        if value == "codex:current":
+        if value == coordinator_current_route:
             participants.append({"id": value, "role": "participant", "runner_route": "manual/current-thread"})
             continue
         route = resolve_model_route(registry, value)

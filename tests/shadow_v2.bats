@@ -80,9 +80,9 @@ load codeguide_helper
 @test "shadow_v2_gate_skeleton blocks combined close when required external review is blocked" {
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
-    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "internal_subagent_md_handoff" \
     --close-required-review "external_antigravity" \
-    --completed-review "codex_subagent_md_handoff" \
+    --completed-review "internal_subagent_md_handoff" \
     --blocked-review "external_antigravity" \
     --print-contract
 
@@ -95,9 +95,9 @@ load codeguide_helper
 
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
-    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "internal_subagent_md_handoff" \
     --close-required-review "external_antigravity" \
-    --completed-review "codex_subagent_md_handoff" \
+    --completed-review "internal_subagent_md_handoff" \
     --blocked-review "external_antigravity=platform_permission_blocked" \
     --print-contract
 
@@ -108,9 +108,9 @@ load codeguide_helper
 
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
-    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "internal_subagent_md_handoff" \
     --close-required-review "external_antigravity" \
-    --completed-review "codex_subagent_md_handoff" \
+    --completed-review "internal_subagent_md_handoff" \
     --print-contract
 
   [ "$status" -eq 1 ]
@@ -131,18 +131,18 @@ EOF
 
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
-    --close-required-review "codex_subagent_md_handoff" \
-    --completed-review "codex_subagent_md_handoff" \
+    --close-required-review "internal_subagent_md_handoff" \
+    --completed-review "internal_subagent_md_handoff" \
     --print-contract
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"completed internal review route requires a durable response artifact: codex_subagent_md_handoff"* ]]
+  [[ "$output" == *"completed internal review route requires a durable response artifact: internal_subagent_md_handoff"* ]]
 
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
-    --close-required-review "codex_subagent_md_handoff" \
-    --completed-review "codex_subagent_md_handoff" \
-    --completed-review-artifact "codex_subagent_md_handoff=$non_markdown_artifact" \
+    --close-required-review "internal_subagent_md_handoff" \
+    --completed-review "internal_subagent_md_handoff" \
+    --completed-review-artifact "internal_subagent_md_handoff=$non_markdown_artifact" \
     --print-contract
 
   [ "$status" -eq 1 ]
@@ -150,9 +150,9 @@ EOF
 
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
-    --close-required-review "codex_subagent_md_handoff" \
-    --completed-review "codex_subagent_md_handoff" \
-    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
+    --close-required-review "internal_subagent_md_handoff" \
+    --completed-review "internal_subagent_md_handoff" \
+    --completed-review-artifact "internal_subagent_md_handoff=$internal_artifact" \
     --print-contract
 
   [ "$status" -eq 0 ]
@@ -258,10 +258,10 @@ EOF
     --external-review-approval-ref "user-approval-001" \
     --external-review-approved-next-step "close shadow v2 external review gate" \
     --external-review-recorded-by "main-thread-supervising-lead-architect" \
-    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "internal_subagent_md_handoff" \
     --close-required-review "external_antigravity" \
-    --completed-review "codex_subagent_md_handoff" \
-    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
+    --completed-review "internal_subagent_md_handoff" \
+    --completed-review-artifact "internal_subagent_md_handoff=$internal_artifact" \
     --completed-review "external_antigravity" \
     --print-contract
 
@@ -274,10 +274,10 @@ EOF
     --external-review-approval-ref "user-approval-001" \
     --external-review-approved-next-step "close shadow v2 external review gate" \
     --external-review-recorded-by "main-thread-supervising-lead-architect" \
-    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "internal_subagent_md_handoff" \
     --close-required-review "external_antigravity" \
-    --completed-review "codex_subagent_md_handoff" \
-    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
+    --completed-review "internal_subagent_md_handoff" \
+    --completed-review-artifact "internal_subagent_md_handoff=$internal_artifact" \
     --completed-review "external_antigravity" \
     --completed-review-artifact "external_antigravity=$stub_artifact" \
     --print-contract
@@ -291,10 +291,10 @@ EOF
     --external-review-approval-ref "user-approval-001" \
     --external-review-approved-next-step "close shadow v2 external review gate" \
     --external-review-recorded-by "main-thread-supervising-lead-architect" \
-    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "internal_subagent_md_handoff" \
     --close-required-review "external_antigravity" \
-    --completed-review "codex_subagent_md_handoff" \
-    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
+    --completed-review "internal_subagent_md_handoff" \
+    --completed-review-artifact "internal_subagent_md_handoff=$internal_artifact" \
     --completed-review "external_antigravity" \
     --completed-review-artifact "external_antigravity=$no_manifest_artifact" \
     --print-contract
@@ -308,10 +308,10 @@ EOF
     --external-review-approval-ref "user-approval-001" \
     --external-review-approved-next-step "close shadow v2 external review gate" \
     --external-review-recorded-by "main-thread-supervising-lead-architect" \
-    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "internal_subagent_md_handoff" \
     --close-required-review "external_antigravity" \
-    --completed-review "codex_subagent_md_handoff" \
-    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
+    --completed-review "internal_subagent_md_handoff" \
+    --completed-review-artifact "internal_subagent_md_handoff=$internal_artifact" \
     --completed-review "external_antigravity" \
     --completed-review-artifact "external_antigravity=$thin_artifact" \
     --print-contract
@@ -326,10 +326,10 @@ EOF
     --external-review-approval-ref "user-approval-001" \
     --external-review-approved-next-step "close shadow v2 external review gate" \
     --external-review-recorded-by "main-thread-supervising-lead-architect" \
-    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "internal_subagent_md_handoff" \
     --close-required-review "external_antigravity" \
-    --completed-review "codex_subagent_md_handoff" \
-    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
+    --completed-review "internal_subagent_md_handoff" \
+    --completed-review-artifact "internal_subagent_md_handoff=$internal_artifact" \
     --completed-review "external_antigravity" \
     --completed-review-artifact "external_antigravity=$empty_artifact" \
     --print-contract
@@ -343,10 +343,10 @@ EOF
     --external-review-approval-ref "user-approval-001" \
     --external-review-approved-next-step "close shadow v2 external review gate" \
     --external-review-recorded-by "main-thread-supervising-lead-architect" \
-    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "internal_subagent_md_handoff" \
     --close-required-review "external_antigravity" \
-    --completed-review "codex_subagent_md_handoff" \
-    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
+    --completed-review "internal_subagent_md_handoff" \
+    --completed-review-artifact "internal_subagent_md_handoff=$internal_artifact" \
     --completed-review "external_antigravity" \
     --completed-review-artifact "external_antigravity=$blocked_artifact" \
     --print-contract
@@ -361,10 +361,10 @@ EOF
     --external-review-approval-ref "user-approval-001" \
     --external-review-approved-next-step "close shadow v2 external review gate" \
     --external-review-recorded-by "main-thread-supervising-lead-architect" \
-    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "internal_subagent_md_handoff" \
     --close-required-review "external_antigravity" \
-    --completed-review "codex_subagent_md_handoff" \
-    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
+    --completed-review "internal_subagent_md_handoff" \
+    --completed-review-artifact "internal_subagent_md_handoff=$internal_artifact" \
     --completed-review "external_antigravity" \
     --completed-review-artifact "external_antigravity=$accepted_artifact" \
     --print-contract
@@ -384,9 +384,9 @@ EOF
 
   run python3 "$SHADOW_V2_SKELETON" \
     --project-root "$TEST_PROJECT" \
-    --close-required-review "codex_subagent_md_handoff" \
-    --completed-review "codex_subagent_md_handoff" \
-    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
+    --close-required-review "internal_subagent_md_handoff" \
+    --completed-review "internal_subagent_md_handoff" \
+    --completed-review-artifact "internal_subagent_md_handoff=$internal_artifact" \
     --blocked-review "external_antigravity" \
     --print-contract
 
@@ -782,7 +782,7 @@ EOF
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"# Shadow v2 Review Packet"* ]]
-  [[ "$output" == *"review_route: codex_subagent_md_handoff"* ]]
+  [[ "$output" == *"review_route: internal_subagent_md_handoff"* ]]
   [[ "$output" == *"privacy_boundary: packet_only_no_workspace_dump"* ]]
   [[ "$output" == *"review_provenance: internal_md_handoff"* ]]
   [[ "$output" == *"unsupported_by_packet: none"* ]]
@@ -956,9 +956,9 @@ EOF
 @test "shadow_v2_pipeline_wrapper blocks combined close when required external review is blocked" {
   run python3 "$SHADOW_V2_PIPELINE" \
     --project-root "$TEST_PROJECT" \
-    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "internal_subagent_md_handoff" \
     --close-required-review "external_antigravity" \
-    --completed-review "codex_subagent_md_handoff" \
+    --completed-review "internal_subagent_md_handoff" \
     --blocked-review "external_antigravity" \
     --format json
 
@@ -971,9 +971,9 @@ EOF
 
   run python3 "$SHADOW_V2_PIPELINE" \
     --project-root "$TEST_PROJECT" \
-    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "internal_subagent_md_handoff" \
     --close-required-review "external_antigravity" \
-    --completed-review "codex_subagent_md_handoff" \
+    --completed-review "internal_subagent_md_handoff" \
     --blocked-review "external_antigravity=platform_permission_blocked" \
     --format json
 
@@ -1002,10 +1002,10 @@ EOF
     --external-review-approval-ref "user-approval-001" \
     --external-review-approved-next-step "close shadow v2 external review gate" \
     --external-review-recorded-by "main-thread-supervising-lead-architect" \
-    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "internal_subagent_md_handoff" \
     --close-required-review "external_antigravity" \
-    --completed-review "codex_subagent_md_handoff" \
-    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
+    --completed-review "internal_subagent_md_handoff" \
+    --completed-review-artifact "internal_subagent_md_handoff=$internal_artifact" \
     --completed-review "external_antigravity" \
     --format json
 
@@ -1020,10 +1020,10 @@ EOF
     --external-review-approval-ref "user-approval-001" \
     --external-review-approved-next-step "close shadow v2 external review gate" \
     --external-review-recorded-by "main-thread-supervising-lead-architect" \
-    --close-required-review "codex_subagent_md_handoff" \
+    --close-required-review "internal_subagent_md_handoff" \
     --close-required-review "external_antigravity" \
-    --completed-review "codex_subagent_md_handoff" \
-    --completed-review-artifact "codex_subagent_md_handoff=$internal_artifact" \
+    --completed-review "internal_subagent_md_handoff" \
+    --completed-review-artifact "internal_subagent_md_handoff=$internal_artifact" \
     --completed-review "external_antigravity" \
     --completed-review-artifact "external_antigravity=$accepted_artifact" \
     --format json

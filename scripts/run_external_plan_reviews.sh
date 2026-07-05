@@ -874,7 +874,7 @@ ensure_orchestration_file() {
 - last_updated:
 
 Allowed primary_author_tool values: antigravity | agy | claude | codex | human | external-runner.
-Allowed review_mode values: external_cli | current_task_debate | agy_subagents | codex_subagents.
+Allowed review_mode values: external_cli | current_task_debate | agy_subagents | claude_subagents | codex_subagents.
 Allowed external_review_status values: not_requested | requested | running | awaiting_response | ingested | blocked | waived.
 Allowed external_review_required_for values: plan_acceptance | implementation_start | commit | close.
 EOF

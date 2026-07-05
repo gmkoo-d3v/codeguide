@@ -138,12 +138,12 @@ EOF'
 
 create_mock_internal_review_artifact() {
   local task_id="$1"
-  local route="${2:-codex_subagent_md_handoff}"
+  local route="${2:-internal_subagent_md_handoff}"
   local artifact="$DOCS_ROOT/report/LLM-REVIEW-${task_id}-${route}-r01.md"
 
   mkdir -p "$DOCS_ROOT/report"
   cat > "$artifact" <<EOF
-- evaluator: codex-subagent
+- evaluator: internal-subagent
 - review_route: ${route}
 - verdict: accept
 - priority_findings: none

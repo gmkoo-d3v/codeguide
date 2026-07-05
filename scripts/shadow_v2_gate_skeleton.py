@@ -49,7 +49,7 @@ NON_CONFIRMING_EVIDENCE_TYPES = {
     "final_shadow_apply",
 }
 REVIEW_ROUTES = {
-    "codex_subagent_md_handoff",
+    "internal_subagent_md_handoff",
     "runtime_independent_session_md_handoff",
     "external_antigravity",
 }
@@ -370,7 +370,7 @@ def contract_payload() -> dict[str, Any]:
         "user_fact_decision_types": sorted(USER_FACT_DECISION_TYPES),
         "non_fact_user_decision_types": ["final_shadow_apply"],
         "non_confirming_evidence_types": sorted(NON_CONFIRMING_EVIDENCE_TYPES),
-        "default_review_route": "codex_subagent_md_handoff",
+        "default_review_route": "internal_subagent_md_handoff",
         "external_review_default": "user_requested_only",
         "combined_review_close_gate": "all_required_routes_must_complete",
         "blocked_required_review_behavior": "stop_without_substitution",
@@ -575,7 +575,7 @@ def close_review_blockers(
     if (
         EXTERNAL_REVIEW_ROUTE in required_set
         and EXTERNAL_REVIEW_ROUTE in blocked_set
-        and "codex_subagent_md_handoff" in completed_set
+        and "internal_subagent_md_handoff" in completed_set
     ):
         blockers.append("sub-agent acceptance cannot substitute for blocked external antigravity review")
     return blockers
@@ -615,7 +615,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--project-id")
     parser.add_argument("--print-contract", action="store_true")
     parser.add_argument("--check-scope", action="store_true")
-    parser.add_argument("--review-route", default="codex_subagent_md_handoff")
+    parser.add_argument("--review-route", default="internal_subagent_md_handoff")
     parser.add_argument("--external-review-requested", action="store_true")
     parser.add_argument("--external-review-approval-ref")
     parser.add_argument("--external-review-approved-next-step")
