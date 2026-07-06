@@ -116,6 +116,8 @@ Use one task capsule per delegated or externally reviewed task: `docs/orchestrat
 
 Allowed primary_author_tool values: antigravity | agy | claude | codex | human | external-runner.
 Allowed review_mode values: external_cli | current_task_debate | agy_subagents | claude_subagents | codex_subagents.
+
+`review_mode: claude_subagents` runs review/analysis natively inside Claude Code instead of an external CLI, with no involvement of `config/ai_model_registry.json` or external runner scripts. Select the sub-agent model tier from the task's `risk_level`: `high`/`critical` -> deep tier (`model: sonnet`); `low`/`medium`/unset -> fast tier (`model: haiku`); an explicit user request for deep or fast analysis overrides the `risk_level` default. Claude Code sub-agent spawning only selects a model (`sonnet` | `opus` | `haiku` | `fable`), not a separate reasoning-effort dial. Independent-scope sub-agents may run in parallel in a single message; record the tier used in `reviewer_agents`/`implementation_agents` (e.g., `claude-subagent:sonnet-deep`, `claude-subagent:haiku-fast`).
 Allowed external_review_status values: not_requested | requested | running | awaiting_response | ingested | blocked | waived.
 Allowed external_review_required_for values: plan_acceptance | implementation_start | commit | close.
 Allowed orchestration lifecycle values: `execution_mode=supervisor_subagents|solo`, `delegation_status=planned|active|completed|blocked`, `risk_preflight_status=pass|approved|blocked|approval_required`, `approval_required=true|false`.

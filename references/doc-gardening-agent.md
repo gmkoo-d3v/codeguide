@@ -48,6 +48,7 @@ Recommended command flow:
   - default `execution_mode` is `solo`; delegated agent fields, external review fields, or `supervisor_subagents` require explicit `risk_preflight_status`
   - `approved` preflight requires `approval_required: true`, concrete approval metadata, and a main-thread recorder rather than evaluator/tool identity
   - supervising lead architect delegates plan drafting/review to sub-agents only when the user explicitly requested delegation or external review, preflight permits it, and the task is separable enough to justify it
+  - for `review_mode: claude_subagents`, pick the sub-agent model tier from `risk_level`: `high`/`critical` -> `model: sonnet` (deep tier), `low`/`medium`/unset -> `model: haiku` (fast tier), unless the user explicitly asked for a specific depth; independent-scope sub-agents may run in parallel in one message
   - supervising lead architect delegates implementation to coding sub-agents with disjoint ownership only when explicitly requested and practical
   - supervising lead architect runs finish sync automatically with `--task-status done` (or `blocked`)
   - bootstrap `docs/plan/PLAN-<task-id>-v1.0.md` automatically when planning artifacts are needed
