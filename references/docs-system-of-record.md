@@ -65,6 +65,8 @@ project-root/
 ```
 
 Create these project-root files if missing:
+- `<project-root>/AGENTS.md`
+- `<project-root>/CLAUDE.md`
 - `<project-root>/docs/task/project-dictionary.md`
 - `<project-root>/docs/task/task-index.md`
 - `<project-root>/docs/shadow/project-shadow.md`

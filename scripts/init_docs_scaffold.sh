@@ -76,6 +76,48 @@ write_if_missing() {
   fi
 }
 
+write_if_missing "${PROJECT_ROOT_ABS}/AGENTS.md" '# Agent Router
+
+- Treat `docs/` as the system of record.
+- For non-trivial tasks, start from `docs/shadow/project-shadow.md`.
+- Use `docs/task/task-index.md` for task state.
+- Use `docs/plan/`, `docs/report/`, `docs/decisions/`, and `docs/orchestration/` for durable plans, reviews, decisions, and handoffs.
+- Use Serena for semantic code navigation before broad file reads.
+- Keep Mem0 disabled for now; later use it only for hints, preferences, and recent-work pointers.
+- Verify tool or memory hints against direct source reads, tests, command output, or runtime evidence.
+- Keep paths as code spans like `docs/...`; do not use import syntax for documentation paths.
+- Do not store long plans, architecture dumps, secrets, or chat transcripts here.
+
+## Operating Loop
+
+1. Read this router.
+2. Read `docs/shadow/project-shadow.md` for project navigation.
+3. Read the relevant task, plan, decision, and report files.
+4. Inspect current source files and tests before editing.
+5. Update durable docs when behavior, architecture, APIs, or decisions change.
+'
+
+write_if_missing "${PROJECT_ROOT_ABS}/CLAUDE.md" '# Claude Router
+
+- Treat `docs/` as the system of record.
+- For non-trivial tasks, start from `docs/shadow/project-shadow.md`.
+- Use `docs/task/task-index.md` for task state.
+- Use `docs/plan/`, `docs/report/`, `docs/decisions/`, and `docs/orchestration/` for durable plans, reviews, decisions, and handoffs.
+- Use Serena for semantic code navigation before broad file reads.
+- Keep Mem0 disabled for now; later use it only for hints, preferences, and recent-work pointers.
+- Verify tool or memory hints against direct source reads, tests, command output, or runtime evidence.
+- Keep paths as code spans like `docs/...`; do not use `@docs/...` import syntax.
+- Do not store long plans, architecture dumps, secrets, or chat transcripts here.
+
+## Operating Loop
+
+1. Read this router.
+2. Read `docs/shadow/project-shadow.md` for project navigation.
+3. Read the relevant task, plan, decision, and report files.
+4. Inspect current source files and tests before editing.
+5. Update durable docs when behavior, architecture, APIs, or decisions change.
+'
+
 write_if_missing "${POLICY_DIR}/shadow-validator-catalog.md" '# Shadow Validator Catalog
 
 - catalog_id: shadow-validator-catalog

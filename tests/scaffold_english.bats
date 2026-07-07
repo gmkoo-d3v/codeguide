@@ -3,6 +3,10 @@
 load codeguide_helper
 
 @test "init_docs_scaffold uses project docs root directly" {
+  run test -f "$TEST_PROJECT/AGENTS.md"
+  [ "$status" -eq 0 ]
+  run test -f "$TEST_PROJECT/CLAUDE.md"
+  [ "$status" -eq 0 ]
   run test -d "$DOCS_ROOT/task"
   [ "$status" -eq 0 ]
   run test -d "$DOCS_ROOT/shadow"
@@ -44,8 +48,46 @@ load codeguide_helper
   [ "$status" -eq 0 ]
   run test ! -e "$workspace/docs"
   [ "$status" -eq 0 ]
+  run test -f "$proj/AGENTS.md"
+  [ "$status" -eq 0 ]
+  run test -f "$proj/CLAUDE.md"
+  [ "$status" -eq 0 ]
+  run test ! -e "$app_dir/AGENTS.md"
+  [ "$status" -eq 0 ]
+  run test ! -e "$app_dir/CLAUDE.md"
+  [ "$status" -eq 0 ]
 
   rm -rf "$workspace"
+}
+
+@test "init_docs_scaffold creates concise root agent routers" {
+  run grep '^- Treat `docs/` as the system of record\.' "$TEST_PROJECT/AGENTS.md"
+  [ "$status" -eq 0 ]
+  run grep '^- For non-trivial tasks, start from `docs/shadow/project-shadow.md`\.' "$TEST_PROJECT/AGENTS.md"
+  [ "$status" -eq 0 ]
+  run grep '^- Use `docs/task/task-index.md` for task state\.' "$TEST_PROJECT/AGENTS.md"
+  [ "$status" -eq 0 ]
+  run grep "^- Use Serena for semantic code navigation before broad file reads\\." "$TEST_PROJECT/AGENTS.md"
+  [ "$status" -eq 0 ]
+  run grep "^- Keep Mem0 disabled for now; later use it only for hints, preferences, and recent-work pointers\\." "$TEST_PROJECT/AGENTS.md"
+  [ "$status" -eq 0 ]
+  run grep '^- Keep paths as code spans like `docs/...`; do not use import syntax for documentation paths\.' "$TEST_PROJECT/AGENTS.md"
+  [ "$status" -eq 0 ]
+  run grep "@docs" "$TEST_PROJECT/AGENTS.md"
+  [ "$status" -ne 0 ]
+
+  run grep '^- Treat `docs/` as the system of record\.' "$TEST_PROJECT/CLAUDE.md"
+  [ "$status" -eq 0 ]
+  run grep '^- For non-trivial tasks, start from `docs/shadow/project-shadow.md`\.' "$TEST_PROJECT/CLAUDE.md"
+  [ "$status" -eq 0 ]
+  run grep '^- Use `docs/task/task-index.md` for task state\.' "$TEST_PROJECT/CLAUDE.md"
+  [ "$status" -eq 0 ]
+  run grep "^- Use Serena for semantic code navigation before broad file reads\\." "$TEST_PROJECT/CLAUDE.md"
+  [ "$status" -eq 0 ]
+  run grep "^- Keep Mem0 disabled for now; later use it only for hints, preferences, and recent-work pointers\\." "$TEST_PROJECT/CLAUDE.md"
+  [ "$status" -eq 0 ]
+  run grep '^- Keep paths as code spans like `docs/...`; do not use `@docs/...` import syntax\.' "$TEST_PROJECT/CLAUDE.md"
+  [ "$status" -eq 0 ]
 }
 
 @test "init_docs_scaffold creates shadow graph scaffold files" {
@@ -237,10 +279,16 @@ EOF
   "$INIT_SCAFFOLD" "$proj"
   # Modify a file to verify it's not overwritten
   echo "custom content" >> "$docs_root/task/project-dictionary.md"
+  echo "custom agent content" >> "$proj/AGENTS.md"
+  echo "custom claude content" >> "$proj/CLAUDE.md"
 
   "$INIT_SCAFFOLD" "$proj"
   # File should still have our custom content (not reset)
   run grep "custom content" "$docs_root/task/project-dictionary.md"
+  [ "$status" -eq 0 ]
+  run grep "custom agent content" "$proj/AGENTS.md"
+  [ "$status" -eq 0 ]
+  run grep "custom claude content" "$proj/CLAUDE.md"
   [ "$status" -eq 0 ]
 
   rm -rf "$workspace"
