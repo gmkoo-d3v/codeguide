@@ -2446,3 +2446,583 @@ EOF
   [[ "$output" == *"orphaned claim directory with no matching task file"* ]]
   [[ "$output" == *"docs/task/.claims/claim-ghost-01"* ]]
 }
+
+@test "validate_docs advisory warns when a bucket index overview_doc reference does not resolve" {
+  cat >> "$DOCS_ROOT/shadow/apps/_index.md" <<'EOF'
+- unit_id: app-a
+  - overview_doc: apps/app-a/overview.md
+  - secondary_tags: web
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow navigation reference does not resolve"* ]]
+  [[ "$output" == *"overview_doc -> apps/app-a/overview.md"* ]]
+}
+
+@test "validate_docs advisory warns when a redirect shim canonical_path does not resolve" {
+  cat > "$DOCS_ROOT/shadow/legacy-shadow.md" <<'EOF'
+# Shadow Redirect
+
+- doc_role: redirect_shim
+- legacy_path: docs/shadow/legacy-shadow.md
+- canonical_path: docs/shadow/apps/app-a/overview.md
+- redirects_fact_scope: unit:app-a:overview
+- deprecated_since: 2026-04-15
+- status: redirected
+- edit_policy: read_only
+- replacement_reason: moved into topology-first shadow graph
+- last_updated: 2026-04-15T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow navigation reference does not resolve"* ]]
+  [[ "$output" == *"canonical_path -> docs/shadow/apps/app-a/overview.md"* ]]
+}
+
+@test "validate_docs advisory warns when a unit overview next_docs reference dangles" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: apps
+- next_docs: apps/app-a/auth.md
+- source_of_truth_paths: src/app_a/auth.py
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  # Item 4 (source-path existence) would otherwise legitimately flag this code path;
+  # create it so this test isolates the navigation-link behavior it is about.
+  mkdir -p "$TEST_PROJECT/src/app_a"
+  printf 'x=1\n' > "$TEST_PROJECT/src/app_a/auth.py"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow navigation reference does not resolve"* ]]
+  [[ "$output" == *"next_docs -> apps/app-a/auth.md"* ]]
+  # source_of_truth code paths are not .md and must not be flagged by this check
+  [[ "$output" != *"src/app_a/auth.py"* ]]
+}
+
+@test "validate_docs advisory passes navigation links when every referenced doc exists" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat >> "$DOCS_ROOT/shadow/apps/_index.md" <<'EOF'
+- unit_id: app-a
+  - overview_doc: apps/app-a/overview.md
+  - secondary_tags: web
+EOF
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: apps
+- next_docs: apps/app-a/auth.md
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  cat > "$DOCS_ROOT/shadow/apps/app-a/auth.md" <<'EOF'
+# Shadow Concern
+
+- doc_role: concern_leaf
+- concern_id: auth
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow navigation references resolve to real files"* ]]
+  [[ "$output" != *"shadow navigation reference does not resolve"* ]]
+}
+
+@test "validate_docs strict skips the advisory navigation link check (recommended tier)" {
+  cat >> "$DOCS_ROOT/shadow/apps/_index.md" <<'EOF'
+- unit_id: app-a
+  - overview_doc: apps/app-a/overview.md
+  - secondary_tags: web
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  # A dangling nav reference alone must not turn strict red, and the advisory-only
+  # navigation warning must not be emitted in strict mode.
+  [[ "$output" != *"shadow navigation reference does not resolve"* ]]
+}
+
+@test "validate_docs advisory resolves Markdown-link next_docs syntax without a false positive" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: apps
+- next_docs: [Auth Flow](apps/app-a/auth.md)
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  cat > "$DOCS_ROOT/shadow/apps/app-a/auth.md" <<'EOF'
+# Shadow Concern
+
+- doc_role: concern_leaf
+- concern_id: auth
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"shadow navigation reference does not resolve"* ]]
+}
+
+@test "validate_docs advisory ignores navigation references inside fenced code examples" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: apps
+- last_updated: 2026-01-01T00:00:00Z
+
+## Authoring example
+
+```markdown
+- canonical_path: docs/shadow/apps/example/never-created.md
+```
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"never-created.md"* ]]
+}
+
+@test "validate_docs advisory catches a dangling reference in a nested-list next_docs block" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: apps
+- next_docs:
+  - apps/app-a/missing-leaf.md
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow navigation reference does not resolve"* ]]
+  [[ "$output" == *"next_docs -> apps/app-a/missing-leaf.md"* ]]
+}
+
+@test "validate_docs advisory does not let an unrelated same-named file mask a dangling shadow ref" {
+  # A real dangling ref: apps/app-a/api.md does not exist under the shadow tree.
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: apps
+- next_docs: apps/app-a/api.md
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  # A decoy with the same basename elsewhere in the project must not mask it.
+  printf '# decoy\n' > "$DOCS_ROOT/api.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow navigation reference does not resolve"* ]]
+  [[ "$output" == *"next_docs -> apps/app-a/api.md"* ]]
+}
+
+@test "validate_docs advisory de-duplicates a repeated dangling navigation reference" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: apps
+- next_docs: apps/app-a/missing.md, apps/app-a/missing.md
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  local hits
+  hits="$(printf '%s\n' "$output" | grep -c 'next_docs -> apps/app-a/missing.md')"
+  [ "$hits" -eq 1 ]
+}
+
+_seed_source_digest_overview() {
+  mkdir -p "$TEST_PROJECT/src" "$DOCS_ROOT/shadow/apps/app-a"
+  printf 'def login():\n    return True\n' > "$TEST_PROJECT/src/auth.py"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: apps
+- source_of_truth_paths: src/auth.py
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  python3 "$SCRIPTS_DIR/shadow_source_digest.py" \
+    "$DOCS_ROOT/shadow/apps/app-a/overview.md" --project-root "$TEST_PROJECT" --write
+}
+
+@test "validate_docs advisory passes when a shadow source-of-truth digest matches current source" {
+  _seed_source_digest_overview
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow source-of-truth digests verified against current source"* ]]
+  [[ "$output" != *"digest drift"* ]]
+}
+
+@test "validate_docs advisory warns on source-of-truth digest drift when source content changes" {
+  _seed_source_digest_overview
+  printf 'def login():\n    return False  # changed\n' > "$TEST_PROJECT/src/auth.py"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow source-of-truth digest drift"* ]]
+  [[ "$output" == *"apps/app-a/overview.md"* ]]
+}
+
+@test "validate_docs advisory warns when a declared source-of-truth path is deleted" {
+  _seed_source_digest_overview
+  rm "$TEST_PROJECT/src/auth.py"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow source-of-truth declared path does not exist: src/auth.py"* ]]
+}
+
+@test "validate_docs advisory is silent about source digest when a doc does not opt in" {
+  mkdir -p "$TEST_PROJECT/src" "$DOCS_ROOT/shadow/apps/app-a"
+  printf 'x = 1\n' > "$TEST_PROJECT/src/auth.py"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: apps
+- source_of_truth_paths: src/auth.py
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"digest drift"* ]]
+  [[ "$output" != *"source-of-truth digests verified"* ]]
+}
+
+@test "validate_docs strict skips the advisory source-of-truth digest check" {
+  _seed_source_digest_overview
+  printf 'def login():\n    return False\n' > "$TEST_PROJECT/src/auth.py"
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [[ "$output" != *"digest drift"* ]]
+}
+
+@test "doc_garden does not write or alter source_of_truth_digest (freshness must stay content-bound)" {
+  _seed_source_digest_overview
+  local before after
+  before="$(grep 'source_of_truth_digest' "$DOCS_ROOT/shadow/apps/app-a/overview.md")"
+  "$DOC_GARDEN" "$TEST_PROJECT" --task-id t-digest --task-title x --task-status in_progress --shadow-note "touch" >/dev/null 2>&1
+  after="$(grep 'source_of_truth_digest' "$DOCS_ROOT/shadow/apps/app-a/overview.md")"
+  [ -n "$before" ]
+  [ "$before" = "$after" ]
+}
+
+@test "shadow source digest detects drift in the mixed inline+nested source_of_truth_paths form" {
+  mkdir -p "$TEST_PROJECT/src" "$DOCS_ROOT/shadow/apps/app-a"
+  printf 'a=1\n' > "$TEST_PROJECT/src/a.py"
+  printf 'b=1\n' > "$TEST_PROJECT/src/b.py"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- source_of_truth_paths: src/a.py
+  - src/b.py
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  python3 "$SCRIPTS_DIR/shadow_source_digest.py" \
+    "$DOCS_ROOT/shadow/apps/app-a/overview.md" --project-root "$TEST_PROJECT" --write
+  # Mutating the NESTED path must be detected (this was a silent false negative).
+  printf 'b=2\n' > "$TEST_PROJECT/src/b.py"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow source-of-truth digest drift"* ]]
+}
+
+@test "shadow source digest --write does not corrupt the pure nested-bullet form" {
+  mkdir -p "$TEST_PROJECT/src" "$DOCS_ROOT/shadow/apps/app-a"
+  printf 'a=1\n' > "$TEST_PROJECT/src/a.py"
+  printf 'c=1\n' > "$TEST_PROJECT/src/c.py"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- source_of_truth_paths:
+  - src/a.py
+  - src/c.py
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  run python3 "$SCRIPTS_DIR/shadow_source_digest.py" \
+    "$DOCS_ROOT/shadow/apps/app-a/overview.md" --project-root "$TEST_PROJECT" --write
+  [ "$status" -eq 0 ]
+  # After writing, the doc must still parse: --check reports ok, not no_paths.
+  run python3 "$SCRIPTS_DIR/shadow_source_digest.py" \
+    "$DOCS_ROOT/shadow/apps/app-a/overview.md" --project-root "$TEST_PROJECT" --check
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"status: ok"* ]]
+  [[ "$output" != *"no_paths"* ]]
+}
+
+@test "validate_docs advisory warns when a declared source-of-truth path escapes the project root" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  printf 'secret\n' > "$TEST_WORKSPACE/outside.txt"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- source_of_truth_paths: ../outside.txt
+- source_of_truth_digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"escapes the project root: ../outside.txt"* ]]
+}
+
+@test "doc_garden does not ADD a source_of_truth_digest to a doc that has none" {
+  mkdir -p "$TEST_PROJECT/src" "$DOCS_ROOT/shadow/apps/app-a"
+  printf 'a=1\n' > "$TEST_PROJECT/src/a.py"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- source_of_truth_paths: src/a.py
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  "$DOC_GARDEN" "$TEST_PROJECT" --task-id t-noadd --task-title x --task-status in_progress --shadow-note "touch" >/dev/null 2>&1
+  run grep -c 'source_of_truth_digest' "$DOCS_ROOT/shadow/apps/app-a/overview.md"
+  [[ "$output" == "0" ]]
+}
+
+@test "validate_docs advisory warns on a dead source_of_truth path in a digest-less doc" {
+  mkdir -p "$TEST_PROJECT/src" "$DOCS_ROOT/shadow/apps/app-a"
+  printf 'a=1\n' > "$TEST_PROJECT/src/auth.py"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- source_of_truth_paths: src/auth.py, src/gone.py
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow source_of_truth path does not exist: src/gone.py"* ]]
+}
+
+@test "validate_docs advisory warns on an escaping source_of_truth path in a digest-less doc" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  printf 'x\n' > "$TEST_WORKSPACE/outside.txt"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- source_of_truth_paths: ../outside.txt
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow source_of_truth path escapes the project root: ../outside.txt"* ]]
+}
+
+@test "validate_docs advisory is silent when digest-less source_of_truth paths all exist" {
+  mkdir -p "$TEST_PROJECT/src" "$DOCS_ROOT/shadow/apps/app-a"
+  printf 'a=1\n' > "$TEST_PROJECT/src/auth.py"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- source_of_truth_paths: src/auth.py
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow source_of_truth_paths all resolve to real in-project files"* ]]
+  [[ "$output" != *"source_of_truth path does not exist"* ]]
+}
+
+@test "validate_docs does not double-warn a dead source when the doc carries a digest" {
+  mkdir -p "$TEST_PROJECT/src" "$DOCS_ROOT/shadow/apps/app-a"
+  printf 'a=1\n' > "$TEST_PROJECT/src/auth.py"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- source_of_truth_paths: src/auth.py
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  python3 "$SCRIPTS_DIR/shadow_source_digest.py" \
+    "$DOCS_ROOT/shadow/apps/app-a/overview.md" --project-root "$TEST_PROJECT" --write
+  # Now the source disappears: the digest check owns this doc, the paths-exist check skips it.
+  rm "$TEST_PROJECT/src/auth.py"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  # The digest check reports the missing source; the paths-exist check must NOT also fire.
+  [[ "$output" == *"shadow source-of-truth declared path does not exist: src/auth.py"* ]]
+  [[ "$output" != *"shadow source_of_truth path does not exist: src/auth.py"* ]]
+}
+
+@test "validate_docs advisory is not silenced by an EMPTY source_of_truth_digest field" {
+  mkdir -p "$TEST_PROJECT/src" "$DOCS_ROOT/shadow/apps/app-a"
+  printf 'a=1\n' > "$TEST_PROJECT/src/auth.py"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- source_of_truth_paths: src/auth.py, src/gone.py
+- source_of_truth_digest:
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  # A bare (empty) digest line must NOT let the dead source escape the check.
+  [[ "$output" == *"shadow source_of_truth path does not exist: src/gone.py"* ]]
+}
+
+@test "validate_docs advisory is not silenced by a fenced source_of_truth_digest example" {
+  mkdir -p "$TEST_PROJECT/src" "$DOCS_ROOT/shadow/apps/app-a"
+  printf 'a=1\n' > "$TEST_PROJECT/src/auth.py"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- source_of_truth_paths: src/auth.py, src/gone.py
+- last_updated: 2026-01-01T00:00:00Z
+
+```markdown
+- source_of_truth_digest: sha256:deadbeef
+```
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow source_of_truth path does not exist: src/gone.py"* ]]
+}
+
+@test "validate_docs does not abort the whole run on a malformed (NUL-byte) source path" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  printf '# Shadow Unit Overview\n- doc_role: unit_overview\n- source_of_truth_paths: src/a\000b.py\n- last_updated: 2026-01-01T00:00:00Z\n' \
+    > "$DOCS_ROOT/shadow/apps/app-a/overview.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  # The malformed path must be handled (missing), and the script must run to the end
+  # (the final [RESULT] line proves it did not abort mid-run under set -e).
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[RESULT]"* ]]
+}
+
+@test "validate_docs advisory passes a well-formed unit overview schema" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: apps
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow unit/concern docs have valid schema"* ]]
+}
+
+@test "validate_docs advisory warns when a unit overview is missing home_bucket" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow unit overview missing home_bucket"* ]]
+}
+
+@test "validate_docs advisory warns when a unit overview home_bucket is not a known bucket" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: widgets
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"home_bucket is not a known bucket (widgets)"* ]]
+}
+
+@test "validate_docs advisory warns when a concern leaf is missing concern_id" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/auth.md" <<'EOF'
+# Shadow Concern
+
+- doc_role: concern_leaf
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow concern leaf missing concern_id"* ]]
+}
+
+@test "validate_docs strict skips the advisory unit schema check" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [[ "$output" != *"shadow unit overview missing home_bucket"* ]]
+}
+
+@test "validate_docs advisory does not treat a fenced doc_role example as a carrier doc" {
+  mkdir -p "$DOCS_ROOT/shadow/apps"
+  cat > "$DOCS_ROOT/shadow/apps/readme.md" <<'EOF'
+# How to write a shadow unit overview
+
+An overview looks like:
+
+```markdown
+- doc_role: unit_overview
+- home_bucket: apps
+```
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"shadow unit overview missing"* ]]
+  [[ "$output" != *"shadow unit/concern docs have valid schema"* ]]
+}
+
+@test "validate_docs advisory surfaces an indented unit overview instead of skipping it" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  printf '# Shadow Unit Overview\n  - doc_role: unit_overview\n  - last_updated: 2026-01-01T00:00:00Z\n' \
+    > "$DOCS_ROOT/shadow/apps/app-a/overview.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow unit overview missing home_bucket"* ]]
+}
+
+@test "validate_docs advisory passes a well-formed concern leaf" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/auth.md" <<'EOF'
+# Shadow Concern
+
+- doc_role: concern_leaf
+- concern_id: auth-flow-01
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shadow unit/concern docs have valid schema"* ]]
+}
+
+@test "validate_docs advisory takes the first non-empty concern_id, ignoring an empty stub" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  printf '# Shadow Concern\n- doc_role: concern_leaf\n- concern_id:\n- concern_id: auth-flow-01\n' \
+    > "$DOCS_ROOT/shadow/apps/app-a/auth.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"shadow concern leaf missing concern_id"* ]]
+}

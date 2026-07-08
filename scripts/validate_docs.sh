@@ -1126,6 +1126,325 @@ check_shadow_graph_tracks_doc_updates() {
   done
 }
 
+# Advisory-only (recommended tier): every navigation reference in a shadow doc
+# that names a Markdown target must resolve to a real file. This catches a
+# rotting read path (dangling overview_doc/next_docs/bucket_links/global_doc, or a
+# redirect shim whose canonical_path no longer exists) without breaking existing
+# corpora, so it is guarded to advisory mode by the caller (same tier as
+# owner/claimed_at). Only values that end in .md are resolved, which excludes tags,
+# prose, ids, and source_of_truth code paths (those are covered by other checks).
+check_shadow_navigation_links() {
+  local issue_output
+
+  issue_output="$(python3 - "$SHADOW_DIR" "$PROJECT_ROOT_ABS" "$DOCS_DIR" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+shadow_dir = Path(sys.argv[1])
+project_root = Path(sys.argv[2])
+docs_dir = Path(sys.argv[3])
+
+path_fields = ("canonical_path", "overview_doc", "next_docs", "bucket_links", "global_doc")
+fields_alt = "|".join(path_fields)
+# A path field with an inline value on the same line.
+inline_re = re.compile(r"^\s*-\s*(" + fields_alt + r")\s*:\s*(\S.*?)\s*$")
+# A bare path-field header whose values are nested bullet lines beneath it.
+header_re = re.compile(r"^(\s*)-\s*(" + fields_alt + r")\s*:\s*$")
+bullet_re = re.compile(r"^(\s*)-\s+(.*?)\s*$")
+# A doc token is a run of path characters ending in .md. The restricted class
+# stops the greedy match at Markdown link punctuation, so [label](auth.md) and
+# <auth.md> both yield the bare path auth.md rather than a garbled token.
+token_re = re.compile(r"[A-Za-z0-9._/-]+\.md\b")
+fence = chr(96) * 3
+
+
+def resolves(ref_file: Path, token: str) -> bool:
+    token = token.strip()
+    if not token:
+        return True
+    candidate = Path(token)
+    if candidate.is_absolute():
+        try:
+            return candidate.resolve(strict=False).is_file()
+        except OSError:
+            return False
+    # Precise bases: docs/-prefixed refs (redirect shims) are project-root
+    # relative; every other shadow ref resolves against the shadow root or the
+    # directory of the referencing doc. This avoids a whole-project search that
+    # would let an unrelated same-named file mask a genuinely dangling ref.
+    if token.startswith("docs/"):
+        bases = (project_root,)
+    else:
+        bases = (shadow_dir, ref_file.parent)
+    for base in bases:
+        try:
+            if (base / candidate).resolve(strict=False).is_file():
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def scan_value(ref_file: Path, field: str, value: str, issues: list) -> None:
+    for token in token_re.findall(value):
+        if not resolves(ref_file, token):
+            issues.append((str(ref_file), field, token))
+
+
+issues = []
+for md in sorted(shadow_dir.rglob("*.md")):
+    rel_parts = md.relative_to(shadow_dir).parts
+    if rel_parts and rel_parts[0] in ("_deprecated", "_obsolete"):
+        continue
+    try:
+        lines = md.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        continue
+    in_fence = False
+    pending_field = None
+    pending_indent = -1
+    for line in lines:
+        if line.lstrip().startswith(fence):
+            in_fence = not in_fence
+            pending_field = None
+            continue
+        if in_fence:
+            continue
+        inline = inline_re.match(line)
+        if inline:
+            pending_field = None
+            scan_value(md, inline.group(1), inline.group(2), issues)
+            continue
+        header = header_re.match(line)
+        if header:
+            pending_field = header.group(2)
+            pending_indent = len(header.group(1))
+            continue
+        if pending_field is not None:
+            bullet = bullet_re.match(line)
+            if bullet and len(bullet.group(1)) > pending_indent:
+                scan_value(md, pending_field, bullet.group(2), issues)
+                continue
+            if line.strip():
+                pending_field = None
+
+seen = set()
+for ref_file, field, token in issues:
+    key = (ref_file, field, token)
+    if key in seen:
+        continue
+    seen.add(key)
+    print(f"{ref_file}\t{field}\t{token}")
+PY
+)"
+
+  if [[ -n "$issue_output" ]]; then
+    while IFS=$'\t' read -r ref_file field token; do
+      [[ -n "$ref_file" ]] && fail "shadow navigation reference does not resolve: ${field} -> ${token} (${ref_file}); fix the link or remove the stale reference"
+    done <<< "$issue_output"
+  else
+    pass "shadow navigation references resolve to real files"
+  fi
+}
+
+# Advisory-only (recommended tier): for any shadow doc that has opted in by carrying
+# a source_of_truth_digest, recompute the digest of its declared source_of_truth_paths
+# and warn on drift or a missing declared source. This binds freshness to source
+# CONTENT (not a timestamp that doc_garden auto-bumps). The digest algorithm lives in
+# scripts/shadow_source_digest.py; this only consumes its --check result.
+check_shadow_source_digest() {
+  local digest_helper="$SCRIPT_DIR/shadow_source_digest.py"
+  if [[ ! -f "$digest_helper" ]]; then
+    return 0
+  fi
+  local checked=0
+  local problems=0
+  local shadow_doc
+  local result
+  local rc
+  local line
+  local status_line
+  while IFS= read -r shadow_doc; do
+    grep -qE "^[[:space:]]*-[[:space:]]*source_of_truth_digest:" "$shadow_doc" 2>/dev/null || continue
+    checked=1
+    # `if !` keeps a helper crash from aborting the whole run under `set -e`.
+    if ! result="$(python3 "$digest_helper" "$shadow_doc" --project-root "$PROJECT_ROOT_ABS" --check 2>/dev/null)"; then
+      fail "could not verify shadow source-of-truth digest (helper error): $shadow_doc"
+      problems=1
+      continue
+    fi
+    status_line=""
+    while IFS= read -r line; do
+      case "$line" in
+        "status: "*) status_line="${line#status: }" ;;
+        "missing: "*)
+          fail "shadow source-of-truth declared path does not exist: ${line#missing: } ($shadow_doc)"
+          problems=1
+          ;;
+        "escaped: "*)
+          fail "shadow source-of-truth declared path escapes the project root: ${line#escaped: } ($shadow_doc)"
+          problems=1
+          ;;
+      esac
+    done <<< "$result"
+    if [[ -z "$status_line" ]]; then
+      fail "could not verify shadow source-of-truth digest (helper error): $shadow_doc"
+      problems=1
+      continue
+    fi
+    case "$status_line" in
+      drift)
+        fail "shadow source-of-truth digest drift, source changed since last verification: $shadow_doc; re-verify then rerun scripts/shadow_source_digest.py --write"
+        problems=1
+        ;;
+      no_paths)
+        fail "shadow source_of_truth_digest present but no source_of_truth_paths declared: $shadow_doc"
+        problems=1
+        ;;
+    esac
+  done < <(
+    find "$SHADOW_DIR" -type f -name '*.md' \
+      ! -path "$SHADOW_DIR/_deprecated/*" \
+      ! -path "$SHADOW_DIR/_obsolete/*" \
+      | sort
+  )
+  if (( checked == 1 && problems == 0 )); then
+    pass "shadow source-of-truth digests verified against current source"
+  fi
+}
+
+# Advisory-only (recommended tier): every source_of_truth_paths entry must resolve to
+# a real in-project file. This catches a dead/renamed/typo source pointer even when the
+# doc has not opted into a source_of_truth_digest. Docs that DO carry a digest are
+# skipped here because check_shadow_source_digest already reports their missing/escaped
+# sources; this avoids duplicate warnings.
+check_shadow_source_paths_exist() {
+  local digest_helper="$SCRIPT_DIR/shadow_source_digest.py"
+  if [[ ! -f "$digest_helper" ]]; then
+    return 0
+  fi
+  local checked=0
+  local problems=0
+  local shadow_doc
+  local result
+  local line
+  local has_paths
+  local has_digest
+  while IFS= read -r shadow_doc; do
+    # Cheap pre-filter only; the skip/report decision below is parser-backed.
+    grep -qE "source_of_truth_paths" "$shadow_doc" 2>/dev/null || continue
+    # `if !` keeps a helper crash from aborting the whole run under `set -e`.
+    if ! result="$(python3 "$digest_helper" "$shadow_doc" --project-root "$PROJECT_ROOT_ABS" --verify-paths 2>/dev/null)"; then
+      fail "could not verify shadow source_of_truth_paths (helper error): $shadow_doc"
+      problems=1
+      continue
+    fi
+    has_paths=""
+    has_digest=""
+    while IFS= read -r line; do
+      case "$line" in
+        "has_paths: "*) has_paths="${line#has_paths: }" ;;
+        "has_digest: "*) has_digest="${line#has_digest: }" ;;
+      esac
+    done <<< "$result"
+    # Parser-backed gating: skip docs with no real declared paths, and docs that carry
+    # a real digest (check_shadow_source_digest owns those). Deciding this from the
+    # fence-aware parser rather than a raw grep closes the empty/fenced-field evasion
+    # where a bare or fenced source_of_truth_digest line silenced this check.
+    [[ "$has_paths" == "true" ]] || continue
+    [[ "$has_digest" == "true" ]] && continue
+    checked=1
+    while IFS= read -r line; do
+      case "$line" in
+        "missing: "*)
+          fail "shadow source_of_truth path does not exist: ${line#missing: } ($shadow_doc)"
+          problems=1
+          ;;
+        "escaped: "*)
+          fail "shadow source_of_truth path escapes the project root: ${line#escaped: } ($shadow_doc)"
+          problems=1
+          ;;
+      esac
+    done <<< "$result"
+  done < <(
+    find "$SHADOW_DIR" -type f -name '*.md' \
+      ! -path "$SHADOW_DIR/_deprecated/*" \
+      ! -path "$SHADOW_DIR/_obsolete/*" \
+      | sort
+  )
+  if (( checked == 1 && problems == 0 )); then
+    pass "shadow source_of_truth_paths all resolve to real in-project files"
+  fi
+}
+
+# Fence-aware reader for a top-level "- key:" field: returns the first non-empty value
+# that is NOT inside a fenced code example, tolerating leading indentation. This avoids
+# treating a fenced template example as a real field, surfaces indented carriers instead
+# of silently skipping them, and skips an empty stub in favour of a later real value.
+extract_shadow_field() {
+  local file_path="$1"
+  local key="$2"
+  awk -v key="$key" '
+    function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
+    /^[[:space:]]*(```|~~~)/ { infence = !infence; next }
+    infence { next }
+    {
+      pat = "^[[:space:]]*-[[:space:]]*" key ":"
+      if ($0 ~ pat) {
+        val = $0
+        sub(pat, "", val)
+        val = trim(val)
+        if (val != "") { print val; exit }
+      }
+    }
+  ' "$file_path" 2>/dev/null
+}
+
+# Advisory-only (recommended tier): the shadow value-carrier docs (unit_overview,
+# concern_leaf) have no field validation elsewhere -- only the line-limit and effect_map
+# checks touch them. Verify the minimal IDENTIFYING schema (home_bucket / concern_id) so a
+# malformed carrier is surfaced, without enforcing optional fields like last_updated
+# (which has a documented mtime fallback elsewhere). Other doc_roles keep their own checks.
+check_shadow_unit_schema() {
+  local shadow_doc
+  local doc_role
+  local bucket_value
+  local checked=0
+  local problems=0
+  while IFS= read -r shadow_doc; do
+    doc_role="$(extract_shadow_field "$shadow_doc" "doc_role")"
+    case "$doc_role" in
+      unit_overview)
+        checked=1
+        bucket_value="$(extract_shadow_field "$shadow_doc" "home_bucket")"
+        if [[ -z "$bucket_value" ]]; then
+          fail "shadow unit overview missing home_bucket: $shadow_doc"
+          problems=1
+        elif ! printf '%s\n' "${SHADOW_BUCKETS[@]}" | grep -qxF -- "$bucket_value"; then
+          fail "shadow unit overview home_bucket is not a known bucket (${bucket_value}): $shadow_doc"
+          problems=1
+        fi
+        ;;
+      concern_leaf)
+        checked=1
+        if [[ -z "$(extract_shadow_field "$shadow_doc" "concern_id")" ]]; then
+          fail "shadow concern leaf missing concern_id: $shadow_doc"
+          problems=1
+        fi
+        ;;
+    esac
+  done < <(
+    find "$SHADOW_DIR" -type f -name '*.md' \
+      ! -path "$SHADOW_DIR/_deprecated/*" \
+      ! -path "$SHADOW_DIR/_obsolete/*" \
+      | sort
+  )
+  if (( checked == 1 && problems == 0 )); then
+    pass "shadow unit/concern docs have valid schema"
+  fi
+}
+
 check_file_exists() {
   local file_path="$1"
   local label="$2"
@@ -2720,6 +3039,17 @@ done
 
 if [[ -d "$SHADOW_DIR" && ${#SHADOW_TRACKED_FILES[*]} -gt 0 ]]; then
   check_shadow_graph_tracks_doc_updates "${SHADOW_TRACKED_FILES[@]}"
+fi
+
+# Navigation link integrity is advisory-only (recommended tier): it warns on a
+# rotting read path but is skipped in strict mode so existing shadow corpora with
+# in-progress references are not blocked. Escalation to strict is a deliberate
+# follow-up once corpora are known clean.
+if [[ -d "$SHADOW_DIR" && "$MODE" != "strict" ]]; then
+  check_shadow_navigation_links
+  check_shadow_source_digest
+  check_shadow_source_paths_exist
+  check_shadow_unit_schema
 fi
 
 # --- Task file checks ---

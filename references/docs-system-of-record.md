@@ -322,6 +322,13 @@ Use a concern leaf doc for concrete facts only.
 - last_updated:
 ```
 
+### Source-of-truth digest (optional, freshness binding)
+
+A unit overview or concern leaf that lists `source_of_truth_paths` may optionally add a `source_of_truth_digest` field to bind the doc to the current CONTENT of those sources, so freshness is checked against what the source actually is rather than a timestamp. It is opt-in and advisory:
+
+- Write it only with `scripts/shadow_source_digest.py <doc> --project-root <root> --write`. It is a deliberate verification assertion — `doc_garden.sh` and the scaffold never write or bump it.
+- `scripts/validate_docs.sh --mode advisory` recomputes the digest (via `--check`) and warns on drift (source changed since last verification), a missing declared source, or a source path that escapes the project root. Strict mode skips it (recommended tier).
+
 ### Effect Map Leaf Template
 
 Use `doc_role: effect_map` only for shadow docs that record side-effect entries under the Shadow Effect Map Workflow Contract. Effect maps are concern-leaf style docs with a stricter writer gate; they must not replace routers, bucket indexes, unit overviews, or general navigation summaries.
