@@ -35,6 +35,61 @@ codeguide_is_skill_package_root() {
   [[ -d "$candidate_root/scripts" || -d "$candidate_root/references" || -d "$candidate_root/tests" ]] || return 1
 }
 
+codeguide_source_root() {
+  # Resolve the git repository that owns the project's SOURCE code, as opposed
+  # to the docs system-of-record root. In the reusable-skills layout the docs
+  # root sits one level ABOVE the skill's own repo (and may itself be a
+  # docs-only local repo), so git operations must not target the docs root.
+  # CODEGUIDE_SOURCE_ROOT overrides all detection for ambiguous layouts.
+  local input_root="$1"
+  local input_abs
+  local git_root
+  local project_root
+  local candidate=""
+  local child
+
+  # Emit physical paths from every branch: git prints physical toplevels, so
+  # scan-derived results must match (macOS /var vs /private/var).
+  if [[ -n "${CODEGUIDE_SOURCE_ROOT:-}" ]]; then
+    (cd "$CODEGUIDE_SOURCE_ROOT" 2>/dev/null && pwd -P) && return 0
+    echo "[WARN] CODEGUIDE_SOURCE_ROOT is not a readable directory: ${CODEGUIDE_SOURCE_ROOT}" >&2
+    return 1
+  fi
+
+  input_abs="$(cd "$input_root" && pwd -P)" || return 1
+  git_root="$(git -C "$input_abs" rev-parse --show-toplevel 2>/dev/null || true)"
+
+  if [[ -n "$git_root" ]] && codeguide_is_skill_package_root "$git_root"; then
+    printf "%s" "$git_root"
+    return 0
+  fi
+
+  project_root="$(codeguide_resolve_project_root "$input_root")"
+
+  for child in "$project_root"/*/; do
+    child="${child%/}"
+    [[ -d "$child" && -e "$child/.git" ]] || continue
+    codeguide_is_skill_package_root "$child" || continue
+    if [[ -n "$candidate" ]]; then
+      echo "[WARN] Multiple skill-package source repositories under ${project_root}; set CODEGUIDE_SOURCE_ROOT to disambiguate." >&2
+      return 1
+    fi
+    candidate="$child"
+  done
+
+  if [[ -n "$candidate" ]]; then
+    (cd "$candidate" && pwd -P)
+    return 0
+  fi
+
+  if git -C "$project_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "$project_root" rev-parse --show-toplevel
+    return 0
+  fi
+
+  return 1
+}
+
 codeguide_docs_root() {
   local project_root_abs="$1"
 

@@ -15,6 +15,8 @@ Default assumption:
 - Default operation is zero-command for the user when docs lifecycle is justified; the agent runs docs lifecycle commands for material architecture, multi-file, cross-service, delegated, or durable planning work.
 - Skip docs lifecycle commands for small direct answers and trivial edits unless the user explicitly requests documentation sync.
 - Reusable skills projects are the only built-in docs-root exception: if a git root is itself a skill package with `SKILL.md` metadata, has no local `docs/`, and its parent has `docs/`, scripts may use the parent as the system-of-record root. Ordinary app/service repositories must keep docs inside their own project root.
+- Source root vs docs root: git-dependent behavior (branch-based task inference, `git_diff` shadow refresh, impact/coverage change sets) targets the SOURCE repository resolved by `codeguide_source_root` (bash) / `codeguide_paths.source_root_for` (python), never the docs root. In the skills layout the source root is the skill package's own repo; a docs-only local repo at the docs root must not supply change sets. `CODEGUIDE_SOURCE_ROOT` overrides detection; an ambiguous layout (multiple skill-package child repos) fails loudly instead of guessing, and a missing source repo downgrades to non-git fallbacks with an explicit warning.
+- The docs root may be tracked in a local-only git repo (no remote, never pushed) for history and rollback; docs must never be absorbed into a distributed source/skill repo.
 
 ## Data safety rules
 - Empty values never overwrite existing non-empty fields during doc-gardening. Use `--allow-empty-overwrite` to explicitly clear a field.

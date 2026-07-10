@@ -25,6 +25,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from codeguide_paths import source_root_for  # DRY: shared source-repo resolution policy
 from shadow_source_digest import read_source_paths  # DRY: same parser as the digest tool
 
 
@@ -46,18 +47,6 @@ def git_ok(args: list[str], cwd: Path) -> bool:
     except (OSError, subprocess.CalledProcessError):
         return False
     return True
-
-
-def git_toplevel(start: Path) -> Path | None:
-    try:
-        out = subprocess.run(
-            ["git", "-C", str(start), "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, check=True,
-        )
-    except (OSError, subprocess.CalledProcessError):
-        return None
-    top = out.stdout.strip()
-    return Path(top).resolve(strict=False) if top else None
 
 
 def git_lines(args: list[str], cwd: Path) -> list[str]:
@@ -82,7 +71,8 @@ def changed_abs_paths(args: argparse.Namespace, project_root: Path, git_root: Pa
 
     if git_root is None:
         raise RuntimeError(
-            "docs root is not inside a git repository; pass --changed-file to supply the change set explicitly"
+            "project root is not inside a git repository and no source repo was found; "
+            "pass --changed-file to supply the change set explicitly or set CODEGUIDE_SOURCE_ROOT"
         )
 
     # --no-renames so a renamed source shows BOTH its old and new path, otherwise a
@@ -113,7 +103,10 @@ def main(argv: list[str]) -> int:
         parser.error("--range and --changed-file are mutually exclusive")
 
     project_root = project_root_from(args.project_root)
-    git_root = git_toplevel(project_root)
+    # Change sets come from the SOURCE repo, not the docs root: in the skills
+    # layout the docs root may be a docs-only local repo whose diff never shows
+    # source changes, which would make every impact report vacuously clean.
+    git_root = source_root_for(project_root)
     shadow_dir = project_root / "docs" / "shadow"
 
     if not shadow_dir.is_dir():

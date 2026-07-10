@@ -27,10 +27,10 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from codeguide_paths import source_root_for  # DRY: shared source-repo resolution policy
 from shadow_source_digest import read_source_paths  # DRY: same parser as the digest tool
 from shadow_impact_report import (  # DRY: same change-set derivation as the impact report
     changed_abs_paths,
-    git_toplevel,
     project_root_from,
 )
 
@@ -86,7 +86,9 @@ def main(argv: list[str]) -> int:
         parser.error("--range and --changed-file are mutually exclusive")
 
     project_root = project_root_from(args.project_root)
-    git_root = git_toplevel(project_root)
+    # Same policy as the impact report: derive the change set from the source
+    # repo, never from a docs-only local repo at the project root.
+    git_root = source_root_for(project_root)
     shadow_dir = project_root / "docs" / "shadow"
     docs_dir = project_root / "docs"
 

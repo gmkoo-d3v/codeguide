@@ -396,6 +396,7 @@ THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$THIS_DIR/codeguide_paths.sh"
 
 PROJECT_ROOT_ABS="$(codeguide_resolve_project_root "$PROJECT_ROOT")"
+SOURCE_ROOT_ABS="$(codeguide_source_root "$PROJECT_ROOT" || true)"
 
 slugify() {
   printf "%s" "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g; s/--\+/-/g; s/^-//; s/-$//'
@@ -411,13 +412,13 @@ GARDEN_SCRIPT="$THIS_DIR/doc_garden.sh"
 VALIDATE_SCRIPT="$THIS_DIR/validate_docs.sh"
 
 is_git_repo() {
-  git -C "$PROJECT_ROOT_ABS" rev-parse --is-inside-work-tree >/dev/null 2>&1
+  [[ -n "$SOURCE_ROOT_ABS" ]] && git -C "$SOURCE_ROOT_ABS" rev-parse --is-inside-work-tree >/dev/null 2>&1
 }
 
 current_branch() {
   if is_git_repo; then
-    git -C "$PROJECT_ROOT_ABS" symbolic-ref --short HEAD 2>/dev/null || \
-      git -C "$PROJECT_ROOT_ABS" rev-parse --abbrev-ref HEAD 2>/dev/null || true
+    git -C "$SOURCE_ROOT_ABS" symbolic-ref --short HEAD 2>/dev/null || \
+      git -C "$SOURCE_ROOT_ABS" rev-parse --abbrev-ref HEAD 2>/dev/null || true
   fi
 }
 
@@ -610,7 +611,7 @@ BRANCH="$(current_branch)"
 IS_GIT_REPO="true"
 if ! is_git_repo; then
   IS_GIT_REPO="false"
-  echo "[INFO] Not a git repository. Branch-based inference disabled; using fallback strategies." >&2
+  echo "[WARN] Not a git repository: no source repo reachable from ${PROJECT_ROOT_ABS}. Branch-based inference and git_diff shadow refresh are disabled; set CODEGUIDE_SOURCE_ROOT to override." >&2
 fi
 
 if [[ "$IS_GIT_REPO" != "true" && -z "$TASK_ID" ]]; then
