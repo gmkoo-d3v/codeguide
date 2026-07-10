@@ -156,7 +156,7 @@ load codeguide_helper
   local canonical_required_for="Allowed external_review_required_for values: plan_acceptance | implementation_start | commit | close."
 
   for path in \
-    "$repo_root/references/docs-system-of-record.md" \
+    "$repo_root/references/orchestration-review-contract.md" \
     "$repo_root/scripts/init_docs_scaffold.sh" \
     "$repo_root/scripts/doc_garden.sh" \
     "$repo_root/scripts/run_external_plan_reviews.sh"; do

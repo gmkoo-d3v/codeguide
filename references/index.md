@@ -5,7 +5,10 @@ Use this file to pick the smallest authoritative reference set for the active ta
 ## Core Governance
 - Operating model, response style, and evidence lookup rules: `operating-model.md`
 - Workflow, scope modes, and validation routing: `workflow.md`
-- Docs system-of-record and templates: `docs-system-of-record.md`
+- Docs system-of-record hub: cross-cutting defaults, directory tree, script entry points, secret rules: `docs-system-of-record.md`
+- Task/decision dictionaries, task-index rules, concurrent-session claims, update rules, hotfix exception, freshness SLA: `task-state-contract.md`
+- Shadow buckets, document roles, shadow templates, anti-dump line caps: `shadow-system-contract.md`
+- ORCH gate template and allowed values, project dictionary, plan and evaluator-report templates: `orchestration-review-contract.md`
 - Doc-gardening process: `doc-gardening-agent.md`
 - Tools and automation details: `tools-automation.md`
 - External plan review prompt: `external-plan-review-prompt.md`
@@ -55,5 +58,4 @@ Use this file to pick the smallest authoritative reference set for the active ta
 7. Keep outputs concise and evidence-based.
 
 ## Exclusions
-- Documents under `mold/` and generated traces under `mold/temp/` are outside this curated index and the English-only documentation policy.
-- The public-facing `README.md` is also outside that policy and may be Korean-first.
+- The public-facing `README.md` is outside the English-only documentation policy and may be Korean-first.

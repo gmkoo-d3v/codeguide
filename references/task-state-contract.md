@@ -1,0 +1,131 @@
+# Task State Contract
+
+Use this reference for task and decision lifecycle: the task and decision dictionaries, task-index rules, concurrent-session claims, the no-archive policy, update rules, the hotfix exception, and the freshness SLA. See `references/docs-system-of-record.md` for cross-cutting defaults, the required directory tree, and secret rules.
+
+## Data safety rules
+- Empty values never overwrite existing non-empty fields during doc-gardening. Use `--allow-empty-overwrite` to explicitly clear a field.
+- Axis values (Why/What/How/Where/Verify) are only written when explicitly provided; no generic defaults are injected.
+- `task_id` inference priority: explicit `--task-id` > branch pattern (ABC-123 or numeric) > latest task file > timestamp fallback.
+- `task-index.md` rows are placed under the correct status section (Planned/In Progress/Blocked/Done) and deduplicated.
+- `validate_docs.sh --mode strict` enforces non-empty values for required fields, not just key existence.
+- Freshness checks use `last_updated` field when available; fall back to file mtime only when the field is absent.
+- Validation checks plan/report contracts:
+  - active tasks (`in_progress|blocked|done`) require at least one `PLAN-<task-id>-v*.md`
+  - evaluator reports must follow `PLAN-...-review-<runner>-<model-slug>-rNN.md`
+
+## Task dictionary template
+
+Use one file per task: `docs/task/TASK-<id>.md`
+
+```markdown
+# TASK-<id>
+
+- title:
+- objective:
+- acceptance_criteria:
+- non_goals:
+- affected_modules:
+- interfaces_changed:
+- data_migrations:
+- test_scope:
+- risks:
+- risk_level:
+- consumes_plan_ref:
+- status: planned | in_progress | blocked | done
+- owner:
+- claimed_at:
+- due_date:
+- axis_why: # principles applied (SOLID/DRY/KISS/YAGNI/LoD/SoC/CQS/POLA)
+- axis_where: # structure and boundary choice
+- axis_verify: # test strategy (TDD/pyramid/FIRST)
+```
+
+`<project-root>/docs/task/task-index.md` should list task ids organized by status section (Planned/In Progress/Blocked/Done). Rows are automatically moved between sections when task status changes.
+
+`consumes_plan_ref` is required when the matching ORCH capsule sets `external_review_required_for: implementation_start` and the task is `in_progress` or `done`. It must reference a same-task plan in the form `PLAN-<task-id>-vX.Y`; cross-task plan consumption is out of scope for this gate and warns instead of being treated as independent.
+
+## Docs lifecycle (no physical archive for task/plan/orchestration)
+
+Never physically move or archive `docs/task/TASK-*.md`, `docs/plan/PLAN-*.md`, or `docs/orchestration/<task-id>/`, even after a task reaches `status: done`. Keep them flat permanently.
+
+- `docs/task/task-index.md` is the single source of truth for task/plan/orchestration lifecycle state. A completed task is managed, not archived: its row stays under the correct status section and its `TASK-*.md`/`PLAN-*.md`/`orchestration/<task-id>/ORCH.md` files stay exactly where they are.
+- Do not create `plan-index.md` or any second ledger for plan files. Plan files are already keyed by `task_id` via filename (`PLAN-<task-id>-vX.Y.md`), so `task-index.md` plus filename globbing is sufficient; a second index would drift from the first, reintroducing the exact staleness problem an index is meant to solve.
+- `scripts/validate_docs.sh` enforces `task-index.md` accuracy in both directions: every `TASK-*.md` must have a row, every row must point at an existing task file listed under the section matching its actual `status:` field, and no task_id may appear more than once.
+- `docs/issues/` (see `docs/issues/README.md` when a project has one) is the one exception that does physically move files, between `current/` and `resolved/`, because closing an issue produces a new `RESOLUTION-*.md` at that same moment — the move is a natural lifecycle event, not a later cleanup pass. `validate_docs.sh` enforces that pairing and index consistency the same way.
+- Rationale: task/plan/orchestration files are cross-referenced by concrete literal paths from other docs (evaluator report rounds, `ORCH.md` fields such as `external_review_result_ref`, prose citations of prior round files by name). Physically moving them at scale silently breaks those citations in ways no validator catches. A folder growing large and looking cluttered is an accepted tradeoff — the goal of docs governance is that work stays tracked and auditable, not that directories look tidy.
+
+## Concurrent session claim contract
+
+When multiple Claude Code sessions run against the same project at once, use an atomic filesystem claim so two sessions cannot pick up the same task:
+
+- Before setting `status: in_progress`, atomically claim the task: `mkdir docs/task/.claims/<task-id>/` (a bare directory, no contents required). `mkdir` fails if the directory already exists, so only one concurrent session ever wins the claim.
+- If the `mkdir` fails, the task is already claimed by another session; pick a different task instead of starting work on it.
+- After a successful claim, set `owner:` (a session-identifying value) and `claimed_at:` (ISO timestamp) on the task file, then move its `task-index.md` row to `In Progress`.
+- On completing or abandoning the task, remove `docs/task/.claims/<task-id>/` in the same step that changes `status` away from `in_progress`.
+- A stale claim (session crashed without releasing it) is detected the same way any stale in_progress task is: `last_updated` ages past the freshness threshold. Do not auto-release a stale claim; surface it to the user first.
+- Sub-agents spawned within a session inherit that session claim; they do not need their own claim directories.
+- `scripts/validate_docs.sh` treats `owner`, `claimed_at`, and the claim directory as recommended (advisory-mode warning) for `in_progress` tasks, the same tier as `risk_level`, so existing task corpora are not broken by adopting this contract. It always flags (strict-mode failure) a claim directory with no matching task file, or one that survives after its task leaves `in_progress`.
+
+## Decision template
+
+Use one file per decision: `docs/decisions/decision-<id>.md`
+
+```markdown
+# decision-<id>
+
+- decision_id:
+- title:
+- date:
+- scope_type: task | hotfix | pr | release | incident | ops | other
+- status: proposed | accepted | superseded
+- chosen_by:
+- linked_task:
+- linked_pr:
+- linked_hotfix:
+- context:
+- selected_option:
+- alternatives_considered:
+- rationale:
+- implementation_plan:
+- impact_and_risks:
+- risk_level:
+- rollback_or_mitigation:
+- axis_why: # principle rationale
+- axis_what: # expression rules (naming/function/comments/format)
+- axis_how: # implementation approach (pattern/refactor/smell)
+- axis_where: # structural placement and boundaries
+- axis_verify: # verification strategy and test evidence
+```
+
+`<project-root>/docs/decisions/decision-index.md` should organize decisions by status section (Proposed/Accepted/Superseded). Rows are automatically moved between sections when decision status changes. Legacy table format is auto-migrated on first update.
+
+## Update rules
+- Update docs for every task that runs the docs lifecycle.
+- Before implementation, create an initial plan file (usually `v1.0`).
+- For each feedback round, write evaluator-specific report files in `docs/report/` with runner route slug in the filename: `PLAN-<id>-<version>-review-<runner>-<model-slug>-rNN.md`.
+- Set `risk_level: high|critical` on the task or a linked decision when the change is high risk.
+- Record `risk_preflight_status`, `risk_preflight_recorded_by`, `risk_preflight_summary`, `approval_required`, `approval_ref`, and `approved_next_step` before delegated or external review work begins; `pass` pairs with `approval_required: false`, and `approved` pairs with `approval_required: true`.
+- In advisory mode, active tasks without `risk_level` should emit a warning so teams can backfill the signal before strict policy tightens.
+- If a task or any linked non-superseded decision has `risk_level: high|critical`, strict validation requires at least one adversarial evaluator report with `review_style: adversarial` plus `objection`, `counterproposal`, `rebuttal`, and `residual_risk`.
+- When improving the plan, create a new versioned plan file (for example `v1.1`) instead of overwriting previous files.
+- Repeat plan -> review -> revision until execution-ready, no new material findings appear, a hard gate blocks progress, or user stop. Do not use fixed iteration count, token budget, or cost cap as the primary stop condition.
+- When user chooses any option, update or create a `decision-*` file immediately.
+- Apply this to all work types: task, hotfix, PR, release, incident, and operations.
+- When plan changes, append revised `implementation_plan` in the same `decision-*`.
+- When task scope changes, update `TASK-*` and relevant dictionary keys.
+- For tiny edits, reuse the current `TASK-*` file instead of creating unnecessary new task files.
+- At task close, refresh the affected shadow router, `_global.md` when applicable, bucket indexes, unit overviews, and leaf docs.
+- Keep 5-axis fields current:
+  - tasks: maintain `axis_why`, `axis_where`, `axis_verify`.
+  - decisions: maintain full `axis_why`, `axis_what`, `axis_how`, `axis_where`, `axis_verify`.
+- Keep freshness SLA:
+  - same-session changes should refresh the affected shadow graph entries in the same implementation change.
+  - external git-driven changes should refresh shadow only on explicit user request.
+  - `in_progress` task docs should be refreshed within 7 days.
+  - `decision-index.md` should be updated in the same change as decision files.
+
+## Hotfix exception policy
+- At urgent release time, allow minimum required docs:
+  - one `decision-*` with selected option, risk, and scope `hotfix`
+  - one linked task status update
+- Complete full task and affected shadow updates within 24 hours after release.

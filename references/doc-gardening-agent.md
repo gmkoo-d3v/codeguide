@@ -42,7 +42,7 @@ Recommended command flow:
 ## Zero-command execution contract
 - Trigger condition: user invokes this skill for material architecture, multi-file, cross-service, delegated, or durable planning work.
 - Agent action:
-  - if other Claude Code sessions may be working the same project concurrently, atomically claim the task first (`mkdir docs/task/.claims/<task-id>/`; abort and pick another task if it already exists) before running start sync with `--task-status in_progress` (see `references/docs-system-of-record.md` Concurrent session claim contract)
+  - if other Claude Code sessions may be working the same project concurrently, atomically claim the task first (`mkdir docs/task/.claims/<task-id>/`; abort and pick another task if it already exists) before running start sync with `--task-status in_progress` (see `references/task-state-contract.md` Concurrent session claim contract)
   - supervising lead architect runs risk preflight before sub-agents, external reviewers, or ping-pong loops
   - if preflight finds a safety, privacy, permission, destructive-action, external-side-effect, sensitive-data, scope, or user-decision gate, stop before delegation/external review until the user approves the exact next step
   - default `execution_mode` is `solo`; delegated agent fields, external review fields, or `supervisor_subagents` require explicit `risk_preflight_status`

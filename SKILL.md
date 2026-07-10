@@ -35,7 +35,11 @@ Outcome-first governance skill for architecture, code quality, documentation lif
 | Session resume capsule, checkpoint cadence, recovery read order | `references/session-resume-contract.md` |
 | Workflow, scope modes, micro-design, edge scans, docs/runtime validation, goal loops | `references/workflow.md`, `references/goal-loop-contract.md` |
 | Documentation language policy | `references/doc-language-policy.md` |
-| Docs system of record, templates, scaffolding, gardening, validation | `references/docs-system-of-record.md`, `references/doc-gardening-agent.md` |
+| Docs system-of-record hub: cross-cutting defaults, directory tree, script entry points, secret rules | `references/docs-system-of-record.md` |
+| Task/decision dictionaries, task-index rules, concurrent-session claims, update rules, hotfix exception, freshness SLA | `references/task-state-contract.md` |
+| Shadow buckets, document roles, shadow templates, anti-dump line caps | `references/shadow-system-contract.md` |
+| ORCH gate template and allowed values, project dictionary, plan and evaluator-report templates | `references/orchestration-review-contract.md` |
+| Doc scaffolding, gardening, and validation process | `references/doc-gardening-agent.md` |
 | Tools, automation, command matrix, runtime validation strategy | `references/tools-automation.md` |
 | MCP context, Serena, memory, graph/vector hints, evidence authority | `references/mcp-context-integration.md`, `references/serena-workflow.md`, `references/mem0-policy.md` |
 | Shadow docs, shadow effect maps, deterministic evidence, review queues, user decisions | `references/shadow-effect-map-workflow.md` |
