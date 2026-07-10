@@ -393,7 +393,20 @@ runner_command_kind_for() {
 
 model_selection_for_model() {
   local route="$1"
+  local cli_model
+  local runner_id
+  local command_kind
+
   require_registered_model "model_selection" "$route" >/dev/null || return 1
+  cli_model="$(model_cli_model_for "$route")" || return 1
+  runner_id="$(model_runner_for "$route")" || return 1
+  command_kind="$(runner_command_kind_for "$runner_id")" || return 1
+  if [[ "$command_kind" == "claude_code" || "$command_kind" == "codex_cli" ]]; then
+    if [[ "$cli_model" != "preconfigured-runtime" ]]; then
+      printf "%s" "cli_flag"
+      return
+    fi
+  fi
   printf "%s" "preconfigured_runtime"
 }
 
@@ -1286,7 +1299,11 @@ build_tool_command() {
       fi
       ;;
     codex_cli)
-      TOOL_COMMAND=("$binary" exec --cd "$CONTEXT_ROOT" --sandbox read-only --ephemeral --output-last-message "$output_capture_file" "$prompt")
+      TOOL_COMMAND=("$binary" exec --cd "$CONTEXT_ROOT" --sandbox read-only --ephemeral --output-last-message "$output_capture_file")
+      if [[ "$cli_model" != "preconfigured-runtime" ]]; then
+        TOOL_COMMAND+=(--model "$cli_model")
+      fi
+      TOOL_COMMAND+=("$prompt")
       ;;
     *)
       echo "[ERROR] Unsupported runner command_kind '${command_kind}' for route '${reviewer_model}'" >&2

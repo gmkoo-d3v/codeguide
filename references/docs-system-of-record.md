@@ -427,7 +427,7 @@ Use one file per evaluator report:
 `docs/report/PLAN-<task-id>-v<major>.<minor>-review-<runner>-<model-slug>-r<nn>.md`
 
 Evaluator label is the actual runner id, such as `agy` or `claude`, from `config/ai_model_registry.json`.
-External CLI model selection is `preconfigured_runtime`: the wrapper records the requested route but uses the model already selected in the runner runtime.
+External CLI model selection is runner-specific: provenance records `preconfigured_runtime` when the runner's current model is used and `cli_flag` when the registry's `cli_model` is passed through a documented per-call flag.
 
 ```markdown
 # PLAN-<task-id>-v1.0 review (<runner>/<route>)
@@ -443,7 +443,7 @@ External CLI model selection is `preconfigured_runtime`: the wrapper records the
 - evaluator_actual_model: <runner:model-route>
 - evaluator_requested_cli_model: <cli-model>
 - evaluator_actual_cli_model: <cli-model>
-- evaluator_model_selection: preconfigured_runtime
+- evaluator_model_selection: preconfigured_runtime | cli_flag
 - quota_fallback_triggered: false
 - review_style: standard | adversarial
 - review_round: r01

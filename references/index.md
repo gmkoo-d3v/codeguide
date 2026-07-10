@@ -21,9 +21,9 @@ Use this file to pick the smallest authoritative reference set for the active ta
 - Context-budget workflow and MCP source-authority rules: `mcp-context-integration.md`
 - Shadow effect-map workflow, document role separation, evidence hierarchy, and user-question gates: `shadow-effect-map-workflow.md`
 - Shadow v2 automation plan and user-decision assistant scope: `shadow-v2-automation-plan.md`
-- Serena symbolic narrowing for current-code anchors, references, call chains, and impact analysis: `serena-workflow.md`
-- mem0, pgvector, and Neo4j restricted prior-context and graph/vector hint policy: `mem0-policy.md`
-- Default order for large or uncertain investigations: docs/shadow first, `rg` plus Serena for current-code narrowing, mem0/pgvector/Neo4j for bounded prior-context hints, then direct source/test/runtime validation; see `mcp-context-integration.md`, `serena-workflow.md`, and `mem0-policy.md`.
+- Serena always-on shadow narrowing plus symbolic narrowing for current-code anchors, references, call chains, and impact analysis: `serena-workflow.md`
+- mem0, pgvector, and Neo4j heavy-context prior-context and graph/vector hint policy: `mem0-policy.md`
+- Default order for shadow investigations: docs/shadow first, `rg` plus always-on Serena for current-code narrowing, mem0/pgvector/Neo4j only for heavy-context prior hints, then direct source/test/runtime validation; see `mcp-context-integration.md`, `serena-workflow.md`, and `mem0-policy.md`.
 - Skip auxiliary retrieval when direct docs or target files already answer the task with low risk.
 
 ## Quality Gates
@@ -46,7 +46,7 @@ Use this file to pick the smallest authoritative reference set for the active ta
 
 ## Selection Rules
 1. Start with one core governance or quality-gate file.
-2. For shadow effect, side-effect, review-question, or call-chain documentation work, load `shadow-effect-map-workflow.md` plus `mcp-context-integration.md`.
+2. For shadow effect, side-effect, review-question, or call-chain documentation work, load `shadow-effect-map-workflow.md`, `mcp-context-integration.md`, and `serena-workflow.md`.
 3. For goal-oriented review, ping-pong, Ralph Wiggum, `/goal`, test-fix, or implementation loops, load `goal-loop-contract.md` before choosing more specific references.
 4. For other context-heavy, MCP, memory, or call-chain work, load `mcp-context-integration.md` before choosing `serena-workflow.md` or `mem0-policy.md`.
 5. Expand to architecture decision aids only when the task needs structural or integration guidance.

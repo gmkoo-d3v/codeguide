@@ -98,6 +98,14 @@
       "vendor": "anthropic",
       "adversarial_peer": "claude:fable-5"
     },
+    "claude:sonnet-xhigh": {
+      "runner": "claude",
+      "cli_model": "claude-sonnet-5",
+      "display_name": "Claude Sonnet 5 (xhigh effort)",
+      "quota_group": "claude-direct-subscription",
+      "effort": "xhigh",
+      "vendor": "anthropic"
+    },
     "claude:fable-5": {
       "runner": "claude",
       "cli_model": "claude-fable-5",
@@ -149,6 +157,34 @@
       "display_name": "Codex preconfigured runtime",
       "quota_group": "codex-preconfigured-runtime",
       "vendor": "openai"
+    },
+    "codex:gpt-5.6-sol": {
+      "runner": "codex",
+      "cli_model": "gpt-5.6-sol",
+      "display_name": "GPT-5.6 Sol",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-5.6-terra": {
+      "runner": "codex",
+      "cli_model": "gpt-5.6-terra",
+      "display_name": "GPT-5.6 Terra",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-5.6-luna": {
+      "runner": "codex",
+      "cli_model": "gpt-5.6-luna",
+      "display_name": "GPT-5.6 Luna",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-5.3-codex-spark": {
+      "runner": "codex",
+      "cli_model": "gpt-5.3-codex-spark",
+      "display_name": "GPT-5.3 Codex Spark",
+      "quota_group": "codex-preconfigured-runtime",
+      "vendor": "openai"
     }
   },
   "aliases": {
@@ -171,6 +207,7 @@
     "claude": "claude:current",
     "claude-sonnet-5": "claude:sonnet-5",
     "claude-sonnet-latest": "claude:sonnet-5",
+    "claude-sonnet-xhigh": "claude:sonnet-xhigh",
     "claude-fable-5": "claude:fable-5",
     "claude-fable-direct": "claude:fable-5",
     "claude-fable-latest": "claude:fable-5",
@@ -185,7 +222,15 @@
     "claude-opus-4.6-legacy": "claude:opus-4.6-legacy",
     "claude-opus-legacy": "claude:opus-4.7-legacy",
     "codex-current": "codex:current",
-    "codex": "codex:current"
+    "codex": "codex:current",
+    "codex-gpt-5.6-sol": "codex:gpt-5.6-sol",
+    "codex-5.6-sol": "codex:gpt-5.6-sol",
+    "codex-gpt-5.6-terra": "codex:gpt-5.6-terra",
+    "codex-5.6-terra": "codex:gpt-5.6-terra",
+    "codex-gpt-5.6-luna": "codex:gpt-5.6-luna",
+    "codex-5.6-luna": "codex:gpt-5.6-luna",
+    "codex-gpt-5.3-codex-spark": "codex:gpt-5.3-codex-spark",
+    "codex-5.3-spark": "codex:gpt-5.3-codex-spark"
   },
   "default_reviewer_aliases": [
     "agy-current",

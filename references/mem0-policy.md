@@ -1,19 +1,26 @@
 # mem0 Policy
 
-Use this reference only when durable memory could affect prior judgments, historical reasoning context, user preferences, architectural decisions, recurring conventions, or workflow constraints.
+Use this reference only when durable memory could affect prior judgments, historical reasoning context, user preferences, architectural decisions, recurring conventions, or workflow constraints and the task has crossed the heavy-context threshold.
 
 ## Role
 - mem0 is an auxiliary memory/index layer, not a source of truth.
 - pgvector semantic search and Neo4j graph search are auxiliary retrieval backends, not authority.
-- Use mem0 only when the user explicitly asks to search memory, prior-context lookup is needed and cannot be answered from docs or code, or a phase gate/review requires memory consistency checks.
+- Use mem0 only when the user explicitly asks to search memory, or when docs, shadow docs, `rg`, direct reads, and Serena are insufficient and the remaining prior-context lookup is heavy enough to justify memory/index overhead.
 - Unsupported memory facts may be used only as retrieval hints and must be labeled `[unsupported-memory]`.
 - Memory output is never authoritative until verified against docs, code, command output, tests, or runtime evidence.
 
 ## Status
 - mem0 is not an active semi-automatic workflow.
 - mem0 is disabled by default for normal task startup.
-- Allowed usage is restricted to read-only, advisory lookups under explicit triggers.
+- Allowed usage is restricted to read-only, advisory lookups under explicit user request or heavy-context triggers.
 - mem0 writes are prohibited until all broader activation gates pass.
+
+## Heavy-context threshold
+- Treat ordinary shadow, architecture, and code tasks as below threshold.
+- Cross the threshold only when current docs, shadow docs, `rg`, direct reads, and Serena still leave an important prior-decision or stale-context question unresolved.
+- Heavy-context examples include repeated failed lookups for a historical decision, conflicting project conventions across durable docs, stale-memory risk that must be audited, or a large related-concept search where direct source navigation would be materially more expensive.
+- Do not use mem0 merely because it is available, because a task mentions shadow, or because a normal current-code search has several results.
+- If the threshold is not met, record `mem0_status: skipped` when reporting MCP evidence.
 
 ## Scope rules
 - Use explicit scope identifiers where supported.
@@ -53,8 +60,8 @@ Read rules:
 - Verify memory claims before using them as factual claims.
 
 ## Context budget use
-- Use mem0, pgvector, and Neo4j to reduce repeated context loading, not to replace source inspection.
-- Use these tools after docs and current-code discovery when the missing information is prior decision context, stale-memory risk, recurring convention, related concept, or provenance candidate.
+- Use mem0, pgvector, and Neo4j to reduce repeated context loading only after the heavy-context threshold is met, not to replace source inspection.
+- Use these tools after docs, shadow docs, `rg`, direct reads, and Serena when the missing information is prior decision context, stale-memory risk, recurring convention, related concept, or provenance candidate.
 - Prefer returning source refs, decision ids, project scopes, symbols, and short evidence pointers instead of full memory bodies or broad graph neighborhoods.
 - Keep semantic and graph reads bounded; prefer top-k or page-limited retrieval when supported, and report sampled coverage when it affects the conclusion.
 - Do not use memory or graph output as a shortcut around direct source validation for shadow facts, code effects, API behavior, security behavior, or runtime behavior.
@@ -136,7 +143,7 @@ If mem0 fails, report `[blocked]` with one of:
 - `discovery_unavailable`
 - `unknown_failure`
 
-Then continue with docs, code, validated command output, and `rg`. Use Serena only if independently available and verified.
+Then continue with docs, shadow docs, code, validated command output, `rg`, and Serena if independently available and verified.
 
 ## Forbidden memory content
 - Secrets.

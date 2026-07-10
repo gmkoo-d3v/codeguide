@@ -108,7 +108,7 @@ def command_for_route(registry: dict[str, Any], route: str, request_file: Path, 
             command.extend(["--model", model["cli_model"]])
         return command
     if runner["command_kind"] == "codex_cli":
-        return [
+        command = [
             binary,
             "exec",
             "--cd",
@@ -118,8 +118,11 @@ def command_for_route(registry: dict[str, Any], route: str, request_file: Path, 
             "--ephemeral",
             "--output-last-message",
             str(response_file),
-            prompt,
         ]
+        if model["cli_model"] != "preconfigured-runtime":
+            command.extend(["--model", model["cli_model"]])
+        command.append(prompt)
+        return command
     raise ValueError(f"unsupported command_kind: {runner['command_kind']}")
 
 
@@ -147,7 +150,10 @@ def run_command_for_route(registry: dict[str, Any], route: str, command: list[st
 
 
 def model_selection_for_route(registry: dict[str, Any], route: str) -> str:
-    model_for_route(registry, route)
+    model = model_for_route(registry, route)
+    runner = runner_for_route(registry, route)
+    if runner["command_kind"] in {"claude_code", "codex_cli"} and model["cli_model"] != "preconfigured-runtime":
+        return "cli_flag"
     return "preconfigured_runtime"
 
 

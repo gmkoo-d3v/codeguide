@@ -1310,6 +1310,70 @@ EOF'
   [ "$status" -eq 0 ]
   run test -f "$DOCS_ROOT/report/PLAN-ext-claude-stdin-v1.0-review-claude-opus-4.8-r01.md"
   [ "$status" -eq 0 ]
+  run grep "^- evaluator_model_selection: cli_flag" "$DOCS_ROOT/report/PLAN-ext-claude-stdin-v1.0-review-claude-opus-4.8-r01.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews passes explicit Codex registry model" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-codex-model-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-codex-model-v1.0
+
+- task_id: ext-codex-model
+- plan_version: v1.0
+- objective: verify explicit Codex model routing
+- scope: external review
+- assumptions: registered Codex models use the documented per-call model flag
+- risks: explicit route silently uses the globally configured model
+- acceptance_signals: mock Codex receives gpt-5.6-sol
+- stop_conditions: model flag is absent
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Run an explicit Codex reviewer route.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/codex-model-args.log"
+output_file=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-last-message" ]]; then
+    output_file="${2:-}"
+    shift 2
+  else
+    shift
+  fi
+done
+cat > "$output_file" <<EOF
+- verdict: accept
+- summary: Mock Codex accepted the explicit GPT-5.6 Sol route.
+- strengths: The registry model reached the CLI.
+- risks: None.
+- requested_changes: None.
+EOF'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-codex-model" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --primary-model "agy-current" \
+    --reviewer "codex-5.6-sol" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-codex-model" \
+    --approved-next-step "run external review ext-codex-model"
+
+  [ "$status" -eq 0 ]
+  run grep -- "--model" "$TEST_WORKSPACE/codex-model-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "gpt-5.6-sol" "$TEST_WORKSPACE/codex-model-args.log"
+  [ "$status" -eq 0 ]
+  run grep "^- evaluator_model_selection: cli_flag" "$DOCS_ROOT/report/PLAN-ext-codex-model-v1.0-review-codex-gpt-5.6-sol-r01.md"
+  [ "$status" -eq 0 ]
 }
 
 @test "run_external_plan_reviews stops on Claude model unavailable before parser retry" {
@@ -1404,6 +1468,24 @@ exit 1'
   [ -n "$handoff_dir" ]
   run test ! -f "$handoff_dir/claude-opus-4.8.retry-request.md"
   [ "$status" -eq 0 ]
+}
+
+@test "bundled registry exposes the requested OpenAI and Anthropic lineups" {
+  local registry_file="$SCRIPTS_DIR/../config/ai_model_registry.json"
+
+  run python3 "$SCRIPTS_DIR/ai_model_registry.py" validate "$registry_file"
+  [ "$status" -eq 0 ]
+
+  run python3 "$SCRIPTS_DIR/ai_model_registry.py" emit-shell "$registry_file"
+  [ "$status" -eq 0 ]
+  local registry_output="$output"
+
+  [[ "$registry_output" == *$'model\tcodex:gpt-5.6-sol\tcodex\tgpt-5.6-sol'* ]]
+  [[ "$registry_output" == *$'model\tcodex:gpt-5.6-terra\tcodex\tgpt-5.6-terra'* ]]
+  [[ "$registry_output" == *$'model\tcodex:gpt-5.6-luna\tcodex\tgpt-5.6-luna'* ]]
+  [[ "$registry_output" == *$'model\tclaude:fable-5\tclaude\tclaude-fable-5'* ]]
+  [[ "$registry_output" == *$'model\tclaude:sonnet-5\tclaude\tclaude-sonnet-5'* ]]
+  [[ "$registry_output" == *$'model\tclaude:opus-4.8\tclaude\topus-4.8'* ]]
 }
 
 @test "run_external_plan_reviews loads runner routes from registry override and still stops on quota" {
@@ -1854,6 +1936,43 @@ EOF'
   run test -f "$DOCS_ROOT/orchestration/runner-codex-exec/current-task/responses/codex-current.response.md"
   [ "$status" -eq 0 ]
   run grep "^- model_selection: preconfigured_runtime" "$DOCS_ROOT/orchestration/runner-codex-exec/current-task/provenance/codex-current.provenance.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "external_review_runner passes explicit Codex registry model" {
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/runner-codex-model-args.log"
+output_file=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-last-message" ]]; then
+    output_file="${2:-}"
+    shift 2
+  else
+    shift
+  fi
+done
+cat > "$output_file" <<EOF
+- verdict: accept
+- summary: Mock Codex accepted the explicit GPT-5.6 Terra route.
+- strengths: The registered model reached the CLI.
+- risks: None.
+- requested_changes: None.
+EOF'
+
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-codex-model" --plan-version "v1.0" --review-round "r01" --task-phase "review" --coordinator "agy" --participant "codex-5.6-terra"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+
+  run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-codex-model" --force
+  [ "$status" -eq 0 ]
+
+  run grep -- "--model" "$TEST_WORKSPACE/runner-codex-model-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "gpt-5.6-terra" "$TEST_WORKSPACE/runner-codex-model-args.log"
+  [ "$status" -eq 0 ]
+  run grep "^- model_selection: cli_flag" "$DOCS_ROOT/orchestration/runner-codex-model/current-task/provenance/codex-gpt-5.6-terra.provenance.md"
   [ "$status" -eq 0 ]
 }
 
