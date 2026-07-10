@@ -168,3 +168,46 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"NEEDS REFRESH: docs/shadow/apps/app-a/overview.md"* ]]
 }
+
+_seed_split_root_layout() {
+  # docs-only parent repo + marker-declared nested source repo
+  SPLIT_PARENT="$TEST_WORKSPACE/split"
+  mkdir -p "$SPLIT_PARENT/skillpkg/scripts" "$SPLIT_PARENT/docs/shadow/apps/app-a"
+  printf -- "---\nname: fixture-skill\n---\n" > "$SPLIT_PARENT/skillpkg/SKILL.md"
+  git -C "$SPLIT_PARENT/skillpkg" init --quiet
+  printf 'a=1\n' > "$SPLIT_PARENT/skillpkg/src.py"
+  git -C "$SPLIT_PARENT/skillpkg" add -A
+  git -C "$SPLIT_PARENT/skillpkg" -c user.email=t@t -c user.name=t commit -qm init
+  printf 'skillpkg\n' > "$SPLIT_PARENT/.codeguide-source-root"
+  cat > "$SPLIT_PARENT/docs/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- source_of_truth_paths: skillpkg/src.py
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  git -C "$SPLIT_PARENT" init --quiet
+  printf 'skillpkg/\n' > "$SPLIT_PARENT/.gitignore"
+  git -C "$SPLIT_PARENT" add -A
+  git -C "$SPLIT_PARENT" -c user.email=t@t -c user.name=t commit -qm init
+  printf 'a=2\n' > "$SPLIT_PARENT/skillpkg/src.py"
+}
+
+@test "impact report split-root: docs-repo working-tree refresh is detected" {
+  _seed_split_root_layout
+  printf -- '- note: refreshed for src change\n' >> "$SPLIT_PARENT/docs/shadow/apps/app-a/overview.md"
+
+  run IMPACT_REPORT --project-root "$SPLIT_PARENT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"need_refresh: 0"* ]]
+  [[ "$output" == *"ok (refreshed alongside sources)"* ]]
+}
+
+@test "impact report split-root: untouched shadow doc still needs refresh" {
+  _seed_split_root_layout
+
+  run IMPACT_REPORT --project-root "$SPLIT_PARENT" --exit-code
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"need_refresh: 1"* ]]
+  [[ "$output" == *"NEEDS REFRESH"* ]]
+}

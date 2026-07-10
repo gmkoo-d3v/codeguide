@@ -2523,3 +2523,156 @@ echo "- verdict: accept"'
   run bash -c 'grep -rl "Codex sandbox detected" "$1"/docs/orchestration/runner-sandbox' _ "$TEST_PROJECT"
   [ "$status" -eq 0 ]
 }
+
+@test "sandbox guard ignores explicitly falsy codex markers" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-sandbox-02-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-sandbox-02-v1.0
+
+- task_id: ext-sandbox-02
+- plan_version: v1.0
+- objective: falsy sandbox markers must not block claude routes
+- scope: sandbox marker boolean semantics
+- assumptions: inherited markers may carry 0/false values
+- risks: false-positive guard blocks legitimate unsandboxed runs
+- acceptance_signals: claude runs when markers are falsy
+- stop_conditions: wrapper completes
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin-sandbox-falsy"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/claude-falsy-called"
+cat <<EOF
+- verdict: accept
+- summary: falsy markers must not block
+- strengths: bounded
+- risks: none
+- requested_changes: none
+EOF'
+
+  run env CODEX_SANDBOX=false CODEX_SANDBOX_NETWORK_DISABLED=0 PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-sandbox-02" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --reviewer "claude-current" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-sandbox-02" \
+    --approved-next-step "run external review ext-sandbox-02 v1.0 r01"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[OK] evaluator=claude"* ]]
+  run test -e "$TEST_WORKSPACE/claude-falsy-called"
+  [ "$status" -eq 0 ]
+}
+
+@test "sandbox guard blocks on a truthy network-disabled marker alone" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-sandbox-03-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-sandbox-03-v1.0
+
+- task_id: ext-sandbox-03
+- plan_version: v1.0
+- objective: network-disabled marker alone must block claude routes
+- scope: sandbox marker boolean semantics
+- assumptions: CODEX_SANDBOX_NETWORK_DISABLED=1 marks a sandboxed shell
+- risks: claude invoked without network burns the round
+- acceptance_signals: claude binary is never invoked
+- stop_conditions: wrapper reports the blocked route
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin-sandbox-net"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/claude-net-called"
+echo "- verdict: accept"'
+
+  run env CODEX_SANDBOX_NETWORK_DISABLED=1 PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-sandbox-03" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --reviewer "claude-current" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-sandbox-03" \
+    --approved-next-step "run external review ext-sandbox-03 v1.0 r01"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Codex sandbox detected"* ]]
+  run test -e "$TEST_WORKSPACE/claude-net-called"
+  [ "$status" -ne 0 ]
+}
+
+@test "model registry rejects control characters in registry fields" {
+  local bad_registry="$TEST_WORKSPACE/bad-registry.json"
+  python3 - "$bad_registry" <<'PY'
+import json
+import sys
+
+registry = {
+    "default_model_alias": "agy-current",
+    "default_task_phase": "planning",
+    "runners": {"agy": {"binary": "agy", "env_binary": "X", "command_kind": "agy"}},
+    "models": {
+        "agy:current": {
+            "runner": "agy",
+            "cli_model": "preconfigured-runtime",
+            "display_name": "BadName",
+            "quota_group": "g",
+            "vendor": "google",
+        }
+    },
+    "aliases": {"agy-current": "agy:current"},
+    "default_reviewer_aliases": ["agy-current"],
+    "vendor_default_reviewers": {"google": "agy-current"},
+    "fallback_policy": {"fail_closed_for_unregistered_models": True, "on_quota_exhausted": []},
+    "quota_error_patterns": ["quota"],
+}
+with open(sys.argv[1], "w") as handle:
+    json.dump(registry, handle)
+PY
+
+  run python3 "$SCRIPTS_DIR/ai_model_registry.py" emit-shell "$bad_registry"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"control characters"* ]]
+}
+
+@test "model registry rejects cli_effort on non-codex runners" {
+  local bad_registry="$TEST_WORKSPACE/effort-registry.json"
+  python3 - "$bad_registry" <<'PY'
+import json
+import sys
+
+registry = {
+    "default_model_alias": "agy-current",
+    "default_task_phase": "planning",
+    "runners": {"agy": {"binary": "agy", "env_binary": "X", "command_kind": "agy"}},
+    "models": {
+        "agy:current": {
+            "runner": "agy",
+            "cli_model": "preconfigured-runtime",
+            "cli_effort": "high",
+            "display_name": "Preconfigured",
+            "quota_group": "g",
+            "vendor": "google",
+        }
+    },
+    "aliases": {"agy-current": "agy:current"},
+    "default_reviewer_aliases": ["agy-current"],
+    "vendor_default_reviewers": {"google": "agy-current"},
+    "fallback_policy": {"fail_closed_for_unregistered_models": True, "on_quota_exhausted": []},
+    "quota_error_patterns": ["quota"],
+}
+with open(sys.argv[1], "w") as handle:
+    json.dump(registry, handle)
+PY
+
+  run python3 "$SCRIPTS_DIR/ai_model_registry.py" emit-shell "$bad_registry"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"cli_effort is only supported for codex_cli runners"* ]]
+}

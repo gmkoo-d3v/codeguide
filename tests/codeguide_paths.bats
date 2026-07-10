@@ -59,14 +59,40 @@ make_skills_layout() {
   [ "$output" = "$(physical_path "$parent/skillpkg")" ]
 }
 
-@test "source root: docs-only local repo at the docs root still resolves to the nested skill repo" {
+@test "source root: docs-only local repo resolves to the nested skill repo via the marker file" {
+  local parent="$TEST_WORKSPACE/workspace"
+  make_skills_layout "$parent"
+  make_git_repo "$parent"
+  printf 'skillpkg\n' > "$parent/.codeguide-source-root"
+
+  run codeguide_source_root "$parent"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(physical_path "$parent/skillpkg")" ]
+}
+
+@test "source root: docs-only local repo without a marker resolves to itself with a hint" {
   local parent="$TEST_WORKSPACE/workspace"
   make_skills_layout "$parent"
   make_git_repo "$parent"
 
   run codeguide_source_root "$parent"
   [ "$status" -eq 0 ]
-  [ "$output" = "$(physical_path "$parent/skillpkg")" ]
+  [[ "$output" == *"$(physical_path "$parent")"* ]]
+  [[ "$output" == *"nested skill-package repo"* ]]
+  [[ "$output" == *".codeguide-source-root"* ]]
+}
+
+@test "source root: ordinary repo is never hijacked by a vendored skill-package child repo" {
+  local project="$TEST_WORKSPACE/app"
+  make_git_repo "$project"
+  mkdir -p "$project/docs"
+  make_git_repo "$project/vendored-skill"
+  make_skill_package "$project/vendored-skill"
+
+  run codeguide_source_root "$project"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"$(physical_path "$project")"* ]]
+  [[ "$output" != *"vendored-skill"* ]] || [[ "$output" == *"was not selected"* ]]
 }
 
 @test "source root: invoked from inside the skill repo resolves to that repo" {
@@ -91,11 +117,32 @@ make_skills_layout() {
   local parent="$TEST_WORKSPACE/workspace"
   local override="$TEST_WORKSPACE/elsewhere"
   make_skills_layout "$parent"
-  mkdir -p "$override"
+  make_git_repo "$override"
 
   CODEGUIDE_SOURCE_ROOT="$override" run codeguide_source_root "$parent"
   [ "$status" -eq 0 ]
   [ "$output" = "$(physical_path "$override")" ]
+}
+
+@test "source root: a subdirectory override normalizes to its git toplevel" {
+  local parent="$TEST_WORKSPACE/workspace"
+  local override="$TEST_WORKSPACE/elsewhere"
+  make_skills_layout "$parent"
+  make_git_repo "$override"
+  mkdir -p "$override/sub/dir"
+
+  CODEGUIDE_SOURCE_ROOT="$override/sub/dir" run codeguide_source_root "$parent"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(physical_path "$override")" ]
+}
+
+@test "source root: an unreadable override fails with a distinct diagnostic" {
+  local parent="$TEST_WORKSPACE/workspace"
+  make_skills_layout "$parent"
+
+  CODEGUIDE_SOURCE_ROOT="$TEST_WORKSPACE/does-not-exist" run codeguide_source_root "$parent"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"CODEGUIDE_SOURCE_ROOT is not a readable directory"* ]]
 }
 
 @test "source root: multiple skill-package repos are ambiguous and fail loudly" {
@@ -120,7 +167,7 @@ print(result if result is not None else "")
 PY
 }
 
-@test "source root (python): parity for ordinary repo, docs-only-repo layout, and no-repo" {
+@test "source root (python): parity for ordinary repo, marker layout, vendored child, ambiguity, and no-repo" {
   local project="$TEST_WORKSPACE/app"
   make_git_repo "$project"
   [ "$(python_source_root "$project")" = "$(physical_path "$project")" ]
@@ -128,7 +175,22 @@ PY
   local parent="$TEST_WORKSPACE/workspace"
   make_skills_layout "$parent"
   make_git_repo "$parent"
+  printf 'skillpkg\n' > "$parent/.codeguide-source-root"
   [ "$(python_source_root "$parent")" = "$(physical_path "$parent/skillpkg")" ]
+
+  local vendored="$TEST_WORKSPACE/vendored"
+  make_git_repo "$vendored"
+  make_git_repo "$vendored/vendored-skill"
+  make_skill_package "$vendored/vendored-skill"
+  [ "$(python_source_root "$vendored" 2>/dev/null)" = "$(physical_path "$vendored")" ]
+
+  local multi="$TEST_WORKSPACE/multi"
+  mkdir -p "$multi/docs"
+  make_git_repo "$multi/skill-a"
+  make_skill_package "$multi/skill-a"
+  make_git_repo "$multi/skill-b"
+  make_skill_package "$multi/skill-b"
+  [ -z "$(python_source_root "$multi" 2>/dev/null)" ]
 
   local plain="$TEST_WORKSPACE/plain"
   mkdir -p "$plain"

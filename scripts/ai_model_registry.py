@@ -26,8 +26,11 @@ def _scalar(value: Any, field: str) -> str:
         _fail(f"{field} must be a string")
     if not value.strip():
         _fail(f"{field} must not be empty")
-    if any(ch in value for ch in ("\t", "\n", "\r")):
-        _fail(f"{field} must not contain tabs or newlines")
+    # Reject every ASCII control character (including \x1f/\x00), not just
+    # tab/newline: registry values feed a control-char-delimited shell emit
+    # stream, so any C0 byte could shift or forge columns downstream.
+    if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value):
+        _fail(f"{field} must not contain control characters")
     return value
 
 
@@ -133,6 +136,10 @@ def validate_registry(registry: dict[str, Any]) -> None:
             effort_value = _scalar(cli_effort, f"models[{route!r}].cli_effort")
             if effort_value not in {"minimal", "low", "medium", "high", "xhigh"}:
                 _fail(f"models[{route!r}].cli_effort must be minimal, low, medium, high, or xhigh")
+            # Only the codex CLI has a documented reasoning-effort flag; a
+            # declared effort on any other runner would be silently dropped.
+            if runners[runner_id].get("command_kind") != "codex_cli":
+                _fail(f"models[{route!r}].cli_effort is only supported for codex_cli runners")
         quota_group = _scalar(model.get("quota_group", ""), f"models[{route!r}].quota_group")
         quota_groups.add(quota_group)
         display_name = model.get("display_name", route)

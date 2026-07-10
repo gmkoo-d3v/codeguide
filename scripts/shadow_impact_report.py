@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from codeguide_paths import source_root_for  # DRY: shared source-repo resolution policy
+from codeguide_paths import _git_toplevel, source_root_for  # DRY: shared source-repo resolution policy
 from shadow_source_digest import read_source_paths  # DRY: same parser as the digest tool
 
 
@@ -119,6 +119,25 @@ def main(argv: list[str]) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
+    # In the split-root layout shadow docs live in the DOCS repo while the
+    # change set comes from the SOURCE repo, so "refreshed alongside sources"
+    # could never match a doc path and every impacted doc would falsely hard-
+    # fail --exit-code forever. Track docs-repo working-tree changes separately
+    # for refresh detection (same-repo layouts keep the original single set).
+    docs_changed: set[Path] = set()
+    docs_git_root = _git_toplevel(project_root)
+    if docs_git_root is not None and docs_git_root != git_root:
+        try:
+            if git_ok(["rev-parse", "--verify", "--quiet", "HEAD"], docs_git_root):
+                docs_rels = git_lines(["diff", "--name-only", "--no-renames", "HEAD"], docs_git_root)
+            else:
+                docs_rels = git_lines(["diff", "--cached", "--name-only", "--no-renames"], docs_git_root)
+            docs_rels += git_lines(["ls-files", "--others", "--exclude-standard"], docs_git_root)
+        except RuntimeError:
+            docs_rels = []
+        for rel in docs_rels:
+            docs_changed.add((docs_git_root / rel).resolve(strict=False))
+
     impacted: list[tuple[str, list[str], bool]] = []
     for doc in sorted(shadow_dir.rglob("*.md")):
         rel_parts = doc.relative_to(shadow_dir).parts
@@ -139,7 +158,8 @@ def main(argv: list[str]) -> int:
                 changed_sources.append(rel)
         if not changed_sources:
             continue
-        refreshed = doc.resolve(strict=False) in changed
+        doc_resolved = doc.resolve(strict=False)
+        refreshed = doc_resolved in changed or doc_resolved in docs_changed
         try:
             doc_label = str(doc.resolve(strict=False).relative_to(project_root))
         except ValueError:

@@ -179,14 +179,17 @@ def validate_external_response_artifact(summary: dict[str, Any], path: Path, con
     if verdict:
         summary["verdict"] = verdict
     normalized_evaluator = normalized_text(evaluator)
-    # Registry routes label evaluators as "<runner>:<model>" and response files
-    # as "<runner>-<model-slug>.response.md"; accept the runner id from either
-    # form in addition to a bare evaluator name.
-    if normalized_evaluator not in EXTERNAL_REVIEW_EVALUATORS:
-        normalized_evaluator = normalized_evaluator.split(":", 1)[0]
-        if normalized_evaluator in EXTERNAL_REVIEW_EVALUATORS:
-            summary["evaluator"] = normalized_evaluator
-    if normalized_evaluator not in EXTERNAL_REVIEW_EVALUATORS:
+    # Registry routes label evaluators as "<runner>:<model>"; accept the runner
+    # id from the route form in addition to a bare evaluator name.
+    if normalized_evaluator and normalized_evaluator not in EXTERNAL_REVIEW_EVALUATORS:
+        route_runner = normalized_evaluator.split(":", 1)[0]
+        if route_runner in EXTERNAL_REVIEW_EVALUATORS:
+            normalized_evaluator = route_runner
+            summary["evaluator"] = route_runner
+    if not normalized_evaluator:
+        # Filename fallback applies ONLY when the content declares no evaluator
+        # at all. A declared-but-unsupported evaluator is an identity claim the
+        # filename must never override (trust gate, not a naming convenience).
         response_slug = path.name
         for suffix in (".retry-response.md", ".response.md"):
             if response_slug.endswith(suffix):

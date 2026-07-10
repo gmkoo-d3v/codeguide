@@ -1366,8 +1366,20 @@ run_codex_tool_command() {
   return 0
 }
 
+codex_sandbox_marker_truthy() {
+  # Defined boolean semantics: a marker counts only when non-empty and not an
+  # explicit falsy value, so inherited CODEX_SANDBOX_NETWORK_DISABLED=0 or
+  # =false does not misclassify an unsandboxed shell.
+  local value
+  value="$(printf "%s" "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  case "$value" in
+    ""|"0"|"false"|"off"|"no"|"none") return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
 codex_sandbox_active() {
-  [[ -n "${CODEX_SANDBOX:-}" || -n "${CODEX_SANDBOX_NETWORK_DISABLED:-}" ]]
+  codex_sandbox_marker_truthy "${CODEX_SANDBOX:-}" || codex_sandbox_marker_truthy "${CODEX_SANDBOX_NETWORK_DISABLED:-}"
 }
 
 run_claude_tool_command() {
@@ -1386,6 +1398,7 @@ run_claude_tool_command() {
     {
       echo "[BLOCKED] Codex sandbox detected (CODEX_SANDBOX / CODEX_SANDBOX_NETWORK_DISABLED)."
       echo "Anthropic claude CLI calls must run non-sandboxed: rerun this command through the user-approved non-sandboxed (escalated) execution path."
+      echo "If this environment is genuinely non-sandboxed and the marker is stale, clear it first: env -u CODEX_SANDBOX -u CODEX_SANDBOX_NETWORK_DISABLED <command>."
     } > "$model_stderr_file"
     return 1
   fi

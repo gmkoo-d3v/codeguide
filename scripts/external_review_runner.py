@@ -128,8 +128,19 @@ def command_for_route(registry: dict[str, Any], route: str, request_file: Path, 
     raise ValueError(f"unsupported command_kind: {runner['command_kind']}")
 
 
+def _sandbox_marker_truthy(value: str | None) -> bool:
+    # Defined boolean semantics: a marker counts only when non-empty and not an
+    # explicit falsy value, so inherited CODEX_SANDBOX_NETWORK_DISABLED=0 or
+    # =false does not misclassify an unsandboxed shell.
+    if value is None:
+        return False
+    return value.strip().lower() not in {"", "0", "false", "off", "no", "none"}
+
+
 def codex_sandbox_active() -> bool:
-    return bool(os.environ.get("CODEX_SANDBOX") or os.environ.get("CODEX_SANDBOX_NETWORK_DISABLED"))
+    return _sandbox_marker_truthy(os.environ.get("CODEX_SANDBOX")) or _sandbox_marker_truthy(
+        os.environ.get("CODEX_SANDBOX_NETWORK_DISABLED")
+    )
 
 
 def run_command_for_route(registry: dict[str, Any], route: str, command: list[str], request_file: Path, response_file: Path) -> subprocess.CompletedProcess[str]:
@@ -146,7 +157,9 @@ def run_command_for_route(registry: dict[str, Any], route: str, command: list[st
                 "",
                 "[BLOCKED] Codex sandbox detected (CODEX_SANDBOX / CODEX_SANDBOX_NETWORK_DISABLED).\n"
                 "Anthropic claude CLI calls must run non-sandboxed: rerun this command through the "
-                "user-approved non-sandboxed (escalated) execution path.\n",
+                "user-approved non-sandboxed (escalated) execution path.\n"
+                "If this environment is genuinely non-sandboxed and the marker is stale, clear it first: "
+                "env -u CODEX_SANDBOX -u CODEX_SANDBOX_NETWORK_DISABLED <command>.\n",
             )
         stdin_text = (
             "Review only the Markdown request provided on stdin. "
