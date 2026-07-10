@@ -3285,3 +3285,70 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" != *"shadow concern leaf missing concern_id"* ]]
 }
+
+@test "validate_docs advisory warns when a done task's capsule still says delegation_status active" {
+  cat > "$DOCS_ROOT/task/TASK-orch-done-active-01.md" <<'EOF'
+# TASK-orch-done-active-01
+
+- title: done-vs-active contradiction fixture
+- status: done
+- owner: test
+EOF
+  printf '%s\n' "- TASK-orch-done-active-01 done" >> "$DOCS_ROOT/task/task-index.md"
+
+  mkdir -p "$DOCS_ROOT/orchestration/orch-done-active-01"
+  cat > "$DOCS_ROOT/orchestration/orch-done-active-01/ORCH.md" <<'EOF'
+# ORCH-orch-done-active-01
+
+- task_id: orch-done-active-01
+- execution_mode: solo
+- delegation_status: active
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [[ "$output" == *"delegation_status 'active' contradicts task status done"* ]]
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [[ "$output" != *"contradicts task status done"* ]]
+}
+
+@test "validate_docs advisory validates delegation_status enum on planned-task capsules" {
+  cat > "$DOCS_ROOT/task/TASK-orch-enum-01.md" <<'EOF'
+# TASK-orch-enum-01
+
+- title: planned-task capsule enum fixture
+- status: planned
+- owner: test
+EOF
+  printf '%s\n' "- TASK-orch-enum-01 planned" >> "$DOCS_ROOT/task/task-index.md"
+
+  mkdir -p "$DOCS_ROOT/orchestration/orch-enum-01"
+  cat > "$DOCS_ROOT/orchestration/orch-enum-01/ORCH.md" <<'EOF'
+# ORCH-orch-enum-01
+
+- task_id: orch-enum-01
+- execution_mode: solo
+- delegation_status: totally_bogus_value
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [[ "$output" == *"orchestration.delegation_status"* ]]
+  [[ "$output" == *"totally_bogus_value"* ]]
+}
+
+@test "validate_docs advisory warns on dangling _archive path references" {
+  cat > "$DOCS_ROOT/plan/PLAN-archive-ref-01-v1.0.md" <<'EOF'
+# PLAN-archive-ref-01-v1.0
+
+- task_id: archive-ref-01
+- plan_version: v1.0
+- supersedes: docs/plan/_archive/PLAN-archive-ref-01-v0.9.md
+- objective: dangling archive reference fixture
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [[ "$output" == *"reference a deleted _archive path"* ]]
+  [[ "$output" == *"PLAN-archive-ref-01-v1.0.md"* ]]
+}

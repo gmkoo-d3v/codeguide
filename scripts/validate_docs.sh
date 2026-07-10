@@ -2396,17 +2396,21 @@ check_orchestration_file_for_task() {
 check_orchestration_semantic_contradictions() {
   local orchestration_file="$1"
   local orch_ref="$2"
+  local task_file="${3:-}"
   local execution_mode
   local delegation_status
   local external_review_status
   local required_review_routes
   local external_review_result_ref
+  local task_status
   local agent_key
   local has_agent_field="false"
 
   if [[ "$MODE" == "strict" ]]; then
     return 0
   fi
+
+  delegation_status="$(extract_field_value "$orchestration_file" "delegation_status")"
 
   execution_mode="$(extract_field_value "$orchestration_file" "execution_mode")"
   if [[ "$execution_mode" == "supervisor_subagents" ]]; then
@@ -2419,9 +2423,29 @@ check_orchestration_semantic_contradictions() {
     if [[ "$has_agent_field" != "true" ]]; then
       fail "orchestration execution_mode=supervisor_subagents requires at least one non-empty agent field (planner_agents/reviewer_agents/implementation_agents/validation_agents) for ${orch_ref}: ${orchestration_file}"
     fi
-    delegation_status="$(extract_field_value "$orchestration_file" "delegation_status")"
     if [[ -z "$delegation_status" ]]; then
       fail "orchestration execution_mode=supervisor_subagents requires a non-empty delegation_status for ${orch_ref}: ${orchestration_file}"
+    fi
+  fi
+
+  # Enum validation for every capsule (the per-active-task checks below only
+  # reach capsules of active tasks, so a corrupted value on a planned-task
+  # capsule would otherwise be invisible).
+  if [[ -n "$delegation_status" ]]; then
+    check_enum_membership "$delegation_status" "orchestration.delegation_status" "$orchestration_file" planned active completed blocked || true
+  fi
+
+  # Cross-artifact coherence: a capsule's delegation_status must not
+  # contradict its task's ledger status (done tasks cannot still be
+  # planned/active; blocked tasks cannot still be active).
+  if [[ -n "$task_file" && -f "$task_file" ]]; then
+    task_status="$(extract_field_value "$task_file" "status")"
+    task_status="${task_status%% *}"
+    if [[ "$task_status" == "done" && ( "$delegation_status" == "active" || "$delegation_status" == "planned" ) ]]; then
+      fail "orchestration delegation_status '${delegation_status}' contradicts task status done for ${orch_ref}: ${orchestration_file}"
+    fi
+    if [[ "$task_status" == "blocked" && "$delegation_status" == "active" ]]; then
+      fail "orchestration delegation_status 'active' contradicts task status blocked for ${orch_ref}: ${orchestration_file}"
     fi
   fi
 
@@ -2460,6 +2484,16 @@ check_tmp_path_references() {
       infence { next }
       /codeguide\/tmp\// { print NR; next }
       /(^|[^A-Za-z0-9_.-])\/tmp\// { print NR }
+    ' "$file_path" 2>/dev/null)
+    # Dangling archive references: the no-archive policy deletes _archive
+    # directories, so any surviving path reference into one is a broken link.
+    while IFS= read -r match_line_no; do
+      [[ -z "$match_line_no" ]] && continue
+      fail "docs reference a deleted _archive path (${file_path}:${match_line_no})"
+    done < <(awk '
+      /^[[:space:]]*(```|~~~)/ { infence = !infence; next }
+      infence { next }
+      /docs\/(plan|task|orchestration)\/_archive\// { print NR }
     ' "$file_path" 2>/dev/null)
   done < <(
     {
@@ -3057,7 +3091,7 @@ if [[ -d "$ORCHESTRATION_DIR" ]]; then
 
     orchestration_capsule_orch_file="$orchestration_task_dir/ORCH.md"
     if [[ -f "$orchestration_capsule_orch_file" ]]; then
-      check_orchestration_semantic_contradictions "$orchestration_capsule_orch_file" "TASK-${orchestration_task_id}"
+      check_orchestration_semantic_contradictions "$orchestration_capsule_orch_file" "TASK-${orchestration_task_id}" "$orchestration_capsule_task_file"
     fi
   done < <(find "$ORCHESTRATION_DIR" -mindepth 1 -maxdepth 1 -type d | sort)
 fi
