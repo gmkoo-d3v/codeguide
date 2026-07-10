@@ -1109,7 +1109,11 @@ check_shadow_empty_graph() {
   source_root="$(codeguide_source_root "$PROJECT_ROOT_ABS" 2>/dev/null || true)"
   [[ -n "$source_root" ]] || return 0
 
-  if ! git -C "$source_root" ls-files 2>/dev/null | grep -qvE '^docs/'; then
+  # Scaffold artifacts are not "source needing documentation": a freshly
+  # bootstrapped docs-only project tracks its routers and markers but no code
+  # (fable/sonnet P3-r01 shared finding — the gate must not fail it).
+  if ! git -C "$source_root" ls-files 2>/dev/null \
+    | grep -qvE '^(docs/|AGENTS\.md$|CLAUDE\.md$|README\.md$|\.gitignore$|\.codeguide-source-root$)'; then
     return 0
   fi
 
@@ -1137,13 +1141,17 @@ check_shadow_empty_graph() {
   fail "shadow graph is empty: no bucket declares a unit and no shadow doc declares source_of_truth_paths, though the source repo has trackable files to document. Author shadow units; see shadow_coverage_report.py for the coverage gap"
 }
 
-# True if the bucket index's "## Units" section lists anything beyond the
-# scaffold's "no units detected yet" placeholder.
+# True if the bucket index's "## Units" section lists a real unit entry. The
+# schema shape is "- <unit_id>:" (identifier then colon) with indented detail
+# lines; an arbitrary garbage line like "- x" must not be able to silence the
+# empty-graph gate (sonnet P3-r01 finding 2).
 bucket_index_has_units() {
   local bucket_file="$1"
   local remaining
 
-  remaining="$(awk '/^## Units$/{flag=1; next} /^## /{flag=0} flag && /^- /{print}' "$bucket_file" 2>/dev/null | grep -vFx -- '- no units detected yet' || true)"
+  remaining="$(awk '/^## Units$/{flag=1; next} /^## /{flag=0} flag && /^- /{print}' "$bucket_file" 2>/dev/null \
+    | grep -vFx -- '- no units detected yet' \
+    | grep -E '^- [A-Za-z0-9._-]+:' || true)"
   [[ -n "$remaining" ]]
 }
 
@@ -2463,19 +2471,25 @@ check_orchestration_semantic_contradictions() {
   delegation_status="$(extract_field_value "$orchestration_file" "delegation_status")"
 
   execution_mode="$(extract_field_value "$orchestration_file" "execution_mode")"
+  for agent_key in planner_agents reviewer_agents implementation_agents validation_agents; do
+    if [[ -n "$(extract_field_value "$orchestration_file" "$agent_key")" ]]; then
+      has_agent_field="true"
+      break
+    fi
+  done
   if [[ "$execution_mode" == "supervisor_subagents" ]]; then
-    for agent_key in planner_agents reviewer_agents implementation_agents validation_agents; do
-      if [[ -n "$(extract_field_value "$orchestration_file" "$agent_key")" ]]; then
-        has_agent_field="true"
-        break
-      fi
-    done
     if [[ "$has_agent_field" != "true" ]]; then
       fail "orchestration execution_mode=supervisor_subagents requires at least one non-empty agent field (planner_agents/reviewer_agents/implementation_agents/validation_agents) for ${orch_ref}: ${orchestration_file}"
     fi
     if [[ -z "$delegation_status" ]]; then
       fail "orchestration execution_mode=supervisor_subagents requires a non-empty delegation_status for ${orch_ref}: ${orchestration_file}"
     fi
+  fi
+  # The converse contradiction: a solo declaration alongside named delegated
+  # agents suppresses solo-exempt checks (fable P3-r01 finding 2 — the false
+  # solo hid a review-pending warning behind the exemption).
+  if [[ "$execution_mode" == "solo" && "$has_agent_field" == "true" ]]; then
+    fail "orchestration execution_mode=solo contradicts non-empty delegated agent fields for ${orch_ref}: ${orchestration_file}"
   fi
 
   # Enum validation for every capsule (the per-active-task checks below only

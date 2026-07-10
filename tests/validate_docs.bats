@@ -3521,3 +3521,74 @@ EOF
   [[ "$output" == *"reference a deleted _archive path"* ]]
   [[ "$output" == *"PLAN-archive-ref-01-v1.0.md"* ]]
 }
+
+@test "empty-graph gate ignores scaffold-only docs projects (routers are not source)" {
+  local parent="$TEST_WORKSPACE/docs-only"
+  mkdir -p "$parent"
+  "$INIT_SCAFFOLD" "$parent" >/dev/null
+  git -C "$parent" init --quiet
+  git -C "$parent" add -A
+  git -C "$parent" -c user.email=t@t -c user.name=t commit -qm init
+
+  run "$VALIDATE" "$parent" --mode strict
+  [[ "$output" != *"shadow graph is empty"* ]]
+
+  printf 'x=1\n' > "$parent/src.py"
+  git -C "$parent" add -A
+  git -C "$parent" -c user.email=t@t -c user.name=t commit -qm code
+
+  run "$VALIDATE" "$parent" --mode strict
+  [[ "$output" == *"shadow graph is empty"* ]]
+}
+
+@test "empty-graph gate is not silenced by a garbage unit line" {
+  local parent="$TEST_WORKSPACE/garbage-unit"
+  mkdir -p "$parent"
+  "$INIT_SCAFFOLD" "$parent" >/dev/null
+  git -C "$parent" init --quiet
+  printf 'x=1\n' > "$parent/src.py"
+  git -C "$parent" add -A
+  git -C "$parent" -c user.email=t@t -c user.name=t commit -qm init
+  python3 - "$parent/docs/shadow/apps/_index.md" <<'PY'
+import sys
+from pathlib import Path
+p = Path(sys.argv[1])
+p.write_text(p.read_text().replace("- no units detected yet", "- x"))
+PY
+
+  run "$VALIDATE" "$parent" --mode advisory
+  [[ "$output" == *"shadow graph is empty"* ]]
+
+  python3 - "$parent/docs/shadow/apps/_index.md" <<'PY'
+import sys
+from pathlib import Path
+p = Path(sys.argv[1])
+p.write_text(p.read_text().replace("- x", "- billing-service:\n  - overview_doc: apps/billing-service/overview.md"))
+PY
+
+  run "$VALIDATE" "$parent" --mode advisory
+  [[ "$output" != *"shadow graph is empty"* ]]
+}
+
+@test "validate_docs advisory warns when a solo ORCH names delegated agents" {
+  cat > "$DOCS_ROOT/task/TASK-orch-solo-agents-01.md" <<'EOF'
+# TASK-orch-solo-agents-01
+
+- title: solo-with-agents contradiction fixture
+- status: planned
+- owner: test
+EOF
+  printf '%s\n' "- TASK-orch-solo-agents-01 planned" >> "$DOCS_ROOT/task/task-index.md"
+  mkdir -p "$DOCS_ROOT/orchestration/orch-solo-agents-01"
+  cat > "$DOCS_ROOT/orchestration/orch-solo-agents-01/ORCH.md" <<'EOF'
+# ORCH-orch-solo-agents-01
+
+- task_id: orch-solo-agents-01
+- execution_mode: solo
+- delegation_status: active
+- reviewer_agents: some-subagent
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [[ "$output" == *"execution_mode=solo contradicts non-empty delegated agent fields"* ]]
+}
