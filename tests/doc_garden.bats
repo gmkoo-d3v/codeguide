@@ -551,3 +551,34 @@ make_resume_source_repo() {
   run grep "^- resume_changed_files: SKILL.md,new.py" "$parent/docs/task/TASK-unborn-01.md"
   [ "$status" -eq 0 ]
 }
+
+@test "resume checkpoint preserves special characters verbatim in agent fields" {
+  "$DOC_GARDEN" "$TEST_PROJECT" --task-id "special-01" --task-title "Special chars" --no-init >/dev/null
+
+  "$DOC_GARDEN" "$TEST_PROJECT" --task-id "special-01" --resume-checkpoint --no-init \
+    --resume-next-action "run legs A + B, then C++ build & re-verify (x+y)" \
+    --resume-last-verified "suite green + lint clean" \
+    --resume-blockers "none" >/dev/null
+
+  run grep -F -- "- resume_next_action: run legs A + B, then C++ build & re-verify (x+y)" "$DOCS_ROOT/task/TASK-special-01.md"
+  [ "$status" -eq 0 ]
+  run grep -F -- "- resume_last_verified: suite green + lint clean" "$DOCS_ROOT/task/TASK-special-01.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "concurrent resume checkpoints serialize and never lose revision increments" {
+  "$DOC_GARDEN" "$TEST_PROJECT" --task-id "race-cp-01" --task-title "Checkpoint race" --no-init >/dev/null
+
+  local pids=()
+  for _ in 1 2 3 4 5 6 7 8; do
+    "$DOC_GARDEN" "$TEST_PROJECT" --task-id "race-cp-01" --resume-checkpoint --no-init >/dev/null 2>&1 &
+    pids+=($!)
+  done
+  local pid
+  for pid in "${pids[@]}"; do
+    wait "$pid"
+  done
+
+  run grep "^- resume_state_revision: 8$" "$DOCS_ROOT/task/TASK-race-cp-01.md"
+  [ "$status" -eq 0 ]
+}

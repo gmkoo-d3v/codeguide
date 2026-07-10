@@ -734,7 +734,10 @@ cleanup_runtime_artifacts() {
 trap cleanup_runtime_artifacts EXIT
 
 normalize() {
-  printf "%s" "$1" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ *//; s/ *$//'
+  # ERE (-E) instead of the GNU-only BRE \+ quantifier: BSD/macOS sed reads
+  # \+ as a LITERAL plus, which both disabled whitespace collapsing entirely
+  # and silently deleted any + preceded by whitespace in every upserted field.
+  printf "%s" "$1" | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/^ +//; s/ +$//'
 }
 
 trim_value() {
@@ -867,6 +870,12 @@ run_resume_checkpoint() {
     echo "[ERROR] --resume-checkpoint requires an existing task file: ${task_file} (run '$0 <project-root> --task-id ${TASK_ID}' first)" >&2
     exit 1
   fi
+
+  # The checkpoint is a read-modify-write (revision increment reads the
+  # previous value), so serialize it with the same lock primitive the index
+  # writers use; concurrent sub-agent checkpoints would otherwise race on the
+  # stale read and silently truncate resume_state_revision.
+  acquire_lock "$task_file"
 
   now_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
