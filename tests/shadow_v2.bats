@@ -243,7 +243,7 @@ command_response_path: $thin_dir/gemini.command-response.raw.md
 raw_capture_deleted: true
 sanitized_response: true
 EOF
-  accepted_artifact="$(create_mock_external_review_artifact "shadow-v2-close-accepted" "gemini-3-5-flash-medium")"
+  accepted_artifact="$(create_mock_external_review_artifact "shadow-v2-close-accepted" "agy-current")"
   internal_artifact="$(create_mock_internal_review_artifact "shadow-v2-close-internal")"
   [ -n "$accepted_artifact" ]
   [ -n "$internal_artifact" ]
@@ -372,7 +372,7 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *'"status":"ok"'* ]]
   [[ "$output" == *'"sha256":"sha256:'* ]]
-  [[ "$output" == *'"evaluator":"gemini"'* ]]
+  [[ "$output" == *'"evaluator":"agy"'* ]]
   [[ "$output" == *'"request_file":'* ]]
   [[ "$output" == *'"command_response_path":'* ]]
   [[ "$output" == *'"provenance_file":'* ]]
@@ -987,7 +987,7 @@ EOF
 @test "shadow_v2_pipeline_wrapper requires external close artifact provenance" {
   local accepted_artifact
   local internal_artifact
-  accepted_artifact="$(create_mock_external_review_artifact "shadow-v2-pipeline-accepted" "gemini-3-5-flash-medium")"
+  accepted_artifact="$(create_mock_external_review_artifact "shadow-v2-pipeline-accepted" "agy-current")"
   internal_artifact="$(create_mock_internal_review_artifact "shadow-v2-pipeline-internal")"
   [ -n "$accepted_artifact" ]
   [ -n "$internal_artifact" ]
@@ -1053,3 +1053,35 @@ EOF
   [[ "$output" == *"--output must be under project docs"* ]]
 }
 
+
+@test "shadow_v2_gate_skeleton blocks a declared non-antigravity evaluator despite an agy filename" {
+  local accepted_artifact
+  local internal_artifact
+  local round_dir
+  local forged
+  accepted_artifact="$(create_mock_external_review_artifact "shadow-v2-evaluator-forge" "agy-current")"
+  internal_artifact="$(create_mock_internal_review_artifact "shadow-v2-evaluator-forge-internal")"
+  round_dir="$(dirname "$accepted_artifact")"
+  forged="$round_dir/agy-current-forged.response.md"
+  {
+    echo "- evaluator: gemini"
+    cat "$accepted_artifact"
+  } > "$forged"
+
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --external-review-requested \
+    --external-review-approval-ref "user-approval-001" \
+    --external-review-approved-next-step "close shadow v2 external review gate" \
+    --external-review-recorded-by "main-thread-supervising-lead-architect" \
+    --close-required-review "internal_subagent_md_handoff" \
+    --close-required-review "external_antigravity" \
+    --completed-review "internal_subagent_md_handoff" \
+    --completed-review-artifact "internal_subagent_md_handoff=$internal_artifact" \
+    --completed-review "external_antigravity" \
+    --completed-review-artifact "external_antigravity=$forged" \
+    --print-contract
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"requires evaluator antigravity or agy"* ]]
+}

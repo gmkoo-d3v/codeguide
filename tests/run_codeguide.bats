@@ -641,3 +641,30 @@ EOF
 }
 
 # ========== init_docs_scaffold edge cases ==========
+
+@test "branch inference resolves through the source repo in the skills layout" {
+  local workspace
+  local proj
+  local skill_dir
+
+  workspace="$(mktemp -d)"
+  proj="$workspace/skills-project"
+  skill_dir="$proj/codeguide"
+  mkdir -p "$proj/docs" "$skill_dir/scripts"
+  git -C "$skill_dir" init --quiet
+  git -C "$skill_dir" checkout -q -b CG-77
+  cat > "$skill_dir/SKILL.md" <<'EOF'
+---
+name: sample-skill
+description: Test skill package.
+---
+EOF
+
+  run "$RUN_CODEGUIDE" "$proj" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"task_id: cg-77"* ]]
+  run test -f "$proj/docs/task/TASK-cg-77.md"
+  [ "$status" -eq 0 ]
+
+  rm -rf "$workspace"
+}

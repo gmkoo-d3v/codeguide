@@ -329,8 +329,8 @@ Hint order:
 
 1. `docs/shadow`
 2. `rg`
-3. Serena for symbol, anchor, reference, or call-chain triggers
-4. mem0, vectorstore, or Neo4j as scoped prior-context hints
+3. Always-on Serena for shadow symbol, anchor, reference, or call-chain narrowing
+4. mem0, vectorstore, or Neo4j only as scoped heavy-context prior hints
 5. direct source, test, command, or runtime validation for evidence
 
 Hint output must be labeled `auxiliary_hint` or equivalent and must not enter `confirmed` evidence fields.

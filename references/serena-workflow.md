@@ -9,13 +9,15 @@ Use this reference when symbolic code navigation can reduce risk, context size, 
 - Serena memory or project state must not override current repository files.
 
 ## Status
-- Serena is flow-triggered semi-automatic support for material symbolic code work when available and verified in the current runtime.
-- Serena is not an unconditional default; use it when explicitly requested or when a concrete symbolic-code trigger fits the task flow.
-- The user does not need to mention Serena when a trigger fits, unless a current kill switch disables it.
+- Serena is always-on support for shadow-related work when available and verified in the current runtime.
+- Shadow-related work includes reading or updating shadow docs, effect maps, call-chain records, review-question packets, user-decision context, anchors, references, and current-code topology for shadow evidence.
+- Outside shadow-related work, Serena remains flow-triggered semi-automatic support for material symbolic code work.
+- The user does not need to mention Serena when shadow-related work or another concrete trigger fits, unless a current kill switch disables it.
 - Serena observations are advisory until verified with direct file reads, `rg`, command output, tests, or runtime evidence.
-- Serena is not required for simple docs-only edits, isolated single-file changes, mechanical changes that are already fully scoped, or tasks where direct file reads are sufficient.
+- Serena is not required for non-shadow simple docs-only edits, isolated single-file changes, mechanical changes that are already fully scoped, or tasks where direct file reads are sufficient.
 
 ## Flow triggers
+- Use Serena for shadow-related work by default.
 - Use Serena when explicitly requested.
 - Use Serena when the task requires symbol lookup.
 - Use Serena when the task requires reference search.
@@ -25,19 +27,19 @@ Use this reference when symbolic code navigation can reduce risk, context size, 
 - Use Serena when the task requires architecture navigation or unfamiliar codebase mapping.
 - Use Serena when the task changes shared DTOs, APIs, schemas, or configuration.
 - Use Serena when a code change touches three or more files, unless the change is mechanical, already fully scoped, or Serena is unavailable.
-- Skip Serena when the user disables it, current-runtime verification fails, no concrete trigger fits, the task is an isolated single-file or docs-only change, or the change is mechanical and already fully scoped with direct file reads.
+- Skip Serena when the user disables it, current-runtime verification fails, no concrete trigger fits for non-shadow work, the task is an isolated non-shadow single-file or docs-only change, or the change is mechanical and already fully scoped with direct file reads.
 
 ## Context budget role
 - Use Serena to narrow the current-code search space to specific symbols, references, call-chain candidates, and impacted files.
 - Do not paste broad symbolic overviews into the working context when a short list of paths, symbols, and line anchors is enough.
 - Treat Serena output as a navigation index that points to direct source reads; do not treat it as final validation evidence.
-- Prefer Serena before broad manual file reading when symbolic scope is unclear, and skip it when the target file or symbol is already obvious.
+- Prefer Serena before broad manual file reading when symbolic scope is unclear; for shadow-related work, keep it available even when the first target file is obvious because follow-on anchors and references are often the real risk.
 - Do not persist raw Serena observations into mem0, Neo4j, or project docs; record only verified source-backed facts or concise pointers.
 
 ## Workflow
 1. Discover Serena tools through the current runtime's approved discovery path.
 2. Activate or select the correct project if required and supported.
-3. Define the repository root, target modules, anchors, and symbols of interest.
+3. Define the repository root, target modules, anchors, and symbols of interest; for shadow-related work, include the affected shadow docs or effect records.
 4. Use Serena-provided symbolic overview, symbol search, reference search, and dependency navigation when available.
 5. Verify every material observation with direct file reads, `rg`, command output, tests, or runtime evidence before editing.
 6. Apply edits within the requested ownership boundary.

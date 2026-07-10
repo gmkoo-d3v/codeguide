@@ -161,7 +161,7 @@ validate_tool() {
 load_model_registry() {
   local registry_file="$1"
   local registry_output
-  local kind first second third fourth fifth sixth seventh
+  local kind first second third fourth fifth sixth seventh eighth
 
   if [[ ! -f "$registry_file" ]]; then
     echo "[ERROR] Model registry not found: $registry_file" >&2
@@ -185,6 +185,7 @@ load_model_registry() {
   MODEL_DISPLAY_NAMES=()
   MODEL_VENDORS=()
   MODEL_ADVERSARIAL_PEERS=()
+  MODEL_CLI_EFFORTS=()
   FALLBACK_FROM_GROUPS=()
   FALLBACK_PHASES=()
   FALLBACK_TARGETS=()
@@ -193,7 +194,11 @@ load_model_registry() {
   VENDOR_DEFAULT_REVIEWER_VENDORS=()
   VENDOR_DEFAULT_REVIEWER_ROUTES=()
 
-  while IFS=$'\t' read -r kind first second third fourth fifth sixth seventh; do
+  # Tab is whitespace-class for IFS, so consecutive tabs collapse and an empty
+  # optional middle field (env_binary, vendor, adversarial_peer) silently
+  # shifts every later column. Re-delimit with a non-whitespace separator.
+  registry_output="$(printf '%s\n' "$registry_output" | tr '\t' '\037')"
+  while IFS=$'\037' read -r kind first second third fourth fifth sixth seventh eighth; do
     case "$kind" in
       default_model)
         DEFAULT_MODEL_ALIAS="$first"
@@ -219,6 +224,7 @@ load_model_registry() {
         MODEL_DISPLAY_NAMES+=("$fifth")
         MODEL_VENDORS+=("$sixth")
         MODEL_ADVERSARIAL_PEERS+=("$seventh")
+        MODEL_CLI_EFFORTS+=("$eighth")
         ;;
       fallback)
         FALLBACK_FROM_GROUPS+=("$first")
@@ -313,6 +319,16 @@ model_runner_for() {
   return 1
 }
 
+model_cli_effort_for() {
+  local route="$1"
+  local index
+  if index="$(model_index_for "$route")"; then
+    printf "%s" "${MODEL_CLI_EFFORTS[$index]}"
+    return
+  fi
+  return 1
+}
+
 model_cli_model_for() {
   local route="$1"
   local index
@@ -393,7 +409,20 @@ runner_command_kind_for() {
 
 model_selection_for_model() {
   local route="$1"
+  local cli_model
+  local runner_id
+  local command_kind
+
   require_registered_model "model_selection" "$route" >/dev/null || return 1
+  cli_model="$(model_cli_model_for "$route")" || return 1
+  runner_id="$(model_runner_for "$route")" || return 1
+  command_kind="$(runner_command_kind_for "$runner_id")" || return 1
+  if [[ "$command_kind" == "claude_code" || "$command_kind" == "codex_cli" ]]; then
+    if [[ "$cli_model" != "preconfigured-runtime" ]]; then
+      printf "%s" "cli_flag"
+      return
+    fi
+  fi
   printf "%s" "preconfigured_runtime"
 }
 
@@ -1266,12 +1295,14 @@ build_tool_command() {
   local command_kind
   local binary
   local cli_model
+  local cli_effort
   local prompt
 
   runner_id="$(model_runner_for "$reviewer_model")" || return 1
   command_kind="$(runner_command_kind_for "$runner_id")" || return 1
   binary="$(runner_binary_for "$runner_id")" || return 1
   cli_model="$(model_cli_model_for "$reviewer_model")" || return 1
+  cli_effort="$(model_cli_effort_for "$reviewer_model" || true)"
   prompt="$(build_tool_prompt_for "$reviewer_model" "$request_file" "$output_capture_file" "$durable_response_file")"
 
   case "$command_kind" in
@@ -1286,7 +1317,14 @@ build_tool_command() {
       fi
       ;;
     codex_cli)
-      TOOL_COMMAND=("$binary" exec --cd "$CONTEXT_ROOT" --sandbox read-only --ephemeral --output-last-message "$output_capture_file" "$prompt")
+      TOOL_COMMAND=("$binary" exec --cd "$CONTEXT_ROOT" --sandbox read-only --ephemeral --output-last-message "$output_capture_file")
+      if [[ "$cli_model" != "preconfigured-runtime" ]]; then
+        TOOL_COMMAND+=(--model "$cli_model")
+      fi
+      if [[ -n "$cli_effort" ]]; then
+        TOOL_COMMAND+=(-c "model_reasoning_effort=${cli_effort}")
+      fi
+      TOOL_COMMAND+=("$prompt")
       ;;
     *)
       echo "[ERROR] Unsupported runner command_kind '${command_kind}' for route '${reviewer_model}'" >&2
@@ -1328,6 +1366,25 @@ run_codex_tool_command() {
   return 0
 }
 
+codex_sandbox_marker_truthy() {
+  # Defined boolean semantics: a marker counts only when non-empty and not an
+  # explicit falsy value, so inherited CODEX_SANDBOX_NETWORK_DISABLED=0 or
+  # =false does not misclassify an unsandboxed shell. Trim surrounding
+  # whitespace first to stay in parity with the python implementation.
+  local value="${1:-}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  value="$(printf "%s" "$value" | tr '[:upper:]' '[:lower:]')"
+  case "$value" in
+    ""|"0"|"false"|"off"|"no"|"none") return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+codex_sandbox_active() {
+  codex_sandbox_marker_truthy "${CODEX_SANDBOX:-}" || codex_sandbox_marker_truthy "${CODEX_SANDBOX_NETWORK_DISABLED:-}"
+}
+
 run_claude_tool_command() {
   local _model="$1"
   local request_file="$2"
@@ -1335,6 +1392,19 @@ run_claude_tool_command() {
   local model_stderr_file="$4"
   local durable_response_file="$5"
   local prompt
+
+  # Anthropic CLI calls must run non-sandboxed when a Codex/ChatGPT operator
+  # drives this skill: Codex sandboxes block Anthropic API network access and
+  # OS credential-store access, so a sandboxed attempt burns the review round
+  # on a predictable auth failure. Fail fast before invoking the binary.
+  if codex_sandbox_active; then
+    {
+      echo "[BLOCKED] Codex sandbox detected (CODEX_SANDBOX / CODEX_SANDBOX_NETWORK_DISABLED)."
+      echo "Anthropic claude CLI calls must run non-sandboxed: rerun this command through the user-approved non-sandboxed (escalated) execution path."
+      echo "If this environment is genuinely non-sandboxed and the marker is stale, clear it first: env -u CODEX_SANDBOX -u CODEX_SANDBOX_NETWORK_DISABLED <command>."
+    } > "$model_stderr_file"
+    return 1
+  fi
 
   prompt="$(build_stdin_tool_prompt_for "$output_capture_file" "$durable_response_file")"
   {
@@ -1440,6 +1510,7 @@ run_tool_prompt() {
     local model_stderr_file="${2:-$stderr_file}"
     local binary
     local runner_id
+    local command_kind
 
     if ! build_tool_command "$model" "$request_file" "$output_capture_file" "$durable_response_file"; then
       echo "[ERROR] Could not build runner command for route '${model}'" > "$model_stderr_file"
@@ -1447,19 +1518,28 @@ run_tool_prompt() {
     fi
     binary="${TOOL_COMMAND[0]}"
     runner_id="$(model_runner_for "$model")"
+    command_kind="$(runner_command_kind_for "$runner_id" || true)"
     if ! command -v "$binary" >/dev/null 2>&1; then
       echo "[ERROR] runner '${runner_id}' binary not found in PATH: ${binary}" > "$model_stderr_file"
       return 127
     fi
-    if [[ "$runner_id" == "agy" ]]; then
-      run_agy_tool_command "$model" "$output_capture_file" "$model_stderr_file"
-    elif [[ "$runner_id" == "claude" ]]; then
-      run_claude_tool_command "$model" "$request_file" "$output_capture_file" "$model_stderr_file" "$durable_response_file"
-    elif [[ "$runner_id" == "codex" ]]; then
-      run_codex_tool_command "$model" "$output_capture_file" "$model_stderr_file"
-    else
-      "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
-    fi
+    # Dispatch by the registry's command_kind, never by runner-id string: any
+    # claude_code-kind runner must route through run_claude_tool_command so the
+    # Codex-sandbox guard and stdin handoff apply regardless of the runner id.
+    case "$command_kind" in
+      agy)
+        run_agy_tool_command "$model" "$output_capture_file" "$model_stderr_file"
+        ;;
+      claude_code)
+        run_claude_tool_command "$model" "$request_file" "$output_capture_file" "$model_stderr_file" "$durable_response_file"
+        ;;
+      codex_cli)
+        run_codex_tool_command "$model" "$output_capture_file" "$model_stderr_file"
+        ;;
+      *)
+        "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
+        ;;
+    esac
   }
 
   if _run_model_route "$reviewer_model" "$stderr_file"; then

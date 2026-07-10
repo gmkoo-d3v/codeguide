@@ -15,6 +15,8 @@ Default assumption:
 - Default operation is zero-command for the user when docs lifecycle is justified; the agent runs docs lifecycle commands for material architecture, multi-file, cross-service, delegated, or durable planning work.
 - Skip docs lifecycle commands for small direct answers and trivial edits unless the user explicitly requests documentation sync.
 - Reusable skills projects are the only built-in docs-root exception: if a git root is itself a skill package with `SKILL.md` metadata, has no local `docs/`, and its parent has `docs/`, scripts may use the parent as the system-of-record root. Ordinary app/service repositories must keep docs inside their own project root.
+- Source root vs docs root: git-dependent behavior (branch-based task inference, `git_diff` shadow refresh, impact/coverage change sets) targets the SOURCE repository resolved by `codeguide_source_root` (bash) / `codeguide_paths.source_root_for` (python), never the docs root. Resolution precedence, most explicit first: `CODEGUIDE_SOURCE_ROOT` (normalized to its git toplevel), the `<project-root>/.codeguide-source-root` marker file naming the source repo path (the explicit contract for docs-only parent repos), the invoking path's own repo when it is a skill package, the project root's enclosing repo (an ordinary project — a vendored skill-package child never hijacks it), and a unique skill-package child repo only when the project root is not inside any repo. Explicit declarations (override or marker) that do not resolve inside a git repository fail closed with a distinct diagnostic — a declared source that is not a repo is a configuration error, not a degradable state; ambiguity fails loudly the same way, and only the DETECTION paths (no declaration anywhere) downgrade to non-git fallbacks with an explicit warning.
+- The docs root may be tracked in a local-only git repo (no remote, never pushed) for history and rollback; docs must never be absorbed into a distributed source/skill repo.
 
 ## Data safety rules
 - Empty values never overwrite existing non-empty fields during doc-gardening. Use `--allow-empty-overwrite` to explicitly clear a field.
@@ -322,6 +324,13 @@ Use a concern leaf doc for concrete facts only.
 - last_updated:
 ```
 
+### Source-of-truth digest (optional, freshness binding)
+
+A unit overview or concern leaf that lists `source_of_truth_paths` may optionally add a `source_of_truth_digest` field to bind the doc to the current CONTENT of those sources, so freshness is checked against what the source actually is rather than a timestamp. It is opt-in and advisory:
+
+- Write it only with `scripts/shadow_source_digest.py <doc> --project-root <root> --write`. It is a deliberate verification assertion — `doc_garden.sh` and the scaffold never write or bump it.
+- `scripts/validate_docs.sh --mode advisory` recomputes the digest (via `--check`) and warns on drift (source changed since last verification), a missing declared source, or a source path that escapes the project root. Strict mode skips it (recommended tier).
+
 ### Effect Map Leaf Template
 
 Use `doc_role: effect_map` only for shadow docs that record side-effect entries under the Shadow Effect Map Workflow Contract. Effect maps are concern-leaf style docs with a stricter writer gate; they must not replace routers, bucket indexes, unit overviews, or general navigation summaries.
@@ -420,7 +429,7 @@ Use one file per evaluator report:
 `docs/report/PLAN-<task-id>-v<major>.<minor>-review-<runner>-<model-slug>-r<nn>.md`
 
 Evaluator label is the actual runner id, such as `agy` or `claude`, from `config/ai_model_registry.json`.
-External CLI model selection is `preconfigured_runtime`: the wrapper records the requested route but uses the model already selected in the runner runtime.
+External CLI model selection is runner-specific: provenance records `preconfigured_runtime` when the runner's current model is used and `cli_flag` when the registry's `cli_model` is passed through a documented per-call flag.
 
 ```markdown
 # PLAN-<task-id>-v1.0 review (<runner>/<route>)
@@ -436,7 +445,7 @@ External CLI model selection is `preconfigured_runtime`: the wrapper records the
 - evaluator_actual_model: <runner:model-route>
 - evaluator_requested_cli_model: <cli-model>
 - evaluator_actual_cli_model: <cli-model>
-- evaluator_model_selection: preconfigured_runtime
+- evaluator_model_selection: preconfigured_runtime | cli_flag
 - quota_fallback_triggered: false
 - review_style: standard | adversarial
 - review_round: r01

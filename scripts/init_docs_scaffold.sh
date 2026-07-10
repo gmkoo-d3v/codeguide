@@ -565,7 +565,7 @@ write_if_missing "${REPORT_DIR}/LLM-REVIEW-template.md" '# PLAN-<task-id>-v1.0 r
 - evaluator: <runner>
 - evaluator_requested_model: <model-slug>
 - evaluator_actual_model: <model-slug>
-- evaluator_model_selection: preconfigured_runtime
+- evaluator_model_selection: preconfigured_runtime | cli_flag
 - quota_fallback_triggered: false
 - review_style: standard
 - review_style: standard | adversarial

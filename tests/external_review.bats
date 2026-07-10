@@ -1310,6 +1310,70 @@ EOF'
   [ "$status" -eq 0 ]
   run test -f "$DOCS_ROOT/report/PLAN-ext-claude-stdin-v1.0-review-claude-opus-4.8-r01.md"
   [ "$status" -eq 0 ]
+  run grep "^- evaluator_model_selection: cli_flag" "$DOCS_ROOT/report/PLAN-ext-claude-stdin-v1.0-review-claude-opus-4.8-r01.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews passes explicit Codex registry model" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-codex-model-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-codex-model-v1.0
+
+- task_id: ext-codex-model
+- plan_version: v1.0
+- objective: verify explicit Codex model routing
+- scope: external review
+- assumptions: registered Codex models use the documented per-call model flag
+- risks: explicit route silently uses the globally configured model
+- acceptance_signals: mock Codex receives gpt-5.6-sol
+- stop_conditions: model flag is absent
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Run an explicit Codex reviewer route.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/codex-model-args.log"
+output_file=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-last-message" ]]; then
+    output_file="${2:-}"
+    shift 2
+  else
+    shift
+  fi
+done
+cat > "$output_file" <<EOF
+- verdict: accept
+- summary: Mock Codex accepted the explicit GPT-5.6 Sol route.
+- strengths: The registry model reached the CLI.
+- risks: None.
+- requested_changes: None.
+EOF'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-codex-model" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --primary-model "agy-current" \
+    --reviewer "codex-5.6-sol" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-codex-model" \
+    --approved-next-step "run external review ext-codex-model"
+
+  [ "$status" -eq 0 ]
+  run grep -- "--model" "$TEST_WORKSPACE/codex-model-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "gpt-5.6-sol" "$TEST_WORKSPACE/codex-model-args.log"
+  [ "$status" -eq 0 ]
+  run grep "^- evaluator_model_selection: cli_flag" "$DOCS_ROOT/report/PLAN-ext-codex-model-v1.0-review-codex-gpt-5.6-sol-r01.md"
+  [ "$status" -eq 0 ]
 }
 
 @test "run_external_plan_reviews stops on Claude model unavailable before parser retry" {
@@ -1404,6 +1468,24 @@ exit 1'
   [ -n "$handoff_dir" ]
   run test ! -f "$handoff_dir/claude-opus-4.8.retry-request.md"
   [ "$status" -eq 0 ]
+}
+
+@test "bundled registry exposes the requested OpenAI and Anthropic lineups" {
+  local registry_file="$SCRIPTS_DIR/../config/ai_model_registry.json"
+
+  run python3 "$SCRIPTS_DIR/ai_model_registry.py" validate "$registry_file"
+  [ "$status" -eq 0 ]
+
+  run python3 "$SCRIPTS_DIR/ai_model_registry.py" emit-shell "$registry_file"
+  [ "$status" -eq 0 ]
+  local registry_output="$output"
+
+  [[ "$registry_output" == *$'model\tcodex:gpt-5.6-sol\tcodex\tgpt-5.6-sol'* ]]
+  [[ "$registry_output" == *$'model\tcodex:gpt-5.6-terra\tcodex\tgpt-5.6-terra'* ]]
+  [[ "$registry_output" == *$'model\tcodex:gpt-5.6-luna\tcodex\tgpt-5.6-luna'* ]]
+  [[ "$registry_output" == *$'model\tclaude:fable-5\tclaude\tclaude-fable-5'* ]]
+  [[ "$registry_output" == *$'model\tclaude:sonnet-5\tclaude\tclaude-sonnet-5'* ]]
+  [[ "$registry_output" == *$'model\tclaude:opus-4.8\tclaude\topus-4.8'* ]]
 }
 
 @test "run_external_plan_reviews loads runner routes from registry override and still stops on quota" {
@@ -1857,6 +1939,43 @@ EOF'
   [ "$status" -eq 0 ]
 }
 
+@test "external_review_runner passes explicit Codex registry model" {
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/runner-codex-model-args.log"
+output_file=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-last-message" ]]; then
+    output_file="${2:-}"
+    shift 2
+  else
+    shift
+  fi
+done
+cat > "$output_file" <<EOF
+- verdict: accept
+- summary: Mock Codex accepted the explicit GPT-5.6 Terra route.
+- strengths: The registered model reached the CLI.
+- risks: None.
+- requested_changes: None.
+EOF'
+
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-codex-model" --plan-version "v1.0" --review-round "r01" --task-phase "review" --coordinator "agy" --participant "codex-5.6-terra"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+
+  run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-codex-model" --force
+  [ "$status" -eq 0 ]
+
+  run grep -- "--model" "$TEST_WORKSPACE/runner-codex-model-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "gpt-5.6-terra" "$TEST_WORKSPACE/runner-codex-model-args.log"
+  [ "$status" -eq 0 ]
+  run grep "^- model_selection: cli_flag" "$DOCS_ROOT/orchestration/runner-codex-model/current-task/provenance/codex-gpt-5.6-terra.provenance.md"
+  [ "$status" -eq 0 ]
+}
+
 @test "external_review_runner preserves auth-unavailable stdout in stderr artifact" {
   local mock_bin="$TEST_WORKSPACE/mock-bin"
   mkdir -p "$mock_bin"
@@ -2262,5 +2381,449 @@ exit 99'
   run test ! -e "$TEST_WORKSPACE/claude-called"
   [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/codex-called"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews passes codex reasoning effort for cli_effort routes" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-effort-01-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-effort-01-v1.0
+
+- task_id: ext-effort-01
+- plan_version: v1.0
+- objective: validate cli_effort passthrough for codex routes
+- scope: external review command construction
+- assumptions: mock codex records its argv
+- risks: effort flag silently dropped
+- acceptance_signals: codex argv contains model_reasoning_effort
+- stop_conditions: wrapper completes
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin-effort"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/codex-effort-args.log"
+output_file=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-last-message" ]]; then
+    output_file="${2:-}"
+    shift 2
+  else
+    shift
+  fi
+done
+if [[ -z "$output_file" ]]; then
+  output_file="/dev/stdout"
+fi
+cat > "$output_file" <<EOF
+- verdict: accept
+- summary: Mock codex accepts the effort-routed review.
+- strengths: Deterministic fixture.
+- risks: None.
+- requested_changes: None.
+EOF'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-effort-01" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --reviewer "codex-gpt-5.6-sol-high" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-effort-01" \
+    --approved-next-step "run external review ext-effort-01 v1.0 r01"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[OK] evaluator=codex"* ]]
+  run grep -- "--model" "$TEST_WORKSPACE/codex-effort-args.log"
+  [ "$status" -eq 0 ]
+  run grep -x -- "gpt-5.6-sol" "$TEST_WORKSPACE/codex-effort-args.log"
+  [ "$status" -eq 0 ]
+  run grep -x -- "model_reasoning_effort=high" "$TEST_WORKSPACE/codex-effort-args.log"
+  [ "$status" -eq 0 ]
+}
+
+@test "external_review_runner dry-run includes codex reasoning effort for cli_effort routes" {
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: effort route request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-effort" --plan-version "v1.0" --review-round "r01" --task-phase "planning" --coordinator "claude" --participant "codex-gpt-5.6-sol-high"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+
+  run python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-effort" --dry-run
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"codex exec"* ]]
+  [[ "$output" == *"--model gpt-5.6-sol"* ]]
+  [[ "$output" == *"model_reasoning_effort=high"* ]]
+}
+
+@test "run_external_plan_reviews blocks sandboxed claude invocation with non-sandboxed remediation" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-sandbox-01-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-sandbox-01-v1.0
+
+- task_id: ext-sandbox-01
+- plan_version: v1.0
+- objective: validate codex sandbox guard for claude routes
+- scope: external review invocation guard
+- assumptions: CODEX_SANDBOX marks a sandboxed codex shell
+- risks: claude invoked from a sandbox burns the round on auth failure
+- acceptance_signals: claude binary is never invoked
+- stop_conditions: wrapper reports the blocked route
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin-sandbox"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/claude-sandbox-called"
+cat <<EOF
+- verdict: accept
+- summary: should never run
+- strengths: none
+- risks: none
+- requested_changes: none
+EOF'
+
+  run env CODEX_SANDBOX=seatbelt PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-sandbox-01" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --reviewer "claude-current" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-sandbox-01" \
+    --approved-next-step "run external review ext-sandbox-01 v1.0 r01"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Codex sandbox detected"* ]]
+  [[ "$output" == *"non-sandboxed"* ]]
+  run test -e "$TEST_WORKSPACE/claude-sandbox-called"
+  [ "$status" -ne 0 ]
+}
+
+@test "external_review_runner blocks sandboxed claude invocation before running the binary" {
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: sandbox guard request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-sandbox" --plan-version "v1.0" --review-round "r01" --task-phase "planning" --coordinator "codex" --participant "claude-current"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin-runner-sandbox"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/runner-claude-sandbox-called"
+echo "- verdict: accept"'
+
+  run env CODEX_SANDBOX=seatbelt PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-sandbox"
+
+  [ "$status" -ne 0 ]
+  run test -e "$TEST_WORKSPACE/runner-claude-sandbox-called"
+  [ "$status" -ne 0 ]
+  run bash -c 'grep -rl "Codex sandbox detected" "$1"/docs/orchestration/runner-sandbox' _ "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+}
+
+@test "sandbox guard ignores explicitly falsy codex markers" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-sandbox-02-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-sandbox-02-v1.0
+
+- task_id: ext-sandbox-02
+- plan_version: v1.0
+- objective: falsy sandbox markers must not block claude routes
+- scope: sandbox marker boolean semantics
+- assumptions: inherited markers may carry 0/false values
+- risks: false-positive guard blocks legitimate unsandboxed runs
+- acceptance_signals: claude runs when markers are falsy
+- stop_conditions: wrapper completes
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin-sandbox-falsy"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/claude-falsy-called"
+cat <<EOF
+- verdict: accept
+- summary: falsy markers must not block
+- strengths: bounded
+- risks: none
+- requested_changes: none
+EOF'
+
+  run env CODEX_SANDBOX=false CODEX_SANDBOX_NETWORK_DISABLED=0 PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-sandbox-02" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --reviewer "claude-current" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-sandbox-02" \
+    --approved-next-step "run external review ext-sandbox-02 v1.0 r01"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[OK] evaluator=claude"* ]]
+  run test -e "$TEST_WORKSPACE/claude-falsy-called"
+  [ "$status" -eq 0 ]
+}
+
+@test "sandbox guard blocks on a truthy network-disabled marker alone" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-sandbox-03-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-sandbox-03-v1.0
+
+- task_id: ext-sandbox-03
+- plan_version: v1.0
+- objective: network-disabled marker alone must block claude routes
+- scope: sandbox marker boolean semantics
+- assumptions: CODEX_SANDBOX_NETWORK_DISABLED=1 marks a sandboxed shell
+- risks: claude invoked without network burns the round
+- acceptance_signals: claude binary is never invoked
+- stop_conditions: wrapper reports the blocked route
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin-sandbox-net"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/claude-net-called"
+echo "- verdict: accept"'
+
+  run env CODEX_SANDBOX_NETWORK_DISABLED=1 PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-sandbox-03" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --reviewer "claude-current" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-sandbox-03" \
+    --approved-next-step "run external review ext-sandbox-03 v1.0 r01"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Codex sandbox detected"* ]]
+  run test -e "$TEST_WORKSPACE/claude-net-called"
+  [ "$status" -ne 0 ]
+}
+
+@test "model registry rejects control characters in registry fields" {
+  local bad_registry="$TEST_WORKSPACE/bad-registry.json"
+  python3 - "$bad_registry" <<'PY'
+import json
+import sys
+
+registry = {
+    "default_model_alias": "agy-current",
+    "default_task_phase": "planning",
+    "runners": {"agy": {"binary": "agy", "env_binary": "X", "command_kind": "agy"}},
+    "models": {
+        "agy:current": {
+            "runner": "agy",
+            "cli_model": "preconfigured-runtime",
+            "display_name": "BadName",
+            "quota_group": "g",
+            "vendor": "google",
+        }
+    },
+    "aliases": {"agy-current": "agy:current"},
+    "default_reviewer_aliases": ["agy-current"],
+    "vendor_default_reviewers": {"google": "agy-current"},
+    "fallback_policy": {"fail_closed_for_unregistered_models": True, "on_quota_exhausted": []},
+    "quota_error_patterns": ["quota"],
+}
+with open(sys.argv[1], "w") as handle:
+    json.dump(registry, handle)
+PY
+
+  run python3 "$SCRIPTS_DIR/ai_model_registry.py" emit-shell "$bad_registry"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"control characters"* ]]
+}
+
+@test "model registry rejects cli_effort on non-codex runners" {
+  local bad_registry="$TEST_WORKSPACE/effort-registry.json"
+  python3 - "$bad_registry" <<'PY'
+import json
+import sys
+
+registry = {
+    "default_model_alias": "agy-current",
+    "default_task_phase": "planning",
+    "runners": {"agy": {"binary": "agy", "env_binary": "X", "command_kind": "agy"}},
+    "models": {
+        "agy:current": {
+            "runner": "agy",
+            "cli_model": "preconfigured-runtime",
+            "cli_effort": "high",
+            "display_name": "Preconfigured",
+            "quota_group": "g",
+            "vendor": "google",
+        }
+    },
+    "aliases": {"agy-current": "agy:current"},
+    "default_reviewer_aliases": ["agy-current"],
+    "vendor_default_reviewers": {"google": "agy-current"},
+    "fallback_policy": {"fail_closed_for_unregistered_models": True, "on_quota_exhausted": []},
+    "quota_error_patterns": ["quota"],
+}
+with open(sys.argv[1], "w") as handle:
+    json.dump(registry, handle)
+PY
+
+  run python3 "$SCRIPTS_DIR/ai_model_registry.py" emit-shell "$bad_registry"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"cli_effort is only supported for codex_cli runners"* ]]
+}
+
+@test "sandbox guard trims whitespace before truthiness (parity with python)" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-sandbox-04-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-sandbox-04-v1.0
+
+- task_id: ext-sandbox-04
+- plan_version: v1.0
+- objective: padded falsy markers must not block claude routes
+- scope: sandbox marker whitespace parity
+- assumptions: markers may carry padded values
+- risks: shell and python truthiness diverging on whitespace
+- acceptance_signals: claude runs when the marker is a padded falsy value
+- stop_conditions: wrapper completes
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin-sandbox-pad"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/claude-pad-called"
+cat <<EOF
+- verdict: accept
+- summary: padded falsy markers must not block
+- strengths: bounded
+- risks: none
+- requested_changes: none
+EOF'
+
+  run env "CODEX_SANDBOX= false " PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-sandbox-04" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --reviewer "claude-current" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-sandbox-04" \
+    --approved-next-step "run external review ext-sandbox-04 v1.0 r01"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[OK] evaluator=claude"* ]]
+  run test -e "$TEST_WORKSPACE/claude-pad-called"
+  [ "$status" -eq 0 ]
+
+  python3 - <<PY
+import sys
+sys.path.insert(0, "$SCRIPTS_DIR")
+from external_review_runner import _sandbox_marker_truthy
+assert _sandbox_marker_truthy(" false ") is False
+assert _sandbox_marker_truthy(" seatbelt ") is True
+PY
+}
+
+@test "sandbox guard fires for any claude_code-kind runner id, not only 'claude'" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-sandbox-05-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-sandbox-05-v1.0
+
+- task_id: ext-sandbox-05
+- plan_version: v1.0
+- objective: guard must key on command_kind, not the runner-id string
+- scope: sandbox guard dispatch
+- assumptions: a second claude_code runner id may be registered later
+- risks: renamed claude-family runner bypasses the guard
+- acceptance_signals: the second runner's binary is never invoked
+- stop_conditions: wrapper reports the blocked route
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local custom_registry="$TEST_WORKSPACE/claude2-registry.json"
+  python3 - "$SCRIPTS_DIR/../config/ai_model_registry.json" "$custom_registry" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1]) as handle:
+    registry = json.load(handle)
+registry["runners"]["claude2"] = {"binary": "claude2", "env_binary": "CODEGUIDE_CLAUDE2_BIN", "command_kind": "claude_code"}
+registry["models"]["claude2:current"] = {
+    "runner": "claude2",
+    "cli_model": "preconfigured-runtime",
+    "display_name": "Claude2 preconfigured",
+    "quota_group": "claude2-preconfigured",
+    "vendor": "anthropic",
+}
+registry["aliases"]["claude2-current"] = "claude2:current"
+with open(sys.argv[2], "w") as handle:
+    json.dump(registry, handle)
+PY
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin-claude2"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/claude2" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/claude2-called"
+echo "- verdict: accept"'
+
+  run env CODEX_SANDBOX=seatbelt CODEGUIDE_MODEL_REGISTRY="$custom_registry" PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-sandbox-05" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --reviewer "claude2-current" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-sandbox-05" \
+    --approved-next-step "run external review ext-sandbox-05 v1.0 r01"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Codex sandbox detected"* ]]
+  run test -e "$TEST_WORKSPACE/claude2-called"
+  [ "$status" -ne 0 ]
+}
+
+@test "external_review_runner blocks a second claude_code runner id under a sandbox (regression pin)" {
+  local custom_registry="$TEST_WORKSPACE/claude2-runner-registry.json"
+  python3 - "$SCRIPTS_DIR/../config/ai_model_registry.json" "$custom_registry" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1]) as handle:
+    registry = json.load(handle)
+registry["runners"]["claude2"] = {"binary": "claude2", "env_binary": "CODEGUIDE_CLAUDE2_BIN", "command_kind": "claude_code"}
+registry["models"]["claude2:current"] = {
+    "runner": "claude2",
+    "cli_model": "preconfigured-runtime",
+    "display_name": "Claude2 preconfigured",
+    "quota_group": "claude2-preconfigured",
+    "vendor": "anthropic",
+}
+registry["aliases"]["claude2-current"] = "claude2:current"
+with open(sys.argv[2], "w") as handle:
+    json.dump(registry, handle)
+PY
+
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: pin" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" --registry "$3" enqueue --task-id "runner-claude2-sandbox" --plan-version "v1.0" --review-round "r01" --task-phase "planning" --coordinator "codex" --participant "claude2-current"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT" "$custom_registry"
+  [ "$status" -eq 0 ]
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin-runner-claude2"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/claude2" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/runner-claude2-called"
+echo "- verdict: accept"'
+
+  run env CODEX_SANDBOX=seatbelt PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" --registry "$custom_registry" run-once --task-id "runner-claude2-sandbox"
+
+  [ "$status" -ne 0 ]
+  run test -e "$TEST_WORKSPACE/runner-claude2-called"
+  [ "$status" -ne 0 ]
+  run bash -c 'grep -rl "Codex sandbox detected" "$1"/docs/orchestration/runner-claude2-sandbox' _ "$TEST_PROJECT"
   [ "$status" -eq 0 ]
 }

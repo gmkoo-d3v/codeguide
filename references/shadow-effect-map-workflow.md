@@ -144,8 +144,8 @@ Residual risk remains explicit rather than hidden: local JSON candidate and deci
 ## Standard Workflow
 
 1. Read existing shadow docs for navigation context.
-2. Use `rg` and, when triggered, Serena for current-code anchors and call-chain narrowing.
-3. Treat mem0, vectorstore, Neo4j, and graph sync as bounded hints only.
+2. Use `rg` and always-on Serena, when available and verified, for current-code anchors and call-chain narrowing.
+3. Treat mem0, vectorstore, Neo4j, and graph sync as bounded heavy-context hints only; skip them for ordinary shadow work.
 4. Run deterministic probes where a registered validator or fallback exists.
 5. Classify each item using the matrix above.
 6. Write navigation summaries separately from effect maps.

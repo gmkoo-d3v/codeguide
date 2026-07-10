@@ -108,7 +108,7 @@ def command_for_route(registry: dict[str, Any], route: str, request_file: Path, 
             command.extend(["--model", model["cli_model"]])
         return command
     if runner["command_kind"] == "codex_cli":
-        return [
+        command = [
             binary,
             "exec",
             "--cd",
@@ -118,15 +118,49 @@ def command_for_route(registry: dict[str, Any], route: str, request_file: Path, 
             "--ephemeral",
             "--output-last-message",
             str(response_file),
-            prompt,
         ]
+        if model["cli_model"] != "preconfigured-runtime":
+            command.extend(["--model", model["cli_model"]])
+        if model.get("cli_effort"):
+            command.extend(["-c", f"model_reasoning_effort={model['cli_effort']}"])
+        command.append(prompt)
+        return command
     raise ValueError(f"unsupported command_kind: {runner['command_kind']}")
+
+
+def _sandbox_marker_truthy(value: str | None) -> bool:
+    # Defined boolean semantics: a marker counts only when non-empty and not an
+    # explicit falsy value, so inherited CODEX_SANDBOX_NETWORK_DISABLED=0 or
+    # =false does not misclassify an unsandboxed shell.
+    if value is None:
+        return False
+    return value.strip().lower() not in {"", "0", "false", "off", "no", "none"}
+
+
+def codex_sandbox_active() -> bool:
+    return _sandbox_marker_truthy(os.environ.get("CODEX_SANDBOX")) or _sandbox_marker_truthy(
+        os.environ.get("CODEX_SANDBOX_NETWORK_DISABLED")
+    )
 
 
 def run_command_for_route(registry: dict[str, Any], route: str, command: list[str], request_file: Path, response_file: Path) -> subprocess.CompletedProcess[str]:
     runner = runner_for_route(registry, route)
     stdin_text = None
     if runner["command_kind"] == "claude_code":
+        # Anthropic CLI calls must run non-sandboxed under a Codex/ChatGPT
+        # operator: Codex sandboxes block Anthropic API network access and OS
+        # credential-store access. Fail fast instead of burning the round.
+        if codex_sandbox_active():
+            return subprocess.CompletedProcess(
+                command,
+                1,
+                "",
+                "[BLOCKED] Codex sandbox detected (CODEX_SANDBOX / CODEX_SANDBOX_NETWORK_DISABLED).\n"
+                "Anthropic claude CLI calls must run non-sandboxed: rerun this command through the "
+                "user-approved non-sandboxed (escalated) execution path.\n"
+                "If this environment is genuinely non-sandboxed and the marker is stale, clear it first: "
+                "env -u CODEX_SANDBOX -u CODEX_SANDBOX_NETWORK_DISABLED <command>.\n",
+            )
         stdin_text = (
             "Review only the Markdown request provided on stdin. "
             "Return only the requested Markdown fields to stdout. "
@@ -147,7 +181,10 @@ def run_command_for_route(registry: dict[str, Any], route: str, command: list[st
 
 
 def model_selection_for_route(registry: dict[str, Any], route: str) -> str:
-    model_for_route(registry, route)
+    model = model_for_route(registry, route)
+    runner = runner_for_route(registry, route)
+    if runner["command_kind"] in {"claude_code", "codex_cli"} and model["cli_model"] != "preconfigured-runtime":
+        return "cli_flag"
     return "preconfigured_runtime"
 
 

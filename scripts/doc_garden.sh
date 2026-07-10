@@ -639,6 +639,7 @@ THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$THIS_DIR/codeguide_paths.sh"
 
 PROJECT_ROOT_ABS="$(codeguide_resolve_project_root "$PROJECT_ROOT")"
+SOURCE_ROOT_ABS="$(codeguide_source_root "$PROJECT_ROOT" || true)"
 INIT_SCRIPT="$THIS_DIR/init_docs_scaffold.sh"
 DOCS_DIR="$(codeguide_docs_root "$PROJECT_ROOT_ABS")"
 TASK_DIR="$DOCS_DIR/task"
@@ -750,7 +751,7 @@ upsert_field_if_blank() {
 }
 
 is_git_repo() {
-  git -C "$PROJECT_ROOT_ABS" rev-parse --is-inside-work-tree >/dev/null 2>&1
+  [[ -n "$SOURCE_ROOT_ABS" ]] && git -C "$SOURCE_ROOT_ABS" rev-parse --is-inside-work-tree >/dev/null 2>&1
 }
 
 resolve_shadow_change_note() {
@@ -769,11 +770,11 @@ resolve_shadow_change_note() {
   fi
 
   if ! is_git_repo; then
-    echo "[ERROR] --shadow-refresh-mode git_diff requires a git repository" >&2
+    echo "[ERROR] --shadow-refresh-mode git_diff requires a git repository (no source repo reachable; set CODEGUIDE_SOURCE_ROOT to override)" >&2
     exit 1
   fi
 
-  if ! diff_output="$(git -C "$PROJECT_ROOT_ABS" diff --name-only "$SHADOW_GIT_RANGE")"; then
+  if ! diff_output="$(git -C "$SOURCE_ROOT_ABS" diff --name-only "$SHADOW_GIT_RANGE")"; then
     echo "[ERROR] Failed to collect git diff for shadow refresh range: $SHADOW_GIT_RANGE" >&2
     exit 1
   fi

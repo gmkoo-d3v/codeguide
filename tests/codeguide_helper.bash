@@ -82,7 +82,10 @@ write_mock_cli() {
 
 create_mock_external_review_artifact() {
   local task_id="$1"
-  local reviewer="${2:-gemini-3-5-flash-medium}"
+  # The close gate only accepts antigravity/agy evaluators, so the fixture runs
+  # with a codex primary to place agy in the cross-vendor reviewer set
+  # (vendor defaults resolve to agy:current + claude:current response slugs).
+  local reviewer="${2:-agy-current}"
   local plan_version="v1.0"
   local review_round="r01"
   local plan_file="$DOCS_ROOT/plan/PLAN-${task_id}-${plan_version}.md"
@@ -106,6 +109,9 @@ create_mock_external_review_artifact() {
 EOF
 
   mkdir -p "$mock_bin"
+  # Mock EVERY registry runner binary so no test ever invokes a real external
+  # CLI (hermetic tests double as the egress guard: a real codex/claude call
+  # from a fixture is an unapproved external-service invocation).
   write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
 cat <<EOF
 - verdict: accept
@@ -115,10 +121,41 @@ cat <<EOF
 - requested_changes: None.
 EOF'
 
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+cat <<EOF
+- verdict: accept
+- summary: Mock claude accepts the bounded review packet.
+- strengths: The handoff is constrained.
+- risks: This is a deterministic test fixture.
+- requested_changes: None.
+EOF'
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+output_file=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-last-message" ]]; then
+    output_file="${2:-}"
+    shift 2
+  else
+    shift
+  fi
+done
+if [[ -z "$output_file" ]]; then
+  output_file="/dev/stdout"
+fi
+cat > "$output_file" <<EOF
+- verdict: accept
+- summary: Mock codex accepts the bounded review packet.
+- strengths: The handoff is constrained.
+- risks: This is a deterministic test fixture.
+- requested_changes: None.
+EOF'
+
   env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
     --task-id "$task_id" \
     --plan-version "$plan_version" \
-    --primary-tool "antigravity" \
+    --primary-tool "codex" \
+    --reviewer "agy-current" \
     --review-round "$review_round" \
     --risk-preflight-status "approved" \
     --approval-ref "user-approval-${task_id}" \

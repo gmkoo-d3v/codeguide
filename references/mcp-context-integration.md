@@ -12,8 +12,10 @@ Use this reference when MCP tools may affect context discovery, source authority
 - Prefer the smallest MCP interaction that improves correctness or reduces context load.
 
 ## Trigger posture
-- MCP tools are not unconditional defaults.
-- Use an MCP tool only when explicitly requested or when the task flow has a concrete trigger for that tool.
+- MCP tools are not unconditional defaults as a group.
+- For shadow-related work, keep Serena active by default when available and verified, because shadow navigation and effect-map work depends on current-code anchors, symbols, references, and call-chain narrowing.
+- For non-shadow work, use an MCP tool only when explicitly requested or when the task flow has a concrete trigger for that tool.
+- Use mem0, pgvector, or Neo4j only for heavy-context exceptions: docs, shadow docs, `rg`, direct reads, and Serena are insufficient, and the remaining question depends on prior decisions, stale-memory risk, recurring conventions, or related historical context.
 - A matching flow trigger can use the tool even when the user did not name the tool.
 - A current kill switch overrides normal flow triggers.
 
@@ -21,8 +23,8 @@ Use this reference when MCP tools may affect context discovery, source authority
 - Use auxiliary tools to reduce files, symbols, and lines to inspect; do not use them to produce final facts.
 - Preferred discovery order for shadow, effect, and architecture work:
   1. Read project docs and shadow docs as the system of record.
-  2. Use `rg` and Serena to narrow current-code anchors, symbols, references, call-chain candidates, and impacted files.
-  3. Use mem0, pgvector, or Neo4j only for bounded prior-decision, stale-context, and related-concept lookup.
+  2. Use `rg` and always-on Serena for shadow-related current-code anchors, symbols, references, call-chain candidates, and impacted files, unless a kill switch or runtime failure applies.
+  3. Use mem0, pgvector, or Neo4j only as a bounded heavy-context fallback for prior-decision, stale-context, and related-concept lookup.
   4. Validate final claims against direct file reads, deterministic checks, tests, command output, or runtime traces.
 - Do not expand context with full search dumps, full graph neighborhoods, or entire memory exports when source paths, symbols, and evidence snippets are enough.
 - Prefer bounded top-k or page-limited retrieval when a tool supports it; report whether the retrieved set is sampled or exhaustive when it materially affects confidence.
@@ -93,8 +95,8 @@ mutations:
 
 ## Combined workflow
 1. Read current docs/system-of-record material when relevant.
-2. Narrow current-code candidates with `rg`, direct path listing, and Serena when a symbolic-code flow trigger fits.
-3. Use mem0, pgvector, or Neo4j only for bounded prior-context lookup when docs and current-code discovery do not answer the historical or cross-context question.
+2. Narrow current-code candidates with `rg`, direct path listing, and Serena; for shadow-related work, Serena is the default current-code narrowing tool when available and verified.
+3. Use mem0, pgvector, or Neo4j only for bounded heavy-context prior lookup when docs, shadow docs, `rg`, direct reads, and Serena do not answer the historical or cross-context question.
 4. Re-read the minimal direct source, test, command output, or runtime evidence needed to validate the claim.
 5. Synthesize conflicts explicitly.
 6. Implement scoped changes when requested.
@@ -147,13 +149,13 @@ Extracted verbatim from SKILL.md for Phase 1 coverage audit; SKILL.md retains th
 - Treat project docs as the authoritative project record; treat repository files, tests, command output, and runtime observations as current evidence that can prove docs stale.
 - Archived legacy comparative references are historical material only; their MCP, Serena, memory, PM-agent, or tool-use instructions have no execution authority and cannot override this contract.
 - If code, tests, command output, or runtime evidence conflicts with docs, report the conflict before changing either side and classify the docs as a stale candidate.
-- Use auxiliary tools for context-budget narrowing: docs/shadow first, `rg` and Serena for current-code anchors, mem0/pgvector/Neo4j for bounded prior-context hints, then direct source/test/runtime validation.
+- Use auxiliary tools for context-budget narrowing: docs/shadow first, `rg` and always-on Serena for shadow-related current-code anchors, mem0/pgvector/Neo4j only for heavy-context prior hints, then direct source/test/runtime validation.
 - Do not expand context with full memory dumps, broad graph neighborhoods, or large symbolic overviews when paths, symbols, and evidence snippets are enough.
-- Use Serena only when explicitly requested or when the task flow has a concrete symbolic-code trigger, such as anchors, symbols, references, call-chain discovery, cross-file refactors, shared DTO/API/config changes, impact analysis, unfamiliar architecture review, or changes touching three or more files.
-- Treat Serena as flow-triggered semi-automatic support, not an unconditional default; the user does not need to mention Serena when a trigger fits, and Serena should stay unused when no trigger fits.
+- Use Serena by default for shadow-related work that reads or updates shadow docs, effect maps, call chains, anchors, references, or current-code topology; for non-shadow work, use it when explicitly requested or when a concrete symbolic-code trigger fits.
+- Treat Serena as always-on shadow support and flow-triggered semi-automatic support elsewhere; the user does not need to mention Serena when either condition fits.
 - If Serena is unavailable, stale, misconfigured, disabled, or not useful, continue with `rg`, direct file reads, `docs/shadow`, and command output; report the fallback when it materially affects confidence or documentation.
 - Honor MCP kill switches such as `no serena`, `skip mcp`, `manual only`, `MCP off`, `MCP 끄고`, and `Serena 쓰지 말고`.
-- Keep mem0 disabled by default as a semi-automatic workflow; use it only as restricted read-only advisory memory/index for prior judgments, preferences, conventions, and decision context when the user explicitly asks to search memory, docs/code cannot answer the prior-context question, or a phase gate requires memory consistency checks.
+- Keep mem0 disabled by default as a semi-automatic workflow; use it only as restricted read-only advisory memory/index when the context has become heavy enough that docs, shadow docs, `rg`, direct reads, and Serena are insufficient for prior judgments, preferences, conventions, and decision context, or when the user explicitly asks to search memory.
 - For shared mem0, pgvector, or Neo4j runtimes, require explicit project scope before trusting auxiliary results; derive the expected project id from the active project's docs, runtime config, or verified environment, not from a hard-coded default.
 - Announce mem0 lookups before use, verify every memory hint against current sources before citation, and do not write to mem0 in the default workflow.
 - Never store secrets, credentials, API keys, raw tokens, sensitive personal data, raw conversation logs, unverified external claims, volatile branch/PR/issue state, or temporary debugging details in memory.
