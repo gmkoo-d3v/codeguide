@@ -53,7 +53,7 @@ Use this reference when symbolic code navigation can reduce risk, context size, 
 - Do not pause implementation solely because Serena is unavailable when direct sources are enough.
 
 ## Freshness checks
-- Confirm the active Serena project matches the repository being edited before relying on symbolic results.
+- Confirm the active Serena project matches the repository being edited before relying on symbolic results. In the skills layout the authoritative Serena project is the SOURCE repo (the skill package), never the docs root: a docs-only parent repo gitignores the source directory, and with ignore_all_files_in_gitignore enabled a parent-rooted project would hide every source file from indexing.
 - Re-read affected source files directly before editing any symbol discovered through Serena.
 - Treat missing, surprising, or contradictory symbol results as stale until direct file reads or command output confirm them.
 - After large file moves, generated-code updates, branch changes, or MCP server restarts, prefer direct `rg` plus file reads until Serena results are checked against current files.
