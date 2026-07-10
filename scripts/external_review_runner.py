@@ -290,6 +290,10 @@ def execute_once(args: argparse.Namespace) -> int:
         external_stderr = external_dir / f"{route_slug}.stderr.md"
         external_provenance = external_dir / f"{route_slug}.provenance.md"
         if current_response.exists() and not args.force:
+            print(
+                f"[WARN] skipping participant {route}: response already exists (use --force to rerun)",
+                file=sys.stderr,
+            )
             continue
         write_text(external_request, request_text)
 

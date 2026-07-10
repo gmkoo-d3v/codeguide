@@ -1898,6 +1898,69 @@ EOF'
   [ "$status" -eq 0 ]
 }
 
+@test "external_review_runner run-once warns and skips a participant whose response already exists without --force" {
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
+printf "x" >> "${TEST_WORKSPACE}/runner-skip-warn-agy.count"
+cat <<EOF
+- verdict: accept
+- summary: Mock agy accepted the current-task debate packet.
+- strengths: Fixture invocation counter.
+- risks: None.
+- requested_changes: None.
+EOF'
+
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-skip-warn" --plan-version "v1.0" --review-round "r01" --task-phase "review" --coordinator "codex" --participant "agy-gemini-3.5-flash-high"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+
+  # First run creates the response (forced, since nothing exists yet).
+  run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-skip-warn" --force
+  [ "$status" -eq 0 ]
+  run test -f "$DOCS_ROOT/orchestration/runner-skip-warn/current-task/responses/agy-gemini-3.5-flash-high.response.md"
+  [ "$status" -eq 0 ]
+  run cat "$TEST_WORKSPACE/runner-skip-warn-agy.count"
+  [ "$output" = "x" ]
+
+  # Second run without --force must skip and warn, and must NOT invoke the CLI again.
+  run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-skip-warn"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] skipping participant agy:gemini-3.5-flash-high: response already exists (use --force to rerun)"* ]]
+  run cat "$TEST_WORKSPACE/runner-skip-warn-agy.count"
+  [ "$output" = "x" ]
+}
+
+@test "external_review_runner run-once --force suppresses the skip warning and actually reruns the participant" {
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
+printf "x" >> "${TEST_WORKSPACE}/runner-force-rerun-agy.count"
+cat <<EOF
+- verdict: accept
+- summary: Mock agy accepted the current-task debate packet.
+- strengths: Fixture invocation counter.
+- risks: None.
+- requested_changes: None.
+EOF'
+
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-force-rerun" --plan-version "v1.0" --review-round "r01" --task-phase "review" --coordinator "codex" --participant "agy-gemini-3.5-flash-high"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+
+  run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-force-rerun" --force
+  [ "$status" -eq 0 ]
+  run cat "$TEST_WORKSPACE/runner-force-rerun-agy.count"
+  [ "$output" = "x" ]
+
+  # Rerunning with --force must invoke the CLI again (no skip warning either).
+  run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-force-rerun" --force
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"[WARN] skipping participant"* ]]
+  run cat "$TEST_WORKSPACE/runner-force-rerun-agy.count"
+  [ "$output" = "xx" ]
+}
+
 @test "external_review_runner executes codex with preconfigured model selection" {
   local mock_bin="$TEST_WORKSPACE/mock-bin"
   mkdir -p "$mock_bin"

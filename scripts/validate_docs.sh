@@ -2386,6 +2386,90 @@ check_orchestration_file_for_task() {
   fi
 }
 
+# ORCH semantic-contradiction checks (advisory warning tier -- gated by
+# MODE != strict, the same "recommended" tier as the concurrent-session claim
+# contract's owner/claimed_at/claim-directory fields, so it never promotes to
+# a strict-mode failure). Flags internally self-contradictory ORCH capsules
+# regardless of whether the owning task is currently "active": a capsule can
+# drift into a contradictory state on a blocked/done task just as easily as
+# an in_progress one, and the per-active-task checks above do not cover that.
+check_orchestration_semantic_contradictions() {
+  local orchestration_file="$1"
+  local orch_ref="$2"
+  local execution_mode
+  local delegation_status
+  local external_review_status
+  local required_review_routes
+  local external_review_result_ref
+  local agent_key
+  local has_agent_field="false"
+
+  if [[ "$MODE" == "strict" ]]; then
+    return 0
+  fi
+
+  execution_mode="$(extract_field_value "$orchestration_file" "execution_mode")"
+  if [[ "$execution_mode" == "supervisor_subagents" ]]; then
+    for agent_key in planner_agents reviewer_agents implementation_agents validation_agents; do
+      if [[ -n "$(extract_field_value "$orchestration_file" "$agent_key")" ]]; then
+        has_agent_field="true"
+        break
+      fi
+    done
+    if [[ "$has_agent_field" != "true" ]]; then
+      fail "orchestration execution_mode=supervisor_subagents requires at least one non-empty agent field (planner_agents/reviewer_agents/implementation_agents/validation_agents) for ${orch_ref}: ${orchestration_file}"
+    fi
+    delegation_status="$(extract_field_value "$orchestration_file" "delegation_status")"
+    if [[ -z "$delegation_status" ]]; then
+      fail "orchestration execution_mode=supervisor_subagents requires a non-empty delegation_status for ${orch_ref}: ${orchestration_file}"
+    fi
+  fi
+
+  external_review_status="$(extract_field_value "$orchestration_file" "external_review_status")"
+  if [[ "$external_review_status" == "ingested" ]]; then
+    required_review_routes="$(extract_field_value "$orchestration_file" "required_review_routes")"
+    external_review_result_ref="$(extract_field_value "$orchestration_file" "external_review_result_ref")"
+    if [[ -z "$required_review_routes" ]]; then
+      fail "orchestration external_review_status=ingested requires a non-empty required_review_routes for ${orch_ref}: ${orchestration_file}"
+    fi
+    if [[ -z "$external_review_result_ref" ]]; then
+      fail "orchestration external_review_status=ingested requires a non-empty external_review_result_ref for ${orch_ref}: ${orchestration_file}"
+    fi
+  fi
+}
+
+# tmp/ path reference detection (advisory warning tier -- gated by
+# MODE != strict, same rationale as check_orchestration_semantic_contradictions
+# above): scans only durable, authored docs -- docs/task/*.md, docs/plan/*.md,
+# and docs/orchestration/*/{INDEX.md,ORCH.md} -- for `codeguide/tmp/` or
+# `/tmp/` path references. Deliberately does NOT touch docs/report/* or any
+# external-cli *.response.md payload: external tool responses legitimately
+# quote arbitrary filesystem paths that are not durable-doc references. Skips
+# fenced code examples using the same fence-aware idiom as extract_shadow_field.
+check_tmp_path_references() {
+  local file_path
+  local match_line_no
+
+  while IFS= read -r file_path; do
+    [[ -z "$file_path" ]] && continue
+    while IFS= read -r match_line_no; do
+      [[ -z "$match_line_no" ]] && continue
+      fail "docs reference a gitignored tmp/ path (${file_path}:${match_line_no})"
+    done < <(awk '
+      /^[[:space:]]*(```|~~~)/ { infence = !infence; next }
+      infence { next }
+      /codeguide\/tmp\// { print NR; next }
+      /(^|[^A-Za-z0-9_.-])\/tmp\// { print NR }
+    ' "$file_path" 2>/dev/null)
+  done < <(
+    {
+      find "$TASK_DIR" -maxdepth 1 -type f -name '*.md' 2>/dev/null
+      find "$PLAN_DIR" -maxdepth 1 -type f -name '*.md' 2>/dev/null
+      find "$ORCHESTRATION_DIR" -mindepth 2 -maxdepth 2 -type f \( -name 'INDEX.md' -o -name 'ORCH.md' \) 2>/dev/null
+    } | sort
+  )
+}
+
 orchestration_execution_mode_for_task() {
   local task_id="$1"
   local orchestration_file
@@ -2948,6 +3032,50 @@ if [[ -d "$ORCHESTRATION_DIR" ]]; then
   if [[ -d "$ORCHESTRATION_DIR/external-cli" ]]; then
     fail "legacy external CLI handoff root is not supported; use docs/orchestration/<task-id>/external-cli/<plan-version>/<round>"
   fi
+
+  # Orphaned orchestration capsules: every orchestration directory (except
+  # _templates) is expected to correspond to a real, indexed task. This is the
+  # reverse direction of check_orchestration_file_for_task above (which only
+  # runs per active task found by the task-file loop below), so it is the only
+  # check that catches a capsule that was never registered as a task at all.
+  # Same tier as an orphaned claim directory: always flags (strict-mode
+  # failure, advisory-mode warning) since it only ever fires once a capsule
+  # exists with no matching task, so it cannot break pre-existing corpora.
+  while IFS= read -r orchestration_task_dir; do
+    orchestration_task_id="$(basename "$orchestration_task_dir")"
+    if [[ "$orchestration_task_id" == "_templates" ]]; then
+      continue
+    fi
+
+    orchestration_capsule_task_file="$TASK_DIR/TASK-${orchestration_task_id}.md"
+    if [[ ! -f "$orchestration_capsule_task_file" ]]; then
+      fail "orphaned orchestration capsule with no matching task file: ${orchestration_task_dir} (expected ${orchestration_capsule_task_file})"
+    fi
+    if [[ -f "$TASK_DIR/task-index.md" ]] && ! grep -qE "^- TASK-${orchestration_task_id} " "$TASK_DIR/task-index.md" 2>/dev/null; then
+      fail "orphaned orchestration capsule: task-index missing row for TASK-${orchestration_task_id} (capsule: ${orchestration_task_dir})"
+    fi
+
+    orchestration_capsule_orch_file="$orchestration_task_dir/ORCH.md"
+    if [[ -f "$orchestration_capsule_orch_file" ]]; then
+      check_orchestration_semantic_contradictions "$orchestration_capsule_orch_file" "TASK-${orchestration_task_id}"
+    fi
+  done < <(find "$ORCHESTRATION_DIR" -mindepth 1 -maxdepth 1 -type d | sort)
+fi
+
+# --- Physical-archive detection (no-archive policy) ---
+# docs/task, docs/plan, and docs/orchestration must stay flat: task-index.md
+# (and the equivalent status fields elsewhere) is the sole source of truth,
+# per docs/DOC-GOVERNANCE.md's no-move-to-archive lifecycle policy. Same tier
+# as an orphaned claim directory: always flags (strict-mode failure,
+# advisory-mode warning).
+for archive_dir_candidate in "$PLAN_DIR/_archive" "$TASK_DIR/_archive" "$ORCHESTRATION_DIR/_archive"; do
+  if [[ -d "$archive_dir_candidate" ]]; then
+    fail "physical archive directory violates the no-archive policy (docs stay flat; task-index.md is the sole source of truth): ${archive_dir_candidate}"
+  fi
+done
+
+if [[ "$MODE" != "strict" ]]; then
+  check_tmp_path_references
 fi
 
 # --- Shadow policy checks ---

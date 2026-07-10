@@ -276,6 +276,164 @@ EOF
   [[ "$output" == *"legacy external CLI handoff root is not supported"* ]]
 }
 
+@test "validate_docs strict fails on an orphaned orchestration capsule with no matching task file" {
+  mkdir -p "$DOCS_ROOT/orchestration/ghost-capsule-01"
+  cat > "$DOCS_ROOT/orchestration/ghost-capsule-01/ORCH.md" <<'EOF'
+# ORCH-ghost-capsule-01
+
+- task_id: ghost-capsule-01
+- execution_mode: solo
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"orphaned orchestration capsule with no matching task file"* ]]
+  [[ "$output" == *"docs/orchestration/ghost-capsule-01"* ]]
+  [[ "$output" == *"TASK-ghost-capsule-01.md"* ]]
+}
+
+@test "validate_docs advisory warns when an orchestration capsule is missing its task-index row" {
+  cat > "$DOCS_ROOT/task/TASK-capsule-no-index-01.md" <<'EOF'
+# TASK-capsule-no-index-01
+
+- title: capsule missing its task-index row
+- status: planned
+- owner: test
+EOF
+  mkdir -p "$DOCS_ROOT/orchestration/capsule-no-index-01"
+  cat > "$DOCS_ROOT/orchestration/capsule-no-index-01/ORCH.md" <<'EOF'
+# ORCH-capsule-no-index-01
+
+- task_id: capsule-no-index-01
+- execution_mode: solo
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] orphaned orchestration capsule: task-index missing row for TASK-capsule-no-index-01"* ]]
+  [[ "$output" != *"orphaned orchestration capsule with no matching task file"* ]]
+}
+
+@test "validate_docs advisory does not warn when an orchestration capsule is properly registered" {
+  cat > "$DOCS_ROOT/task/TASK-capsule-ok-01.md" <<'EOF'
+# TASK-capsule-ok-01
+
+- title: capsule properly registered
+- status: planned
+- owner: test
+EOF
+  printf '%s\n' "- TASK-capsule-ok-01 planned" >> "$DOCS_ROOT/task/task-index.md"
+  mkdir -p "$DOCS_ROOT/orchestration/capsule-ok-01"
+  cat > "$DOCS_ROOT/orchestration/capsule-ok-01/ORCH.md" <<'EOF'
+# ORCH-capsule-ok-01
+
+- task_id: capsule-ok-01
+- execution_mode: solo
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"orphaned orchestration capsule"* ]]
+}
+
+@test "validate_docs strict fails when docs/plan/_archive exists" {
+  mkdir -p "$DOCS_ROOT/plan/_archive"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"physical archive directory violates the no-archive policy"* ]]
+  [[ "$output" == *"docs/plan/_archive"* ]]
+}
+
+@test "validate_docs advisory warns when docs/task/_archive exists" {
+  mkdir -p "$DOCS_ROOT/task/_archive"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] physical archive directory violates the no-archive policy"* ]]
+  [[ "$output" == *"docs/task/_archive"* ]]
+}
+
+@test "validate_docs strict fails when docs/orchestration/_archive exists" {
+  mkdir -p "$DOCS_ROOT/orchestration/_archive"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"physical archive directory violates the no-archive policy"* ]]
+  [[ "$output" == *"docs/orchestration/_archive"* ]]
+}
+
+@test "validate_docs advisory does not warn about archive directories when none exist" {
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"violates the no-archive policy"* ]]
+}
+
+@test "validate_docs advisory warns when durable docs reference a gitignored tmp/ path" {
+  cat > "$DOCS_ROOT/task/TASK-tmp-ref-fixture-01.md" <<'EOF'
+# TASK-tmp-ref-fixture-01
+
+- title: tmp reference fixture
+- status: planned
+- owner: test
+- notes: see /tmp/scratch-notes.md for the working draft
+EOF
+
+  cat > "$DOCS_ROOT/plan/PLAN-tmp-ref-fixture-01-v1.0.md" <<'EOF'
+# PLAN-tmp-ref-fixture-01-v1.0
+
+- task_id: tmp-ref-fixture-01
+- plan_version: v1.0
+- objective: exercise tmp-reference detection
+- assumptions: draft evidence lives at codeguide/tmp/plan-notes.md
+EOF
+
+  mkdir -p "$DOCS_ROOT/orchestration/tmp-ref-fixture-01"
+  cat > "$DOCS_ROOT/orchestration/tmp-ref-fixture-01/INDEX.md" <<'EOF'
+# Capsule Index
+
+- see codeguide/tmp/index-draft.md for the working notes
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] docs reference a gitignored tmp/ path (${DOCS_ROOT}/task/TASK-tmp-ref-fixture-01.md:"* ]]
+  [[ "$output" == *"[WARN] docs reference a gitignored tmp/ path (${DOCS_ROOT}/plan/PLAN-tmp-ref-fixture-01-v1.0.md:"* ]]
+  [[ "$output" == *"[WARN] docs reference a gitignored tmp/ path (${DOCS_ROOT}/orchestration/tmp-ref-fixture-01/INDEX.md:"* ]]
+}
+
+@test "validate_docs strict mode does not flag gitignored tmp/ path references" {
+  cat > "$DOCS_ROOT/task/TASK-tmp-ref-strict-01.md" <<'EOF'
+# TASK-tmp-ref-strict-01
+
+- title: tmp reference strict fixture
+- status: planned
+- owner: test
+- notes: see /tmp/scratch-notes.md for the working draft
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [[ "$output" != *"gitignored tmp/ path"* ]]
+}
+
+@test "validate_docs advisory does not warn about tmp/ path references inside a fenced code block" {
+  cat > "$DOCS_ROOT/plan/PLAN-tmp-ref-fenced-01-v1.0.md" <<'EOF'
+# PLAN-tmp-ref-fenced-01-v1.0
+
+- task_id: tmp-ref-fenced-01
+- plan_version: v1.0
+- objective: fenced tmp reference should be skipped
+```
+example: /tmp/should-be-skipped.md
+```
+- assumptions: none
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"gitignored tmp/ path"* ]]
+}
+
 @test "validate_docs strict mode fails on empty required fields" {
   "$DOC_GARDEN" "$TEST_PROJECT" \
     --task-id "200" \
@@ -1118,6 +1276,107 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
   [[ "$output" == *"fallback regex evidence_type mismatch"* ]]
+}
+
+@test "validate_docs advisory warns when supervisor_subagents ORCH capsule has no agent fields or delegation_status" {
+  cat > "$DOCS_ROOT/task/TASK-orch-contradiction-01.md" <<'EOF'
+# TASK-orch-contradiction-01
+
+- title: ORCH semantic contradiction fixture
+- status: planned
+- owner: test
+EOF
+  printf '%s\n' "- TASK-orch-contradiction-01 planned" >> "$DOCS_ROOT/task/task-index.md"
+
+  mkdir -p "$DOCS_ROOT/orchestration/orch-contradiction-01"
+  cat > "$DOCS_ROOT/orchestration/orch-contradiction-01/ORCH.md" <<'EOF'
+# ORCH-orch-contradiction-01
+
+- task_id: orch-contradiction-01
+- execution_mode: supervisor_subagents
+- delegation_status:
+- planner_agents:
+- reviewer_agents:
+- implementation_agents:
+- validation_agents:
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] orchestration execution_mode=supervisor_subagents requires at least one non-empty agent field (planner_agents/reviewer_agents/implementation_agents/validation_agents) for TASK-orch-contradiction-01"* ]]
+  [[ "$output" == *"[WARN] orchestration execution_mode=supervisor_subagents requires a non-empty delegation_status for TASK-orch-contradiction-01"* ]]
+}
+
+@test "validate_docs advisory warns when an ingested ORCH capsule lacks required_review_routes or external_review_result_ref" {
+  write_await_gate_fixture "orch-ingested-contradiction-01" "planned" "" "" "ingested" "" "" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] orchestration external_review_status=ingested requires a non-empty required_review_routes for TASK-orch-ingested-contradiction-01"* ]]
+  [[ "$output" == *"[WARN] orchestration external_review_status=ingested requires a non-empty external_review_result_ref for TASK-orch-ingested-contradiction-01"* ]]
+}
+
+@test "validate_docs advisory does not warn when ORCH capsule fields are mutually consistent" {
+  cat > "$DOCS_ROOT/task/TASK-orch-consistent-01.md" <<'EOF'
+# TASK-orch-consistent-01
+
+- title: ORCH semantic consistency fixture
+- status: planned
+- owner: test
+EOF
+  printf '%s\n' "- TASK-orch-consistent-01 planned" >> "$DOCS_ROOT/task/task-index.md"
+
+  mkdir -p "$DOCS_ROOT/orchestration/orch-consistent-01"
+  cat > "$DOCS_ROOT/orchestration/orch-consistent-01/ORCH.md" <<'EOF'
+# ORCH-orch-consistent-01
+
+- task_id: orch-consistent-01
+- execution_mode: supervisor_subagents
+- delegation_status: active
+- planner_agents: planner-1
+- reviewer_agents:
+- implementation_agents:
+- validation_agents:
+- external_review_status: ingested
+- required_review_routes: agy:current
+- external_review_result_ref: docs/orchestration/orch-consistent-01/external-cli/v1.0/r01
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"execution_mode=supervisor_subagents requires"* ]]
+  [[ "$output" != *"external_review_status=ingested requires"* ]]
+}
+
+@test "validate_docs strict mode does not apply ORCH semantic-contradiction checks" {
+  cat > "$DOCS_ROOT/task/TASK-orch-contradiction-strict-01.md" <<'EOF'
+# TASK-orch-contradiction-strict-01
+
+- title: ORCH semantic contradiction strict-tier fixture
+- status: planned
+- owner: test
+EOF
+  printf '%s\n' "- TASK-orch-contradiction-strict-01 planned" >> "$DOCS_ROOT/task/task-index.md"
+
+  mkdir -p "$DOCS_ROOT/orchestration/orch-contradiction-strict-01"
+  cat > "$DOCS_ROOT/orchestration/orch-contradiction-strict-01/ORCH.md" <<'EOF'
+# ORCH-orch-contradiction-strict-01
+
+- task_id: orch-contradiction-strict-01
+- execution_mode: supervisor_subagents
+- delegation_status:
+- planner_agents:
+- reviewer_agents:
+- implementation_agents:
+- validation_agents:
+- external_review_status: ingested
+- required_review_routes:
+- external_review_result_ref:
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [[ "$output" != *"execution_mode=supervisor_subagents requires"* ]]
+  [[ "$output" != *"external_review_status=ingested requires"* ]]
 }
 
 @test "validate_docs strict fails when supervisor_subagents orchestration fields are blank" {
