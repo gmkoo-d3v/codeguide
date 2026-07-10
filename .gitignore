@@ -37,8 +37,10 @@ node_modules/
 dist/
 build/
 
-# Local tool state
-.serena/
+# Local tool state (Serena: track the authoritative project.yml and
+# memories; only the cache and local overrides stay untracked)
+.serena/cache/
+.serena/project.local.yml
 .gemini/
 .claude/
 .cache/
