@@ -1090,47 +1090,90 @@ check_freshness_days() {
   fi
 }
 
-check_shadow_graph_tracks_doc_updates() {
-  local newest_doc=""
-  local newest_doc_epoch
-  local shadow_file
-  local shadow_epoch
-  local candidate
-  local candidate_epoch
+# Content-based replacement for the removed timestamp heuristic (a shadow doc
+# "older than" the newest task/decision doc): garden no longer blind-bumps
+# bucket/_global docs and only bumps the router on a real change, so a
+# last_updated-vs-last_updated comparison would just measure which script ran
+# most recently, not whether the shadow graph documents anything. What DOES
+# matter is a shadow graph that is entirely EMPTY -- no unit anywhere, no
+# source_of_truth_paths declared anywhere -- while the project has real source
+# to document. Fires only when a source repo is actually reachable and has
+# git-tracked files outside docs/; a scaffold-only fixture with no source repo
+# must never trip it.
+check_shadow_empty_graph() {
+  local source_root
+  local bucket
+  local bucket_file
+  local any_units="false"
 
-  newest_doc_epoch="0"
+  source_root="$(codeguide_source_root "$PROJECT_ROOT_ABS" 2>/dev/null || true)"
+  [[ -n "$source_root" ]] || return 0
 
-  while IFS= read -r candidate; do
-    candidate_epoch="$(file_effective_epoch "$candidate")"
-    if (( candidate_epoch > newest_doc_epoch )); then
-      newest_doc_epoch="$candidate_epoch"
-      newest_doc="$candidate"
-    fi
-  done < <(
-    find "$TASK_DIR" "$DECISIONS_DIR" -maxdepth 1 -type f \
-      \( -name 'TASK-*.md' -o -name 'decision-*.md' \) \
-      ! -name 'task-template.md' \
-      ! -name 'decision-template.md' \
-      ! -name 'task-index.md' \
-      ! -name 'decision-index.md' \
-      | sort
-  )
-
-  if [[ -z "$newest_doc" ]]; then
-    pass "shadow graph is not older than tracked task/decision docs"
+  if ! git -C "$source_root" ls-files 2>/dev/null | grep -qvE '^docs/'; then
     return 0
   fi
 
-  for shadow_file in "$@"; do
-    [[ -f "$shadow_file" ]] || continue
+  [[ -d "$SHADOW_DIR" ]] || return 0
 
-    shadow_epoch="$(file_effective_epoch "$shadow_file")"
-    if (( shadow_epoch < newest_doc_epoch )); then
-      fail "shadow graph doc is older than tracked task/decision doc: ${shadow_file} < ${newest_doc}. Run doc_garden.sh and refresh the shadow graph"
-    else
-      pass "shadow graph doc is not older than tracked task/decision docs: ${shadow_file}"
+  for bucket in "${SHADOW_BUCKETS[@]}"; do
+    bucket_file="$SHADOW_DIR/$bucket/_index.md"
+    [[ -f "$bucket_file" ]] || continue
+    if bucket_index_has_units "$bucket_file"; then
+      any_units="true"
+      break
     fi
   done
+
+  if [[ "$any_units" == "true" ]]; then
+    pass "shadow graph is not empty: at least one bucket declares a unit"
+    return 0
+  fi
+
+  if shadow_tree_has_source_declarations; then
+    pass "shadow graph is not empty: at least one shadow doc declares source_of_truth_paths"
+    return 0
+  fi
+
+  fail "shadow graph is empty: no bucket declares a unit and no shadow doc declares source_of_truth_paths, though the source repo has trackable files to document. Author shadow units; see shadow_coverage_report.py for the coverage gap"
+}
+
+# True if the bucket index's "## Units" section lists anything beyond the
+# scaffold's "no units detected yet" placeholder.
+bucket_index_has_units() {
+  local bucket_file="$1"
+  local remaining
+
+  remaining="$(awk '/^## Units$/{flag=1; next} /^## /{flag=0} flag && /^- /{print}' "$bucket_file" 2>/dev/null | grep -vFx -- '- no units detected yet' || true)"
+  [[ -n "$remaining" ]]
+}
+
+# True if ANY shadow doc (excluding _deprecated/_obsolete) declares at least
+# one real source_of_truth_paths entry. Reuses shadow_source_digest.py's
+# fence-aware parser (the same one check_shadow_source_paths_exist trusts) so
+# a fenced-code-block mention of the field cannot manufacture coverage.
+shadow_tree_has_source_declarations() {
+  local digest_helper="$SCRIPT_DIR/shadow_source_digest.py"
+  local shadow_doc
+  local result
+  local has_paths
+
+  [[ -f "$digest_helper" ]] || return 1
+  [[ -d "$SHADOW_DIR" ]] || return 1
+
+  while IFS= read -r shadow_doc; do
+    grep -qE "source_of_truth_paths" "$shadow_doc" 2>/dev/null || continue
+    result="$(python3 "$digest_helper" "$shadow_doc" --project-root "$PROJECT_ROOT_ABS" --verify-paths 2>/dev/null || true)"
+    has_paths="$(printf "%s\n" "$result" | grep -m1 "^has_paths: " | sed 's/^has_paths: //')"
+    if [[ "$has_paths" == "true" ]]; then
+      return 0
+    fi
+  done < <(
+    find "$SHADOW_DIR" -type f -name '*.md' \
+      ! -path "$SHADOW_DIR/_deprecated/*" \
+      ! -path "$SHADOW_DIR/_obsolete/*" \
+      | sort
+  )
+  return 1
 }
 
 # Advisory-only (recommended tier): every navigation reference in a shadow doc
@@ -3174,7 +3217,6 @@ if [[ -d "$POLICY_DIR" ]]; then
 fi
 
 # --- Shadow graph checks ---
-SHADOW_TRACKED_FILES=()
 if [[ -d "$SHADOW_DIR" ]]; then
   while IFS= read -r shadow_doc; do
     check_line_limit "$shadow_doc" "$MAX_SHADOW_LINES" "shadow document"
@@ -3214,7 +3256,6 @@ if [[ -d "$SHADOW_DIR" ]]; then
 fi
 
 if [[ -f "$SHADOW_DIR/project-shadow.md" ]]; then
-  SHADOW_TRACKED_FILES+=("$SHADOW_DIR/project-shadow.md")
   check_field_value_equals "$SHADOW_DIR/project-shadow.md" "doc_role" "router" "shadow router" || true
   check_field_exists "$SHADOW_DIR/project-shadow.md" "read_path" "shadow router" || true
   check_field_exists "$SHADOW_DIR/project-shadow.md" "bucket_links" "shadow router" || true
@@ -3230,7 +3271,6 @@ if [[ -f "$SHADOW_DIR/project-shadow.md" ]]; then
 fi
 
 if [[ -f "$SHADOW_GLOBAL_FILE" ]]; then
-  SHADOW_TRACKED_FILES+=("$SHADOW_GLOBAL_FILE")
   check_field_value_equals "$SHADOW_GLOBAL_FILE" "doc_role" "global" "shadow global" || true
   if [[ "$MODE" == "strict" ]]; then
     check_timestamp_field_valid_non_future "$SHADOW_GLOBAL_FILE" "last_updated" "shadow global" || true
@@ -3243,7 +3283,6 @@ fi
 for shadow_bucket in "${SHADOW_BUCKETS[@]}"; do
   shadow_bucket_file="$SHADOW_DIR/${shadow_bucket}/_index.md"
   if [[ -f "$shadow_bucket_file" ]]; then
-    SHADOW_TRACKED_FILES+=("$shadow_bucket_file")
     check_field_value_equals "$shadow_bucket_file" "doc_role" "bucket_index" "shadow bucket index (${shadow_bucket})" || true
     check_field_value_equals "$shadow_bucket_file" "bucket" "$shadow_bucket" "shadow bucket index (${shadow_bucket})" || true
     if [[ "$MODE" == "strict" ]]; then
@@ -3255,9 +3294,7 @@ for shadow_bucket in "${SHADOW_BUCKETS[@]}"; do
   fi
 done
 
-if [[ -d "$SHADOW_DIR" && ${#SHADOW_TRACKED_FILES[*]} -gt 0 ]]; then
-  check_shadow_graph_tracks_doc_updates "${SHADOW_TRACKED_FILES[@]}"
-fi
+check_shadow_empty_graph
 
 # Navigation link integrity is advisory-only (recommended tier): it warns on a
 # rotting read path but is skipped in strict mode so existing shadow corpora with

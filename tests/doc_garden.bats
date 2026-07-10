@@ -232,6 +232,82 @@ load codeguide_helper
   done
 }
 
+@test "doc_garden router no-op refresh (same task, same note) leaves the file byte-identical" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "router-noop-01" \
+    --task-title "Router no-op" \
+    --shadow-note "same note" \
+    --no-init
+
+  local before after
+  before="$(cat "$DOCS_ROOT/shadow/project-shadow.md")"
+
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "router-noop-01" \
+    --task-title "Router no-op" \
+    --shadow-note "same note" \
+    --no-init
+
+  after="$(cat "$DOCS_ROOT/shadow/project-shadow.md")"
+  [ "$before" = "$after" ]
+}
+
+@test "doc_garden router bumps last_updated only when task or note actually differs" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "router-diff-01" \
+    --task-title "Router diff" \
+    --shadow-note "first note" \
+    --no-init
+
+  local before after
+  before="$(cat "$DOCS_ROOT/shadow/project-shadow.md")"
+
+  # Re-run with the identical task-id and note first: still a no-op.
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "router-diff-01" \
+    --task-title "Router diff" \
+    --shadow-note "first note" \
+    --no-init
+  after="$(cat "$DOCS_ROOT/shadow/project-shadow.md")"
+  [ "$before" = "$after" ]
+
+  # A genuinely different note is a real change and must bump the router.
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "router-diff-01" \
+    --task-title "Router diff" \
+    --shadow-note "second note" \
+    --no-init
+  after="$(cat "$DOCS_ROOT/shadow/project-shadow.md")"
+  [ "$before" != "$after" ]
+
+  run grep "^- latest_change_note: second note" "$DOCS_ROOT/shadow/project-shadow.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "doc_garden never bumps bucket or global shadow metadata docs across refreshes" {
+  local global_before global_after apps_before apps_after
+  global_before="$(cat "$DOCS_ROOT/shadow/_global.md")"
+  apps_before="$(cat "$DOCS_ROOT/shadow/apps/_index.md")"
+
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "garden-no-touch-01" \
+    --task-title "Garden never touches global or bucket docs" \
+    --shadow-note "first refresh" \
+    --no-init
+
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "garden-no-touch-02" \
+    --task-title "Garden never touches global or bucket docs again" \
+    --shadow-note "second refresh" \
+    --no-init
+
+  global_after="$(cat "$DOCS_ROOT/shadow/_global.md")"
+  apps_after="$(cat "$DOCS_ROOT/shadow/apps/_index.md")"
+
+  [ "$global_before" = "$global_after" ]
+  [ "$apps_before" = "$apps_after" ]
+}
+
 @test "doc_garden rejects git_diff shadow refresh without explicit range" {
   run "$DOC_GARDEN" "$TEST_PROJECT" \
     --task-id "shadow-git-01" \

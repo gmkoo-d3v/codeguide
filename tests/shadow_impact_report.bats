@@ -46,6 +46,22 @@ EOF
   [[ "$output" == *"no shadow doc declares any changed source"* ]]
 }
 
+@test "impact report shows a distinct coverage-gap line when zero shadow docs declare source_of_truth_paths" {
+  mkdir -p "$TEST_PROJECT/src" "$DOCS_ROOT/shadow/apps/app-a"
+  printf 'a=1\n' > "$TEST_PROJECT/src/auth.py"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  run IMPACT_REPORT --project-root "$TEST_PROJECT" --changed-file src/auth.py
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"impacted_shadow_docs: 0"* ]]
+  [[ "$output" == *"no shadow doc declares any source_of_truth_paths (coverage gap; run shadow_coverage_report.py)"* ]]
+  [[ "$output" != *"no shadow doc declares any changed source"* ]]
+}
+
 @test "impact report resolves the mixed inline+nested source_of_truth_paths form" {
   _seed_overview_with_source "$(printf -- '- source_of_truth_paths: src/auth.py\n  - src/pay.py')"
   # Change only the NESTED path; it must still be recognized as an impacted source.

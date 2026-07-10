@@ -161,6 +161,7 @@ def main(argv: list[str]) -> int:
             docs_changed.add((docs_git_root / rel).resolve(strict=False))
 
     impacted: list[tuple[str, list[str], bool | None]] = []
+    any_declared_paths = False
     for doc in sorted(shadow_dir.rglob("*.md")):
         rel_parts = doc.relative_to(shadow_dir).parts
         if rel_parts and rel_parts[0] in ("_deprecated", "_obsolete"):
@@ -172,6 +173,7 @@ def main(argv: list[str]) -> int:
         declared = read_source_paths(lines)
         if not declared:
             continue
+        any_declared_paths = True
         changed_sources = []
         for rel in declared:
             candidate = Path(rel)
@@ -200,7 +202,10 @@ def main(argv: list[str]) -> int:
     if refresh_unknown:
         print(f"- refresh_unknown: {len(refresh_unknown)}")
     if not impacted:
-        print("- result: no shadow doc declares any changed source")
+        if any_declared_paths:
+            print("- result: no shadow doc declares any changed source")
+        else:
+            print("- result: no shadow doc declares any source_of_truth_paths (coverage gap; run shadow_coverage_report.py)")
     for doc_label, changed_sources, refreshed in impacted:
         if refreshed:
             print(f"- ok (refreshed alongside sources): {doc_label}")

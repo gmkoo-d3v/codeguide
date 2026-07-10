@@ -686,7 +686,6 @@ SHADOW_DIR="$DOCS_DIR/shadow"
 DECISIONS_DIR="$DOCS_DIR/decisions"
 ORCHESTRATION_DIR="$(codeguide_orchestration_root "$PROJECT_ROOT_ABS")"
 ORCHESTRATION_TEMPLATES_DIR="$(codeguide_orchestration_templates_dir "$PROJECT_ROOT_ABS")"
-SHADOW_BUCKETS=(apps services packages infra data)
 
 if [[ "$RUN_INIT" == "true" && "$RESUME_CHECKPOINT" != "true" ]]; then
   "$INIT_SCRIPT" "$PROJECT_ROOT_ABS"
@@ -694,7 +693,6 @@ fi
 TASK_INDEX="$TASK_DIR/task-index.md"
 DECISION_INDEX="$DECISIONS_DIR/decision-index.md"
 SHADOW_FILE="$SHADOW_DIR/project-shadow.md"
-SHADOW_GLOBAL_FILE="$SHADOW_DIR/_global.md"
 TMP_FILES=()
 LOCK_DIRS=()
 
@@ -1304,45 +1302,64 @@ update_decision_index() {
   apply_decision_index_row "$file_name" "$row" "$DECISION_STATUS"
 }
 
+# Bumps last_updated/updated_by_task/latest_change_note ONLY when the new
+# updated_by_task or latest_change_note value actually differs from what the
+# router currently carries. A same-task, same-note re-run (or a run that
+# supplies neither) is a genuine no-op: the file must come out byte-identical,
+# so a real content signal (git diff, PLAN/report presence) is never drowned
+# out by a router timestamp that moves on every invocation regardless of
+# whether anything changed.
 refresh_shadow_router() {
   local file_path="$1"
   local change_note="$2"
+  local new_task=""
+  local current_task=""
+  local current_note=""
+  local normalized_note
+  local changed="false"
 
   if [[ ! -f "$file_path" ]]; then
     return 0
   fi
 
-  upsert_field "$file_path" "last_updated" "$NOW_UTC"
   if [[ -n "$TASK_ID" ]]; then
-    upsert_field "$file_path" "updated_by_task" "TASK-${TASK_ID}"
+    new_task="TASK-${TASK_ID}"
+  fi
+  normalized_note="$(normalize "$change_note")"
+
+  current_task="$(grep -E "^- updated_by_task:" "$file_path" 2>/dev/null | head -n 1 | sed "s/^- updated_by_task:[[:space:]]*//" || true)"
+  current_task="$(trim_value "$current_task")"
+  current_note="$(grep -E "^- latest_change_note:" "$file_path" 2>/dev/null | head -n 1 | sed "s/^- latest_change_note:[[:space:]]*//" || true)"
+  current_note="$(trim_value "$current_note")"
+
+  if [[ -n "$new_task" && "$new_task" != "$current_task" ]]; then
+    changed="true"
+  fi
+  if [[ -n "$normalized_note" && "$normalized_note" != "$current_note" ]]; then
+    changed="true"
+  fi
+
+  if [[ "$changed" != "true" ]]; then
+    return 0
+  fi
+
+  upsert_field "$file_path" "last_updated" "$NOW_UTC"
+  if [[ -n "$new_task" ]]; then
+    upsert_field "$file_path" "updated_by_task" "$new_task"
   fi
   if [[ -n "$change_note" ]]; then
     upsert_field "$file_path" "latest_change_note" "$change_note"
   fi
 }
 
-refresh_shadow_metadata_doc() {
-  local file_path="$1"
-
-  if [[ ! -f "$file_path" ]]; then
-    return 0
-  fi
-
-  upsert_field "$file_path" "last_updated" "$NOW_UTC"
-}
-
+# The bucket/_global metadata docs carry no content the garden ever changes
+# (no change note, no task pointer) -- garden refresh must never touch them.
+# Their last_updated is a content-based signal (source digest, coverage/impact
+# reports), never a blind bump.
 refresh_shadow_graph() {
   local change_note="$1"
-  local bucket
-  local bucket_file
 
   refresh_shadow_router "$SHADOW_FILE" "$change_note"
-  refresh_shadow_metadata_doc "$SHADOW_GLOBAL_FILE"
-
-  for bucket in "${SHADOW_BUCKETS[@]}"; do
-    bucket_file="$SHADOW_DIR/$bucket/_index.md"
-    refresh_shadow_metadata_doc "$bucket_file"
-  done
 }
 
 NOW_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"

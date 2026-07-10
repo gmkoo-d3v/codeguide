@@ -1550,39 +1550,73 @@ EOF
   [ "$status" -eq 0 ]
 }
 
-@test "validate_docs strict fails when project shadow lags behind tracked task docs" {
-  "$DOC_GARDEN" "$TEST_PROJECT" \
-    --task-id "shadow-lag-01" \
-    --task-title "Shadow lag test" \
-    --axis-why "why" \
-    --axis-where "where" \
-    --axis-verify "verify" \
-    --no-init
+### ========== Empty shadow graph gate (content-based, replaces timestamp heuristic) ==========
 
-  sed -i.bak 's/^- last_updated:.*$/- last_updated: 2000-01-01T00:00:00Z/' "$DOCS_ROOT/shadow/project-shadow.md"
-  rm -f "$DOCS_ROOT/shadow/project-shadow.md.bak"
+make_empty_graph_gate_source_repo() {
+  local source_repo="$1"
 
-  run "$VALIDATE" "$TEST_PROJECT" --mode strict
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"shadow graph doc is older than tracked task/decision doc"* ]]
+  mkdir -p "$source_repo"
+  git -C "$source_repo" init --quiet
+  git -C "$source_repo" config user.email "test@test.com"
+  git -C "$source_repo" config user.name "test"
+  printf 'print("hi")\n' > "$source_repo/app.py"
+  git -C "$source_repo" add app.py
+  git -C "$source_repo" commit -q -m "init"
 }
 
-@test "validate_docs strict fails when shadow bucket index lags behind tracked task docs" {
-  "$DOC_GARDEN" "$TEST_PROJECT" \
-    --task-id "shadow-bucket-lag-01" \
-    --task-title "Shadow bucket lag test" \
-    --axis-why "why" \
-    --axis-where "where" \
-    --axis-verify "verify" \
-    --no-init
-
-  sed -i.bak 's/^- last_updated:.*$/- last_updated: 2000-01-01T00:00:00Z/' "$DOCS_ROOT/shadow/apps/_index.md"
-  rm -f "$DOCS_ROOT/shadow/apps/_index.md.bak"
+@test "validate_docs strict fails on an entirely empty shadow graph when a source repo is reachable" {
+  local source_repo="$TEST_WORKSPACE/gate-source-strict"
+  make_empty_graph_gate_source_repo "$source_repo"
+  printf '%s' "$source_repo" > "$TEST_PROJECT/.codeguide-source-root"
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"shadow graph doc is older than tracked task/decision doc"* ]]
-  [[ "$output" == *"apps/_index.md"* ]]
+  [[ "$output" == *"[FAIL] shadow graph is empty"* ]]
+  [[ "$output" == *"shadow_coverage_report.py"* ]]
+}
+
+@test "validate_docs advisory warns (does not fail) on an entirely empty shadow graph" {
+  local source_repo="$TEST_WORKSPACE/gate-source-advisory"
+  make_empty_graph_gate_source_repo "$source_repo"
+  printf '%s' "$source_repo" > "$TEST_PROJECT/.codeguide-source-root"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] shadow graph is empty"* ]]
+}
+
+@test "validate_docs shadow empty-graph gate never fires without a reachable source repo" {
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [[ "$output" != *"shadow graph is empty"* ]]
+}
+
+@test "validate_docs shadow empty-graph gate does not fire once a bucket declares a unit" {
+  local source_repo="$TEST_WORKSPACE/gate-source-units"
+  make_empty_graph_gate_source_repo "$source_repo"
+  printf '%s' "$source_repo" > "$TEST_PROJECT/.codeguide-source-root"
+
+  cat >> "$DOCS_ROOT/shadow/apps/_index.md" <<'EOF'
+- unit_id: app-a
+  - overview_doc: apps/app-a/overview.md
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [[ "$output" != *"shadow graph is empty"* ]]
+}
+
+@test "validate_docs shadow empty-graph gate does not fire once any shadow doc declares source_of_truth_paths" {
+  local source_repo="$TEST_WORKSPACE/gate-source-declared"
+  make_empty_graph_gate_source_repo "$source_repo"
+  printf '%s' "$source_repo" > "$TEST_PROJECT/.codeguide-source-root"
+
+  mkdir -p "$TEST_PROJECT/src/widget"
+  printf 'x = 1\n' > "$TEST_PROJECT/src/widget/core.py"
+  cat >> "$DOCS_ROOT/shadow/_global.md" <<'EOF'
+- source_of_truth_paths: src/widget/core.py
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [[ "$output" != *"shadow graph is empty"* ]]
 }
 
 @test "validate_docs strict fails when required shadow bucket index is missing" {
@@ -2730,21 +2764,11 @@ EOF
 write_strict_clean_resume_fixture() {
   local task_id="$1"
   local orch_file="$DOCS_ROOT/orchestration/${task_id}/ORCH.md"
-  local shadow_ts
 
   write_await_gate_fixture "$task_id" "in_progress" "" "" "not_requested" "" "" "" ""
 
   sed -i.bak "s/^- supervisor_agent:.*/- supervisor_agent: main-thread-supervising-lead-architect/" "$orch_file"
   rm -f "${orch_file}.bak"
-
-  # The fixture task file carries no last_updated, so its effective epoch is
-  # its mtime — stamped AFTER the scaffold stamped the shadow docs' last_updated.
-  # When the writes cross a second boundary, strict's shadow-freshness check
-  # flakes ("shadow graph doc is older than tracked task/decision doc"). Pin the
-  # task to the shadow router's own timestamp so both epochs are always equal,
-  # regardless of any later appends (last_updated wins over mtime).
-  shadow_ts="$(grep '^- last_updated:' "$DOCS_ROOT/shadow/project-shadow.md" | head -n 1 | sed 's/^- last_updated:[[:space:]]*//')"
-  printf '%s\n' "- last_updated: ${shadow_ts}" >> "$DOCS_ROOT/task/TASK-${task_id}.md"
 
   grep -vF -- "- TASK-${task_id} " "$DOCS_ROOT/task/task-index.md" > "$DOCS_ROOT/task/task-index.md.tmp"
   mv "$DOCS_ROOT/task/task-index.md.tmp" "$DOCS_ROOT/task/task-index.md"
