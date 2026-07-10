@@ -165,6 +165,14 @@
       "quota_group": "codex-direct-subscription",
       "vendor": "openai"
     },
+    "codex:gpt-5.6-sol-high": {
+      "runner": "codex",
+      "cli_model": "gpt-5.6-sol",
+      "cli_effort": "high",
+      "display_name": "GPT-5.6 Sol (High)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
     "codex:gpt-5.6-terra": {
       "runner": "codex",
       "cli_model": "gpt-5.6-terra",
@@ -230,7 +238,9 @@
     "codex-gpt-5.6-luna": "codex:gpt-5.6-luna",
     "codex-5.6-luna": "codex:gpt-5.6-luna",
     "codex-gpt-5.3-codex-spark": "codex:gpt-5.3-codex-spark",
-    "codex-5.3-spark": "codex:gpt-5.3-codex-spark"
+    "codex-5.3-spark": "codex:gpt-5.3-codex-spark",
+    "codex-gpt-5.6-sol-high": "codex:gpt-5.6-sol-high",
+    "codex-5.6-sol-high": "codex:gpt-5.6-sol-high"
   },
   "default_reviewer_aliases": [
     "agy-current",

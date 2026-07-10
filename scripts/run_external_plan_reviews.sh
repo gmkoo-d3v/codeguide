@@ -161,7 +161,7 @@ validate_tool() {
 load_model_registry() {
   local registry_file="$1"
   local registry_output
-  local kind first second third fourth fifth sixth seventh
+  local kind first second third fourth fifth sixth seventh eighth
 
   if [[ ! -f "$registry_file" ]]; then
     echo "[ERROR] Model registry not found: $registry_file" >&2
@@ -185,6 +185,7 @@ load_model_registry() {
   MODEL_DISPLAY_NAMES=()
   MODEL_VENDORS=()
   MODEL_ADVERSARIAL_PEERS=()
+  MODEL_CLI_EFFORTS=()
   FALLBACK_FROM_GROUPS=()
   FALLBACK_PHASES=()
   FALLBACK_TARGETS=()
@@ -193,7 +194,11 @@ load_model_registry() {
   VENDOR_DEFAULT_REVIEWER_VENDORS=()
   VENDOR_DEFAULT_REVIEWER_ROUTES=()
 
-  while IFS=$'\t' read -r kind first second third fourth fifth sixth seventh; do
+  # Tab is whitespace-class for IFS, so consecutive tabs collapse and an empty
+  # optional middle field (env_binary, vendor, adversarial_peer) silently
+  # shifts every later column. Re-delimit with a non-whitespace separator.
+  registry_output="$(printf '%s\n' "$registry_output" | tr '\t' '\037')"
+  while IFS=$'\037' read -r kind first second third fourth fifth sixth seventh eighth; do
     case "$kind" in
       default_model)
         DEFAULT_MODEL_ALIAS="$first"
@@ -219,6 +224,7 @@ load_model_registry() {
         MODEL_DISPLAY_NAMES+=("$fifth")
         MODEL_VENDORS+=("$sixth")
         MODEL_ADVERSARIAL_PEERS+=("$seventh")
+        MODEL_CLI_EFFORTS+=("$eighth")
         ;;
       fallback)
         FALLBACK_FROM_GROUPS+=("$first")
@@ -308,6 +314,16 @@ model_runner_for() {
   local index
   if index="$(model_index_for "$route")"; then
     printf "%s" "${MODEL_RUNNERS[$index]}"
+    return
+  fi
+  return 1
+}
+
+model_cli_effort_for() {
+  local route="$1"
+  local index
+  if index="$(model_index_for "$route")"; then
+    printf "%s" "${MODEL_CLI_EFFORTS[$index]}"
     return
   fi
   return 1
@@ -1279,12 +1295,14 @@ build_tool_command() {
   local command_kind
   local binary
   local cli_model
+  local cli_effort
   local prompt
 
   runner_id="$(model_runner_for "$reviewer_model")" || return 1
   command_kind="$(runner_command_kind_for "$runner_id")" || return 1
   binary="$(runner_binary_for "$runner_id")" || return 1
   cli_model="$(model_cli_model_for "$reviewer_model")" || return 1
+  cli_effort="$(model_cli_effort_for "$reviewer_model" || true)"
   prompt="$(build_tool_prompt_for "$reviewer_model" "$request_file" "$output_capture_file" "$durable_response_file")"
 
   case "$command_kind" in
@@ -1302,6 +1320,9 @@ build_tool_command() {
       TOOL_COMMAND=("$binary" exec --cd "$CONTEXT_ROOT" --sandbox read-only --ephemeral --output-last-message "$output_capture_file")
       if [[ "$cli_model" != "preconfigured-runtime" ]]; then
         TOOL_COMMAND+=(--model "$cli_model")
+      fi
+      if [[ -n "$cli_effort" ]]; then
+        TOOL_COMMAND+=(-c "model_reasoning_effort=${cli_effort}")
       fi
       TOOL_COMMAND+=("$prompt")
       ;;
@@ -1345,6 +1366,10 @@ run_codex_tool_command() {
   return 0
 }
 
+codex_sandbox_active() {
+  [[ -n "${CODEX_SANDBOX:-}" || -n "${CODEX_SANDBOX_NETWORK_DISABLED:-}" ]]
+}
+
 run_claude_tool_command() {
   local _model="$1"
   local request_file="$2"
@@ -1352,6 +1377,18 @@ run_claude_tool_command() {
   local model_stderr_file="$4"
   local durable_response_file="$5"
   local prompt
+
+  # Anthropic CLI calls must run non-sandboxed when a Codex/ChatGPT operator
+  # drives this skill: Codex sandboxes block Anthropic API network access and
+  # OS credential-store access, so a sandboxed attempt burns the review round
+  # on a predictable auth failure. Fail fast before invoking the binary.
+  if codex_sandbox_active; then
+    {
+      echo "[BLOCKED] Codex sandbox detected (CODEX_SANDBOX / CODEX_SANDBOX_NETWORK_DISABLED)."
+      echo "Anthropic claude CLI calls must run non-sandboxed: rerun this command through the user-approved non-sandboxed (escalated) execution path."
+    } > "$model_stderr_file"
+    return 1
+  fi
 
   prompt="$(build_stdin_tool_prompt_for "$output_capture_file" "$durable_response_file")"
   {

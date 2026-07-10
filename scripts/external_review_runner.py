@@ -121,15 +121,33 @@ def command_for_route(registry: dict[str, Any], route: str, request_file: Path, 
         ]
         if model["cli_model"] != "preconfigured-runtime":
             command.extend(["--model", model["cli_model"]])
+        if model.get("cli_effort"):
+            command.extend(["-c", f"model_reasoning_effort={model['cli_effort']}"])
         command.append(prompt)
         return command
     raise ValueError(f"unsupported command_kind: {runner['command_kind']}")
+
+
+def codex_sandbox_active() -> bool:
+    return bool(os.environ.get("CODEX_SANDBOX") or os.environ.get("CODEX_SANDBOX_NETWORK_DISABLED"))
 
 
 def run_command_for_route(registry: dict[str, Any], route: str, command: list[str], request_file: Path, response_file: Path) -> subprocess.CompletedProcess[str]:
     runner = runner_for_route(registry, route)
     stdin_text = None
     if runner["command_kind"] == "claude_code":
+        # Anthropic CLI calls must run non-sandboxed under a Codex/ChatGPT
+        # operator: Codex sandboxes block Anthropic API network access and OS
+        # credential-store access. Fail fast instead of burning the round.
+        if codex_sandbox_active():
+            return subprocess.CompletedProcess(
+                command,
+                1,
+                "",
+                "[BLOCKED] Codex sandbox detected (CODEX_SANDBOX / CODEX_SANDBOX_NETWORK_DISABLED).\n"
+                "Anthropic claude CLI calls must run non-sandboxed: rerun this command through the "
+                "user-approved non-sandboxed (escalated) execution path.\n",
+            )
         stdin_text = (
             "Review only the Markdown request provided on stdin. "
             "Return only the requested Markdown fields to stdout. "

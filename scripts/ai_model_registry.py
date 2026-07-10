@@ -128,6 +128,11 @@ def validate_registry(registry: dict[str, Any]) -> None:
         if runner_id not in runners:
             _fail(f"models[{route!r}].runner references unknown runner: {runner_id}")
         _scalar(model.get("cli_model", ""), f"models[{route!r}].cli_model")
+        cli_effort = model.get("cli_effort")
+        if cli_effort is not None:
+            effort_value = _scalar(cli_effort, f"models[{route!r}].cli_effort")
+            if effort_value not in {"minimal", "low", "medium", "high", "xhigh"}:
+                _fail(f"models[{route!r}].cli_effort must be minimal, low, medium, high, or xhigh")
         quota_group = _scalar(model.get("quota_group", ""), f"models[{route!r}].quota_group")
         quota_groups.add(quota_group)
         display_name = model.get("display_name", route)
@@ -220,6 +225,7 @@ def emit_shell(registry: dict[str, Any]) -> None:
             model.get("display_name", route),
             model.get("vendor", ""),
             resolve_model_route(registry, adversarial_peer) if adversarial_peer else "",
+            model.get("cli_effort") or "",
         )
     for alias in registry["default_reviewer_aliases"]:
         emit("default_reviewer", resolve_model_route(registry, alias))

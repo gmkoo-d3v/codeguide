@@ -2383,3 +2383,143 @@ exit 99'
   run test ! -e "$TEST_WORKSPACE/codex-called"
   [ "$status" -eq 0 ]
 }
+
+@test "run_external_plan_reviews passes codex reasoning effort for cli_effort routes" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-effort-01-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-effort-01-v1.0
+
+- task_id: ext-effort-01
+- plan_version: v1.0
+- objective: validate cli_effort passthrough for codex routes
+- scope: external review command construction
+- assumptions: mock codex records its argv
+- risks: effort flag silently dropped
+- acceptance_signals: codex argv contains model_reasoning_effort
+- stop_conditions: wrapper completes
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin-effort"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+printf "%s\n" "$@" > "${TEST_WORKSPACE}/codex-effort-args.log"
+output_file=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-last-message" ]]; then
+    output_file="${2:-}"
+    shift 2
+  else
+    shift
+  fi
+done
+if [[ -z "$output_file" ]]; then
+  output_file="/dev/stdout"
+fi
+cat > "$output_file" <<EOF
+- verdict: accept
+- summary: Mock codex accepts the effort-routed review.
+- strengths: Deterministic fixture.
+- risks: None.
+- requested_changes: None.
+EOF'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-effort-01" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --reviewer "codex-gpt-5.6-sol-high" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-effort-01" \
+    --approved-next-step "run external review ext-effort-01 v1.0 r01"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[OK] evaluator=codex"* ]]
+  run grep -- "--model" "$TEST_WORKSPACE/codex-effort-args.log"
+  [ "$status" -eq 0 ]
+  run grep -x -- "gpt-5.6-sol" "$TEST_WORKSPACE/codex-effort-args.log"
+  [ "$status" -eq 0 ]
+  run grep -x -- "model_reasoning_effort=high" "$TEST_WORKSPACE/codex-effort-args.log"
+  [ "$status" -eq 0 ]
+}
+
+@test "external_review_runner dry-run includes codex reasoning effort for cli_effort routes" {
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: effort route request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-effort" --plan-version "v1.0" --review-round "r01" --task-phase "planning" --coordinator "claude" --participant "codex-gpt-5.6-sol-high"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+
+  run python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-effort" --dry-run
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"codex exec"* ]]
+  [[ "$output" == *"--model gpt-5.6-sol"* ]]
+  [[ "$output" == *"model_reasoning_effort=high"* ]]
+}
+
+@test "run_external_plan_reviews blocks sandboxed claude invocation with non-sandboxed remediation" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-sandbox-01-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-sandbox-01-v1.0
+
+- task_id: ext-sandbox-01
+- plan_version: v1.0
+- objective: validate codex sandbox guard for claude routes
+- scope: external review invocation guard
+- assumptions: CODEX_SANDBOX marks a sandboxed codex shell
+- risks: claude invoked from a sandbox burns the round on auth failure
+- acceptance_signals: claude binary is never invoked
+- stop_conditions: wrapper reports the blocked route
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin-sandbox"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/claude-sandbox-called"
+cat <<EOF
+- verdict: accept
+- summary: should never run
+- strengths: none
+- risks: none
+- requested_changes: none
+EOF'
+
+  run env CODEX_SANDBOX=seatbelt PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-sandbox-01" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --reviewer "claude-current" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-sandbox-01" \
+    --approved-next-step "run external review ext-sandbox-01 v1.0 r01"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Codex sandbox detected"* ]]
+  [[ "$output" == *"non-sandboxed"* ]]
+  run test -e "$TEST_WORKSPACE/claude-sandbox-called"
+  [ "$status" -ne 0 ]
+}
+
+@test "external_review_runner blocks sandboxed claude invocation before running the binary" {
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: sandbox guard request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-sandbox" --plan-version "v1.0" --review-round "r01" --task-phase "planning" --coordinator "codex" --participant "claude-current"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin-runner-sandbox"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/runner-claude-sandbox-called"
+echo "- verdict: accept"'
+
+  run env CODEX_SANDBOX=seatbelt PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-sandbox"
+
+  [ "$status" -ne 0 ]
+  run test -e "$TEST_WORKSPACE/runner-claude-sandbox-called"
+  [ "$status" -ne 0 ]
+  run bash -c 'grep -rl "Codex sandbox detected" "$1"/docs/orchestration/runner-sandbox' _ "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+}
