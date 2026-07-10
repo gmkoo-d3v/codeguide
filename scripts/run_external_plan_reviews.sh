@@ -1510,6 +1510,7 @@ run_tool_prompt() {
     local model_stderr_file="${2:-$stderr_file}"
     local binary
     local runner_id
+    local command_kind
 
     if ! build_tool_command "$model" "$request_file" "$output_capture_file" "$durable_response_file"; then
       echo "[ERROR] Could not build runner command for route '${model}'" > "$model_stderr_file"
@@ -1517,19 +1518,28 @@ run_tool_prompt() {
     fi
     binary="${TOOL_COMMAND[0]}"
     runner_id="$(model_runner_for "$model")"
+    command_kind="$(runner_command_kind_for "$runner_id" || true)"
     if ! command -v "$binary" >/dev/null 2>&1; then
       echo "[ERROR] runner '${runner_id}' binary not found in PATH: ${binary}" > "$model_stderr_file"
       return 127
     fi
-    if [[ "$runner_id" == "agy" ]]; then
-      run_agy_tool_command "$model" "$output_capture_file" "$model_stderr_file"
-    elif [[ "$runner_id" == "claude" ]]; then
-      run_claude_tool_command "$model" "$request_file" "$output_capture_file" "$model_stderr_file" "$durable_response_file"
-    elif [[ "$runner_id" == "codex" ]]; then
-      run_codex_tool_command "$model" "$output_capture_file" "$model_stderr_file"
-    else
-      "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
-    fi
+    # Dispatch by the registry's command_kind, never by runner-id string: any
+    # claude_code-kind runner must route through run_claude_tool_command so the
+    # Codex-sandbox guard and stdin handoff apply regardless of the runner id.
+    case "$command_kind" in
+      agy)
+        run_agy_tool_command "$model" "$output_capture_file" "$model_stderr_file"
+        ;;
+      claude_code)
+        run_claude_tool_command "$model" "$request_file" "$output_capture_file" "$model_stderr_file" "$durable_response_file"
+        ;;
+      codex_cli)
+        run_codex_tool_command "$model" "$output_capture_file" "$model_stderr_file"
+        ;;
+      *)
+        "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
+        ;;
+    esac
   }
 
   if _run_model_route "$reviewer_model" "$stderr_file"; then

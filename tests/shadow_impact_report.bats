@@ -211,3 +211,45 @@ EOF
   [[ "$output" == *"need_refresh: 1"* ]]
   [[ "$output" == *"NEEDS REFRESH"* ]]
 }
+
+_seed_split_root_layout_untracked() {
+  # split-root layout whose docs parent is NOT a git repository
+  SPLIT_PARENT="$TEST_WORKSPACE/split-untracked"
+  mkdir -p "$SPLIT_PARENT/skillpkg/scripts" "$SPLIT_PARENT/docs/shadow/apps/app-a"
+  printf -- "---\nname: fixture-skill\n---\n" > "$SPLIT_PARENT/skillpkg/SKILL.md"
+  git -C "$SPLIT_PARENT/skillpkg" init --quiet
+  printf 'a=1\n' > "$SPLIT_PARENT/skillpkg/src.py"
+  git -C "$SPLIT_PARENT/skillpkg" add -A
+  git -C "$SPLIT_PARENT/skillpkg" -c user.email=t@t -c user.name=t commit -qm init
+  printf 'skillpkg\n' > "$SPLIT_PARENT/.codeguide-source-root"
+  cat > "$SPLIT_PARENT/docs/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- source_of_truth_paths: skillpkg/src.py
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  printf 'a=2\n' > "$SPLIT_PARENT/skillpkg/src.py"
+}
+
+@test "impact report split-root without a docs repo reports unknown instead of false NEEDS REFRESH" {
+  _seed_split_root_layout_untracked
+  printf -- '- note: refreshed for src change\n' >> "$SPLIT_PARENT/docs/shadow/apps/app-a/overview.md"
+
+  run IMPACT_REPORT --project-root "$SPLIT_PARENT" --exit-code
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"refresh_unknown: 1"* ]]
+  [[ "$output" == *"refresh state unknown"* ]]
+  [[ "$output" == *"refresh detection is unavailable"* ]]
+  [[ "$output" != *"NEEDS REFRESH"* ]]
+}
+
+@test "impact report split-root without a docs repo keeps --changed-file refresh detection" {
+  _seed_split_root_layout_untracked
+
+  run IMPACT_REPORT --project-root "$SPLIT_PARENT" \
+    --changed-file skillpkg/src.py --changed-file docs/shadow/apps/app-a/overview.md
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"need_refresh: 0"* ]]
+  [[ "$output" == *"ok (refreshed alongside sources)"* ]]
+}

@@ -16,6 +16,16 @@ Change-set sources (pick one):
 
 Exit code is 0 by default (a report). With --exit-code it exits 1 when at least one
 impacted shadow doc was not refreshed, for use in a pre-commit hook or CI reminder.
+
+Known limitations (split-root layouts):
+- Refresh detection unions the DOCS repo's working-tree/untracked changes only,
+  so a post-commit audit (--range over source history after the docs refresh was
+  already committed) over-reports NEEDS REFRESH. Fail-noisy by design.
+- When the docs root is NOT itself inside a git repository, git-derived change
+  sets cannot observe docs-side refreshes at all; impacted docs are then reported
+  as `refresh state unknown` (a third status that never fails --exit-code) with a
+  stderr warning, instead of a permanently false NEEDS REFRESH. Remediate by
+  tracking the docs root in git or passing the change set via --changed-file.
 """
 from __future__ import annotations
 
@@ -125,7 +135,19 @@ def main(argv: list[str]) -> int:
     # fail --exit-code forever. Track docs-repo working-tree changes separately
     # for refresh detection (same-repo layouts keep the original single set).
     docs_changed: set[Path] = set()
+    refresh_detectable = True
     docs_git_root = _git_toplevel(project_root)
+    if docs_git_root is None and not args.changed_file:
+        # Split-root layout whose docs root is untracked: the git-derived
+        # change set cannot contain any docs path, so the binary refreshed/
+        # needs-refresh classification would be permanently, misleadingly
+        # false. Downgrade to an explicit third status instead.
+        refresh_detectable = False
+        print(
+            f"warning: docs root {project_root} is not inside a git repository; "
+            "refresh detection is unavailable — track the docs root in git or pass --changed-file",
+            file=sys.stderr,
+        )
     if docs_git_root is not None and docs_git_root != git_root:
         try:
             if git_ok(["rev-parse", "--verify", "--quiet", "HEAD"], docs_git_root):
@@ -138,7 +160,7 @@ def main(argv: list[str]) -> int:
         for rel in docs_rels:
             docs_changed.add((docs_git_root / rel).resolve(strict=False))
 
-    impacted: list[tuple[str, list[str], bool]] = []
+    impacted: list[tuple[str, list[str], bool | None]] = []
     for doc in sorted(shadow_dir.rglob("*.md")):
         rel_parts = doc.relative_to(shadow_dir).parts
         if rel_parts and rel_parts[0] in ("_deprecated", "_obsolete"):
@@ -159,24 +181,34 @@ def main(argv: list[str]) -> int:
         if not changed_sources:
             continue
         doc_resolved = doc.resolve(strict=False)
-        refreshed = doc_resolved in changed or doc_resolved in docs_changed
+        refreshed: bool | None = doc_resolved in changed or doc_resolved in docs_changed
+        if not refreshed and not refresh_detectable:
+            refreshed = None
         try:
             doc_label = str(doc.resolve(strict=False).relative_to(project_root))
         except ValueError:
             doc_label = str(doc)
         impacted.append((doc_label, changed_sources, refreshed))
 
-    need_refresh = [item for item in impacted if not item[2]]
+    need_refresh = [item for item in impacted if item[2] is False]
+    refresh_unknown = [item for item in impacted if item[2] is None]
 
     print("# Shadow Impact Report")
     print(f"- changed_files: {len(changed)}")
     print(f"- impacted_shadow_docs: {len(impacted)}")
     print(f"- need_refresh: {len(need_refresh)}")
+    if refresh_unknown:
+        print(f"- refresh_unknown: {len(refresh_unknown)}")
     if not impacted:
         print("- result: no shadow doc declares any changed source")
     for doc_label, changed_sources, refreshed in impacted:
         if refreshed:
             print(f"- ok (refreshed alongside sources): {doc_label}")
+        elif refreshed is None:
+            print(
+                f"- impact detected, refresh state unknown (docs root not git-tracked): {doc_label} "
+                f"declares changed source(s): {', '.join(changed_sources)}"
+            )
         else:
             print(f"- NEEDS REFRESH: {doc_label} declares changed source(s) but was not refreshed: {', '.join(changed_sources)}")
 

@@ -2729,3 +2729,101 @@ assert _sandbox_marker_truthy(" false ") is False
 assert _sandbox_marker_truthy(" seatbelt ") is True
 PY
 }
+
+@test "sandbox guard fires for any claude_code-kind runner id, not only 'claude'" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-sandbox-05-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-sandbox-05-v1.0
+
+- task_id: ext-sandbox-05
+- plan_version: v1.0
+- objective: guard must key on command_kind, not the runner-id string
+- scope: sandbox guard dispatch
+- assumptions: a second claude_code runner id may be registered later
+- risks: renamed claude-family runner bypasses the guard
+- acceptance_signals: the second runner's binary is never invoked
+- stop_conditions: wrapper reports the blocked route
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local custom_registry="$TEST_WORKSPACE/claude2-registry.json"
+  python3 - "$SCRIPTS_DIR/../config/ai_model_registry.json" "$custom_registry" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1]) as handle:
+    registry = json.load(handle)
+registry["runners"]["claude2"] = {"binary": "claude2", "env_binary": "CODEGUIDE_CLAUDE2_BIN", "command_kind": "claude_code"}
+registry["models"]["claude2:current"] = {
+    "runner": "claude2",
+    "cli_model": "preconfigured-runtime",
+    "display_name": "Claude2 preconfigured",
+    "quota_group": "claude2-preconfigured",
+    "vendor": "anthropic",
+}
+registry["aliases"]["claude2-current"] = "claude2:current"
+with open(sys.argv[2], "w") as handle:
+    json.dump(registry, handle)
+PY
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin-claude2"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/claude2" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/claude2-called"
+echo "- verdict: accept"'
+
+  run env CODEX_SANDBOX=seatbelt CODEGUIDE_MODEL_REGISTRY="$custom_registry" PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-sandbox-05" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --reviewer "claude2-current" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-sandbox-05" \
+    --approved-next-step "run external review ext-sandbox-05 v1.0 r01"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Codex sandbox detected"* ]]
+  run test -e "$TEST_WORKSPACE/claude2-called"
+  [ "$status" -ne 0 ]
+}
+
+@test "external_review_runner blocks a second claude_code runner id under a sandbox (regression pin)" {
+  local custom_registry="$TEST_WORKSPACE/claude2-runner-registry.json"
+  python3 - "$SCRIPTS_DIR/../config/ai_model_registry.json" "$custom_registry" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1]) as handle:
+    registry = json.load(handle)
+registry["runners"]["claude2"] = {"binary": "claude2", "env_binary": "CODEGUIDE_CLAUDE2_BIN", "command_kind": "claude_code"}
+registry["models"]["claude2:current"] = {
+    "runner": "claude2",
+    "cli_model": "preconfigured-runtime",
+    "display_name": "Claude2 preconfigured",
+    "quota_group": "claude2-preconfigured",
+    "vendor": "anthropic",
+}
+registry["aliases"]["claude2-current"] = "claude2:current"
+with open(sys.argv[2], "w") as handle:
+    json.dump(registry, handle)
+PY
+
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: pin" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" --registry "$3" enqueue --task-id "runner-claude2-sandbox" --plan-version "v1.0" --review-round "r01" --task-phase "planning" --coordinator "codex" --participant "claude2-current"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT" "$custom_registry"
+  [ "$status" -eq 0 ]
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin-runner-claude2"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/claude2" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/runner-claude2-called"
+echo "- verdict: accept"'
+
+  run env CODEX_SANDBOX=seatbelt PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" --registry "$custom_registry" run-once --task-id "runner-claude2-sandbox"
+
+  [ "$status" -ne 0 ]
+  run test -e "$TEST_WORKSPACE/runner-claude2-called"
+  [ "$status" -ne 0 ]
+  run bash -c 'grep -rl "Codex sandbox detected" "$1"/docs/orchestration/runner-claude2-sandbox' _ "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+}
