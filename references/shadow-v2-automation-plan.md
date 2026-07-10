@@ -1,5 +1,7 @@
 # Shadow v2 Automation Plan
 
+> Size justification (2026-07-11, P5): this file intentionally exceeds the ~300-line reference budget — it is a single operational playbook whose phases cross-reference each other, and the P5 dedup made it the canonical home for two routed clauses; splitting it is a recorded follow-up candidate, not an oversight.
+
 Use this reference when planning or implementing the next automation layer for the shadow effect-map workflow.
 
 ## Status
