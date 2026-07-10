@@ -2251,6 +2251,17 @@ EOF
 - last_updated: 2026-01-01T00:00:00Z
 EOF
 
+  # The scaffolded task template now carries the seven resume_* capsule fields
+  # (session-resume-contract.md), and presence marks adoption: strict demands a
+  # truthful capsule on an in_progress task. Checkpoint the way a real strict
+  # handoff would before validating.
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "highrisk-pass-01" \
+    --resume-checkpoint \
+    --resume-next-action "record external adversarial review verdict" \
+    --resume-last-verified "adversarial evaluator report r01 ingested" \
+    --resume-blockers "none"
+
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -eq 0 ]
 }
@@ -2704,6 +2715,140 @@ EOF
   [ "$status" -ne 0 ]
   [[ "$output" == *"orphaned claim directory with no matching task file"* ]]
   [[ "$output" == *"docs/task/.claims/claim-ghost-01"* ]]
+}
+
+# ========== Resume capsule (session-resume-contract.md) ==========
+
+# write_await_gate_fixture is only ever exercised under --mode advisory
+# elsewhere in this suite (or under --mode strict expecting FAILURE), so it
+# carries three latent strict-mode issues that were never surfaced: a blank
+# orchestration.supervisor_agent, an external_review_required_for value
+# ("not_requested") outside that field's enum, and a task-index row appended
+# to the physically-last section regardless of status. None of those are
+# resume-capsule concerns, so normalize them here to get a strict-clean
+# baseline the resume checks can be asserted against in isolation.
+write_strict_clean_resume_fixture() {
+  local task_id="$1"
+  local orch_file="$DOCS_ROOT/orchestration/${task_id}/ORCH.md"
+  local shadow_ts
+
+  write_await_gate_fixture "$task_id" "in_progress" "" "" "not_requested" "" "" "" ""
+
+  sed -i.bak "s/^- supervisor_agent:.*/- supervisor_agent: main-thread-supervising-lead-architect/" "$orch_file"
+  rm -f "${orch_file}.bak"
+
+  # The fixture task file carries no last_updated, so its effective epoch is
+  # its mtime — stamped AFTER the scaffold stamped the shadow docs' last_updated.
+  # When the writes cross a second boundary, strict's shadow-freshness check
+  # flakes ("shadow graph doc is older than tracked task/decision doc"). Pin the
+  # task to the shadow router's own timestamp so both epochs are always equal,
+  # regardless of any later appends (last_updated wins over mtime).
+  shadow_ts="$(grep '^- last_updated:' "$DOCS_ROOT/shadow/project-shadow.md" | head -n 1 | sed 's/^- last_updated:[[:space:]]*//')"
+  printf '%s\n' "- last_updated: ${shadow_ts}" >> "$DOCS_ROOT/task/TASK-${task_id}.md"
+
+  grep -vF -- "- TASK-${task_id} " "$DOCS_ROOT/task/task-index.md" > "$DOCS_ROOT/task/task-index.md.tmp"
+  mv "$DOCS_ROOT/task/task-index.md.tmp" "$DOCS_ROOT/task/task-index.md"
+  awk -v section="## In Progress" -v row="- TASK-${task_id} in_progress" '
+    { print; if ($0 == section) { print row } }
+  ' "$DOCS_ROOT/task/task-index.md" > "$DOCS_ROOT/task/task-index.md.tmp"
+  mv "$DOCS_ROOT/task/task-index.md.tmp" "$DOCS_ROOT/task/task-index.md"
+}
+
+@test "validate_docs advisory warns when an in_progress task has no resume capsule fields at all" {
+  write_await_gate_fixture "resume-missing-01" "in_progress" "not_requested" "" "not_requested" "" "" "" ""
+  printf '%s\n' "- claimed_at: 2026-01-01T00:00:00Z" >> "$DOCS_ROOT/task/TASK-resume-missing-01.md"
+  mkdir -p "$DOCS_ROOT/task/.claims/resume-missing-01"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"resume capsule missing for in_progress task TASK-resume-missing-01"* ]]
+  [[ "$output" == *"doc_garden.sh --task-id resume-missing-01 --resume-checkpoint"* ]]
+}
+
+@test "validate_docs advisory does not nudge adoption once any resume_* field is present" {
+  write_await_gate_fixture "resume-present-01" "in_progress" "not_requested" "" "not_requested" "" "" "" ""
+  printf '%s\n' "- claimed_at: 2026-01-01T00:00:00Z" >> "$DOCS_ROOT/task/TASK-resume-present-01.md"
+  mkdir -p "$DOCS_ROOT/task/.claims/resume-present-01"
+  printf '%s\n' "- resume_checkpointed_at: 2026-01-01T00:00:00Z" >> "$DOCS_ROOT/task/TASK-resume-present-01.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"resume capsule missing for in_progress task"* ]]
+}
+
+@test "validate_docs strict does not fail an in_progress task with no resume_* fields at all" {
+  write_strict_clean_resume_fixture "resume-absent-strict-01"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"resume_next_action is present but empty"* ]]
+  [[ "$output" != *"resume_last_verified is present but empty"* ]]
+}
+
+@test "validate_docs strict fails when resume_next_action is present but empty" {
+  write_await_gate_fixture "resume-empty-next-01" "in_progress" "not_requested" "" "not_requested" "" "" "" ""
+  printf '%s\n' "- resume_next_action:" >> "$DOCS_ROOT/task/TASK-resume-empty-next-01.md"
+  printf '%s\n' "- resume_last_verified: bats suite green" >> "$DOCS_ROOT/task/TASK-resume-empty-next-01.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"resume_next_action is present but empty for in_progress task TASK-resume-empty-next-01"* ]]
+  [[ "$output" != *"resume_last_verified is present but empty"* ]]
+}
+
+@test "validate_docs strict fails when resume_last_verified is present but empty" {
+  write_await_gate_fixture "resume-empty-verified-01" "in_progress" "not_requested" "" "not_requested" "" "" "" ""
+  printf '%s\n' "- resume_next_action: run the bats suite" >> "$DOCS_ROOT/task/TASK-resume-empty-verified-01.md"
+  printf '%s\n' "- resume_last_verified:" >> "$DOCS_ROOT/task/TASK-resume-empty-verified-01.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"resume_last_verified is present but empty for in_progress task TASK-resume-empty-verified-01"* ]]
+  [[ "$output" != *"resume_next_action is present but empty"* ]]
+}
+
+@test "validate_docs strict passes when resume_next_action and resume_last_verified are both truthfully filled" {
+  write_strict_clean_resume_fixture "resume-filled-01"
+  printf '%s\n' "- resume_next_action: run the bats suite" >> "$DOCS_ROOT/task/TASK-resume-filled-01.md"
+  printf '%s\n' "- resume_last_verified: bats suite green" >> "$DOCS_ROOT/task/TASK-resume-filled-01.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"resume_next_action is present but empty"* ]]
+  [[ "$output" != *"resume_last_verified is present but empty"* ]]
+}
+
+@test "validate_docs strict does not fail when resume_state_revision is present but non-numeric" {
+  write_strict_clean_resume_fixture "resume-revision-strict-01"
+  printf '%s\n' "- resume_next_action: run the bats suite" >> "$DOCS_ROOT/task/TASK-resume-revision-strict-01.md"
+  printf '%s\n' "- resume_last_verified: bats suite green" >> "$DOCS_ROOT/task/TASK-resume-revision-strict-01.md"
+  printf '%s\n' "- resume_state_revision: corrupted" >> "$DOCS_ROOT/task/TASK-resume-revision-strict-01.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] resume_state_revision is present but non-numeric for in_progress task TASK-resume-revision-strict-01"* ]]
+}
+
+@test "validate_docs advisory warns when resume_state_revision is present but non-numeric" {
+  write_await_gate_fixture "resume-revision-advisory-01" "in_progress" "not_requested" "" "not_requested" "" "" "" ""
+  printf '%s\n' "- claimed_at: 2026-01-01T00:00:00Z" >> "$DOCS_ROOT/task/TASK-resume-revision-advisory-01.md"
+  mkdir -p "$DOCS_ROOT/task/.claims/resume-revision-advisory-01"
+  printf '%s\n' "- resume_state_revision: not-a-number" >> "$DOCS_ROOT/task/TASK-resume-revision-advisory-01.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] resume_state_revision is present but non-numeric for in_progress task TASK-resume-revision-advisory-01"* ]]
+}
+
+@test "validate_docs does not warn about resume_state_revision when it is a valid integer" {
+  write_strict_clean_resume_fixture "resume-revision-ok-01"
+  printf '%s\n' "- resume_next_action: run the bats suite" >> "$DOCS_ROOT/task/TASK-resume-revision-ok-01.md"
+  printf '%s\n' "- resume_last_verified: bats suite green" >> "$DOCS_ROOT/task/TASK-resume-revision-ok-01.md"
+  printf '%s\n' "- resume_state_revision: 3" >> "$DOCS_ROOT/task/TASK-resume-revision-ok-01.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"resume_state_revision is present but non-numeric"* ]]
 }
 
 @test "validate_docs advisory warns when a bucket index overview_doc reference does not resolve" {

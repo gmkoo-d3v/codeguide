@@ -205,6 +205,13 @@ pass() {
   echo "[PASS] $1"
 }
 
+# Unlike fail(), always prints [WARN] and never affects ISSUE_COUNT/exit code —
+# for signals that are informational in BOTH advisory and strict mode (e.g. the
+# resume_state_revision non-numeric check in the session-resume-contract.md).
+soft_warn() {
+  echo "[WARN] $1" >&2
+}
+
 for _required_cmd in python3 perl; do
   if ! command -v "$_required_cmd" >/dev/null 2>&1; then
     echo "[ERROR] ${_required_cmd} is required for documentation validation but was not found in PATH" >&2
@@ -2649,6 +2656,55 @@ is_active_task_status() {
   esac
 }
 
+# Resume capsule enforcement (references/session-resume-contract.md). Scoped to
+# in_progress tasks, since that is the only status the contract requires a
+# capsule for. Three independent tiers:
+#   - advisory only: no resume_* field at all on the task -> adoption nudge.
+#   - strict only: resume_next_action or resume_last_verified PRESENT but
+#     empty -> failure (a declared capsule must be truthful). Absent fields
+#     never fail strict, so pre-contract task corpora stay safe.
+#   - both modes: resume_state_revision present but non-numeric -> a
+#     non-blocking warning even under strict (soft_warn, not fail).
+RESUME_CAPSULE_FIELDS=(resume_source_head resume_changed_files resume_checkpointed_at resume_state_revision resume_next_action resume_last_verified resume_blockers)
+
+check_resume_capsule_for_task() {
+  local task_file="$1"
+  local task_ref="$2"
+  local field
+  local has_any_resume_field="false"
+  local field_value
+  local revision_value
+
+  for field in "${RESUME_CAPSULE_FIELDS[@]}"; do
+    if grep -qE "^- ${field}:" "$task_file" 2>/dev/null; then
+      has_any_resume_field="true"
+      break
+    fi
+  done
+
+  if [[ "$MODE" != "strict" && "$has_any_resume_field" == "false" ]]; then
+    fail "resume capsule missing for in_progress task ${task_ref}: adopt it with doc_garden.sh --task-id ${task_ref#TASK-} --resume-checkpoint (see references/session-resume-contract.md)"
+  fi
+
+  if [[ "$MODE" == "strict" ]]; then
+    for field in resume_next_action resume_last_verified; do
+      if grep -qE "^- ${field}:" "$task_file" 2>/dev/null; then
+        field_value="$(extract_field_value "$task_file" "$field")"
+        if [[ -z "$field_value" ]]; then
+          fail "${field} is present but empty for in_progress task ${task_ref}: a declared resume capsule must be truthful (references/session-resume-contract.md)"
+        fi
+      fi
+    done
+  fi
+
+  if grep -qE "^- resume_state_revision:" "$task_file" 2>/dev/null; then
+    revision_value="$(extract_field_value "$task_file" "resume_state_revision")"
+    if [[ ! "$revision_value" =~ ^[0-9]+$ ]]; then
+      soft_warn "resume_state_revision is present but non-numeric for in_progress task ${task_ref}: '${revision_value}' ($task_file)"
+    fi
+  fi
+}
+
 # Maps a task-index.md "## <Section>" header to the task.status enum value
 # shown under it (mirrors status_to_section in doc_garden.sh, inverted).
 task_index_section_status() {
@@ -3265,6 +3321,8 @@ if [[ -d "$TASK_DIR" ]]; then
       if [[ "$MODE" != "strict" && ! -d "$TASK_CLAIMS_DIR/${task_id}" ]]; then
         fail "claim directory is recommended for in_progress task ${task_ref}: mkdir ${TASK_CLAIMS_DIR}/${task_id}/ atomically before setting status: in_progress so two concurrent sessions cannot claim the same task"
       fi
+
+      check_resume_capsule_for_task "$task_file" "$task_ref"
     fi
 
     # Active tasks must have at least one versioned plan file

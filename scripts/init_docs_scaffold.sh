@@ -511,6 +511,13 @@ write_if_missing "${TASK_DIR}/task-template.md" '# TASK-<id>
 - axis_why:
 - axis_where:
 - axis_verify:
+- resume_source_head:
+- resume_changed_files:
+- resume_checkpointed_at:
+- resume_state_revision:
+- resume_next_action:
+- resume_last_verified:
+- resume_blockers:
 '
 
 write_if_missing "${DECISIONS_DIR}/decision-template.md" '# decision-<id>

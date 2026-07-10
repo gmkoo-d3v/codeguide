@@ -51,6 +51,12 @@ Options:
   --shadow-note "<text>"          Short note for shadow graph latest change
   --shadow-refresh-mode <mode>    same_session|git_diff (default: same_session)
   --shadow-git-range "<range>"    Explicit git revision range for user-requested git_diff shadow refresh
+  --resume-checkpoint              Write the resume capsule onto the task file (requires --task-id).
+                                    Surgical task-file update only: does not run scaffold init, touch
+                                    the task index/orchestration file, or refresh the shadow graph.
+  --resume-next-action "<text>"   Pass-through: upsert resume_next_action (requires --resume-checkpoint)
+  --resume-last-verified "<text>" Pass-through: upsert resume_last_verified (requires --resume-checkpoint)
+  --resume-blockers "<text>"      Pass-through: upsert resume_blockers (requires --resume-checkpoint)
   --allow-empty-overwrite          Allow empty values to overwrite existing values
   --no-init                        Skip scaffold initialization
   -h, --help                      Show this message
@@ -116,6 +122,10 @@ DELEGATION_NOTE=""
 SHADOW_NOTE=""
 SHADOW_REFRESH_MODE="same_session"
 SHADOW_GIT_RANGE=""
+RESUME_CHECKPOINT="false"
+RESUME_NEXT_ACTION=""
+RESUME_LAST_VERIFIED=""
+RESUME_BLOCKERS=""
 ALLOW_EMPTY_OVERWRITE="false"
 RUN_INIT="true"
 
@@ -485,6 +495,25 @@ while [[ $# -gt 0 ]]; do
       SHADOW_GIT_RANGE="${2:-}"
       shift 2
       ;;
+    --resume-checkpoint)
+      RESUME_CHECKPOINT="true"
+      shift
+      ;;
+    --resume-next-action)
+      require_option_value "$1" "$#"
+      RESUME_NEXT_ACTION="${2:-}"
+      shift 2
+      ;;
+    --resume-last-verified)
+      require_option_value "$1" "$#"
+      RESUME_LAST_VERIFIED="${2:-}"
+      shift 2
+      ;;
+    --resume-blockers)
+      require_option_value "$1" "$#"
+      RESUME_BLOCKERS="${2:-}"
+      shift 2
+      ;;
     --allow-empty-overwrite)
       ALLOW_EMPTY_OVERWRITE="true"
       shift
@@ -516,6 +545,16 @@ fi
 
 if [[ -n "$DECISION_ID" ]]; then
   validate_identifier "--decision-id" "$DECISION_ID"
+fi
+
+if [[ "$RESUME_CHECKPOINT" == "true" && -z "$TASK_ID" ]]; then
+  echo "[ERROR] --resume-checkpoint requires --task-id" >&2
+  exit 1
+fi
+
+if [[ "$RESUME_CHECKPOINT" != "true" && ( -n "$RESUME_NEXT_ACTION" || -n "$RESUME_LAST_VERIFIED" || -n "$RESUME_BLOCKERS" ) ]]; then
+  echo "[ERROR] --resume-next-action, --resume-last-verified, and --resume-blockers require --resume-checkpoint" >&2
+  exit 1
 fi
 
 validate_task_status "$TASK_STATUS"
@@ -649,7 +688,7 @@ ORCHESTRATION_DIR="$(codeguide_orchestration_root "$PROJECT_ROOT_ABS")"
 ORCHESTRATION_TEMPLATES_DIR="$(codeguide_orchestration_templates_dir "$PROJECT_ROOT_ABS")"
 SHADOW_BUCKETS=(apps services packages infra data)
 
-if [[ "$RUN_INIT" == "true" ]]; then
+if [[ "$RUN_INIT" == "true" && "$RESUME_CHECKPOINT" != "true" ]]; then
   "$INIT_SCRIPT" "$PROJECT_ROOT_ABS"
 fi
 TASK_INDEX="$TASK_DIR/task-index.md"
@@ -789,6 +828,109 @@ resolve_shadow_change_note() {
   fi
 }
 
+# Same derivation as shadow_impact_report.py's default (working-tree) change
+# set: tracked diff vs HEAD (--no-renames, so a renamed source keeps both its
+# old and new path) plus untracked files; falls back to the staged diff when
+# HEAD is unborn. Paths are printed source-repo-relative, one per line, NOT
+# yet sorted/deduped/capped — that is the caller's job (resume_changed_files
+# and resume_source_head both need the same underlying set to stay coherent).
+resume_source_changed_paths() {
+  local source_root="$1"
+
+  if git -C "$source_root" rev-parse --verify --quiet HEAD >/dev/null 2>&1; then
+    git -C "$source_root" diff --name-only --no-renames HEAD
+  else
+    git -C "$source_root" diff --cached --name-only --no-renames
+  fi
+  git -C "$source_root" ls-files --others --exclude-standard
+}
+
+# --resume-checkpoint: a surgical update of ONLY the seven resume_* fields on
+# the task file (references/session-resume-contract.md). Deliberately bypasses
+# scaffold init, the task-index/orchestration-file writers, and the shadow
+# graph refresh below — none of those are "doc mutations" this mode is allowed
+# to make.
+run_resume_checkpoint() {
+  local task_file="$TASK_DIR/TASK-${TASK_ID}.md"
+  local now_utc
+  local head_sha
+  local source_head_value
+  local changed_files_value
+  local changed_list
+  local changed_count=0
+  local capped_list
+  local extra_count
+  local prev_revision
+  local next_revision
+
+  if [[ ! -f "$task_file" ]]; then
+    echo "[ERROR] --resume-checkpoint requires an existing task file: ${task_file} (run '$0 <project-root> --task-id ${TASK_ID}' first)" >&2
+    exit 1
+  fi
+
+  now_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+  if is_git_repo; then
+    # A fresh source repo with no commits has no HEAD to resolve; record the
+    # unborn state explicitly instead of dying under set -e.
+    head_sha="$(git -C "$SOURCE_ROOT_ABS" rev-parse --verify --quiet HEAD 2>/dev/null || printf "unborn")"
+    changed_list="$(resume_source_changed_paths "$SOURCE_ROOT_ABS" | sed '/^$/d' | sort -u)"
+
+    if [[ -z "$changed_list" ]]; then
+      changed_files_value="none"
+    else
+      changed_count="$(printf "%s\n" "$changed_list" | wc -l | tr -d ' ')"
+      capped_list="$(printf "%s\n" "$changed_list" | head -n 10 | paste -sd ',' -)"
+      if (( changed_count > 10 )); then
+        extra_count=$((changed_count - 10))
+        changed_files_value="${capped_list} (+${extra_count} more)"
+      else
+        changed_files_value="$capped_list"
+      fi
+    fi
+
+    if (( changed_count > 0 )); then
+      source_head_value="${head_sha} (dirty: ${changed_count} files)"
+    else
+      source_head_value="${head_sha} (clean)"
+    fi
+  else
+    echo "[WARN] Not a git repository: no source repo reachable from ${PROJECT_ROOT_ABS}. resume_source_head recorded as no-source-repo; set CODEGUIDE_SOURCE_ROOT to override." >&2
+    source_head_value="no-source-repo"
+    changed_files_value="none"
+  fi
+
+  prev_revision="$(grep -E "^- resume_state_revision:" "$task_file" 2>/dev/null | head -n 1 | sed "s/^- resume_state_revision:[[:space:]]*//" || true)"
+  prev_revision="$(trim_value "$prev_revision")"
+  if [[ "$prev_revision" =~ ^[0-9]+$ ]]; then
+    next_revision=$((prev_revision + 1))
+  else
+    next_revision=1
+  fi
+
+  upsert_field "$task_file" "resume_source_head" "$source_head_value"
+  upsert_field "$task_file" "resume_changed_files" "$changed_files_value"
+  upsert_field "$task_file" "resume_checkpointed_at" "$now_utc"
+  upsert_field "$task_file" "resume_state_revision" "$next_revision"
+
+  if [[ -n "$RESUME_NEXT_ACTION" ]]; then
+    upsert_field "$task_file" "resume_next_action" "$RESUME_NEXT_ACTION"
+  fi
+  if [[ -n "$RESUME_LAST_VERIFIED" ]]; then
+    upsert_field "$task_file" "resume_last_verified" "$RESUME_LAST_VERIFIED"
+  fi
+  if [[ -n "$RESUME_BLOCKERS" ]]; then
+    upsert_field "$task_file" "resume_blockers" "$RESUME_BLOCKERS"
+  fi
+
+  echo "[OK] Resume checkpoint written."
+  echo "  - Task: TASK-${TASK_ID}"
+  echo "  - resume_source_head: ${source_head_value}"
+  echo "  - resume_changed_files: ${changed_files_value}"
+  echo "  - resume_checkpointed_at: ${now_utc}"
+  echo "  - resume_state_revision: ${next_revision}"
+}
+
 ensure_task_file() {
   local task_file="$1"
   local template="$TASK_DIR/task-template.md"
@@ -819,6 +961,13 @@ ensure_task_file() {
 - axis_why:
 - axis_where:
 - axis_verify:
+- resume_source_head:
+- resume_changed_files:
+- resume_checkpointed_at:
+- resume_state_revision:
+- resume_next_action:
+- resume_last_verified:
+- resume_blockers:
 EOF
     fi
   fi
@@ -1190,6 +1339,11 @@ refresh_shadow_graph() {
 NOW_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 TODAY="$(date -u +"%Y-%m-%d")"
 RESOLVED_SHADOW_CHANGE_NOTE="$(resolve_shadow_change_note)"
+
+if [[ "$RESUME_CHECKPOINT" == "true" ]]; then
+  run_resume_checkpoint
+  exit 0
+fi
 
 if [[ -n "$TASK_ID" ]]; then
   TASK_FILE="$TASK_DIR/TASK-${TASK_ID}.md"
