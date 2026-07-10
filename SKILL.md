@@ -32,6 +32,7 @@ Outcome-first governance skill for architecture, code quality, documentation lif
 | Need | Reference |
 |---|---|
 | Operating model, response style, evidence lookup, reasoning-budget behavior | `references/operating-model.md` |
+| Session resume capsule, checkpoint cadence, recovery read order | `references/session-resume-contract.md` |
 | Workflow, scope modes, micro-design, edge scans, docs/runtime validation, goal loops | `references/workflow.md`, `references/goal-loop-contract.md` |
 | Documentation language policy | `references/doc-language-policy.md` |
 | Docs system of record, templates, scaffolding, gardening, validation | `references/docs-system-of-record.md`, `references/doc-gardening-agent.md` |
