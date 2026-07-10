@@ -196,3 +196,49 @@ PY
   mkdir -p "$plain"
   [ -z "$(python_source_root "$plain")" ]
 }
+
+@test "source root: marker pointing at a non-repository target fails closed" {
+  local parent="$TEST_WORKSPACE/workspace"
+  local outside="$TEST_WORKSPACE/plain-outside"
+  make_skills_layout "$parent"
+  make_git_repo "$parent"
+  mkdir -p "$outside"
+  printf '%s\n' "$outside" > "$parent/.codeguide-source-root"
+
+  run codeguide_source_root "$parent"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"does not resolve inside a git repository"* ]]
+
+  [ -z "$(python_source_root "$parent" 2>/dev/null)" ]
+}
+
+@test "source root: absolute and subdirectory marker targets normalize to the source toplevel" {
+  local parent="$TEST_WORKSPACE/workspace"
+  make_skills_layout "$parent"
+  make_git_repo "$parent"
+  mkdir -p "$parent/skillpkg/sub/dir"
+
+  printf '%s\n' "$parent/skillpkg" > "$parent/.codeguide-source-root"
+  run codeguide_source_root "$parent"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(physical_path "$parent/skillpkg")" ]
+
+  printf 'skillpkg/sub/dir\n' > "$parent/.codeguide-source-root"
+  run codeguide_source_root "$parent"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(physical_path "$parent/skillpkg")" ]
+  [ "$(python_source_root "$parent")" = "$(physical_path "$parent/skillpkg")" ]
+}
+
+@test "source root: non-repository override fails closed in both languages" {
+  local parent="$TEST_WORKSPACE/workspace"
+  local override="$TEST_WORKSPACE/plain-override"
+  make_skills_layout "$parent"
+  mkdir -p "$override"
+
+  CODEGUIDE_SOURCE_ROOT="$override" run codeguide_source_root "$parent"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"does not resolve inside a git repository"* ]]
+
+  [ -z "$(CODEGUIDE_SOURCE_ROOT="$override" python_source_root "$parent" 2>/dev/null)" ]
+}

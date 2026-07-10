@@ -59,10 +59,12 @@ def _warn(message: str) -> None:
 
 
 def _normalize_source_dir(raw_dir: Path, label: str) -> Path | None:
-    """Normalize a user-supplied source location to its git toplevel.
+    """Normalize an EXPLICITLY declared source location to its git toplevel.
 
     git prints toplevel-relative diff paths, so returning a subdirectory here
-    would silently empty every downstream change set.
+    would silently empty every downstream change set — and an explicit
+    declaration (env override or marker file) that is not a git repository is
+    a configuration error, so it fails closed instead of degrading.
     """
     dir_abs = raw_dir.expanduser().resolve(strict=False)
     if not dir_abs.is_dir():
@@ -71,8 +73,8 @@ def _normalize_source_dir(raw_dir: Path, label: str) -> Path | None:
     git_root = _git_toplevel(dir_abs)
     if git_root is not None:
         return git_root
-    _warn(f"[WARN] {label} is not inside a git repository; git-dependent features will be disabled: {raw_dir}")
-    return dir_abs
+    _warn(f"[WARN] {label} does not resolve inside a git repository; fix the declaration or unset it: {raw_dir}")
+    return None
 
 
 def _skill_package_child_repos(project_root: Path) -> list[Path]:

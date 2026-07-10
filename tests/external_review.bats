@@ -2676,3 +2676,56 @@ PY
   [ "$status" -ne 0 ]
   [[ "$output" == *"cli_effort is only supported for codex_cli runners"* ]]
 }
+
+@test "sandbox guard trims whitespace before truthiness (parity with python)" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-sandbox-04-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-sandbox-04-v1.0
+
+- task_id: ext-sandbox-04
+- plan_version: v1.0
+- objective: padded falsy markers must not block claude routes
+- scope: sandbox marker whitespace parity
+- assumptions: markers may carry padded values
+- risks: shell and python truthiness diverging on whitespace
+- acceptance_signals: claude runs when the marker is a padded falsy value
+- stop_conditions: wrapper completes
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin-sandbox-pad"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+touch "${TEST_WORKSPACE}/claude-pad-called"
+cat <<EOF
+- verdict: accept
+- summary: padded falsy markers must not block
+- strengths: bounded
+- risks: none
+- requested_changes: none
+EOF'
+
+  run env "CODEX_SANDBOX= false " PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-sandbox-04" \
+    --plan-version "v1.0" \
+    --primary-tool "agy" \
+    --reviewer "claude-current" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-sandbox-04" \
+    --approved-next-step "run external review ext-sandbox-04 v1.0 r01"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[OK] evaluator=claude"* ]]
+  run test -e "$TEST_WORKSPACE/claude-pad-called"
+  [ "$status" -eq 0 ]
+
+  python3 - <<PY
+import sys
+sys.path.insert(0, "$SCRIPTS_DIR")
+from external_review_runner import _sandbox_marker_truthy
+assert _sandbox_marker_truthy(" false ") is False
+assert _sandbox_marker_truthy(" seatbelt ") is True
+PY
+}

@@ -1369,9 +1369,12 @@ run_codex_tool_command() {
 codex_sandbox_marker_truthy() {
   # Defined boolean semantics: a marker counts only when non-empty and not an
   # explicit falsy value, so inherited CODEX_SANDBOX_NETWORK_DISABLED=0 or
-  # =false does not misclassify an unsandboxed shell.
-  local value
-  value="$(printf "%s" "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  # =false does not misclassify an unsandboxed shell. Trim surrounding
+  # whitespace first to stay in parity with the python implementation.
+  local value="${1:-}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  value="$(printf "%s" "$value" | tr '[:upper:]' '[:lower:]')"
   case "$value" in
     ""|"0"|"false"|"off"|"no"|"none") return 1 ;;
     *) return 0 ;;

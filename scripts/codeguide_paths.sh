@@ -36,9 +36,11 @@ codeguide_is_skill_package_root() {
 }
 
 codeguide_normalize_source_dir() {
-  # Normalize a user-supplied source location to its git toplevel (physical
-  # path). git prints toplevel-relative diff paths, so a subdirectory here
-  # would silently empty every downstream change set.
+  # Normalize an EXPLICITLY declared source location (env override or marker
+  # file) to its git toplevel (physical path). git prints toplevel-relative
+  # diff paths, so a subdirectory here would silently empty every downstream
+  # change set — and an explicit declaration that is not a git repository is a
+  # configuration error, so it fails closed instead of degrading.
   local raw_dir="$1"
   local label="$2"
   local dir_abs
@@ -53,8 +55,8 @@ codeguide_normalize_source_dir() {
     printf "%s" "$git_root"
     return 0
   fi
-  echo "[WARN] ${label} is not inside a git repository; git-dependent features will be disabled: ${raw_dir}" >&2
-  printf "%s" "$dir_abs"
+  echo "[WARN] ${label} does not resolve inside a git repository; fix the declaration or unset it: ${raw_dir}" >&2
+  return 1
 }
 
 codeguide_source_root() {
