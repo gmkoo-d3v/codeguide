@@ -179,9 +179,21 @@ def validate_external_response_artifact(summary: dict[str, Any], path: Path, con
     if verdict:
         summary["verdict"] = verdict
     normalized_evaluator = normalized_text(evaluator)
+    # Registry routes label evaluators as "<runner>:<model>" and response files
+    # as "<runner>-<model-slug>.response.md"; accept the runner id from either
+    # form in addition to a bare evaluator name.
     if normalized_evaluator not in EXTERNAL_REVIEW_EVALUATORS:
+        normalized_evaluator = normalized_evaluator.split(":", 1)[0]
+        if normalized_evaluator in EXTERNAL_REVIEW_EVALUATORS:
+            summary["evaluator"] = normalized_evaluator
+    if normalized_evaluator not in EXTERNAL_REVIEW_EVALUATORS:
+        response_slug = path.name
+        for suffix in (".retry-response.md", ".response.md"):
+            if response_slug.endswith(suffix):
+                response_slug = response_slug[: -len(suffix)]
+                break
         for candidate in sorted(EXTERNAL_REVIEW_EVALUATORS):
-            if path.name in {f"{candidate}.response.md", f"{candidate}.retry-response.md"}:
+            if response_slug == candidate or response_slug.startswith(f"{candidate}-"):
                 normalized_evaluator = candidate
                 summary["evaluator"] = candidate
                 break
@@ -210,6 +222,9 @@ def validate_external_response_artifact(summary: dict[str, Any], path: Path, con
         return blockers
 
     request_evaluator = normalized_text(review_field(request_content, "evaluator"))
+    if request_evaluator not in EXTERNAL_REVIEW_EVALUATORS:
+        # Wrapper-generated requests record the registry route ("agy:current").
+        request_evaluator = request_evaluator.split(":", 1)[0]
     if request_evaluator not in EXTERNAL_REVIEW_EVALUATORS:
         blockers.append(
             f"completed external antigravity review companion request evaluator must be antigravity or agy: {request_file}"
@@ -244,9 +259,11 @@ def validate_external_response_artifact(summary: dict[str, Any], path: Path, con
             blockers.append(
                 f"completed external antigravity review command_response_path must share the response directory: {request_file}"
             )
+        # Raw captures are named by the same evaluator slug as the response
+        # file (e.g. agy-current), not the bare runner id.
         if raw_path.name not in {
-            f"{normalized_evaluator}.command-response.raw.md",
-            f"{normalized_evaluator}.retry-command-response.raw.md",
+            f"{evaluator_slug}.command-response.raw.md",
+            f"{evaluator_slug}.retry-command-response.raw.md",
         }:
             blockers.append(
                 f"completed external antigravity review command_response_path filename must match evaluator raw capture: {request_file}"

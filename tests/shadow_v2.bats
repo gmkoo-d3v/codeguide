@@ -243,7 +243,7 @@ command_response_path: $thin_dir/gemini.command-response.raw.md
 raw_capture_deleted: true
 sanitized_response: true
 EOF
-  accepted_artifact="$(create_mock_external_review_artifact "shadow-v2-close-accepted" "gemini-3-5-flash-medium")"
+  accepted_artifact="$(create_mock_external_review_artifact "shadow-v2-close-accepted" "agy-current")"
   internal_artifact="$(create_mock_internal_review_artifact "shadow-v2-close-internal")"
   [ -n "$accepted_artifact" ]
   [ -n "$internal_artifact" ]
@@ -372,7 +372,7 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *'"status":"ok"'* ]]
   [[ "$output" == *'"sha256":"sha256:'* ]]
-  [[ "$output" == *'"evaluator":"gemini"'* ]]
+  [[ "$output" == *'"evaluator":"agy"'* ]]
   [[ "$output" == *'"request_file":'* ]]
   [[ "$output" == *'"command_response_path":'* ]]
   [[ "$output" == *'"provenance_file":'* ]]
@@ -987,7 +987,7 @@ EOF
 @test "shadow_v2_pipeline_wrapper requires external close artifact provenance" {
   local accepted_artifact
   local internal_artifact
-  accepted_artifact="$(create_mock_external_review_artifact "shadow-v2-pipeline-accepted" "gemini-3-5-flash-medium")"
+  accepted_artifact="$(create_mock_external_review_artifact "shadow-v2-pipeline-accepted" "agy-current")"
   internal_artifact="$(create_mock_internal_review_artifact "shadow-v2-pipeline-internal")"
   [ -n "$accepted_artifact" ]
   [ -n "$internal_artifact" ]
