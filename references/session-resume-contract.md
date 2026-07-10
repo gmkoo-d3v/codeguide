@@ -11,7 +11,7 @@ Script-maintained — written ONLY by `doc_garden.sh --resume-checkpoint`, never
 
 ```markdown
 - resume_source_head:      # source-repo HEAD sha + short dirty summary
-- resume_changed_files:    # working-tree changes, sorted, capped (top 10 + count)
+- resume_changed_files:    # working-tree changes, SOURCE-REPO-relative paths, sorted, capped (top 10 + count)
 - resume_checkpointed_at:  # UTC ISO timestamp
 - resume_state_revision:   # monotonic integer, incremented per checkpoint
 ```
