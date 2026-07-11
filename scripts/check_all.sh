@@ -83,6 +83,9 @@ done
 # Suite membership (bash 3.2: no associative arrays). Sets SUITE_FILES as a
 # list of tests/-relative .bats filenames; empty means "the tests/ directory
 # as a whole" (the full/default suite).
+# front_cli.bats is deliberately in no named subset: its tests execute
+# check_all --suite themselves, so including it would nest bats inside bats
+# recursively. Iterate on it directly: bats tests/front_cli.bats.
 SUITE_FILES=()
 set_suite_files() {
   case "$1" in
