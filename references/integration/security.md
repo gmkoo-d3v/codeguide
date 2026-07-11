@@ -19,6 +19,8 @@ Extracted from references/integration-patterns.md for Phase 4 index-ization; aut
 public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        // Bearer-header path (non-browser clients). The cookie-session default
+        // keeps CSRF ENABLED instead - see CSRF Protection below.
         http
             .csrf(csrf -> csrf.disable())
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -177,10 +179,13 @@ app.add_middleware(
 
 **Spring Boot:**
 ```java
-// CSRF typically disabled for stateless JWT APIs
+// Disable CSRF only when no credential rides on a cookie (Authorization: Bearer
+// presented by non-browser clients). A JWT delivered in a cookie - this doc's
+// frontend default - is cookie-borne and MUST keep CSRF enabled; SameSite=Strict
+// is defense in depth, not a substitute.
 http.csrf(csrf -> csrf.disable())
 
-// For session-based auth, enable CSRF:
+// For any cookie-borne credential (session cookie or cookie-delivered JWT), enable CSRF:
 http.csrf(csrf -> csrf
     .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
 )
