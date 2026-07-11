@@ -1165,6 +1165,25 @@ EOF
   [[ "$output" == *"shadow rule registry missing rules block"* ]] || [[ "$output" == *"must contain at least one rule id mapping"* ]]
 }
 
+@test "validate_docs strict fails when rule registry has rule ids but no primary validator mappings" {
+  # Deliberately narrower than the "no mappings" fixture above: this keeps at
+  # least one top-level rule id AND at least one allowed_effect_types line so
+  # rule_count/effect_type_count stay non-zero (both of those grep|wc
+  # pipelines are unprotected under `set -o pipefail` and abort the whole
+  # script on a zero-match grep -- a real crash in the product code, not a
+  # fixture problem; see the flagged follow-up). Only "primary:" lines are
+  # stripped, which zeroes primary_count via collect_rule_registry_refs's own
+  # `|| true`-guarded pipeline, so this specific fail() path is reachable.
+  perl -0pi -e 's/^[ \t]+primary:.*\n//gm' "$DOCS_ROOT/policy/shadow-rule-registry.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"must contain at least one primary validator mapping"* ]]
+  # Full attributable literal for check_rule_registry_has_mappings
+  # (rule-coverage matrix arbiter).
+  [[ "$output" == *"shadow rule registry must contain at least one primary validator mapping: "* ]]
+}
+
 @test "validate_docs strict fails on invalid policy fallback risk enum" {
   sed -i.bak 's/max_promotion_risk: medium/max_promotion_risk: extreme/' "$DOCS_ROOT/policy/shadow-regex-patterns.md"
   rm -f "$DOCS_ROOT/policy/shadow-regex-patterns.md.bak"
@@ -1212,6 +1231,22 @@ EOF
   [[ "$output" == *"primary validator evidence_type mismatch"* ]]
 }
 
+@test "validate_docs strict fails when rule registry primary reference is not a declared catalog id" {
+  # A primary ref pointing at an id that is not in shadow-validator-catalog.md's
+  # validators block: check_rule_registry_mapping_contracts is a no-op for an
+  # unknown id (its evidence_type-mismatch check only fires for ids that ARE
+  # in the catalog), so this isolates check_rule_registry_refs_exist.
+  perl -0pi -e 's/primary: jpa\.repository\.save\@v1/primary: jpa.repository.save_missing\@v1/' "$DOCS_ROOT/policy/shadow-rule-registry.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"jpa.repository.save_missing@v1"* ]]
+  # Full attributable literal for check_rule_registry_refs_exist
+  # (rule-coverage matrix arbiter).
+  [[ "$output" == *"rule registry references unknown "* ]]
+  [[ "$output" == *"rule registry references unknown primary validator catalog id: jpa.repository.save_missing@v1"* ]]
+}
+
 @test "validate_docs strict fails when policy roots leave fenced yaml blocks" {
   perl -0pi -e 's/```yaml\nvalidators:/```text\nvalidators:/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
 
@@ -1226,6 +1261,17 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
   [[ "$output" == *"must declare source_probe_only"* ]]
+  # Full attributable literal for check_catalog_probe_coverage (rule-coverage
+  # matrix arbiter). Deliberately NOT the "implemented_primary_v1 id must be
+  # declared/implemented..." family: those exact literals are ALSO emitted
+  # independently by shadow_policy_loader.py's parity_diagnostics (wrapped by
+  # check_policy_loader_contract), so asserting on them would still pass with
+  # check_catalog_probe_coverage's own body neutered -- a cosmetic match. This
+  # "must declare source_probe_only (" literal (with the trailing catalog_file
+  # paren) has no python-side counterpart: shadow_policy_loader.py's
+  # equivalent message ends at "source_probe_only" with no trailing "(", so it
+  # cannot satisfy this candidate.
+  [[ "$output" == *"shadow validator catalog must declare source_probe_only ("* ]]
 }
 
 @test "validate_docs strict fails when catalog coverage id is undeclared" {
@@ -1268,6 +1314,11 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
   [[ "$output" == *"evidence_type must match AdapterRegistry"* ]]
+  # Same fixture also exercises check_policy_loader_contract: the strict
+  # policy-loader parity check (shadow_policy_loader.py --check-parity)
+  # surfaces this exact drift through its own fail() wrapper. Full
+  # attributable literal (rule-coverage matrix arbiter).
+  [[ "$output" == *"shadow policy loader strict contract failed: "* ]]
 }
 
 @test "validate_docs strict fails when fallback regex evidence type mismatches rule evidence branch" {
@@ -1451,6 +1502,10 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
   [[ "$output" == *"orchestration risk preflight must be pass or approved"* ]]
+  # Full attributable literal for check_orchestration_file_for_task
+  # (rule-coverage matrix arbiter): includes the rest of the leading literal
+  # that the fragment above truncates before the $orchestration_file expansion.
+  [[ "$output" == *"orchestration risk preflight must be pass or approved before delegated/external review: "* ]]
 }
 
 @test "validate_docs strict fails when approved preflight leaves approval_required false" {
@@ -1573,6 +1628,9 @@ make_empty_graph_gate_source_repo() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"[FAIL] shadow graph is empty"* ]]
   [[ "$output" == *"shadow_coverage_report.py"* ]]
+  # Full attributable literal (rule-coverage matrix arbiter): the entire
+  # fail() message has no $ interpolation, so this is the whole candidate.
+  [[ "$output" == *"shadow graph is empty: no bucket declares a unit and no shadow doc declares source_of_truth_paths, though the source repo has trackable files to document. Author shadow units; see shadow_coverage_report.py for the coverage gap"* ]]
 }
 
 @test "validate_docs advisory warns (does not fail) on an entirely empty shadow graph" {
@@ -2886,6 +2944,9 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"shadow navigation reference does not resolve"* ]]
   [[ "$output" == *"overview_doc -> apps/app-a/overview.md"* ]]
+  # Full attributable literal (rule-coverage matrix arbiter): includes the
+  # trailing ": " that the fragment above omits.
+  [[ "$output" == *"shadow navigation reference does not resolve: "* ]]
 }
 
 @test "validate_docs advisory warns when a redirect shim canonical_path does not resolve" {
@@ -3391,6 +3452,9 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
   [[ "$output" == *"shadow concern leaf missing concern_id"* ]]
+  # Full attributable literal (rule-coverage matrix arbiter): includes the
+  # trailing ": " that the fragment above omits.
+  [[ "$output" == *"shadow concern leaf missing concern_id: "* ]]
 }
 
 @test "validate_docs strict skips the advisory unit schema check" {

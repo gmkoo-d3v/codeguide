@@ -122,6 +122,35 @@ TABLE
   [[ "$output" != *"[STAGE]"* ]]
 }
 
+# --- packaging gate (check_all.sh packaging-smoke stage) --------------------
+
+@test "check_all fails the gate when packaging smoke finds a stray file, with the packaging stage marked FAIL" {
+  local skill_root="$(cd "$SCRIPTS_DIR/.." && pwd)"
+  local skill_copy="$TEST_WORKSPACE/skill-copy"
+  mkdir -p "$skill_copy"
+
+  # Copy the whole skill tree except .git (irrelevant to check_all's own
+  # stages and large/slow to duplicate) into a scratch copy so the planted
+  # stray below cannot affect the real skill root.
+  local entry base
+  for entry in "$skill_root"/* "$skill_root"/.[!.]*; do
+    [ -e "$entry" ] || continue
+    base="$(basename "$entry")"
+    [ "$base" = ".git" ] && continue
+    cp -R "$entry" "$skill_copy/"
+  done
+
+  # Plant an unclassified stray file at the copy's root: packaging_smoke.py
+  # has no SHIP or DEV-ARTIFACT rule for it, so it must classify UNKNOWN and
+  # fail the packaging-smoke stage (default exit-code mode).
+  printf 'stray\n' > "$skill_copy/stray-artifact.bin"
+
+  run bash "$skill_copy/scripts/check_all.sh" "$TEST_PROJECT" --suite fast --skip-pytest
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"[FAIL] packaging smoke (packaging_smoke.py)"* ]]
+  [[ "$output" == *"[RESULT] Quality gate failed; see stages marked FAIL above."* ]]
+}
+
 # --- artifacts (check_all.sh --artifacts) -----------------------------------
 
 @test "check_all --artifacts writes stage logs, a junit report, and names the dir in the summary" {
@@ -133,7 +162,8 @@ TABLE
 
   local log
   for log in 01-env-contract.log 02-bats-suite.log 03-pytest-suite.log \
-    04-strict-docs-validation.log 05-english-docs-policy.log; do
+    04-strict-docs-validation.log 05-english-docs-policy.log \
+    06-packaging-smoke.log; do
     run test -s "$artifacts_dir/$log"
     [ "$status" -eq 0 ]
   done
@@ -178,6 +208,7 @@ for line in lines:
   [[ "$output" == *"[SKIP] pytest suite (tests/)"* ]]
   [[ "$output" == *"[PASS] strict docs validation (validate_docs.sh)"* ]]
   [[ "$output" == *"[PASS] English docs policy (check_english_docs.sh)"* ]]
+  [[ "$output" == *"[PASS] packaging smoke (packaging_smoke.py)"* ]]
 
   run python3 -c '
 import json
@@ -200,9 +231,37 @@ assert results["pytest suite (tests/)"]["result"] == "SKIP"
 assert results["pytest suite (tests/)"]["duration_s"] == 0
 assert results["strict docs validation (validate_docs.sh)"]["result"] == "PASS"
 assert results["English docs policy (check_english_docs.sh)"]["result"] == "PASS"
+assert results["packaging smoke (packaging_smoke.py)"]["result"] == "PASS"
 for stage in record["stages"]:
     assert isinstance(stage["duration_s"], int), stage
     assert stage["result"] in ("PASS", "FAIL", "SKIP"), stage
+' "$metrics_file"
+  [ "$status" -eq 0 ]
+}
+
+@test "check_all --metrics-out includes the packaging-smoke stage with an integer duration" {
+  local metrics_file="$TEST_WORKSPACE/metrics-packaging.jsonl"
+
+  run bash "$CHECK_ALL" "$TEST_PROJECT" --suite fast --skip-pytest --metrics-out "$metrics_file"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[PASS] packaging smoke (packaging_smoke.py)"* ]]
+
+  run python3 -c '
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    lines = [line for line in fh.read().splitlines() if line]
+record = json.loads(lines[-1])
+
+stages = {s["slug"]: s for s in record["stages"]}
+assert "packaging-smoke" in stages, record
+stage = stages["packaging-smoke"]
+assert stage["name"] == "packaging smoke (packaging_smoke.py)", stage
+assert stage["result"] == "PASS", stage
+assert isinstance(stage["duration_s"], int), stage
+assert stage["duration_s"] >= 0, stage
 ' "$metrics_file"
   [ "$status" -eq 0 ]
 }

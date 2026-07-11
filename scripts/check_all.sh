@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Single quality gate for the codeguide skill: from a clean checkout, one
-# command verifies the environment contract, runs the full test suites, and
-# runs strict docs validation plus the English-policy check.
+# command verifies the environment contract, runs the full test suites,
+# runs strict docs validation plus the English-policy check, and runs a
+# packaging smoke check (packaging_smoke.py).
 
 set -u
 
@@ -14,11 +15,13 @@ Usage:
   check_all.sh [project-root] [--skip-pytest] [--suite <name>] [--artifacts <dir>] [--metrics-out <file>]
 
 Single quality gate for the codeguide skill: verifies the environment
-contract, runs the bats and pytest suites, and runs strict docs validation
-plus the English-policy check. project-root defaults to the git toplevel
-containing this script (the repo whose docs/ tree is validated). All stages
-run even after a failure so one invocation reports the full picture; the
-exit code is nonzero if any stage failed.
+contract, runs the bats and pytest suites, runs strict docs validation
+plus the English-policy check, and runs a packaging smoke check
+(packaging_smoke.py: every path under the skill root must classify as
+SHIP, DEV-ARTIFACT, or UNKNOWN; any UNKNOWN fails this stage). project-root
+defaults to the git toplevel containing this script (the repo whose docs/
+tree is validated). All stages run even after a failure so one invocation
+reports the full picture; the exit code is nonzero if any stage failed.
 
 Options:
   --skip-pytest       Skip the pytest stage and the pytest check inside the
@@ -255,6 +258,8 @@ fi
 run_stage "strict-docs-validation" "strict docs validation (validate_docs.sh)" bash "$SCRIPT_DIR/validate_docs.sh" "$PROJECT_ROOT" --mode strict
 
 run_stage "english-docs-policy" "English docs policy (check_english_docs.sh)" bash "$SCRIPT_DIR/check_english_docs.sh" "$SKILL_ROOT"
+
+run_stage "packaging-smoke" "packaging smoke (packaging_smoke.py)" python3 "$SCRIPT_DIR/packaging_smoke.py" --skill-root "$SKILL_ROOT"
 
 printf '\n=== [SUMMARY] ===\n'
 for i in "${!STAGE_NAMES[@]}"; do
