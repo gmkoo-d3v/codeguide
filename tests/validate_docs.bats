@@ -1184,6 +1184,129 @@ EOF
   [[ "$output" == *"shadow rule registry must contain at least one primary validator mapping: "* ]]
 }
 
+@test "validate_docs strict completes and cleanly fails when the rule registry rules block is present but has zero rule id mappings" {
+  # Regression for check_rule_registry_has_mappings's rule_count pipeline
+  # (scripts/validate_docs.d/20-rules-shadow.sh): `grep | grep -Ev | wc -l | tr -d ' '`
+  # had no `|| true` guard, unlike the sibling collect_rule_registry_refs
+  # pipeline. Under `set -euo pipefail`, a "rules:" block that legitimately
+  # declares its structure but contains zero rule-id mapping lines makes the
+  # first grep's no-match exit (1) propagate through the pipe and abort the
+  # whole validator right after the "declares rules block" PASS line, so the
+  # designed clean fail() below never ran. This fixture keeps "rules:" present
+  # (structure intact) but empty, isolating that exact zero-match path.
+  cat > "$DOCS_ROOT/policy/shadow-rule-registry.md" <<'EOF'
+# Shadow Rule Registry
+
+- registry_id: shadow-rule-registry
+- registry_version: 1
+- status: active-draft
+- linked_task: TASK-shadow-effect-map-01
+- linked_decisions: decision-shadow-practical-contract-01
+- purpose: rules block present but empty must yield a clean fail, not a crash
+- last_updated: 2026-04-30T13:49:45Z
+
+## Contract
+
+- Rule ids not listed here cannot produce confirmed shadow facts.
+
+```yaml
+rules: {}
+```
+
+```yaml
+promotion_gates:
+  regex_only:
+    max_effective_risk: medium
+    evidence_field: fallback_result
+    forbidden_field: validator_result
+  high_or_critical:
+    requires_one_of:
+      - parser_backed_validator
+      - test_assertion
+      - runtime_trace
+      - valid_waiver
+  unknown_defaults:
+    unlisted_rule: unknown
+    unlisted_boundary: unknown
+    unmapped_stack: unknown
+    unmapped_evidence_type: unknown
+```
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"shadow rule registry declares rules block"* ]]
+  # Full attributable literal for check_rule_registry_has_mappings.
+  [[ "$output" == *"shadow rule registry must contain at least one rule id mapping: "* ]]
+  # Proves the run reached the end instead of aborting mid-pipeline.
+  [[ "$output" == *"[RESULT]"* ]]
+}
+
+@test "validate_docs strict completes and cleanly fails when a rule id has zero allowed_effect_types mappings" {
+  # Regression for check_rule_registry_has_mappings's effect_type_count
+  # pipeline (scripts/validate_docs.d/20-rules-shadow.sh): `grep | wc -l | tr -d ' '`
+  # had no `|| true` guard. Under `set -euo pipefail`, a rule id with zero
+  # `allowed_effect_types:` lines anywhere in the file makes that grep's
+  # no-match exit (1) propagate through the pipe and abort the validator
+  # before its designed `effect_type_count < rule_count` fail() could run.
+  # This fixture keeps one real rule id (so rule_count is non-zero) but
+  # strips its allowed_effect_types line, isolating that exact zero-match
+  # path from the rule_count one covered by the test above.
+  cat > "$DOCS_ROOT/policy/shadow-rule-registry.md" <<'EOF'
+# Shadow Rule Registry
+
+- registry_id: shadow-rule-registry
+- registry_version: 1
+- status: active-draft
+- linked_task: TASK-shadow-effect-map-01
+- linked_decisions: decision-shadow-practical-contract-01
+- purpose: a rule id with no allowed_effect_types must yield a clean fail, not a crash
+- last_updated: 2026-04-30T13:49:45Z
+
+## Contract
+
+- Rule ids not listed here cannot produce confirmed shadow facts.
+
+```yaml
+rules:
+  repo.write:
+    validators_by_stack:
+      spring_boot_jpa:
+        code_call:
+          primary: jpa.repository.save@v1
+          fallback: java.regex.repository_save_call@v1
+          fallback_max_risk: medium
+```
+
+```yaml
+promotion_gates:
+  regex_only:
+    max_effective_risk: medium
+    evidence_field: fallback_result
+    forbidden_field: validator_result
+  high_or_critical:
+    requires_one_of:
+      - parser_backed_validator
+      - test_assertion
+      - runtime_trace
+      - valid_waiver
+  unknown_defaults:
+    unlisted_rule: unknown
+    unlisted_boundary: unknown
+    unmapped_stack: unknown
+    unmapped_evidence_type: unknown
+```
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"shadow rule registry contains rule id mappings (1)"* ]]
+  # Full attributable literal for check_rule_registry_has_mappings.
+  [[ "$output" == *"shadow rule registry must declare allowed_effect_types for every rule (0/1): "* ]]
+  # Proves the run reached the end instead of aborting mid-pipeline.
+  [[ "$output" == *"[RESULT]"* ]]
+}
+
 @test "validate_docs strict fails on invalid policy fallback risk enum" {
   sed -i.bak 's/max_promotion_risk: medium/max_promotion_risk: extreme/' "$DOCS_ROOT/policy/shadow-regex-patterns.md"
   rm -f "$DOCS_ROOT/policy/shadow-regex-patterns.md.bak"
