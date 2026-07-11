@@ -118,6 +118,8 @@ clean checkout 기준 `check_all.sh` 하나로 전체 품질 게이트(의존성
 
 `validate_docs.sh --format json`은 stdout에 JSON 객체 하나(`{mode, project_root, format_version, issues[{tier,id,caller,message}], counts, result}`)만 내보내고 진단은 stderr로 보내며 종료 코드는 text 모드와 동일합니다. 각 issue의 `id`는 그 이슈를 발생시킨 check 함수 이름, `caller`는 그 함수를 호출한 상위 함수 이름(최상위 흐름은 둘 다 `main`)이라는 안정 계약이므로 소비자는 `(id, caller, message 접두어)`로 규칙을 구별하며, check 함수 이름을 바꾸면 id가 깨지므로 커밋에서 명시해야 합니다(기본값은 `--format text`로 출력이 byte 단위로 동결).
 
+`scripts/check_all.sh --metrics-out <file>`은 실행마다 스테이지별 결과·소요 시간(초)을 담은 JSONL 한 줄을 append해 runtime/flake 추세 수집의 기반이 되며(관측 전용 — 플래그가 없으면 동작·출력 불변), `scripts/packaging_smoke.py`는 skill tree 전체를 SHIP/DEV-ARTIFACT/UNKNOWN으로 분류해 배포 manifest에 허용되지 않은 항목(UNKNOWN)이 있으면 실패하는 read-only 위생 검사입니다.
+
 ## 단일 진입점: scripts/codeguide
 
 개별 스크립트 경로를 하나씩 외우는 대신, `scripts/codeguide`가 서브커맨드 하나로 모든 자동화 진입점을 노출합니다. 각 서브커맨드는 나머지 인자를 quoting 그대로 대상 도구에 전달(`exec`)하므로, `scripts/codeguide <서브커맨드> --help`는 대상 도구 자신의 usage를 그대로 보여줍니다.

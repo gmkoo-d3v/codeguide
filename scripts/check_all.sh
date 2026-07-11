@@ -11,7 +11,7 @@ SKILL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 usage() {
   cat <<'EOF'
 Usage:
-  check_all.sh [project-root] [--skip-pytest] [--suite <name>] [--artifacts <dir>]
+  check_all.sh [project-root] [--skip-pytest] [--suite <name>] [--artifacts <dir>] [--metrics-out <file>]
 
 Single quality gate for the codeguide skill: verifies the environment
 contract, runs the bats and pytest suites, and runs strict docs validation
@@ -49,6 +49,10 @@ Options:
                        stage additionally writes a JUnit report into <dir>
                        via --report-formatter junit --output <dir>. Exit
                        semantics are unchanged; the summary prints <dir>.
+  --metrics-out <file> Append one JSONL record to <file> (parent dir
+                       created) summarizing this run's stage results and
+                       durations. Observation only: absent this flag,
+                       behavior and output are unchanged.
   -h, --help            Show this message.
 EOF
 }
@@ -57,6 +61,7 @@ PROJECT_ROOT=""
 SKIP_PYTEST="false"
 SUITE="full"
 ARTIFACTS_DIR=""
+METRICS_OUT=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-pytest) SKIP_PYTEST="true"; shift ;;
@@ -73,6 +78,13 @@ while [[ $# -gt 0 ]]; do
         exit 2
       fi
       ARTIFACTS_DIR="$2"; shift 2
+      ;;
+    --metrics-out)
+      if [[ $# -lt 2 ]]; then
+        echo "[ERROR] --metrics-out requires a value" >&2
+        exit 2
+      fi
+      METRICS_OUT="$2"; shift 2
       ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "[ERROR] Unknown option: $1" >&2; exit 2 ;;
@@ -147,8 +159,18 @@ if [[ -n "$ARTIFACTS_DIR" ]]; then
   ARTIFACTS_DIR="$(cd "$ARTIFACTS_DIR" && pwd)"
 fi
 
+if [[ -n "$METRICS_OUT" ]]; then
+  METRICS_OUT_DIR="$(dirname "$METRICS_OUT")"
+  if ! mkdir -p "$METRICS_OUT_DIR"; then
+    echo "[ERROR] Cannot create metrics directory: $METRICS_OUT_DIR" >&2
+    exit 2
+  fi
+fi
+
 declare -a STAGE_NAMES=()
+declare -a STAGE_SLUGS=()
 declare -a STAGE_RESULTS=()
+declare -a STAGE_DURATIONS=()
 STAGE_INDEX=0
 OVERALL=0
 
@@ -162,6 +184,8 @@ run_stage() {
   STAGE_INDEX=$((STAGE_INDEX + 1))
   printf '\n=== [STAGE] %s ===\n' "$name"
   local status
+  local start_ts end_ts duration
+  start_ts="$(date +%s)"
   if [[ -n "$ARTIFACTS_DIR" ]]; then
     local log_file
     log_file="$(printf '%s/%02d-%s.log' "$ARTIFACTS_DIR" "$STAGE_INDEX" "$slug")"
@@ -171,6 +195,10 @@ run_stage() {
     "$@"
     status=$?
   fi
+  end_ts="$(date +%s)"
+  duration=$((end_ts - start_ts))
+  STAGE_SLUGS+=("$slug")
+  STAGE_DURATIONS+=("$duration")
   if [[ "$status" -eq 0 ]]; then
     STAGE_NAMES+=("$name"); STAGE_RESULTS+=("PASS")
   else
@@ -194,6 +222,8 @@ skip_stage() {
   else
     printf '%s\n' "$line"
   fi
+  STAGE_SLUGS+=("$slug")
+  STAGE_DURATIONS+=("0")
   STAGE_NAMES+=("$name"); STAGE_RESULTS+=("SKIP")
 }
 
@@ -238,4 +268,58 @@ if (( OVERALL == 0 )); then
 else
   printf '[RESULT] Quality gate failed; see stages marked FAIL above.\n'
 fi
+
+if [[ -n "$METRICS_OUT" ]]; then
+  METRICS_OVERALL="pass"
+  if (( OVERALL != 0 )); then
+    METRICS_OVERALL="fail"
+  fi
+  METRICS_ARTIFACTS_FLAG="false"
+  if [[ -n "$ARTIFACTS_DIR" ]]; then
+    METRICS_ARTIFACTS_FLAG="true"
+  fi
+  declare -a STAGE_RECORDS=()
+  for i in "${!STAGE_NAMES[@]}"; do
+    STAGE_RECORDS+=("${STAGE_NAMES[$i]}"$'\x1f'"${STAGE_SLUGS[$i]}"$'\x1f'"${STAGE_RESULTS[$i]}"$'\x1f'"${STAGE_DURATIONS[$i]}")
+  done
+  if ! python3 - "$METRICS_OUT" "$SUITE" "$SKIP_PYTEST" "$METRICS_ARTIFACTS_FLAG" "$METRICS_OVERALL" "${STAGE_RECORDS[@]}" <<'PYEOF'
+import json
+import sys
+from datetime import datetime, timezone
+
+out_path = sys.argv[1]
+suite = sys.argv[2]
+skip_pytest = sys.argv[3] == "true"
+artifacts = sys.argv[4] == "true"
+overall = sys.argv[5]
+records = sys.argv[6:]
+
+stages = []
+for record in records:
+    name, slug, result, duration_s = record.split("\x1f")
+    stages.append({
+        "name": name,
+        "slug": slug,
+        "result": result,
+        "duration_s": int(duration_s),
+    })
+
+payload = {
+    "schema": "codeguide-check-all/1",
+    "timestamp_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "suite": suite,
+    "skip_pytest": skip_pytest,
+    "artifacts": artifacts,
+    "stages": stages,
+    "overall": overall,
+}
+
+with open(out_path, "a") as fh:
+    fh.write(json.dumps(payload, separators=(",", ":")) + "\n")
+PYEOF
+  then
+    echo "[ERROR] Failed to write metrics to $METRICS_OUT" >&2
+  fi
+fi
+
 exit "$OVERALL"

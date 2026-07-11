@@ -143,3 +143,109 @@ TABLE
   run grep -q "<testsuite" "$artifacts_dir/report.xml"
   [ "$status" -eq 0 ]
 }
+
+# --- metrics (check_all.sh --metrics-out) -----------------------------------
+
+@test "check_all --metrics-out appends one parseable JSON line per run across two runs" {
+  local metrics_file="$TEST_WORKSPACE/metrics.jsonl"
+
+  run bash "$CHECK_ALL" "$TEST_PROJECT" --suite fast --skip-pytest --metrics-out "$metrics_file"
+  [ "$status" -eq 0 ]
+  run bash "$CHECK_ALL" "$TEST_PROJECT" --suite fast --skip-pytest --metrics-out "$metrics_file"
+  [ "$status" -eq 0 ]
+
+  run python3 -c '
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    lines = [line for line in fh.read().splitlines() if line]
+assert len(lines) == 2, lines
+for line in lines:
+    json.loads(line)
+' "$metrics_file"
+  [ "$status" -eq 0 ]
+}
+
+@test "check_all --metrics-out records stage names/results matching the run summary" {
+  local metrics_file="$TEST_WORKSPACE/metrics.jsonl"
+
+  run bash "$CHECK_ALL" "$TEST_PROJECT" --suite fast --skip-pytest --metrics-out "$metrics_file"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[PASS] environment contract (check_env.sh --skip-pytest)"* ]]
+  [[ "$output" == *"[PASS] bats suite (--suite fast: 3 file(s))"* ]]
+  [[ "$output" == *"[SKIP] pytest suite (tests/)"* ]]
+  [[ "$output" == *"[PASS] strict docs validation (validate_docs.sh)"* ]]
+  [[ "$output" == *"[PASS] English docs policy (check_english_docs.sh)"* ]]
+
+  run python3 -c '
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    lines = [line for line in fh.read().splitlines() if line]
+record = json.loads(lines[-1])
+assert record["schema"] == "codeguide-check-all/1", record
+assert record["suite"] == "fast", record
+assert record["skip_pytest"] is True, record
+assert record["artifacts"] is False, record
+assert record["overall"] == "pass", record
+
+results = {s["name"]: s for s in record["stages"]}
+assert results["environment contract (check_env.sh --skip-pytest)"]["result"] == "PASS"
+assert results["bats suite (--suite fast: 3 file(s))"]["result"] == "PASS"
+assert results["pytest suite (tests/)"]["result"] == "SKIP"
+assert results["pytest suite (tests/)"]["duration_s"] == 0
+assert results["strict docs validation (validate_docs.sh)"]["result"] == "PASS"
+assert results["English docs policy (check_english_docs.sh)"]["result"] == "PASS"
+for stage in record["stages"]:
+    assert isinstance(stage["duration_s"], int), stage
+    assert stage["result"] in ("PASS", "FAIL", "SKIP"), stage
+' "$metrics_file"
+  [ "$status" -eq 0 ]
+}
+
+@test "check_all --metrics-out records overall fail and the failing stage without changing the exit code" {
+  local metrics_file="$TEST_WORKSPACE/metrics.jsonl"
+
+  # Force a deterministic strict-docs-validation FAIL on the scratch project
+  # without perturbing the bats-suite or env-contract stages.
+  rm -f "$DOCS_ROOT/task/task-index.md"
+
+  run bash "$CHECK_ALL" "$TEST_PROJECT" --suite fast --skip-pytest
+  local baseline_status="$status"
+  [ "$baseline_status" -ne 0 ]
+  [[ "$output" == *"[FAIL] strict docs validation (validate_docs.sh)"* ]]
+
+  run bash "$CHECK_ALL" "$TEST_PROJECT" --suite fast --skip-pytest --metrics-out "$metrics_file"
+  [ "$status" -eq "$baseline_status" ]
+  [[ "$output" == *"[FAIL] strict docs validation (validate_docs.sh)"* ]]
+
+  run python3 -c '
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    lines = [line for line in fh.read().splitlines() if line]
+record = json.loads(lines[-1])
+assert record["overall"] == "fail", record
+
+failing = [s for s in record["stages"] if s["result"] == "FAIL"]
+assert len(failing) == 1, record
+assert failing[0]["name"] == "strict docs validation (validate_docs.sh)", failing[0]
+
+passing = {s["name"]: s for s in record["stages"] if s["result"] == "PASS"}
+assert "bats suite (--suite fast: 3 file(s))" in passing
+assert "environment contract (check_env.sh --skip-pytest)" in passing
+' "$metrics_file"
+  [ "$status" -eq 0 ]
+}
+
+@test "check_all --metrics-out without a value exits 2" {
+  run bash "$CHECK_ALL" "$TEST_PROJECT" --metrics-out
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--metrics-out requires a value"* ]]
+}
