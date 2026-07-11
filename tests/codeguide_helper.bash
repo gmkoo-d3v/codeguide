@@ -61,6 +61,15 @@ external_handoff_dir() {
 }
 
 setup() {
+  # Tests must not inherit environment markers from the calling shell: an
+  # exported CODEX_SANDBOX* flips the external-review sandbox guard and fails
+  # unrelated tests, CODEGUIDE_SOURCE_ROOT poisons scaffold root resolution,
+  # and CODEGUIDE_*_BIN overrides reroute runner binaries. Tests that need any
+  # of these inject them explicitly per invocation (e.g. `env CODEX_SANDBOX=1`).
+  unset CODEX_SANDBOX CODEX_SANDBOX_NETWORK_DISABLED
+  unset CODEGUIDE_SOURCE_ROOT
+  unset CODEGUIDE_ANTIGRAVITY_BIN CODEGUIDE_CLAUDE_BIN CODEGUIDE_CODEX_BIN
+
   TEST_WORKSPACE="$(mktemp -d)"
   export TEST_WORKSPACE
   TEST_PROJECT="$TEST_WORKSPACE/repo"
