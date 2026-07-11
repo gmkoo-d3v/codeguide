@@ -1,5 +1,7 @@
 # Java / Spring Boot Backend Patterns
 
+> Non-authoritative legacy examples. For version-specific APIs and setup, route to the official Spring Boot skill or docs first.
+
 Extracted verbatim from references/backend-patterns.md for Phase 4 index-ization.
 
 ## Java / Spring Boot

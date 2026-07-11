@@ -40,13 +40,13 @@ Use this file to pick the smallest authoritative reference set for the active ta
 - Vue smells: `smells-vue.md`
 
 ## Architecture Decision Aids
-- Backend architecture patterns: `backend/_index.md`
 - Frontend architecture decision rules: `frontend-patterns.md`
 - Integration and security patterns: `integration/_index.md`
 
 ## Deprecated / Secondary Framework References
+- Backend legacy examples by stack: `backend/_index.md`
 - Frontend legacy examples by stack: `frontend/_index.md`
-- Use dedicated framework skills and official documentation first for setup, API details, and version-specific behavior.
+- Framework code samples inside any reference file — including the cross-cutting integration docs above — are non-authoritative and version-specific; use dedicated framework skills and official documentation first for setup, API details, and version-specific behavior.
 
 ## Selection Rules
 1. Start with one core governance or quality-gate file.

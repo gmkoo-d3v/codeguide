@@ -1,5 +1,7 @@
 # Node / Express Backend Patterns
 
+> Non-authoritative legacy examples. For version-specific APIs and setup, route to the official Express/Node skill or docs first.
+
 Extracted verbatim from references/backend-patterns.md for Phase 4 index-ization.
 
 ## Node / Express

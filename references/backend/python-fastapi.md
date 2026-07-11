@@ -1,5 +1,7 @@
 # Python / FastAPI Backend Patterns
 
+> Non-authoritative legacy examples. For version-specific APIs and setup, route to the official FastAPI/Pydantic skill or docs first.
+
 Extracted verbatim from references/backend-patterns.md for Phase 4 index-ization.
 
 ## Python / FastAPI
@@ -69,7 +71,7 @@ class UserService:
 
     async def find_by_id(self, user_id: int) -> UserResponse | None:
         user = await self.user_repository.find_by_id(user_id)
-        return UserResponse.from_orm(user) if user else None
+        return UserResponse.model_validate(user) if user else None
 
     async def create_user(self, user_data: UserCreate) -> UserResponse:
         existing = await self.user_repository.find_by_email(user_data.email)
@@ -77,7 +79,7 @@ class UserService:
             raise ValidationError("Email already exists")
 
         user = await self.user_repository.create(user_data)
-        return UserResponse.from_orm(user)
+        return UserResponse.model_validate(user)
 ```
 
 ### Repositories
@@ -107,7 +109,7 @@ class UserRepository:
         return result.scalar_one_or_none()
 
     async def create(self, user_data: UserCreate) -> User:
-        user = User(**user_data.dict())
+        user = User(**user_data.model_dump())
         self.db.add(user)
         await self.db.commit()
         await self.db.refresh(user)
@@ -207,12 +209,12 @@ async def test_create_user_success():
 ```python
 # tests/integration/test_users_api.py
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 from app.main import app
 
 @pytest.mark.asyncio
 async def test_create_user_integration():
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/users",
             json={"email": "test@example.com", "name": "Test User"}

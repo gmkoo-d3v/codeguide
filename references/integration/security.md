@@ -1,10 +1,16 @@
 # Security Integration Patterns
 
-Extracted verbatim from references/integration-patterns.md for Phase 4 index-ization.
+Extracted from references/integration-patterns.md for Phase 4 index-ization; auth-token guidance rewritten to secure-by-default (cookie/BFF over browser storage) 2026-07-11.
 
 ## Security
 
 ### Authentication (JWT)
+
+**Token storage decision (frontend) — decide before writing any client auth code:**
+- Default: never expose the session token to page JavaScript. Deliver it as an `HttpOnly; Secure; SameSite=Strict` (or `Lax`) cookie the server sets, or run a Backend-for-Frontend (BFF) that holds the token server-side and gives the browser only a first-party session cookie.
+- Rationale: an `HttpOnly` cookie is unreadable to injected scripts, so a single XSS flaw cannot exfiltrate the session — the dominant SPA token-theft vector.
+- Cost: cookies ride along automatically, so the session is now exposed to CSRF. Pair the cookie default with the CSRF defense below; a BFF carries the same obligation for state-changing calls.
+- Reject browser-readable storage for access or refresh tokens as the default. That is a tradeoff, not a baseline — see "Browser-storage tokens" at the end of this section.
 
 **Backend (Spring Security):**
 ```java
@@ -81,62 +87,47 @@ function authMiddleware(req, res, next) {
 app.get('/api/users/:id', authMiddleware, userController.getUser);
 ```
 
-**Frontend (React):**
+The two filters above validate a JWT presented as `Authorization: Bearer`. With the cookie default the browser does not send that header — read the token from the `HttpOnly` session cookie instead, or let a BFF/gateway translate the cookie into a Bearer header for downstream services. The Bearer form stays correct for non-browser clients (mobile apps, service-to-service).
+
+**Frontend (cookie session — default):**
 ```typescript
-// contexts/AuthContext.tsx
-export function AuthProvider({ children }: { children: ReactNode }) {
-    const [token, setToken] = useState<string | null>(
-        localStorage.getItem('token')
-    );
-
-    const login = async (email: string, password: string) => {
-        const response = await authService.login(email, password);
-        setToken(response.token);
-        localStorage.setItem('token', response.token);
-    };
-
-    const logout = () => {
-        setToken(null);
-        localStorage.removeItem('token');
-    };
-
-    return (
-        <AuthContext.Provider value={{ token, login, logout }}>
-            {children}
-        </AuthContext.Provider>
-    );
-}
+// The token lives only in an HttpOnly cookie the server sets:
+//   Set-Cookie: session=<jwt>; HttpOnly; Secure; SameSite=Strict; Path=/
+// Page JavaScript can neither read nor write it, so XSS cannot steal it.
 
 // services/apiClient.ts
-axios.interceptors.request.use(config => {
-    const token = localStorage.getItem('token');
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
+const api = axios.create({
+    baseURL: '/api',
+    withCredentials: true, // browser attaches the HttpOnly session cookie
 });
 
-// Refresh token on 401
-axios.interceptors.response.use(
-    response => response,
-    async error => {
-        if (error.response?.status === 401) {
-            const refreshToken = localStorage.getItem('refreshToken');
-            if (refreshToken) {
-                const { token } = await authService.refresh(refreshToken);
-                localStorage.setItem('token', token);
-                // Retry original request
-                error.config.headers.Authorization = `Bearer ${token}`;
-                return axios.request(error.config);
-            } else {
-                // Redirect to login
-                window.location.href = '/login';
-            }
-        }
-        return Promise.reject(error);
-    }
-);
+// Login and logout are server round-trips; no token is handled in JS.
+async function login(email: string, password: string) {
+    await api.post('/auth/login', { email, password }); // server sets the cookie
+}
+async function logout() {
+    await api.post('/auth/logout');                     // server clears the cookie
+}
+
+// Auth state comes from the server, not from a readable token.
+async function currentUser() {
+    const { data } = await api.get('/auth/me'); // 401 -> treat as logged out
+    return data;
+}
+
+// State-changing requests must carry the CSRF token (see CSRF Protection).
+api.interceptors.request.use(config => {
+    config.headers['X-XSRF-TOKEN'] = getCsrfToken();
+    return config;
+});
 ```
+
+**Browser-storage tokens (threat-model tradeoff — not the default):**
+- What it is: holding the access (and sometimes refresh) token in `sessionStorage` or `localStorage` and attaching it as an `Authorization: Bearer` header from client code.
+- Exposure it creates: the value is readable by any script on the origin, so one XSS flaw — including a compromised third-party dependency — exfiltrates the live session. A stored refresh token upgrades that to long-lived account takeover.
+- When it may be acceptable: a token-only API with no cookie support, a same-origin app under a strict audited `Content-Security-Policy` with no third-party scripts, short access-token TTLs, and no high-value scope behind the token.
+- Required mitigations if you accept it: enforce a strict CSP, keep access-token TTL short, never keep a refresh token in browser storage, sanitize every DOM sink, and pin and scan dependencies. Prefer `sessionStorage` (dies with the tab) over `localStorage`.
+- This is a documented deviation, not a pattern to copy by default. If you cannot meet every mitigation above, fall back to the cookie or BFF default.
 
 ### CORS Configuration
 

@@ -1,6 +1,6 @@
 # Error Protocol
 
-Extracted verbatim from references/integration-patterns.md for Phase 4 index-ization.
+Extracted from references/integration-patterns.md for Phase 4 index-ization; Pydantic v2 serialization API fix applied 2026-07-11.
 
 ## Error Protocol
 
@@ -86,7 +86,7 @@ async def not_found_handler(request: Request, exc: NotFoundException):
             code="NOT_FOUND",
             message=str(exc),
             details={"resource": exc.resource_type}
-        ).dict()
+        ).model_dump()
     )
 ```
 
