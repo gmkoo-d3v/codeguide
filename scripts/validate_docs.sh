@@ -2,6 +2,17 @@
 
 set -euo pipefail
 
+# Output-format contract (--format text|json; default text):
+#   text mode is frozen and byte-identical to historical behavior. In json mode
+#   stdout carries exactly one JSON object and every diagnostic stays on stderr;
+#   the exit code is identical in both modes. Each reported issue carries a
+#   stable id equal to the name of the check FUNCTION that raised it (bash
+#   FUNCNAME[1]); issues raised from this file's top-level phase flow carry
+#   "main", and helper-emitted issues carry the helper's name (e.g.
+#   check_field_non_empty). Rule ids ARE check-function names: renaming a check
+#   function is an ID break and MUST be called out in the commit. See
+#   validate_docs.d/00-report.sh for the record/serialization mechanics.
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -9,6 +20,7 @@ Usage:
 
 Options:
   --mode <advisory|strict>   Validation mode (default: advisory)
+  --format <text|json>        Output format (default: text; json => one JSON object on stdout)
   --max-shadow-lines <n>      Maximum lines per project docs/shadow/*.md file (default: 300)
   --max-task-lines <n>        Maximum lines per project docs/task/TASK-*.md (default: 220)
   --max-decision-lines <n>    Maximum lines per project docs/decisions/decision-*.md (default: 180)
@@ -42,6 +54,7 @@ PROJECT_ROOT="${1%/}"
 shift
 
 MODE="advisory"
+VALIDATE_FORMAT="text"
 MAX_SHADOW_LINES=300
 MAX_TASK_LINES=220
 MAX_DECISION_LINES=180
@@ -92,6 +105,11 @@ while [[ $# -gt 0 ]]; do
     --mode)
       require_option_value "$1" "$#"
       MODE="${2:-}"
+      shift 2
+      ;;
+    --format)
+      require_option_value "$1" "$#"
+      VALIDATE_FORMAT="${2:-}"
       shift 2
       ;;
     --max-shadow-lines)
@@ -161,6 +179,11 @@ if [[ "$MODE" != "advisory" && "$MODE" != "strict" ]]; then
   exit 1
 fi
 
+if [[ "$VALIDATE_FORMAT" != "text" && "$VALIDATE_FORMAT" != "json" ]]; then
+  echo "[ERROR] Invalid format: $VALIDATE_FORMAT (use text or json)" >&2
+  exit 1
+fi
+
 require_positive_integer "--max-shadow-lines" "$MAX_SHADOW_LINES"
 require_positive_integer "--max-task-lines" "$MAX_TASK_LINES"
 require_positive_integer "--max-decision-lines" "$MAX_DECISION_LINES"
@@ -191,6 +214,15 @@ ISSUE_TRACKER_CURRENT_DIR="$ISSUE_TRACKER_DIR/current"
 ISSUE_TRACKER_RESOLVED_DIR="$ISSUE_TRACKER_DIR/resolved"
 
 ISSUE_COUNT=0
+PASS_COUNT=0
+# json mode buffers one NUL-delimited record per issue here; text mode leaves it
+# empty and never writes. The early trap covers the window until the secret-scan
+# trap below takes over cleanup of both temp files.
+VALIDATE_JSON_RECORD_FILE=""
+if [[ "$VALIDATE_FORMAT" == "json" ]]; then
+  VALIDATE_JSON_RECORD_FILE="$(mktemp)"
+  trap 'rm -f "$VALIDATE_JSON_RECORD_FILE"' EXIT
+fi
 
 # Rule modules: themed function libraries split from this file (audit P1).
 # Definition order is irrelevant — everything is sourced before the phase
@@ -735,7 +767,7 @@ fi
 
 # --- Secret scanning ---
 TMP_SECRET_REPORT="$(mktemp)"
-trap 'rm -f "$TMP_SECRET_REPORT"' EXIT
+trap 'rm -f "$TMP_SECRET_REPORT" ${VALIDATE_JSON_RECORD_FILE:+"$VALIDATE_JSON_RECORD_FILE"}' EXIT
 
 redact_secret_report() {
   perl -pe '
@@ -797,6 +829,17 @@ else
 fi
 
 # --- Result ---
+if [[ "$VALIDATE_FORMAT" == "json" ]]; then
+  # json mode: emit exactly one JSON object on stdout (the [RESULT] line is
+  # replaced by the "result" field) and keep the exit code identical to text
+  # mode — strict + issues => 1, otherwise 0.
+  emit_json_result
+  if (( ISSUE_COUNT > 0 )) && [[ "$MODE" == "strict" ]]; then
+    exit 1
+  fi
+  exit 0
+fi
+
 if (( ISSUE_COUNT > 0 )); then
   if [[ "$MODE" == "strict" ]]; then
     echo "[RESULT] Docs validation failed with ${ISSUE_COUNT} issue(s)." >&2

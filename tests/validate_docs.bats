@@ -4050,3 +4050,177 @@ EOF
   grep -q '^## Cancelled$' "$DOCS_ROOT/task/task-index.md"
   grep -q '^## Done$' "$DOCS_ROOT/task/task-index.md"
 }
+
+# --- Output format contract: --format text|json ---
+
+# Extract the id of the first issue whose message contains $2, from JSON in $1.
+json_id_for_message() {
+  python3 -c '
+import json, sys
+obj = json.loads(sys.argv[1])
+needle = sys.argv[2]
+for issue in obj["issues"]:
+    if needle in issue["message"]:
+        sys.stdout.write(issue["id"])
+        break
+' "$1" "$2"
+}
+
+@test "validate_docs default output equals --format text byte-for-byte (passing scaffold)" {
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  local noflag_status="$status"
+  local noflag_output="$output"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict --format text
+  [ "$status" -eq "$noflag_status" ]
+  [ "$output" = "$noflag_output" ]
+}
+
+@test "validate_docs default output equals --format text byte-for-byte (with FAIL and WARN lines)" {
+  write_terminal_task_fixture "fmt-parity-01" "superseded" "" "Superseded"
+
+  # strict path exercises [FAIL]/[PASS] lines
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  local strict_noflag_status="$status"
+  local strict_noflag_output="$output"
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict --format text
+  [ "$status" -eq "$strict_noflag_status" ]
+  [ "$output" = "$strict_noflag_output" ]
+
+  # advisory path exercises [WARN]/[PASS] lines
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  local adv_noflag_status="$status"
+  local adv_noflag_output="$output"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory --format text
+  [ "$status" -eq "$adv_noflag_status" ]
+  [ "$output" = "$adv_noflag_output" ]
+}
+
+@test "validate_docs --format json emits a single parseable JSON object (passing scaffold)" {
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict --format json
+  [ "$status" -eq 0 ]
+  echo "$output" | python3 -c '
+import json, sys
+obj = json.loads(sys.stdin.read())
+assert obj["format_version"] == 1, obj
+assert obj["mode"] == "strict", obj
+assert obj["result"] == "pass", obj
+assert obj["counts"]["fail"] == 0, obj
+assert obj["issues"] == [], obj
+assert set(obj.keys()) == {"mode","project_root","format_version","issues","counts","result"}, obj
+'
+}
+
+@test "validate_docs --format json rejects an invalid format value" {
+  run "$VALIDATE" "$TEST_PROJECT" --format xml
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"[ERROR] Invalid format: xml"* ]]
+}
+
+@test "validate_docs --format json captures the emitting check-function name as issue id" {
+  # disposition failure is raised by check_field_non_empty (helper emitter)
+  write_terminal_task_fixture "json-id-disp-01" "superseded" "" "Superseded"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict --format json
+  [ "$status" -eq 1 ]
+
+  local id
+  id="$(json_id_for_message "$output" "disposition is present but empty in superseded task")"
+  [ "$id" = "check_field_non_empty" ]
+}
+
+@test "validate_docs --format json tags top-level phase-flow issues with id main" {
+  # A task absent from the index is flagged by the top-level flow, not a helper.
+  cat > "$DOCS_ROOT/task/TASK-json-id-main-01.md" <<EOF
+# TASK-json-id-main-01
+
+- title: main id fixture
+- status: planned
+- risk_level: low
+- axis_why: x
+- axis_where: y
+- axis_verify: z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict --format json
+  [ "$status" -eq 1 ]
+
+  local id
+  id="$(json_id_for_message "$output" "task-index missing row for TASK-json-id-main-01")"
+  [ "$id" = "main" ]
+}
+
+@test "validate_docs --format json survives hostile message content (quotes, backslash, tab, non-ASCII)" {
+  # A bad status value is echoed verbatim into the enum-check message. A literal
+  # tab in the value would break naive tab-splitting; the NUL-record format must
+  # round-trip it intact through JSON.
+  printf '%s\n' \
+    '# TASK-json-id-hostile-01' \
+    '' \
+    '- title: hostile' \
+    $'- status: bad"\\\tval\xc3\x9ce' \
+    '- axis_why: x' \
+    '- axis_where: y' \
+    '- axis_verify: z' > "$DOCS_ROOT/task/TASK-json-id-hostile-01.md"
+  printf '%s\n' "- TASK-json-id-hostile-01 x" >> "$DOCS_ROOT/task/task-index.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict --format json
+
+  echo "$output" | python3 -c '
+import json, sys
+obj = json.loads(sys.stdin.read())
+matches = [i for i in obj["issues"] if "invalid task.status value" in i["message"]]
+assert matches, obj
+msg = matches[0]["message"]
+assert matches[0]["id"] == "check_enum_membership", matches[0]
+# quote, backslash, real tab, and U+00DC must all survive intact
+assert "bad\"\\\tvalÜe" in msg, repr(msg)
+'
+}
+
+@test "validate_docs --format json result and exit code mirror text mode (advisory vs strict)" {
+  # A task absent from the index raises the same unconditional fail() in both
+  # modes, so it demotes fail-tier (strict) to warn-tier (advisory).
+  cat > "$DOCS_ROOT/task/TASK-json-tier-01.md" <<EOF
+# TASK-json-tier-01
+
+- title: tier fixture
+- status: planned
+- risk_level: low
+- axis_why: x
+- axis_where: y
+- axis_verify: z
+EOF
+
+  # strict: exit 1, result fail, one fail-tier issue
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict --format json
+  local strict_json_status="$status"
+  local strict_json="$output"
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict --format text
+  [ "$status" -eq "$strict_json_status" ]
+  [ "$strict_json_status" -eq 1 ]
+  echo "$strict_json" | python3 -c '
+import json, sys
+o = json.loads(sys.stdin.read())
+assert o["result"] == "fail", o
+assert o["counts"]["fail"] == 1, o
+assert o["counts"]["warn"] == 0, o
+assert all(i["tier"] == "fail" for i in o["issues"]), o
+'
+
+  # advisory: exit 0, result pass, the same issue demoted to warn tier
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory --format json
+  local adv_json_status="$status"
+  local adv_json="$output"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory --format text
+  [ "$status" -eq "$adv_json_status" ]
+  [ "$adv_json_status" -eq 0 ]
+  echo "$adv_json" | python3 -c '
+import json, sys
+o = json.loads(sys.stdin.read())
+assert o["result"] == "pass", o
+assert o["counts"]["fail"] == 0, o
+assert o["counts"]["warn"] == 1, o
+assert all(i["tier"] == "warn" for i in o["issues"]), o
+'
+}
