@@ -4,14 +4,18 @@ set -euo pipefail
 
 # Output-format contract (--format text|json; default text):
 #   text mode is frozen and byte-identical to historical behavior. In json mode
-#   stdout carries exactly one JSON object and every diagnostic stays on stderr;
-#   the exit code is identical in both modes. Each reported issue carries a
-#   stable id equal to the name of the check FUNCTION that raised it (bash
-#   FUNCNAME[1]); issues raised from this file's top-level phase flow carry
-#   "main", and helper-emitted issues carry the helper's name (e.g.
-#   check_field_non_empty). Rule ids ARE check-function names: renaming a check
-#   function is an ID break and MUST be called out in the commit. See
-#   validate_docs.d/00-report.sh for the record/serialization mechanics.
+#   stdout carries exactly one JSON object and every diagnostic stays on stderr
+#   (CLI errors route usage() to stderr in both modes; -h/--help keeps usage on
+#   stdout); the exit code is identical in both modes. Each reported issue
+#   carries a stable id equal to the name of the check FUNCTION that raised it
+#   (bash FUNCNAME[1]) plus a caller field naming that function's own caller
+#   (FUNCNAME[2]); issues raised from this file's top-level phase flow carry
+#   "main" in either slot. Consumers discriminate rules by (id, caller,
+#   message-prefix): helper-emitted issues carry the helper as id (e.g.
+#   check_field_non_empty) and the invoking rule (or "main") as caller. Rule
+#   ids ARE check-function names: renaming a check function is an ID break and
+#   MUST be called out in the commit. See validate_docs.d/00-report.sh for the
+#   record/serialization mechanics.
 
 usage() {
   cat <<'EOF'
@@ -46,7 +50,7 @@ for arg in "$@"; do
 done
 
 if [[ $# -lt 1 ]]; then
-  usage
+  usage >&2
   exit 1
 fi
 
@@ -77,7 +81,7 @@ require_option_value() {
   local remaining_args="$2"
   if (( remaining_args < 2 )); then
     echo "[ERROR] Option ${option_name} requires a value" >&2
-    usage
+    usage >&2
     exit 1
   fi
 }
@@ -163,7 +167,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "[ERROR] Unknown option: $1" >&2
-      usage
+      usage >&2
       exit 1
       ;;
   esac

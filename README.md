@@ -116,7 +116,7 @@ scripts/check_all.sh                                 # 단일 게이트: env + b
 
 clean checkout 기준 `check_all.sh` 하나로 전체 품질 게이트(의존성 확인, 전체 테스트, strict docs validation)가 재현됩니다. 테스트는 호출 셸의 환경 변수에 의존하지 않습니다: `tests/codeguide_helper.bash`의 `setup()`이 `CODEX_SANDBOX*`, `CODEGUIDE_SOURCE_ROOT`, `CODEGUIDE_*_BIN`을 초기화하고, sandbox 동작 테스트는 필요한 변수를 per-test로 명시 주입합니다.
 
-`validate_docs.sh --format json`은 stdout에 JSON 객체 하나(`{mode, project_root, format_version, issues[{tier,id,message}], counts, result}`)만 내보내고 진단은 stderr로 보내며 종료 코드는 text 모드와 동일합니다. 각 issue의 `id`는 그 이슈를 발생시킨 check 함수 이름(최상위 흐름은 `main`)이라는 안정 계약이므로, check 함수 이름을 바꾸면 id가 깨지며 커밋에서 명시해야 합니다(기본값은 `--format text`로 출력이 byte 단위로 동결).
+`validate_docs.sh --format json`은 stdout에 JSON 객체 하나(`{mode, project_root, format_version, issues[{tier,id,caller,message}], counts, result}`)만 내보내고 진단은 stderr로 보내며 종료 코드는 text 모드와 동일합니다. 각 issue의 `id`는 그 이슈를 발생시킨 check 함수 이름, `caller`는 그 함수를 호출한 상위 함수 이름(최상위 흐름은 둘 다 `main`)이라는 안정 계약이므로 소비자는 `(id, caller, message 접두어)`로 규칙을 구별하며, check 함수 이름을 바꾸면 id가 깨지므로 커밋에서 명시해야 합니다(기본값은 `--format text`로 출력이 byte 단위로 동결).
 
 ## 단일 진입점: scripts/codeguide
 

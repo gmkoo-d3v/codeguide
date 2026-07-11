@@ -5,21 +5,24 @@
 #
 # Rule-id / JSON-record contract (see validate_docs.sh header + README):
 #   Every issue carries a stable id = the name of the function that called
-#   fail()/soft_warn() (bash FUNCNAME[1]); issues raised from the top-level
-#   phase flow carry "main". In text mode (default / --format text) nothing
-#   below changes: output stays byte-identical. Under VALIDATE_FORMAT=json the
-#   human [FAIL]/[WARN]/[PASS] echoes are suppressed and each issue is appended
-#   to $VALIDATE_JSON_RECORD_FILE as a NUL-delimited triple (tier, id, message).
-#   A bash string can never hold a NUL byte, so no message content — however
-#   hostile (quotes, backslashes, tabs, newlines, non-ASCII) — can forge a
-#   field or record boundary. emit_json_result() serializes the file once via a
-#   single python3 invocation at result time.
+#   fail()/soft_warn() (bash FUNCNAME[1]) plus a caller = that function's own
+#   caller (FUNCNAME[2]); either defaults to "main" for the top-level phase
+#   flow. Consumers discriminate rules by (id, caller, message-prefix):
+#   helper-emitted issues carry the helper as id and the invoking rule (or
+#   "main") as caller. In text mode (default / --format text) nothing below
+#   changes: output stays byte-identical. Under VALIDATE_FORMAT=json the human
+#   [FAIL]/[WARN]/[PASS] echoes are suppressed and each issue is appended to
+#   $VALIDATE_JSON_RECORD_FILE as a NUL-delimited quadruple (tier, id, caller,
+#   message). A bash string can never hold a NUL byte, so no message content —
+#   however hostile (quotes, backslashes, tabs, newlines, non-ASCII) — can
+#   forge a field or record boundary. emit_json_result() serializes the file
+#   once via a single python3 invocation at result time.
 
 fail() {
   if [[ "${VALIDATE_FORMAT:-text}" == "json" ]]; then
     local __tier="warn"
     [[ "$MODE" == "strict" ]] && __tier="fail"
-    printf '%s\0%s\0%s\0' "$__tier" "${FUNCNAME[1]:-main}" "$1" >> "$VALIDATE_JSON_RECORD_FILE"
+    printf '%s\0%s\0%s\0%s\0' "$__tier" "${FUNCNAME[1]:-main}" "${FUNCNAME[2]:-main}" "$1" >> "$VALIDATE_JSON_RECORD_FILE"
     ISSUE_COUNT=$((ISSUE_COUNT + 1))
     return
   fi
@@ -44,7 +47,7 @@ pass() {
 # resume_state_revision non-numeric check in the session-resume-contract.md).
 soft_warn() {
   if [[ "${VALIDATE_FORMAT:-text}" == "json" ]]; then
-    printf '%s\0%s\0%s\0' "warn" "${FUNCNAME[1]:-main}" "$1" >> "$VALIDATE_JSON_RECORD_FILE"
+    printf '%s\0%s\0%s\0%s\0' "warn" "${FUNCNAME[1]:-main}" "${FUNCNAME[2]:-main}" "$1" >> "$VALIDATE_JSON_RECORD_FILE"
     return
   fi
   echo "[WARN] $1" >&2
@@ -52,10 +55,10 @@ soft_warn() {
 
 # Serialize the captured issue records into a single JSON object on stdout.
 # Called once by validate_docs.sh at result time when --format json is active.
-# Reads $VALIDATE_JSON_RECORD_FILE (NUL-delimited tier/id/message triples),
-# $PASS_COUNT, and the mode/root globals; the "result" field mirrors the
-# text-mode exit code (strict + issues => fail, otherwise pass). python3 is a
-# hard dependency (preflight-checked), so one invocation here is safe.
+# Reads $VALIDATE_JSON_RECORD_FILE (NUL-delimited tier/id/caller/message
+# quadruples), $PASS_COUNT, and the mode/root globals; the "result" field
+# mirrors the text-mode exit code (strict + issues => fail, otherwise pass).
+# python3 is a hard dependency (preflight-checked), so one invocation is safe.
 emit_json_result() {
   local __result="pass"
   if (( ISSUE_COUNT > 0 )) && [[ "$MODE" == "strict" ]]; then
@@ -94,11 +97,12 @@ def decode(raw):
 issues = []
 fail_count = 0
 warn_count = 0
-for start in range(0, len(fields), 3):
+for start in range(0, len(fields), 4):
     tier = decode(fields[start])
     rule_id = decode(fields[start + 1])
-    message = decode(fields[start + 2])
-    issues.append({"tier": tier, "id": rule_id, "message": message})
+    caller = decode(fields[start + 2])
+    message = decode(fields[start + 3])
+    issues.append({"tier": tier, "id": rule_id, "caller": caller, "message": message})
     if tier == "fail":
         fail_count += 1
     elif tier == "warn":

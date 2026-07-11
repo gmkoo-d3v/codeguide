@@ -4053,17 +4053,19 @@ EOF
 
 # --- Output format contract: --format text|json ---
 
-# Extract the id of the first issue whose message contains $2, from JSON in $1.
-json_id_for_message() {
+# Extract field $3 (id/caller/tier/message) of the first issue whose message
+# contains $2, from JSON in $1.
+json_issue_field() {
   python3 -c '
 import json, sys
 obj = json.loads(sys.argv[1])
 needle = sys.argv[2]
+field = sys.argv[3]
 for issue in obj["issues"]:
     if needle in issue["message"]:
-        sys.stdout.write(issue["id"])
+        sys.stdout.write(issue[field])
         break
-' "$1" "$2"
+' "$1" "$2" "$3"
 }
 
 @test "validate_docs default output equals --format text byte-for-byte (passing scaffold)" {
@@ -4119,14 +4121,29 @@ assert set(obj.keys()) == {"mode","project_root","format_version","issues","coun
 
 @test "validate_docs --format json captures the emitting check-function name as issue id" {
   # disposition failure is raised by check_field_non_empty (helper emitter)
+  # called from the top-level task-file loop, so caller is "main".
   write_terminal_task_fixture "json-id-disp-01" "superseded" "" "Superseded"
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict --format json
   [ "$status" -eq 1 ]
 
-  local id
-  id="$(json_id_for_message "$output" "disposition is present but empty in superseded task")"
-  [ "$id" = "check_field_non_empty" ]
+  local needle="disposition is present but empty in superseded task"
+  [ "$(json_issue_field "$output" "$needle" "id")" = "check_field_non_empty" ]
+  [ "$(json_issue_field "$output" "$needle" "caller")" = "main" ]
+}
+
+@test "validate_docs --format json records the invoking rule as caller for helper-emitted issues" {
+  # The await-gate ORCH fixture leaves supervisor_agent empty; in strict mode
+  # check_field_non_empty flags it from INSIDE check_orchestration_file_for_task,
+  # so (id, caller) discriminates this rule from other users of the same helper.
+  write_await_gate_fixture "json-caller-01" "in_progress" "implementation_start" "PLAN-json-caller-01-v1.0" "requested" "agy:current" "" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict --format json
+  [ "$status" -eq 1 ]
+
+  local needle="supervisor_agent is present but empty in orchestration"
+  [ "$(json_issue_field "$output" "$needle" "id")" = "check_field_non_empty" ]
+  [ "$(json_issue_field "$output" "$needle" "caller")" = "check_orchestration_file_for_task" ]
 }
 
 @test "validate_docs --format json tags top-level phase-flow issues with id main" {
@@ -4145,9 +4162,33 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode strict --format json
   [ "$status" -eq 1 ]
 
-  local id
-  id="$(json_id_for_message "$output" "task-index missing row for TASK-json-id-main-01")"
-  [ "$id" = "main" ]
+  local needle="task-index missing row for TASK-json-id-main-01"
+  [ "$(json_issue_field "$output" "$needle" "id")" = "main" ]
+  [ "$(json_issue_field "$output" "$needle" "caller")" = "main" ]
+}
+
+@test "validate_docs CLI errors keep json-mode stdout empty and route usage to stderr" {
+  # Unknown option: stdout must stay pure (empty) so json consumers never see
+  # usage text; the [ERROR] line and usage() both land on stderr.
+  run bash -c "\"$VALIDATE\" \"$TEST_PROJECT\" --format json --bogus-option 2>/dev/null"
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+
+  # Missing option value path goes through require_option_value -> usage >&2.
+  run bash -c "\"$VALIDATE\" \"$TEST_PROJECT\" --format json --mode 2>/dev/null"
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+
+  # The stderr side still carries the diagnostics.
+  run bash -c "\"$VALIDATE\" \"$TEST_PROJECT\" --format json --bogus-option 2>&1 1>/dev/null"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"[ERROR] Unknown option: --bogus-option"* ]]
+  [[ "$output" == *"Usage:"* ]]
+
+  # -h/--help keeps usage on stdout and exits 0.
+  run bash -c "\"$VALIDATE\" --help 2>/dev/null"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Usage:"* ]]
 }
 
 @test "validate_docs --format json survives hostile message content (quotes, backslash, tab, non-ASCII)" {
