@@ -1,0 +1,4 @@
+# Development-only Python dependencies for the codeguide skill.
+# Runtime scripts under scripts/ are stdlib-only by contract; this file exists
+# for the test/validation toolchain. Install: python3 -m pip install -r requirements-dev.txt
+pytest>=7.0

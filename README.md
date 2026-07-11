@@ -103,6 +103,18 @@ README의 중심은 아니지만, 이 스킬은 몇 개의 쉘 스크립트로 �
 
 고위험 작업에서는 `run_external_plan_reviews.sh`가 task나 linked decision의 `risk_level`을 읽어, 사용자가 adversarial evaluator를 명시하지 않아도 non-primary reviewer 중 하나를 자동으로 adversarial pass로 승격시킵니다.
 
+## 실행 환경 계약
+
+지원 toolchain은 bash >= 3.2, python3 >= 3.9, bats-core >= 1.5, git이며, Python dev 의존성은 `requirements-dev.txt`(pytest)뿐입니다. runtime 스크립트는 stdlib-only 계약을 유지합니다.
+
+```bash
+scripts/check_env.sh                                 # toolchain doctor (원인별 remediation 출력)
+python3 -m pip install -r requirements-dev.txt      # dev 의존성 설치
+scripts/check_all.sh                                 # 단일 게이트: env + bats + pytest + strict docs + English policy
+```
+
+clean checkout 기준 `check_all.sh` 하나로 전체 품질 게이트(의존성 확인, 전체 테스트, strict docs validation)가 재현됩니다. 테스트는 호출 셸의 환경 변수에 의존하지 않습니다: `tests/codeguide_helper.bash`의 `setup()`이 `CODEX_SANDBOX*`, `CODEGUIDE_SOURCE_ROOT`, `CODEGUIDE_*_BIN`을 초기화하고, sandbox 동작 테스트는 필요한 변수를 per-test로 명시 주입합니다.
+
 ## 수동 실행이 필요할 때
 
 자동화나 테스트 관점에서 직접 실행할 수도 있습니다.
