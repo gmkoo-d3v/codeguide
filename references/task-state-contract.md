@@ -6,12 +6,14 @@ Use this reference for task and decision lifecycle: the task and decision dictio
 - Empty values never overwrite existing non-empty fields during doc-gardening. Use `--allow-empty-overwrite` to explicitly clear a field.
 - Axis values (Why/What/How/Where/Verify) are only written when explicitly provided; no generic defaults are injected.
 - `task_id` inference priority: explicit `--task-id` > branch pattern (ABC-123 or numeric) > latest task file > timestamp fallback.
-- `task-index.md` rows are placed under the correct status section (Planned/In Progress/Blocked/Done) and deduplicated.
+- `task-index.md` rows are placed under the correct status section (Planned/In Progress/Blocked/Done/Superseded/Cancelled) and deduplicated.
 - `validate_docs.sh --mode strict` enforces non-empty values for required fields, not just key existence.
 - Freshness checks use `last_updated` field when available; fall back to file mtime only when the field is absent.
 - Validation checks plan/report contracts:
   - active tasks (`in_progress|blocked|done`) require at least one `PLAN-<task-id>-v*.md`
   - evaluator reports must follow `PLAN-...-review-<runner>-<model-slug>-rNN.md`
+  - `in_progress|blocked` tasks require a fresh evaluator report for the LATEST plan version; `done` tasks require at least one identity-valid report anywhere in the plan lineage (`PLAN-<task-id>-v*-review-*.md`) — plan versions added after close must not reopen the gate retroactively
+  - plans and ORCH capsules of terminal-status tasks (`done|superseded|cancelled`) keep identity checks (task_id, plan_version) but are exempt from authorship-completeness fields (objective/scope/last_updated) and size caps: closed artifacts are immutable evidence and later schema generations are not applied to them retroactively
 
 ## Task dictionary template
 
@@ -31,7 +33,8 @@ Use one file per task: `docs/task/TASK-<id>.md`
 - risks:
 - risk_level:
 - consumes_plan_ref:
-- status: planned | in_progress | blocked | done
+- status: planned | in_progress | blocked | done | superseded | cancelled
+- disposition: # required for superseded/cancelled: why the task closed without completing
 - owner:
 - claimed_at:
 - due_date:
@@ -40,7 +43,9 @@ Use one file per task: `docs/task/TASK-<id>.md`
 - axis_verify: # test strategy (TDD/pyramid/FIRST)
 ```
 
-`<project-root>/docs/task/task-index.md` should list task ids organized by status section (Planned/In Progress/Blocked/Done). Rows are automatically moved between sections when task status changes.
+`<project-root>/docs/task/task-index.md` should list task ids organized by status section (Planned/In Progress/Blocked/Done/Superseded/Cancelled). Rows are automatically moved between sections when task status changes.
+
+`superseded` and `cancelled` are terminal statuses for tasks that close WITHOUT completing: `superseded` when a successor task absorbed the remaining scope, `cancelled` when the need lapsed (stale, overtaken by events). Both require a non-empty `disposition:` field naming the successor or the reason (strict-mode failure when missing). They are set by direct ledger edit at disposition time, not by the session wizard. Terminal tasks are inactive: no plan, orchestration capsule, or evaluator report is required, and their existing artifacts stay in place as immutable evidence per the no-archive policy. Do not use them to dodge a review gate on work that actually shipped — shipped work closes as `done`.
 
 `consumes_plan_ref` is required when the matching ORCH capsule sets `external_review_required_for: implementation_start` and the task is `in_progress` or `done`. It must reference a same-task plan in the form `PLAN-<task-id>-vX.Y`; cross-task plan consumption is out of scope for this gate and warns instead of being treated as independent.
 

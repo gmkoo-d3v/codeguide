@@ -2292,6 +2292,7 @@ adversarial_requirement_source_for_task() {
 check_orchestration_file_for_task() {
   local task_id="$1"
   local task_ref="$2"
+  local task_status="${3:-}"
   local orchestration_file
   local execution_mode
   local delegation_status
@@ -2315,7 +2316,13 @@ check_orchestration_file_for_task() {
   fi
 
   pass "orchestration file exists for active task ${task_ref}"
-  check_line_limit "$orchestration_file" "$MAX_ORCHESTRATION_LINES" "orchestration document"
+  # Size caps gate active authorship; a terminal task's capsule is immutable
+  # evidence and is not re-measured against caps introduced later.
+  if is_terminal_task_status "$task_status"; then
+    pass "orchestration size cap skipped for terminal task artifact (status=${task_status}): ${orchestration_file}"
+  else
+    check_line_limit "$orchestration_file" "$MAX_ORCHESTRATION_LINES" "orchestration document"
+  fi
 
   if [[ "$MODE" == "strict" ]]; then
     check_field_non_empty "$orchestration_file" "task_id" "orchestration" || true
@@ -2511,6 +2518,9 @@ check_orchestration_semantic_contradictions() {
     if [[ "$task_status" == "blocked" && "$delegation_status" == "active" ]]; then
       fail "orchestration delegation_status 'active' contradicts task status blocked for ${orch_ref}: ${orchestration_file}"
     fi
+    if [[ ( "$task_status" == "superseded" || "$task_status" == "cancelled" ) && ( "$delegation_status" == "active" || "$delegation_status" == "planned" ) ]]; then
+      fail "orchestration delegation_status '${delegation_status}' contradicts terminal task status ${task_status} for ${orch_ref}: ${orchestration_file}"
+    fi
   fi
 
   external_review_status="$(extract_field_value "$orchestration_file" "external_review_status")"
@@ -2617,6 +2627,7 @@ check_evaluator_reports_for_task() {
   local execution_mode="$3"
   local adversarial_source="${4:-}"
   local latest_plan_version="${5:-}"
+  local task_status="${6:-}"
   local report_count=0
   local adversarial_count=0
   local stale_report_count=0
@@ -2640,6 +2651,51 @@ check_evaluator_reports_for_task() {
   fi
   if [[ -z "$latest_plan_version" ]]; then
     fail "cannot determine latest plan version for active task ${task_ref}"
+    return
+  fi
+
+  # A done task was gated on the plan it consumed when it closed; plan versions
+  # added after close (post-review records, next-round notes) must not reopen
+  # the gate retroactively. Lineage rule: at least one identity-valid evaluator
+  # report for ANY plan version of this task. Reports whose filename and fields
+  # disagree are skipped here — the global report loop already fails them.
+  # in_progress/blocked tasks keep the fresh latest-plan gate below.
+  if [[ "$task_status" == "done" ]]; then
+    while IFS= read -r report_file; do
+      report_base="$(basename "$report_file")"
+      parse_evaluator_report_filename "$report_base" || continue
+      [[ "$REPORT_FILE_TASK_ID" == "$task_id" ]] || continue
+      report_task_id="$(extract_field_value "$report_file" "task_id")"
+      report_plan_version="$(extract_field_value "$report_file" "plan_version")"
+      report_evaluator="$(extract_field_value "$report_file" "evaluator")"
+      report_round="$(extract_field_value "$report_file" "review_round")"
+      if [[ "$report_task_id" != "$task_id" || "$report_plan_version" != "$REPORT_FILE_PLAN_VERSION" || "$report_evaluator" != "$REPORT_FILE_EVALUATOR" || "$report_round" != "$REPORT_FILE_ROUND" ]]; then
+        continue
+      fi
+      report_count=$((report_count + 1))
+      report_review_style="$(extract_field_value "$report_file" "review_style")"
+      if [[ "$report_review_style" == "adversarial" ]]; then
+        adversarial_count=$((adversarial_count + 1))
+      fi
+    done < <(find "$REPORT_DIR" -maxdepth 1 -type f -name "PLAN-${task_id}-v*-review-*.md" | sort)
+
+    if [[ -n "$adversarial_source" ]]; then
+      if (( adversarial_count > 0 )); then
+        pass "adversarial evaluator report exists in plan lineage for done high-risk task ${task_ref} (${adversarial_count})"
+      else
+        fail "missing adversarial evaluator report in plan lineage for done high-risk task ${task_ref} (${adversarial_source}): expected ${REPORT_DIR}/PLAN-${task_id}-v*-review-<runner>-<model-slug>-rNN.md with review_style: adversarial"
+      fi
+      return
+    fi
+    if [[ "$execution_mode" == "solo" ]]; then
+      pass "evaluator reports optional for solo execution on ${task_ref}"
+      return
+    fi
+    if (( report_count > 0 )); then
+      pass "evaluator report exists in plan lineage for done task ${task_ref} (${report_count})"
+    else
+      fail "missing evaluator report in plan lineage for done task ${task_ref}: expected at least one ${REPORT_DIR}/PLAN-${task_id}-v*-review-<runner>-<model-slug>-rNN.md"
+    fi
     return
   fi
 
@@ -2713,6 +2769,20 @@ is_active_task_status() {
   esac
 }
 
+# Terminal ledger statuses: the task will not be worked further. "done" closed
+# successfully; "superseded"/"cancelled" closed without completing (a successor
+# task or the disposition field explains why). Terminal-task plan/orchestration
+# artifacts are immutable evidence: identity checks still apply, but authorship
+# completeness (scope/objective/last_updated) and size caps do not, so schema
+# rules added later are not applied retroactively to closed work.
+is_terminal_task_status() {
+  local status="$1"
+  case "$status" in
+    done|superseded|cancelled) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # Resume capsule enforcement (references/session-resume-contract.md). Scoped to
 # in_progress tasks, since that is the only status the contract requires a
 # capsule for. Three independent tiers:
@@ -2770,6 +2840,8 @@ task_index_section_status() {
     "## In Progress") printf "in_progress" ;;
     "## Blocked")     printf "blocked" ;;
     "## Done")        printf "done" ;;
+    "## Superseded")  printf "superseded" ;;
+    "## Cancelled")   printf "cancelled" ;;
     *)                printf "" ;;
   esac
 }
@@ -3348,7 +3420,7 @@ if [[ -d "$TASK_DIR" ]]; then
       check_field_exists "$task_file" "status" "task file" || true
     fi
 
-    check_enum_membership "$task_status" "task.status" "$task_file" planned in_progress blocked done || true
+    check_enum_membership "$task_status" "task.status" "$task_file" planned in_progress blocked done superseded cancelled || true
     check_enum_membership "$task_risk_level" "task.risk_level" "$task_file" low medium high critical || true
 
     # Freshness check for in_progress tasks
@@ -3376,6 +3448,17 @@ if [[ -d "$TASK_DIR" ]]; then
       check_resume_capsule_for_task "$task_file" "$task_ref"
     fi
 
+    # Superseded/cancelled tasks closed without completing: the disposition
+    # field must say why (successor task, staleness, overtaken by events) so
+    # the ledger stays honest without fabricating done-style close-out evidence.
+    if [[ "$task_status_primary" == "superseded" || "$task_status_primary" == "cancelled" ]]; then
+      if [[ "$MODE" == "strict" ]]; then
+        check_field_non_empty "$task_file" "disposition" "${task_status_primary} task" || true
+      else
+        check_field_exists "$task_file" "disposition" "${task_status_primary} task" || true
+      fi
+    fi
+
     # Active tasks must have at least one versioned plan file
     if is_active_task_status "$task_status"; then
       if [[ "$MODE" != "strict" && -z "$task_risk_level" ]]; then
@@ -3387,11 +3470,11 @@ if [[ -d "$TASK_DIR" ]]; then
       else
         fail "missing plan file for active task ${task_ref}: expected ${PLAN_DIR}/PLAN-${task_id}-v*.md"
       fi
-      check_orchestration_file_for_task "$task_id" "$task_ref"
+      check_orchestration_file_for_task "$task_id" "$task_ref" "$task_status_primary"
       check_external_review_await_gate_for_task "$task_id" "$task_ref" "$task_file" "$task_status"
       orchestration_mode="$(orchestration_execution_mode_for_task "$task_id")"
       adversarial_source="$(adversarial_requirement_source_for_task "$task_id")"
-      check_evaluator_reports_for_task "$task_id" "$task_ref" "$orchestration_mode" "$adversarial_source" "$latest_plan_version"
+      check_evaluator_reports_for_task "$task_id" "$task_ref" "$orchestration_mode" "$adversarial_source" "$latest_plan_version" "$task_status_primary"
     fi
 
     # Task-index consistency: verify task appears in task-index.md
@@ -3480,21 +3563,42 @@ fi
 if [[ -d "$PLAN_DIR" ]]; then
   while IFS= read -r plan_file; do
     plan_base="$(basename "$plan_file")"
-    check_line_limit "$plan_file" "$MAX_PLAN_LINES" "plan document"
 
     if [[ ! "$plan_base" =~ ^PLAN-[A-Za-z0-9._-]+-v[0-9]+\.[0-9]+\.md$ ]]; then
       fail "invalid plan file name format: ${plan_base} (expected PLAN-<task-id>-v<major>.<minor>.md)"
     fi
 
+    # Plans of terminal-status tasks are immutable evidence: identity checks
+    # (task_id, plan_version) still apply, but authorship-completeness fields
+    # and the size cap gate active work only and are not applied retroactively
+    # to schema generations that predate them.
+    plan_task_status=""
+    plan_file_task_id="$(printf "%s" "$plan_base" | sed -E 's/^PLAN-(.*)-v[0-9]+\.[0-9]+\.md$/\1/')"
+    if [[ -f "$TASK_DIR/TASK-${plan_file_task_id}.md" ]]; then
+      plan_task_status="$(extract_field_value "$TASK_DIR/TASK-${plan_file_task_id}.md" "status")"
+      plan_task_status="${plan_task_status%% *}"
+    fi
+
+    if is_terminal_task_status "$plan_task_status"; then
+      pass "plan size cap skipped for terminal task artifact (status=${plan_task_status}): ${plan_file}"
+    else
+      check_line_limit "$plan_file" "$MAX_PLAN_LINES" "plan document"
+    fi
+
     if [[ "$MODE" == "strict" ]]; then
       check_field_non_empty "$plan_file" "task_id" "plan" || true
       check_field_non_empty "$plan_file" "plan_version" "plan" || true
+    else
+      check_field_exists "$plan_file" "task_id" "plan" || true
+      check_field_exists "$plan_file" "plan_version" "plan" || true
+    fi
+    if is_terminal_task_status "$plan_task_status"; then
+      pass "plan completeness fields skipped for terminal task artifact (status=${plan_task_status}): ${plan_file}"
+    elif [[ "$MODE" == "strict" ]]; then
       check_field_non_empty "$plan_file" "objective" "plan" || true
       check_field_non_empty "$plan_file" "scope" "plan" || true
       check_field_non_empty "$plan_file" "last_updated" "plan" || true
     else
-      check_field_exists "$plan_file" "task_id" "plan" || true
-      check_field_exists "$plan_file" "plan_version" "plan" || true
       check_field_exists "$plan_file" "objective" "plan" || true
       check_field_exists "$plan_file" "scope" "plan" || true
       check_field_exists "$plan_file" "last_updated" "plan" || true
@@ -3612,10 +3716,21 @@ if [[ -d "$REPORT_DIR" ]]; then
     fi
 
     if [[ "$report_review_style" == "adversarial" ]]; then
-      if [[ "$MODE" == "strict" ]]; then
+      # An adversarial reviewer who ACCEPTS has no objection to state: the
+      # debate fields must exist but may stay empty on verdict accept.
+      # residual_risk is required either way — even an accept must name what
+      # it did not cover. Reviewer artifacts are immutable, so the rule adapts
+      # to the coherent case rather than forcing post-hoc edits to reports.
+      report_verdict="$(extract_field_value "$report_file" "verdict")"
+      if [[ "$MODE" == "strict" && "$report_verdict" != "accept" ]]; then
         check_field_non_empty "$report_file" "objection" "adversarial evaluator report" || true
         check_field_non_empty "$report_file" "counterproposal" "adversarial evaluator report" || true
         check_field_non_empty "$report_file" "rebuttal" "adversarial evaluator report" || true
+        check_field_non_empty "$report_file" "residual_risk" "adversarial evaluator report" || true
+      elif [[ "$MODE" == "strict" ]]; then
+        check_field_exists "$report_file" "objection" "adversarial evaluator report" || true
+        check_field_exists "$report_file" "counterproposal" "adversarial evaluator report" || true
+        check_field_exists "$report_file" "rebuttal" "adversarial evaluator report" || true
         check_field_non_empty "$report_file" "residual_risk" "adversarial evaluator report" || true
       else
         check_field_exists "$report_file" "objection" "adversarial evaluator report" || true

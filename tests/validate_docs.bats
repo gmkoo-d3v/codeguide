@@ -3592,3 +3592,377 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [[ "$output" == *"execution_mode=solo contradicts non-empty delegated agent fields"* ]]
 }
+
+# --- Terminal task statuses (superseded/cancelled) and retroactivity rules ---
+
+write_terminal_task_fixture() {
+  local task_id="$1"
+  local task_status="$2"
+  local disposition="$3"
+  local task_file="$DOCS_ROOT/task/TASK-${task_id}.md"
+
+  cat > "$task_file" <<EOF
+# TASK-${task_id}
+
+- title: Terminal status fixture
+- objective: exercise terminal-status validation
+- acceptance_criteria: validator behavior observed
+- non_goals: production docs
+- affected_modules: docs
+- interfaces_changed: none
+- data_migrations: none
+- test_scope: validate_docs
+- risks: low
+- risk_level: low
+- status: ${task_status}
+- disposition: ${disposition}
+- owner:
+- due_date:
+- axis_why: verify terminal status handling
+- axis_where: docs validation fixture
+- axis_verify: bats
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  printf '%s\n' "" "## ${4:-Superseded}" "- TASK-${task_id} ${task_status}" >> "$DOCS_ROOT/task/task-index.md"
+}
+
+@test "validate_docs strict passes superseded task with disposition and no plan or report" {
+  write_terminal_task_fixture "term-pass-01" "superseded" "superseded by TASK-successor-01; remaining scope shipped there" "Superseded"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"missing plan file for active task TASK-term-pass-01"* ]]
+  [[ "$output" != *"missing evaluator report"*"TASK-term-pass-01"* ]]
+}
+
+@test "validate_docs strict fails superseded task without disposition" {
+  write_terminal_task_fixture "term-nodisp-01" "superseded" "" "Superseded"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"disposition is present but empty in superseded task"* ]]
+}
+
+@test "validate_docs strict fails cancelled task without a disposition field" {
+  write_terminal_task_fixture "term-cancel-01" "cancelled" "" "Cancelled"
+  sed -i.bak '/^- disposition:/d' "$DOCS_ROOT/task/TASK-term-cancel-01.md"
+  rm -f "$DOCS_ROOT/task/TASK-term-cancel-01.md.bak"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"disposition is missing in cancelled task"* ]]
+}
+
+@test "validate_docs flags task-index section mismatch for terminal statuses" {
+  write_terminal_task_fixture "term-idx-01" "superseded" "superseded by TASK-successor-01" "Cancelled"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"task-index section mismatch for TASK-term-idx-01"* ]]
+}
+
+@test "validate_docs strict skips plan size cap and completeness fields for terminal task artifacts" {
+  write_terminal_task_fixture "term-plan-01" "superseded" "superseded by TASK-successor-01" "Superseded"
+
+  {
+    printf '%s\n' "# PLAN-term-plan-01-v1.0" "" "- task_id: term-plan-01" "- plan_version: v1.0" "- objective: oversized historical plan"
+    for i in $(seq 1 240); do printf '%s\n' "- historical line ${i}"; done
+  } > "$DOCS_ROOT/plan/PLAN-term-plan-01-v1.0.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"plan size cap skipped for terminal task artifact (status=superseded)"* ]]
+  [[ "$output" == *"plan completeness fields skipped for terminal task artifact"* ]]
+  [[ "$output" != *"scope is missing in plan"* ]]
+}
+
+@test "validate_docs strict still enforces plan size cap and scope for active tasks" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "active-plan-cap-01" \
+    --task-title "Active plan cap" \
+    --task-status "in_progress" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --no-init
+
+  {
+    printf '%s\n' "# PLAN-active-plan-cap-01-v1.0" "" "- task_id: active-plan-cap-01" "- plan_version: v1.0" "- objective: oversized active plan"
+    for i in $(seq 1 240); do printf '%s\n' "- filler line ${i}"; done
+  } > "$DOCS_ROOT/plan/PLAN-active-plan-cap-01-v1.0.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"plan document is too large"* ]]
+  [[ "$output" == *"scope is missing in plan"* ]]
+}
+
+@test "validate_docs advisory flags superseded task whose capsule delegation_status is still planned" {
+  write_await_gate_fixture "term-deleg-01" "superseded" "close" "PLAN-term-deleg-01-v1.0" "not_requested" "" "" "" ""
+  printf '%s\n' "- disposition: superseded by TASK-successor-01" >> "$DOCS_ROOT/task/TASK-term-deleg-01.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [[ "$output" == *"orchestration delegation_status 'planned' contradicts terminal task status superseded"* ]]
+}
+
+@test "validate_docs strict passes done task whose evaluator report covers an earlier plan version" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "lineage-done-01" \
+    --task-title "Lineage done test" \
+    --task-status "done" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "pass" \
+    --primary-author-tool "antigravity" \
+    --review-mode "agy_subagents" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "reviewer-1" \
+    --implementation-agents "coder-1" \
+    --validation-agents "validator-1" \
+    --owned-scopes "planner:docs/plan; reviewer:docs/report" \
+    --delegation-status "completed" \
+    --no-init
+
+  cat > "$DOCS_ROOT/plan/PLAN-lineage-done-01-v1.0.md" <<'EOF'
+# PLAN-lineage-done-01-v1.0
+
+- task_id: lineage-done-01
+- plan_version: v1.0
+- objective: consumed plan
+- scope: docs validation
+- assumptions: none
+- risks: low
+- acceptance_signals: reviewed before close
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  cat > "$DOCS_ROOT/plan/PLAN-lineage-done-01-v1.1.md" <<'EOF'
+# PLAN-lineage-done-01-v1.1
+
+- task_id: lineage-done-01
+- plan_version: v1.1
+- objective: post-close review record
+- scope: docs validation
+- assumptions: none
+- risks: low
+- acceptance_signals: records the r01 outcome
+- stop_conditions: closed
+- owner: test
+- last_updated: 2026-01-02T00:00:00Z
+EOF
+
+  cat > "$DOCS_ROOT/report/PLAN-lineage-done-01-v1.0-review-codex-r01.md" <<'EOF'
+# PLAN-lineage-done-01-v1.0 review (codex)
+
+- task_id: lineage-done-01
+- plan_version: v1.0
+- evaluator: codex
+- review_style: standard
+- review_round: r01
+- verdict: accept
+- summary: consumed plan reviewed before close
+- strengths: complete
+- risks: none
+- requested_changes: none
+- last_updated: 2026-01-01T12:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"evaluator report exists in plan lineage for done task TASK-lineage-done-01"* ]]
+}
+
+@test "validate_docs strict fails done task with no evaluator report anywhere in the lineage" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "lineage-miss-01" \
+    --task-title "Lineage missing test" \
+    --task-status "done" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "pass" \
+    --primary-author-tool "antigravity" \
+    --review-mode "agy_subagents" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "reviewer-1" \
+    --implementation-agents "coder-1" \
+    --validation-agents "validator-1" \
+    --owned-scopes "planner:docs/plan; reviewer:docs/report" \
+    --delegation-status "completed" \
+    --no-init
+
+  cat > "$DOCS_ROOT/plan/PLAN-lineage-miss-01-v1.0.md" <<'EOF'
+# PLAN-lineage-miss-01-v1.0
+
+- task_id: lineage-miss-01
+- plan_version: v1.0
+- objective: never reviewed
+- scope: docs validation
+- assumptions: none
+- risks: low
+- acceptance_signals: gate fires
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"missing evaluator report in plan lineage for done task TASK-lineage-miss-01"* ]]
+}
+
+@test "validate_docs strict allows empty adversarial debate fields on accept verdict" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "adv-accept-01" \
+    --task-title "Adversarial accept" \
+    --task-status "planned" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --no-init
+
+  cat > "$DOCS_ROOT/plan/PLAN-adv-accept-01-v1.0.md" <<'EOF'
+# PLAN-adv-accept-01-v1.0
+
+- task_id: adv-accept-01
+- plan_version: v1.0
+- objective: adversarial accept fixture
+- scope: docs validation
+- assumptions: none
+- risks: low
+- acceptance_signals: accept report passes
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  cat > "$DOCS_ROOT/report/PLAN-adv-accept-01-v1.0-review-codex-r01.md" <<'EOF'
+# PLAN-adv-accept-01-v1.0 review (codex)
+
+- task_id: adv-accept-01
+- plan_version: v1.0
+- evaluator: codex
+- review_style: adversarial
+- review_round: r01
+- verdict: accept
+- summary: accepted with nothing to object to
+- strengths: clean
+- risks: none observed
+- requested_changes: none
+- objection:
+- counterproposal:
+- rebuttal:
+- residual_risk: did not execute the plan steps, only reviewed them
+- last_updated: 2026-01-01T12:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"objection is present but empty"* ]]
+}
+
+@test "validate_docs strict still requires adversarial debate fields on revise verdict" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "adv-revise-01" \
+    --task-title "Adversarial revise" \
+    --task-status "planned" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --no-init
+
+  cat > "$DOCS_ROOT/plan/PLAN-adv-revise-01-v1.0.md" <<'EOF'
+# PLAN-adv-revise-01-v1.0
+
+- task_id: adv-revise-01
+- plan_version: v1.0
+- objective: adversarial revise fixture
+- scope: docs validation
+- assumptions: none
+- risks: low
+- acceptance_signals: revise report must show the debate
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  cat > "$DOCS_ROOT/report/PLAN-adv-revise-01-v1.0-review-codex-r01.md" <<'EOF'
+# PLAN-adv-revise-01-v1.0 review (codex)
+
+- task_id: adv-revise-01
+- plan_version: v1.0
+- evaluator: codex
+- review_style: adversarial
+- review_round: r01
+- verdict: revise
+- summary: pushing back without stating the objection
+- strengths: none
+- risks: some
+- requested_changes: fix things
+- objection:
+- counterproposal:
+- rebuttal:
+- residual_risk: unclear
+- last_updated: 2026-01-01T12:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"objection is present but empty in adversarial evaluator report"* ]]
+}
+
+@test "validate_docs strict requires residual_risk even on adversarial accept verdict" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "adv-resid-01" \
+    --task-title "Adversarial residual" \
+    --task-status "planned" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --no-init
+
+  cat > "$DOCS_ROOT/plan/PLAN-adv-resid-01-v1.0.md" <<'EOF'
+# PLAN-adv-resid-01-v1.0
+
+- task_id: adv-resid-01
+- plan_version: v1.0
+- objective: residual risk fixture
+- scope: docs validation
+- assumptions: none
+- risks: low
+- acceptance_signals: residual_risk stays required
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  cat > "$DOCS_ROOT/report/PLAN-adv-resid-01-v1.0-review-codex-r01.md" <<'EOF'
+# PLAN-adv-resid-01-v1.0 review (codex)
+
+- task_id: adv-resid-01
+- plan_version: v1.0
+- evaluator: codex
+- review_style: adversarial
+- review_round: r01
+- verdict: accept
+- summary: accept but silent on coverage
+- strengths: clean
+- risks: none observed
+- requested_changes: none
+- objection:
+- counterproposal:
+- rebuttal:
+- residual_risk:
+- last_updated: 2026-01-01T12:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"residual_risk is present but empty in adversarial evaluator report"* ]]
+}

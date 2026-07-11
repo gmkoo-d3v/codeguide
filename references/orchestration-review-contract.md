@@ -133,6 +133,8 @@ External CLI model selection is runner-specific: provenance records `preconfigur
 - last_updated:
 ```
 
+Adversarial-report field rule (`review_style: adversarial`): `objection`, `counterproposal`, and `rebuttal` must be non-empty in strict mode when the verdict is `revise` or `blocked` — a reviewer pushing back must show the debate. On `verdict: accept` the three fields must still exist but may stay empty: a reviewer who accepts has no objection to state, and reviewer artifacts are immutable, so the validator accepts the coherent case instead of forcing post-hoc edits. `residual_risk` is required non-empty in strict mode regardless of verdict — even an accept must name what it did not cover.
+
 ## PR and commit standards
 - For PR-based delivery, use the canonical templates in:
   - `references/git-pr-commit-templates.md`
