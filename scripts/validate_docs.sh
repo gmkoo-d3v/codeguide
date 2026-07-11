@@ -2471,11 +2471,29 @@ check_orchestration_semantic_contradictions() {
   local agent_key
   local has_agent_field="false"
 
+  delegation_status="$(extract_field_value "$orchestration_file" "delegation_status")"
+
+  # Cross-artifact coherence runs in BOTH modes (promoted per
+  # quality-baseline review r01 C1): a capsule claiming planned/active
+  # delegation while its task ledger says the work is closed is a
+  # ledger-integrity defect, not a style nit, and must keep strict red.
+  if [[ -n "$task_file" && -f "$task_file" ]]; then
+    task_status="$(extract_field_value "$task_file" "status")"
+    task_status="${task_status%% *}"
+    if [[ "$task_status" == "done" && ( "$delegation_status" == "active" || "$delegation_status" == "planned" ) ]]; then
+      fail "orchestration delegation_status '${delegation_status}' contradicts task status done for ${orch_ref}: ${orchestration_file}"
+    fi
+    if [[ "$task_status" == "blocked" && "$delegation_status" == "active" ]]; then
+      fail "orchestration delegation_status 'active' contradicts task status blocked for ${orch_ref}: ${orchestration_file}"
+    fi
+    if [[ ( "$task_status" == "superseded" || "$task_status" == "cancelled" ) && ( "$delegation_status" == "active" || "$delegation_status" == "planned" ) ]]; then
+      fail "orchestration delegation_status '${delegation_status}' contradicts terminal task status ${task_status} for ${orch_ref}: ${orchestration_file}"
+    fi
+  fi
+
   if [[ "$MODE" == "strict" ]]; then
     return 0
   fi
-
-  delegation_status="$(extract_field_value "$orchestration_file" "delegation_status")"
 
   execution_mode="$(extract_field_value "$orchestration_file" "execution_mode")"
   for agent_key in planner_agents reviewer_agents implementation_agents validation_agents; do
@@ -2504,23 +2522,6 @@ check_orchestration_semantic_contradictions() {
   # capsule would otherwise be invisible).
   if [[ -n "$delegation_status" ]]; then
     check_enum_membership "$delegation_status" "orchestration.delegation_status" "$orchestration_file" planned active completed blocked || true
-  fi
-
-  # Cross-artifact coherence: a capsule's delegation_status must not
-  # contradict its task's ledger status (done tasks cannot still be
-  # planned/active; blocked tasks cannot still be active).
-  if [[ -n "$task_file" && -f "$task_file" ]]; then
-    task_status="$(extract_field_value "$task_file" "status")"
-    task_status="${task_status%% *}"
-    if [[ "$task_status" == "done" && ( "$delegation_status" == "active" || "$delegation_status" == "planned" ) ]]; then
-      fail "orchestration delegation_status '${delegation_status}' contradicts task status done for ${orch_ref}: ${orchestration_file}"
-    fi
-    if [[ "$task_status" == "blocked" && "$delegation_status" == "active" ]]; then
-      fail "orchestration delegation_status 'active' contradicts task status blocked for ${orch_ref}: ${orchestration_file}"
-    fi
-    if [[ ( "$task_status" == "superseded" || "$task_status" == "cancelled" ) && ( "$delegation_status" == "active" || "$delegation_status" == "planned" ) ]]; then
-      fail "orchestration delegation_status '${delegation_status}' contradicts terminal task status ${task_status} for ${orch_ref}: ${orchestration_file}"
-    fi
   fi
 
   external_review_status="$(extract_field_value "$orchestration_file" "external_review_status")"
@@ -2665,6 +2666,10 @@ check_evaluator_reports_for_task() {
       report_base="$(basename "$report_file")"
       parse_evaluator_report_filename "$report_base" || continue
       [[ "$REPORT_FILE_TASK_ID" == "$task_id" ]] || continue
+      # A lineage report only counts when the plan version it names actually
+      # exists (review r01 C2): a report against a phantom version must not
+      # satisfy the gate on its own.
+      [[ -f "$PLAN_DIR/PLAN-${task_id}-${REPORT_FILE_PLAN_VERSION}.md" ]] || continue
       report_task_id="$(extract_field_value "$report_file" "task_id")"
       report_plan_version="$(extract_field_value "$report_file" "plan_version")"
       report_evaluator="$(extract_field_value "$report_file" "evaluator")"
@@ -3459,8 +3464,11 @@ if [[ -d "$TASK_DIR" ]]; then
       fi
     fi
 
-    # Active tasks must have at least one versioned plan file
-    if is_active_task_status "$task_status"; then
+    # Active tasks must have at least one versioned plan file. Gating keys on
+    # the primary status token (parenthetical notes tolerated, same as the
+    # task-index section check); the full value still has to pass the enum
+    # check above, so a noted status never slips past strict silently.
+    if is_active_task_status "$task_status_primary"; then
       if [[ "$MODE" != "strict" && -z "$task_risk_level" ]]; then
         fail "risk_level is recommended for active task ${task_ref}: set low|medium|high|critical to improve review routing"
       fi

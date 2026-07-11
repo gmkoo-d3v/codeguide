@@ -446,6 +446,10 @@ write_if_missing "${TASK_DIR}/task-index.md" '# Task Index
 
 ## Blocked
 
+## Superseded
+
+## Cancelled
+
 ## Done
 '
 

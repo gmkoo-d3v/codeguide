@@ -3477,8 +3477,11 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [[ "$output" == *"delegation_status 'active' contradicts task status done"* ]]
 
+  # Promoted to strict per quality-baseline review r01 C1: the ledger
+  # contradiction is a strict failure too, not an advisory-only warning.
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
-  [[ "$output" != *"contradicts task status done"* ]]
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"delegation_status 'active' contradicts task status done"* ]]
 }
 
 @test "validate_docs advisory validates delegation_status enum on planned-task capsules" {
@@ -3698,11 +3701,15 @@ EOF
   [[ "$output" == *"scope is missing in plan"* ]]
 }
 
-@test "validate_docs advisory flags superseded task whose capsule delegation_status is still planned" {
+@test "validate_docs flags superseded task whose capsule delegation_status is still planned in both modes" {
   write_await_gate_fixture "term-deleg-01" "superseded" "close" "PLAN-term-deleg-01-v1.0" "not_requested" "" "" "" ""
   printf '%s\n' "- disposition: superseded by TASK-successor-01" >> "$DOCS_ROOT/task/TASK-term-deleg-01.md"
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [[ "$output" == *"orchestration delegation_status 'planned' contradicts terminal task status superseded"* ]]
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
   [[ "$output" == *"orchestration delegation_status 'planned' contradicts terminal task status superseded"* ]]
 }
 
@@ -3965,4 +3972,81 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
   [[ "$output" == *"residual_risk is present but empty in adversarial evaluator report"* ]]
+}
+
+@test "validate_docs strict lineage gate ignores a report naming a phantom plan version" {
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "lineage-phantom-01" \
+    --task-title "Lineage phantom test" \
+    --task-status "done" \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "pass" \
+    --primary-author-tool "antigravity" \
+    --review-mode "agy_subagents" \
+    --planner-agents "planner-1" \
+    --reviewer-agents "reviewer-1" \
+    --implementation-agents "coder-1" \
+    --validation-agents "validator-1" \
+    --owned-scopes "planner:docs/plan; reviewer:docs/report" \
+    --delegation-status "completed" \
+    --no-init
+
+  cat > "$DOCS_ROOT/plan/PLAN-lineage-phantom-01-v1.0.md" <<'EOF'
+# PLAN-lineage-phantom-01-v1.0
+
+- task_id: lineage-phantom-01
+- plan_version: v1.0
+- objective: only real plan version
+- scope: docs validation
+- assumptions: none
+- risks: low
+- acceptance_signals: phantom-version report does not satisfy the gate
+- stop_conditions: fixed
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  cat > "$DOCS_ROOT/report/PLAN-lineage-phantom-01-v9.9-review-codex-r01.md" <<'EOF'
+# PLAN-lineage-phantom-01-v9.9 review (codex)
+
+- task_id: lineage-phantom-01
+- plan_version: v9.9
+- evaluator: codex
+- review_style: standard
+- review_round: r01
+- verdict: accept
+- summary: report against a plan version that never existed
+- strengths: none
+- risks: none
+- requested_changes: none
+- last_updated: 2026-01-01T12:00:00Z
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"missing evaluator report in plan lineage for done task TASK-lineage-phantom-01"* ]]
+}
+
+@test "validate_docs strict keeps active-task gates on a status with a parenthetical note" {
+  write_terminal_task_fixture "noted-status-01" "done (paused for later)" "" "Done"
+  sed -i.bak '/^- disposition:/d' "$DOCS_ROOT/task/TASK-noted-status-01.md"
+  rm -f "$DOCS_ROOT/task/TASK-noted-status-01.md.bak"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"invalid task.status value"* ]]
+  [[ "$output" == *"missing plan file for active task TASK-noted-status-01"* ]]
+}
+
+@test "init_docs_scaffold task-index template includes terminal status sections" {
+  # The scaffold's golden output must track the validator's section map
+  # (review r01 sonnet #2): a fresh project needs a home for terminal rows.
+  run grep -c '^## ' "$DOCS_ROOT/task/task-index.md"
+  [ "$status" -eq 0 ]
+  grep -q '^## Superseded$' "$DOCS_ROOT/task/task-index.md"
+  grep -q '^## Cancelled$' "$DOCS_ROOT/task/task-index.md"
+  grep -q '^## Done$' "$DOCS_ROOT/task/task-index.md"
 }
