@@ -84,6 +84,7 @@ LLM을 활용한 개발은 보통 다음 지점에서 쉽게 흔들립니다.
 
 README의 중심은 아니지만, 이 스킬은 몇 개의 쉘 스크립트로 운영 규칙을 자동화합니다.
 
+- [`scripts/codeguide`](./scripts/codeguide): 아래 스크립트들을 서브커맨드 하나로 묶는 단일 진입점 (자세한 내용은 [단일 진입점: scripts/codeguide](#단일-진입점-scriptscodeguide))
 - [`scripts/run_codeguide.sh`](./scripts/run_codeguide.sh): docs lifecycle 시작, 동기화, 검증, runtime validation 진입점
 - [`scripts/run_external_plan_reviews.sh`](./scripts/run_external_plan_reviews.sh): primary 작성 도구를 제외한 다른 evaluator 둘에게 `PLAN-*` 리뷰를 요청하고, report 문서를 생성한 뒤 멈추는 반자동 ping-pong 리뷰 명령
 - [`scripts/doc_garden.sh`](./scripts/doc_garden.sh): task, decision, orchestration, shadow 문서 갱신
@@ -108,36 +109,61 @@ README의 중심은 아니지만, 이 스킬은 몇 개의 쉘 스크립트로 �
 지원 toolchain은 bash >= 3.2, python3 >= 3.9, bats-core >= 1.5, git이며, Python dev 의존성은 `requirements-dev.txt`(pytest)뿐입니다. runtime 스크립트는 stdlib-only 계약을 유지합니다.
 
 ```bash
-scripts/check_env.sh                                 # toolchain doctor (원인별 remediation 출력)
+scripts/check_env.sh                                 # toolchain doctor (원인별 remediation 출력); scripts/codeguide doctor 별칭도 동일
 python3 -m pip install -r requirements-dev.txt      # dev 의존성 설치
-scripts/check_all.sh                                 # 단일 게이트: env + bats + pytest + strict docs + English policy
+scripts/check_all.sh                                 # 단일 게이트: env + bats + pytest + strict docs + English policy; scripts/codeguide check 별칭도 동일
 ```
 
 clean checkout 기준 `check_all.sh` 하나로 전체 품질 게이트(의존성 확인, 전체 테스트, strict docs validation)가 재현됩니다. 테스트는 호출 셸의 환경 변수에 의존하지 않습니다: `tests/codeguide_helper.bash`의 `setup()`이 `CODEX_SANDBOX*`, `CODEGUIDE_SOURCE_ROOT`, `CODEGUIDE_*_BIN`을 초기화하고, sandbox 동작 테스트는 필요한 변수를 per-test로 명시 주입합니다.
 
-## 수동 실행이 필요할 때
+## 단일 진입점: scripts/codeguide
 
-자동화나 테스트 관점에서 직접 실행할 수도 있습니다.
+개별 스크립트 경로를 하나씩 외우는 대신, `scripts/codeguide`가 서브커맨드 하나로 모든 자동화 진입점을 노출합니다. 각 서브커맨드는 나머지 인자를 quoting 그대로 대상 도구에 전달(`exec`)하므로, `scripts/codeguide <서브커맨드> --help`는 대상 도구 자신의 usage를 그대로 보여줍니다.
+
+```bash
+scripts/codeguide                       # 서브커맨드 목록 + 한 줄 설명 (bare / -h / --help / help 모두 동일)
+scripts/codeguide <서브커맨드> --help    # 대상 도구 자신의 usage로 위임
+```
+
+| 서브커맨드 | 대상 스크립트 | 용도 |
+| --- | --- | --- |
+| `doctor` | `check_env.sh` | toolchain doctor |
+| `check` | `check_all.sh` | 단일 품질 게이트 |
+| `validate` | `validate_docs.sh` | 문서 정합성/최신성/secret scan 검증 |
+| `docs-sync` | `doc_garden.sh` | task/decision/orchestration/shadow 문서 갱신 |
+| `scaffold` | `init_docs_scaffold.sh` | 프로젝트 `docs/` 스캐폴드 초기화 |
+| `review` | `run_external_plan_reviews.sh` | ping-pong 외부 plan review 라운드 |
+| `shadow-impact` | `shadow_impact_report.py` | 변경됐지만 shadow doc이 갱신되지 않은 소스 리포트 |
+| `shadow-coverage` | `shadow_coverage_report.py` | 어떤 shadow doc도 문서화하지 않은 변경 소스 리포트 |
+| `shadow-metrics` | `shadow_metrics_report.py` | shadow doc 토큰 비용/크기를 상한 대비 측정 |
+| `shadow-digest` | `shadow_source_digest.py` | shadow doc의 source-of-truth 콘텐츠 다이제스트 계산/검증 |
+
+`check_all.sh`(= `scripts/codeguide check`)는 재현 가능한 서브셋 실행과 실패 진단용 아티팩트 보존을 위한 옵션 두 가지를 추가로 지원합니다.
+
+- `--suite <fast|contract|external|shadow|full>`: bats 스테이지만 지정한 파일 서브셋으로 제한합니다. 기본값 `full`은 옵션 없는 기존 실행과 동일하게 `tests/` 전체를 돌립니다. suite 멤버 파일이 하나라도 없으면 어떤 스테이지도 시작하기 전에 fail-loud로 중단됩니다. pytest 스테이지는 `full` suite에서만 실행됩니다(다른 suite에서는 skip으로 보고됩니다).
+  ```bash
+  scripts/codeguide check --suite fast --skip-pytest   # 빠른 서브셋만 재현 가능하게 실행
+  ```
+- `--artifacts <dir>`: 각 스테이지의 stdout+stderr를 `<dir>/<NN>-<stage>.log`로 tee하고, bats 스테이지는 추가로 `<dir>`에 JUnit 리포트(`--report-formatter junit --output <dir>`)를 남깁니다. 종료 코드 의미는 변하지 않으며, summary에 아티팩트 디렉터리 경로가 함께 출력됩니다.
+  ```bash
+  scripts/codeguide check --artifacts .artifacts/check-all   # 실패 원인 진단용 로그 + JUnit 보존
+  ```
+
+## 직접 스크립트를 호출해야 할 때
+
+`scripts/codeguide`가 다루지 않는 하위 도구(shadow effect 파이프라인의 review queue/decision/apply-gate 단계, 또는 `run_codeguide.sh` 통합 모드)가 필요하면 `scripts/` 아래 스크립트를 직접 호출할 수도 있습니다.
 
 ```bash
 cd <skill-dir>
-scripts/init_docs_scaffold.sh /path/to/project
 scripts/run_codeguide.sh /path/to/project --mode auto
 python3 scripts/shadow_policy_loader.py --project-root /path/to/project --adapter-module scripts/shadow_evidence_probe.py --check-parity
 python3 scripts/shadow_evidence_probe.py --project-root /path/to/project --validator-id py.ast.call_match@v1 --source-file src/app.py --callee save
 python3 scripts/shadow_review_queue.py --input probe.jsonl --task-id shadow-effect-map-01
 python3 scripts/shadow_user_decision_wrapper.py --project-root /path/to/project --output decision.json --decision-id UD-001 --decision-type final_shadow_apply --answer yes --decided-by gm --decided-at 2026-05-03 --expires-at 2026-05-10 --candidate-id LC-... --record record.json --target-shadow-file packages/app/effects.md --rationale "Approve exact record" --source-ref TASK-shadow-effect-map-01
-scripts/run_external_plan_reviews.sh /path/to/project \
-  --task-id search-nav-01 \
-  --plan-version v1.0 \
-  --primary-tool codex \
-  --review-round r01 \
-  --risk-preflight-status pass
-scripts/validate_docs.sh /path/to/project --mode strict
 bats tests/
 ```
 
-`run_external_plan_reviews.sh`는 기본적으로 CLI의 기본 모델을 사용하며, 사용자가 override를 주지 않으면 버전명 하드코딩을 피합니다. 긴 프롬프트는 shell 인자로 직접 넘기지 않고 `docs/orchestration/<task-id>/external-cli/<plan-version>/<round>/` 아래의 Markdown request/response 파일로 왕복합니다. 외부 CLI에 넘기는 짧은 bash 명령은 stdout redirection, `tee`, 또는 `--output-last-message` 같은 도구별 옵션으로 절대 command-output 경로를 명시해야 하며, 프롬프트 안의 경로 언급만으로는 부족합니다. wrapper는 raw command output을 redaction한 뒤 durable response 파일로 저장하고 raw capture를 삭제합니다. request는 `Why/What/How/Where/Verify` 축을 포함하고, 유효한 response는 parser-friendly bullet field를 따르며, 보존 파일은 저장 전 민감값을 redaction합니다. 이 명령은 review report를 만든 뒤 멈추며, 다음 `PLAN-v1.1`을 자동 생성하지 않습니다.
+`run_external_plan_reviews.sh`(= `scripts/codeguide review`)는 기본적으로 CLI의 기본 모델을 사용하며, 사용자가 override를 주지 않으면 버전명 하드코딩을 피합니다. 긴 프롬프트는 shell 인자로 직접 넘기지 않고 `docs/orchestration/<task-id>/external-cli/<plan-version>/<round>/` 아래의 Markdown request/response 파일로 왕복합니다. 외부 CLI에 넘기는 짧은 bash 명령은 stdout redirection, `tee`, 또는 `--output-last-message` 같은 도구별 옵션으로 절대 command-output 경로를 명시해야 하며, 프롬프트 안의 경로 언급만으로는 부족합니다. wrapper는 raw command output을 redaction한 뒤 durable response 파일로 저장하고 raw capture를 삭제합니다. request는 `Why/What/How/Where/Verify` 축을 포함하고, 유효한 response는 parser-friendly bullet field를 따르며, 보존 파일은 저장 전 민감값을 redaction합니다. 이 명령은 review report를 만든 뒤 멈추며, 다음 `PLAN-v1.1`을 자동 생성하지 않습니다.
 
 이 명령들은 스킬 사용의 본질이라기보다, 스킬의 운영 상태를 재현하거나 검증하기 위한 보조 인터페이스입니다.
 
