@@ -175,7 +175,10 @@ load codeguide_helper
   run grep -F -- '`review_mode`: `external_cli|current_task_debate|agy_subagents|claude_subagents|codex_subagents`' "$repo_root/references/orchestration-contract.md"
   [ "$status" -eq 0 ]
 
-  run grep -F "check_enum_membership \"\$review_mode\" \"orchestration.review_mode\"" "$repo_root/scripts/validate_docs.sh"
+  # The producing call lives in the validator's rule modules since the P1
+  # split; search the adapter and validate_docs.d/ so the gate stays
+  # layout-agnostic.
+  run grep -rF "check_enum_membership \"\$review_mode\" \"orchestration.review_mode\"" "$repo_root/scripts/validate_docs.sh" "$repo_root/scripts/validate_docs.d"
   [ "$status" -eq 0 ]
   [[ "$output" == *"external_cli current_task_debate agy_subagents claude_subagents codex_subagents"* ]]
 }
