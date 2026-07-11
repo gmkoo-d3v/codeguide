@@ -929,7 +929,7 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 
 ## Concurrent session claim contract
 
-- When multiple Claude Code sessions run against the same project at once, each session must atomically claim a task before setting `status: in_progress`: `mkdir docs/task/.claims/<task-id>/` (a bare directory; no contents required). `mkdir` fails if the directory already exists, so only one concurrent session can ever win the claim on a given task.
+- When multiple agent sessions run against the same project at once, each session must atomically claim a task before setting `status: in_progress`: `mkdir docs/task/.claims/<task-id>/` (a bare directory; no contents required). `mkdir` fails if the directory already exists, so only one concurrent session can ever win the claim on a given task.
 - If the `mkdir` fails, the task is already claimed by another session; do not start work on it, pick a different task instead.
 - After a successful claim, set `owner:` (a session-identifying value, e.g. a short session id) and `claimed_at:` (ISO timestamp) on the `TASK-<id>.md` file, then move its `task-index.md` row to `In Progress`.
 - On completing or abandoning the task, remove `docs/task/.claims/<task-id>/` in the same step that changes `status` away from `in_progress`.
