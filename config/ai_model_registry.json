@@ -173,10 +173,42 @@
       "quota_group": "codex-direct-subscription",
       "vendor": "openai"
     },
+    "codex:gpt-5.6-sol-medium": {
+      "runner": "codex",
+      "cli_model": "gpt-5.6-sol",
+      "cli_effort": "medium",
+      "display_name": "GPT-5.6 Sol (Medium)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-5.6-sol-xhigh": {
+      "runner": "codex",
+      "cli_model": "gpt-5.6-sol",
+      "cli_effort": "xhigh",
+      "display_name": "GPT-5.6 Sol (xhigh)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
     "codex:gpt-5.6-terra": {
       "runner": "codex",
       "cli_model": "gpt-5.6-terra",
       "display_name": "GPT-5.6 Terra",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-5.6-terra-medium": {
+      "runner": "codex",
+      "cli_model": "gpt-5.6-terra",
+      "cli_effort": "medium",
+      "display_name": "GPT-5.6 Terra (Medium)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-5.6-terra-high": {
+      "runner": "codex",
+      "cli_model": "gpt-5.6-terra",
+      "cli_effort": "high",
+      "display_name": "GPT-5.6 Terra (High)",
       "quota_group": "codex-direct-subscription",
       "vendor": "openai"
     },
@@ -240,7 +272,15 @@
     "codex-gpt-5.3-codex-spark": "codex:gpt-5.3-codex-spark",
     "codex-5.3-spark": "codex:gpt-5.3-codex-spark",
     "codex-gpt-5.6-sol-high": "codex:gpt-5.6-sol-high",
-    "codex-5.6-sol-high": "codex:gpt-5.6-sol-high"
+    "codex-5.6-sol-high": "codex:gpt-5.6-sol-high",
+    "codex-gpt-5.6-sol-medium": "codex:gpt-5.6-sol-medium",
+    "codex-5.6-sol-medium": "codex:gpt-5.6-sol-medium",
+    "codex-gpt-5.6-sol-xhigh": "codex:gpt-5.6-sol-xhigh",
+    "codex-5.6-sol-xhigh": "codex:gpt-5.6-sol-xhigh",
+    "codex-gpt-5.6-terra-medium": "codex:gpt-5.6-terra-medium",
+    "codex-5.6-terra-medium": "codex:gpt-5.6-terra-medium",
+    "codex-gpt-5.6-terra-high": "codex:gpt-5.6-terra-high",
+    "codex-5.6-terra-high": "codex:gpt-5.6-terra-high"
   },
   "default_reviewer_aliases": [
     "agy-current",
