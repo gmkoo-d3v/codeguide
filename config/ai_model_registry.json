@@ -26,24 +26,24 @@
       "quota_group": "agy-preconfigured-runtime",
       "vendor": "google"
     },
-    "agy:gemini-3.5-flash-medium": {
+    "agy:gemini-3.6-flash-medium": {
       "runner": "agy",
-      "cli_model": "gemini-3.5-flash-medium",
-      "display_name": "Gemini 3.5 Flash (Medium)",
+      "cli_model": "gemini-3.6-flash-medium",
+      "display_name": "Gemini 3.6 Flash (Medium)",
       "quota_group": "agy-gemini-shared",
       "vendor": "google"
     },
-    "agy:gemini-3.5-flash-high": {
+    "agy:gemini-3.6-flash-high": {
       "runner": "agy",
-      "cli_model": "gemini-3.5-flash-high",
-      "display_name": "Gemini 3.5 Flash (High)",
+      "cli_model": "gemini-3.6-flash-high",
+      "display_name": "Gemini 3.6 Flash (High)",
       "quota_group": "agy-gemini-shared",
       "vendor": "google"
     },
-    "agy:gemini-3.5-flash-low": {
+    "agy:gemini-3.6-flash-low": {
       "runner": "agy",
-      "cli_model": "gemini-3.5-flash-low",
-      "display_name": "Gemini 3.5 Flash (Low)",
+      "cli_model": "gemini-3.6-flash-low",
+      "display_name": "Gemini 3.6 Flash (Low)",
       "quota_group": "agy-gemini-shared",
       "vendor": "google"
     },
@@ -232,9 +232,9 @@
     "agy": "agy:current",
     "antigravity-current": "agy:current",
     "antigravity": "agy:current",
-    "agy-gemini-3.5-flash-medium": "agy:gemini-3.5-flash-medium",
-    "agy-gemini-3.5-flash-high": "agy:gemini-3.5-flash-high",
-    "agy-gemini-3.5-flash-low": "agy:gemini-3.5-flash-low",
+    "agy-gemini-3.6-flash-medium": "agy:gemini-3.6-flash-medium",
+    "agy-gemini-3.6-flash-high": "agy:gemini-3.6-flash-high",
+    "agy-gemini-3.6-flash-low": "agy:gemini-3.6-flash-low",
     "agy-gemini-3.1-pro-low": "agy:gemini-3.1-pro-low",
     "agy-gemini-3.1-pro-high": "agy:gemini-3.1-pro-high",
     "agy-claude-sonnet-4.6-thinking": "agy:claude-sonnet-4.6-thinking",

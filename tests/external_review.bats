@@ -1124,7 +1124,7 @@ EOF
     --plan-version "v1.0" \
     --primary-tool "agy" \
     --primary-model "claude-sonnet-4.6" \
-    --reviewer "agy-gemini-3.5-flash-medium" \
+    --reviewer "agy-gemini-3.6-flash-medium" \
     --review-round "r01" \
     --risk-preflight-status "approved" \
     --approval-ref "user-approval-ext-fallback-plan" \
@@ -1132,7 +1132,7 @@ EOF
     --task-phase "planning"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Quota exhausted for route 'agy:gemini-3.5-flash-medium' (quota_group=agy-gemini-shared)"* ]]
+  [[ "$output" == *"Quota exhausted for route 'agy:gemini-3.6-flash-medium' (quota_group=agy-gemini-shared)"* ]]
   [[ "$output" == *"Switch the globally selected model in runner 'agy'"* ]]
   [[ "$output" == *"Do not auto-edit runner settings"* ]]
 
@@ -1142,7 +1142,7 @@ EOF
   [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/claude-calls.log"
   [ "$status" -eq 0 ]
-  run test ! -f "$DOCS_ROOT/report/PLAN-ext-fallback-plan-v1.0-review-agy-gemini-3.5-flash-medium-r01.md"
+  run test ! -f "$DOCS_ROOT/report/PLAN-ext-fallback-plan-v1.0-review-agy-gemini-3.6-flash-medium-r01.md"
   [ "$status" -eq 0 ]
 }
 
@@ -1184,7 +1184,7 @@ EOF
     --plan-version "v1.0" \
     --primary-tool "agy" \
     --primary-model "claude-opus-4.8" \
-    --reviewer "agy-gemini-3.5-flash-medium" \
+    --reviewer "agy-gemini-3.6-flash-medium" \
     --review-round "r01" \
     --risk-preflight-status "approved" \
     --approval-ref "user-approval-ext-fallback-code" \
@@ -1192,7 +1192,7 @@ EOF
     --task-phase "code"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Quota exhausted for route 'agy:gemini-3.5-flash-medium' (quota_group=agy-gemini-shared)"* ]]
+  [[ "$output" == *"Quota exhausted for route 'agy:gemini-3.6-flash-medium' (quota_group=agy-gemini-shared)"* ]]
   [[ "$output" == *"Switch the globally selected model in runner 'agy'"* ]]
   [[ "$output" == *"Do not auto-edit runner settings"* ]]
 
@@ -1202,7 +1202,7 @@ EOF
   [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/claude-calls-code.log"
   [ "$status" -eq 0 ]
-  run test ! -f "$DOCS_ROOT/report/PLAN-ext-fallback-code-v1.0-review-agy-gemini-3.5-flash-medium-r01.md"
+  run test ! -f "$DOCS_ROOT/report/PLAN-ext-fallback-code-v1.0-review-agy-gemini-3.6-flash-medium-r01.md"
   [ "$status" -eq 0 ]
 }
 
@@ -1238,7 +1238,7 @@ EOF
     --task-id "ext-fallback-fail" \
     --plan-version "v1.0" \
     --primary-tool "claude" \
-    --primary-model "agy-gemini-3.5-flash-medium" \
+    --primary-model "agy-gemini-3.6-flash-medium" \
     --reviewer "claude-opus-4.8" \
     --review-round "r01" \
     --risk-preflight-status "approved" \
@@ -1750,14 +1750,14 @@ exit 1'
     --plan-version "v1.0" \
     --primary-tool "agy" \
     --primary-model "claude-sonnet-4.6" \
-    --reviewer "agy-gemini-3.5-flash-medium" \
+    --reviewer "agy-gemini-3.6-flash-medium" \
     --review-round "r01" \
     --risk-preflight-status "approved" \
     --approval-ref "user-approval-ext-fallback-exhausted" \
     --approved-next-step "run external review ext-fallback-exhausted"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Quota exhausted for route 'agy:gemini-3.5-flash-medium' (quota_group=agy-gemini-shared)"* ]]
+  [[ "$output" == *"Quota exhausted for route 'agy:gemini-3.6-flash-medium' (quota_group=agy-gemini-shared)"* ]]
   [[ "$output" == *"Switch the globally selected model in runner 'agy'"* ]]
   run test ! -e "$TEST_WORKSPACE/claude-fallback-called"
   [ "$status" -eq 0 ]
@@ -1808,7 +1808,7 @@ EOF'
     --plan-version "v1.0" \
     --primary-tool "agy" \
     --primary-model "claude-opus-4.8" \
-    --reviewer "agy-gemini-3.5-flash-medium" \
+    --reviewer "agy-gemini-3.6-flash-medium" \
     --reviewer "claude-sonnet-4.6" \
     --adversarial-evaluator "claude-sonnet-4.6" \
     --review-round "r01" \
@@ -1880,7 +1880,7 @@ cat <<EOF
 - requested_changes: None.
 EOF'
 
-  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-agy-exec" --plan-version "v1.0" --review-round "r01" --task-phase "review" --coordinator "codex" --participant "agy-gemini-3.5-flash-high"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-agy-exec" --plan-version "v1.0" --review-round "r01" --task-phase "review" --coordinator "codex" --participant "agy-gemini-3.6-flash-high"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
   [ "$status" -eq 0 ]
 
   run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-agy-exec" --force
@@ -1892,9 +1892,9 @@ EOF'
   [ "$status" -eq 0 ]
   run grep -E -- '(^|[[:space:]])-m([[:space:]]|$)|--approval-mode|--output-format|--include-directories' "$TEST_WORKSPACE/runner-agy-args.log"
   [ "$status" -ne 0 ]
-  run test -f "$DOCS_ROOT/orchestration/runner-agy-exec/current-task/responses/agy-gemini-3.5-flash-high.response.md"
+  run test -f "$DOCS_ROOT/orchestration/runner-agy-exec/current-task/responses/agy-gemini-3.6-flash-high.response.md"
   [ "$status" -eq 0 ]
-  run grep "^- model_selection: preconfigured_runtime" "$DOCS_ROOT/orchestration/runner-agy-exec/current-task/provenance/agy-gemini-3.5-flash-high.provenance.md"
+  run grep "^- model_selection: preconfigured_runtime" "$DOCS_ROOT/orchestration/runner-agy-exec/current-task/provenance/agy-gemini-3.6-flash-high.provenance.md"
   [ "$status" -eq 0 ]
 }
 
@@ -1912,13 +1912,13 @@ cat <<EOF
 - requested_changes: None.
 EOF'
 
-  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-skip-warn" --plan-version "v1.0" --review-round "r01" --task-phase "review" --coordinator "codex" --participant "agy-gemini-3.5-flash-high"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-skip-warn" --plan-version "v1.0" --review-round "r01" --task-phase "review" --coordinator "codex" --participant "agy-gemini-3.6-flash-high"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
   [ "$status" -eq 0 ]
 
   # First run creates the response (forced, since nothing exists yet).
   run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-skip-warn" --force
   [ "$status" -eq 0 ]
-  run test -f "$DOCS_ROOT/orchestration/runner-skip-warn/current-task/responses/agy-gemini-3.5-flash-high.response.md"
+  run test -f "$DOCS_ROOT/orchestration/runner-skip-warn/current-task/responses/agy-gemini-3.6-flash-high.response.md"
   [ "$status" -eq 0 ]
   run cat "$TEST_WORKSPACE/runner-skip-warn-agy.count"
   [ "$output" = "x" ]
@@ -1926,7 +1926,7 @@ EOF'
   # Second run without --force must skip and warn, and must NOT invoke the CLI again.
   run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-skip-warn"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] skipping participant agy:gemini-3.5-flash-high: response already exists (use --force to rerun)"* ]]
+  [[ "$output" == *"[WARN] skipping participant agy:gemini-3.6-flash-high: response already exists (use --force to rerun)"* ]]
   run cat "$TEST_WORKSPACE/runner-skip-warn-agy.count"
   [ "$output" = "x" ]
 }
@@ -1945,7 +1945,7 @@ cat <<EOF
 - requested_changes: None.
 EOF'
 
-  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-force-rerun" --plan-version "v1.0" --review-round "r01" --task-phase "review" --coordinator "codex" --participant "agy-gemini-3.5-flash-high"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
+  run bash -c 'printf "%s\n" "- verdict: accept" "- summary: debate request" "- strengths: bounded" "- risks: none" "- requested_changes: none" | python3 "$1" --project-root "$2" enqueue --task-id "runner-force-rerun" --plan-version "v1.0" --review-round "r01" --task-phase "review" --coordinator "codex" --participant "agy-gemini-3.6-flash-high"' _ "$EXTERNAL_REVIEW_RUNNER" "$TEST_PROJECT"
   [ "$status" -eq 0 ]
 
   run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-force-rerun" --force
