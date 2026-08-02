@@ -99,6 +99,7 @@ Use `<project-root>/docs/shadow/<bucket>/<unit>/overview.md` as the landing doc 
 - planned_concerns:
 - next_docs:
 - source_of_truth_paths:
+- linked_decisions:
 - last_updated:
 ```
 
@@ -116,8 +117,19 @@ Use a concern leaf doc for concrete facts only.
 - change_hotspots:
 - contracts_and_rules:
 - next_split_trigger:
+- linked_decisions:
 - last_updated:
 ```
+
+### Rationale links (optional, `linked_decisions`)
+
+`source_of_truth_paths` answers "what code does this doc summarize". `linked_decisions` answers the other question an agent asks while standing on the same doc: "WHY is it shaped this way". It is the authored edge in the traversal direction (router -> bucket -> overview -> leaf); the reverse direction is derived on demand by `scripts/shadow_rationale_report.py`, never stored as a backlink index.
+
+- Carried only by `unit_overview` and `concern_leaf`. Routers and bucket indexes stay navigation-only; decisions and tasks gain no new field.
+- Value: an inline, single-line, comma-separated list of repo-relative capsule paths (`docs/decisions/decision-<id>.md`). A bare header with nested bullets is not accepted, `docs/decisions/decision-index.md` is not a capsule, and duplicate or empty members are malformed. An absent field and an empty field mean the same thing: no rationale declared, and no finding.
+- Semantics: the decisions that CURRENTLY govern this unit or concern — a curated operative set (about five is a healthy ceiling), not accumulated history. `docs/decisions/decision-index.md` remains the full record. When a linked decision is superseded, link its successor.
+- `scripts/validate_docs.sh --mode advisory` resolves every entry, warns on a superseded target, and notes a `proposed` one. Strict mode skips the whole check (recommended tier, same as navigation links).
+- Rationale links assert governance, not freshness: they say a decision explains this doc, never that the code still matches the decision. Re-verify them at the moment the doc is refreshed for source drift.
 
 ### Source-of-truth digest (optional, freshness binding)
 

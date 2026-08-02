@@ -199,3 +199,36 @@ create_mock_internal_review_artifact() {
 EOF
   printf "%s\n" "$artifact"
 }
+
+# Enforcing assertions. A bare `[[ ... ]]` that is not the last statement of a
+# test NEVER fails it: stock macOS bash 3.2.57 exempts a standalone `[[ ]]` from
+# errexit (`bash -ec '[[ 1 == 2 ]]; echo REACHED'` prints REACHED). A function
+# call's non-zero return is a simple-command status, so these do propagate.
+# See the project docs for the
+# suite-wide conversion; new tests must use these instead of bare `[[ ]]`.
+assert_contains() {
+  local haystack="$1"
+  local needle="$2"
+  if [[ "$haystack" != *"$needle"* ]]; then
+    printf 'assert_contains failed\n  expected to find: %s\n  in: %s\n' "$needle" "$haystack" >&2
+    return 1
+  fi
+}
+
+refute_contains() {
+  local haystack="$1"
+  local needle="$2"
+  if [[ "$haystack" == *"$needle"* ]]; then
+    printf 'refute_contains failed\n  expected NOT to find: %s\n  in: %s\n' "$needle" "$haystack" >&2
+    return 1
+  fi
+}
+
+assert_equal() {
+  local actual="$1"
+  local expected="$2"
+  if [[ "$actual" != "$expected" ]]; then
+    printf 'assert_equal failed\n  expected: %s\n  actual:   %s\n' "$expected" "$actual" >&2
+    return 1
+  fi
+}

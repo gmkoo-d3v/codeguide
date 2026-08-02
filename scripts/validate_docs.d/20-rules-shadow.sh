@@ -1041,6 +1041,183 @@ check_shadow_unit_schema() {
   fi
 }
 
+# Advisory-only (recommended tier, gated by the caller like the navigation-link
+# check): `linked_decisions` is the authored rationale edge -- the "why does this
+# code exist" hop of the read path.
+#
+# The grammar lives in ONE place: shadow_rationale_report.py --lint owns parsing
+# (fences, the inline-comma-list rule, entry shape, target status) and this rule
+# owns tiering and message text. Two hand-written parsers were tried first and
+# drifted on the trailing-empty-member and fenced-example cases within a day --
+# same lesson, and same fix, as check_shadow_source_digest delegating to
+# shadow_source_digest.py --check.
+check_shadow_linked_decisions() {
+  local helper="$SCRIPT_DIR/shadow_rationale_report.py"
+  local lint_output
+  local kind
+  local doc
+  local detail
+  local problems=0
+  local declared_count=0
+
+  [[ -f "$helper" ]] || return 0
+
+  # `if !` keeps a helper crash from aborting the whole run under `set -e`.
+  if ! lint_output="$(python3 "$helper" --project-root "$PROJECT_ROOT_ABS" --lint 2>/dev/null)"; then
+    fail "could not lint shadow linked_decisions (helper error): $helper"
+    return 0
+  fi
+
+  while IFS=$'\t' read -r kind doc detail; do
+    [[ -n "$kind" ]] || continue
+    case "$kind" in
+      declared)
+        # Count is the second field: TAB is IFS whitespace, so an empty middle
+        # field would collapse and shift the value (see the helper's --lint note).
+        declared_count="$doc"
+        ;;
+      nested)
+        fail "shadow linked_decisions must be an inline comma list, not nested bullets: $doc"
+        problems=1
+        ;;
+      role)
+        fail "shadow linked_decisions is only valid on unit_overview or concern_leaf (doc_role=${detail}): $doc"
+        problems=1
+        ;;
+      empty)
+        fail "shadow linked_decisions has an empty member: $doc"
+        problems=1
+        ;;
+      duplicate)
+        fail "shadow linked_decisions lists a duplicate decision (${detail}): $doc"
+        problems=1
+        ;;
+      not_capsule)
+        fail "shadow linked_decisions must name a decision capsule, not the index (${detail}): $doc"
+        problems=1
+        ;;
+      shape)
+        fail "shadow linked_decisions entry must be a repo-relative docs/decisions/decision-<id>.md path (${detail}): $doc"
+        problems=1
+        ;;
+      dangling)
+        fail "shadow linked_decisions reference does not resolve (${detail}): $doc"
+        problems=1
+        ;;
+      superseded)
+        fail "shadow linked_decisions points at a superseded decision (${detail}); link the successor: $doc"
+        problems=1
+        ;;
+      proposed)
+        # Non-blocking in both modes: linking a proposal is legitimate while it
+        # is being decided, but it must not read as settled rationale.
+        soft_warn "shadow linked_decisions points at a proposed decision (${detail}): $doc"
+        ;;
+      no_status)
+        fail "shadow linked_decisions target has no readable status (${detail}): $doc"
+        problems=1
+        ;;
+    esac
+  done <<< "$lint_output"
+
+  # A corpus with no rationale at all is not a finding; only report the clean
+  # state when the field is actually in use (count comes from the same parser,
+  # so a fenced example can never be mistaken for a real declaration).
+  if (( problems == 0 )) && (( declared_count > 0 )); then
+    pass "shadow linked_decisions resolve to operative decision capsules"
+  fi
+}
+
+# Advisory-only, and additionally gated on an adoption signal: a policy registry
+# still carrying only its shipped `template_linked_*` placeholder is unadopted,
+# not broken. Warning about it in a project that has no decisions yet would tell
+# the author to link a capsule that cannot exist. Once the project has written
+# even one decision capsule, an unfilled placeholder IS rot worth naming -- this
+# repo carried three dangling placeholder targets unnoticed for months because
+# presence-only checking accepted them.
+#
+# MODE is checked in the body, not by the caller: unlike the shadow-graph checks,
+# check_shadow_policy_files runs in BOTH modes, so an ungated fail here would put
+# new findings into strict.
+check_policy_decision_links() {
+  local policy_file="$1"
+  local label="$2"
+  local singular_key="$3"
+  local plural_key="$4"
+  local raw_value
+  local entry
+  local key
+  local concrete_values
+  local has_placeholder
+  local target_id
+  local -a entries
+
+  [[ "$MODE" != "strict" ]] || return 0
+  [[ -f "$policy_file" ]] || return 0
+
+  # Both concrete forms are validated when both exist: preferring one silently
+  # would let a dangling value hide behind a healthy sibling field.
+  concrete_values=""
+  for key in "$singular_key" "$plural_key"; do
+    raw_value="$(extract_field_value "$policy_file" "$key")"
+    [[ -n "$raw_value" ]] || continue
+    concrete_values="${concrete_values}${concrete_values:+,}${raw_value}"
+  done
+
+  if [[ -z "$concrete_values" ]]; then
+    # No concrete link at all. Only nudge where the placeholder is actually still
+    # in place AND adoption is possible (a project with at least one real capsule);
+    # otherwise a fresh scaffold would be told to link something that cannot exist.
+    has_placeholder=""
+    for key in "template_${singular_key}" "template_${plural_key}"; do
+      if [[ -n "$(extract_field_value "$policy_file" "$key")" ]]; then
+        has_placeholder="yes"
+        break
+      fi
+    done
+    [[ -n "$has_placeholder" ]] || return 0
+    if [[ -n "$(find "$DECISIONS_DIR" -maxdepth 1 -type f -name 'decision-*.md' ! -name 'decision-index.md' ! -name 'decision-template.md' 2>/dev/null | head -n 1)" ]]; then
+      fail "${label} still carries only the shipped template_${singular_key} placeholder: replace it with a real ${singular_key} now that this project has decision capsules ($policy_file)"
+    fi
+    return 0
+  fi
+
+  entries=()
+  IFS=',' read -r -a entries <<< "$concrete_values"
+  for entry in "${entries[@]}"; do
+    entry="$(printf '%s' "$entry" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    [[ -n "$entry" ]] || continue
+    target_id="${entry##*/}"
+    target_id="${target_id%.md}"
+    if [[ ! -f "$DECISIONS_DIR/${target_id}.md" ]]; then
+      fail "${label} ${singular_key} does not resolve to a decision capsule (${entry}): expected $DECISIONS_DIR/${target_id}.md"
+    fi
+  done
+}
+
+check_shadow_router_task_link() {
+  local router_file="$SHADOW_DIR/project-shadow.md"
+  local task_value
+
+  [[ -f "$router_file" ]] || return 0
+  task_value="$(extract_field_value "$router_file" "updated_by_task")"
+  [[ -n "$task_value" ]] || return 0
+
+  # Shape first, existence second: without the anchored pattern, a value carrying
+  # a trailing note ("TASK-x (done)") or a path fragment would either be looked up
+  # as a nonsense filename or, worse, resolve outside docs/task via `../`.
+  if [[ ! "$task_value" =~ ^TASK-[A-Za-z0-9._-]+$ ]]; then
+    fail "shadow router updated_by_task must be a bare TASK-<id> value (${task_value}): $router_file"
+    return 0
+  fi
+
+  if [[ -f "$TASK_DIR/${task_value}.md" ]]; then
+    pass "shadow router updated_by_task resolves to a real task"
+  else
+    fail "shadow router updated_by_task does not resolve to a task file (${task_value}): expected $TASK_DIR/${task_value}.md"
+  fi
+}
+
 collect_versioned_registry_ids() {
   local file_path="$1"
   grep -E '^[[:space:]]{2,}[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+@v[0-9]+:' "$file_path" 2>/dev/null \
@@ -1648,4 +1825,10 @@ check_shadow_policy_files() {
   regex_ids="$(collect_versioned_registry_ids_in_block "$regex_file" "regex_patterns")"
   check_rule_registry_refs_exist "$rule_file" "primary" "$catalog_ids" "validator catalog id"
   check_rule_registry_refs_exist "$rule_file" "fallback" "$regex_ids" "regex pattern id"
+
+  # The check_any_field_non_empty calls above prove a link field is PRESENT;
+  # these resolve what it points at (advisory tier, adoption-gated).
+  check_policy_decision_links "$catalog_file" "shadow validator catalog" "linked_decision" "linked_decisions"
+  check_policy_decision_links "$regex_file" "shadow regex pattern registry" "linked_decision" "linked_decisions"
+  check_policy_decision_links "$rule_file" "shadow rule registry" "linked_decision" "linked_decisions"
 }

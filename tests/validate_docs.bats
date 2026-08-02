@@ -503,7 +503,7 @@ EOF
   run env -i PATH="$PATH" HOME="$HOME" bash "$VALIDATE" "$TEST_PROJECT" --mode advisory
   # The crash killed the shell mid-run: no [RESULT] line and a 128+signal status.
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[RESULT]"* ]]
+  assert_contains "$output" "[RESULT]"
 }
 
 @test "validate_docs advisory reports tmp and _archive references from the same corpus scan" {
@@ -540,8 +540,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] docs reference a gitignored tmp/ path (${DOCS_ROOT}/task/TASK-mixed-scan-01.md:"* ]]
-  [[ "$output" == *"[WARN] docs reference a deleted _archive path (${DOCS_ROOT}/plan/PLAN-mixed-scan-01-v1.0.md:"* ]]
+  assert_contains "$output" "[WARN] docs reference a gitignored tmp/ path (${DOCS_ROOT}/task/TASK-mixed-scan-01.md:"
+  assert_contains "$output" "[WARN] docs reference a deleted _archive path (${DOCS_ROOT}/plan/PLAN-mixed-scan-01-v1.0.md:"
 }
 
 @test "validate_docs strict mode fails on empty required fields" {
@@ -4561,4 +4561,220 @@ assert o["counts"]["fail"] == 0, o
 assert o["counts"]["warn"] == 1, o
 assert all(i["tier"] == "warn" for i in o["issues"]), o
 '
+}
+
+# --- linked_decisions rationale edges ---
+
+_rationale_capsule() {
+  # $1 = decision id suffix, $2 = status
+  cat > "$DOCS_ROOT/decisions/decision-${1}.md" <<EOF
+# decision-${1}
+
+- decision_id: ${1}
+- title: fixture
+- date: 2026-08-01
+- scope_type: task
+- status: ${2}
+- chosen_by: user
+- linked_task: TASK-${1}
+- last_updated: 2026-08-01T00:00:00Z
+EOF
+}
+
+_rationale_overview() {
+  # $1 = linked_decisions value (may be empty)
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  {
+    printf '# Shadow Unit Overview\n\n- doc_role: unit_overview\n- home_bucket: apps\n'
+    printf -- '- linked_decisions: %s\n' "$1"
+    printf -- '- last_updated: 2026-08-01T00:00:00Z\n'
+  } > "$DOCS_ROOT/shadow/apps/app-a/overview.md"
+}
+
+@test "validate_docs advisory accepts linked_decisions pointing at an accepted capsule" {
+  _rationale_capsule rationale-ok-01 accepted
+  _rationale_overview "docs/decisions/decision-rationale-ok-01.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow linked_decisions resolve to operative decision capsules"
+  refute_contains "$output" "[WARN] shadow linked_decisions"
+}
+
+@test "validate_docs advisory warns when a linked_decisions entry does not resolve" {
+  _rationale_overview "docs/decisions/decision-nowhere-01.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow linked_decisions reference does not resolve (docs/decisions/decision-nowhere-01.md)"
+}
+
+@test "validate_docs advisory warns when linked_decisions points at a superseded decision" {
+  _rationale_capsule rationale-old-01 superseded
+  _rationale_overview "docs/decisions/decision-rationale-old-01.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "points at a superseded decision (docs/decisions/decision-rationale-old-01.md); link the successor"
+}
+
+@test "validate_docs notes a proposed linked_decisions target without failing strict" {
+  _rationale_capsule rationale-proposed-01 proposed
+  _rationale_overview "docs/decisions/decision-rationale-proposed-01.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  assert_contains "$output" "points at a proposed decision (docs/decisions/decision-rationale-proposed-01.md)"
+  # soft_warn never contributes to the issue count, in either mode.
+  [ "$status" -eq 0 ]
+}
+
+@test "validate_docs advisory warns when a linked_decisions target has no readable status" {
+  mkdir -p "$DOCS_ROOT/decisions"
+  printf '# decision-rationale-nostatus-01\n\n- decision_id: rationale-nostatus-01\n' \
+    > "$DOCS_ROOT/decisions/decision-rationale-nostatus-01.md"
+  _rationale_overview "docs/decisions/decision-rationale-nostatus-01.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow linked_decisions target has no readable status (docs/decisions/decision-rationale-nostatus-01.md)"
+}
+
+@test "validate_docs advisory warns on a duplicate or empty linked_decisions member" {
+  _rationale_capsule rationale-dup-01 accepted
+  _rationale_overview "docs/decisions/decision-rationale-dup-01.md, docs/decisions/decision-rationale-dup-01.md, , docs/decisions/decision-rationale-dup-01.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "lists a duplicate decision (docs/decisions/decision-rationale-dup-01.md)"
+  assert_contains "$output" "shadow linked_decisions has an empty member"
+}
+
+@test "validate_docs advisory warns when linked_decisions names the decision index" {
+  _rationale_overview "docs/decisions/decision-index.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "must name a decision capsule, not the index (docs/decisions/decision-index.md)"
+}
+
+@test "validate_docs advisory warns on a bare-id linked_decisions member" {
+  _rationale_overview "n26fa0-01"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "must be a repo-relative docs/decisions/decision-<id>.md path (n26fa0-01)"
+}
+
+@test "validate_docs advisory warns when linked_decisions sits on a non-carrier doc_role" {
+  _rationale_capsule rationale-role-01 accepted
+  cat > "$DOCS_ROOT/shadow/_global.md" <<'EOF'
+# Shadow Global
+
+- doc_role: global
+- linked_decisions: docs/decisions/decision-rationale-role-01.md
+- last_updated: 2026-08-01T00:00:00Z
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "only valid on unit_overview or concern_leaf (doc_role=global)"
+}
+
+@test "validate_docs advisory warns when linked_decisions is written as nested bullets" {
+  _rationale_capsule rationale-nested-01 accepted
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: apps
+- linked_decisions:
+  - docs/decisions/decision-rationale-nested-01.md
+- last_updated: 2026-08-01T00:00:00Z
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "must be an inline comma list, not nested bullets"
+}
+
+@test "validate_docs advisory stays silent on an empty or fenced-only linked_decisions" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: apps
+- linked_decisions:
+- last_updated: 2026-08-01T00:00:00Z
+
+Template example:
+
+```
+- linked_decisions: docs/decisions/decision-fenced-example-01.md
+```
+~~~
+- linked_decisions: docs/decisions/decision-tilde-example-01.md
+~~~
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "shadow linked_decisions"
+}
+
+@test "validate_docs strict mode skips the linked_decisions check entirely" {
+  _rationale_overview "docs/decisions/decision-nowhere-01.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  refute_contains "$output" "shadow linked_decisions"
+}
+
+@test "validate_docs advisory warns when the shadow router updated_by_task does not resolve" {
+  perl -0pi -e 's{^- updated_by_task:.*$}{- updated_by_task: TASK-does-not-exist-01}m' \
+    "$DOCS_ROOT/shadow/project-shadow.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow router updated_by_task does not resolve to a task file (TASK-does-not-exist-01)"
+}
+
+@test "validate_docs advisory accepts a resolving router updated_by_task and ignores an empty one" {
+  # Scaffold ships the field empty: that is "not yet claimed", not a defect.
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "shadow router updated_by_task"
+
+  printf '# TASK-router-link-01\n\n- title: t\n- status: planned\n- owner: test\n' \
+    > "$DOCS_ROOT/task/TASK-router-link-01.md"
+  printf -- '- TASK-router-link-01 | planned | t\n' >> "$DOCS_ROOT/task/task-index.md"
+  perl -0pi -e 's{^- updated_by_task:.*$}{- updated_by_task: TASK-router-link-01}m' \
+    "$DOCS_ROOT/shadow/project-shadow.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow router updated_by_task resolves to a real task"
+}
+
+@test "validate_docs advisory nudges an unfilled policy template_linked_decision only once decisions exist" {
+  # Fresh scaffold: policy files carry only their shipped placeholders and there
+  # is no local capsule to link, so the nudge must stay silent.
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "still carries only the shipped template_linked_decision placeholder"
+
+  _rationale_capsule policy-nudge-01 accepted
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow rule registry still carries only the shipped template_linked_decision placeholder"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  refute_contains "$output" "still carries only the shipped template_linked_decision placeholder"
+}
+
+@test "validate_docs advisory resolves a concrete policy linked_decision value" {
+  _rationale_capsule policy-real-01 accepted
+  printf -- '- linked_decision: decision-policy-real-01\n' >> "$DOCS_ROOT/policy/shadow-validator-catalog.md"
+  printf -- '- linked_decision: decision-policy-missing-01\n' >> "$DOCS_ROOT/policy/shadow-regex-patterns.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "shadow validator catalog linked_decision does not resolve"
+  assert_contains "$output" "shadow regex pattern registry linked_decision does not resolve to a decision capsule (decision-policy-missing-01)"
+}
+
+@test "validate_docs advisory flags a trailing-comma linked_decisions member" {
+  # `IFS=',' read -a` silently drops a trailing empty field, which would let the
+  # bash rule accept a value the python report (str.split) reports as malformed.
+  # The two implementations must agree on the grammar, so this pins the split.
+  _rationale_capsule rationale-trailing-01 accepted
+  _rationale_overview "docs/decisions/decision-rationale-trailing-01.md,"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow linked_decisions has an empty member"
 }

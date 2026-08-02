@@ -415,6 +415,8 @@ if [[ -d "$SHADOW_DIR" && "$MODE" != "strict" ]]; then
   check_shadow_source_digest
   check_shadow_source_paths_exist
   check_shadow_unit_schema
+  check_shadow_linked_decisions
+  check_shadow_router_task_link
 fi
 
 # --- Task file checks ---
