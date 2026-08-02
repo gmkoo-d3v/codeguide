@@ -16,7 +16,7 @@ load codeguide_helper
   # Verify context was written
   run grep "^- context:" "$DOCS_ROOT/decisions/decision-test-001.md"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Important context here"* ]]
+  assert_contains "$output" "Important context here"
 
   # Run again with empty context — should NOT overwrite
   "$DOC_GARDEN" "$TEST_PROJECT" \
@@ -29,12 +29,12 @@ load codeguide_helper
   # Context should still have the original value
   run grep "^- context:" "$DOCS_ROOT/decisions/decision-test-001.md"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Important context here"* ]]
+  assert_contains "$output" "Important context here"
 
   # Rationale should still have the original value
   run grep "^- rationale:" "$DOCS_ROOT/decisions/decision-test-001.md"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Real rationale"* ]]
+  assert_contains "$output" "Real rationale"
 }
 
 @test "upsert_field allows empty overwrite with --allow-empty-overwrite" {
@@ -45,7 +45,7 @@ load codeguide_helper
     --no-init
 
   run grep "^- context:" "$DOCS_ROOT/decisions/decision-test-002.md"
-  [[ "$output" == *"Will be cleared"* ]]
+  assert_contains "$output" "Will be cleared"
 
   "$DOC_GARDEN" "$TEST_PROJECT" \
     --decision-id "test-002" \
@@ -73,7 +73,7 @@ load codeguide_helper
     --no-init
 
   run grep "^- axis_why:" "$DOCS_ROOT/task/TASK-100.md"
-  [[ "$output" == *"SOLID principle applied"* ]]
+  assert_contains "$output" "SOLID principle applied"
 
   # Run again without axis values — should preserve existing
   "$DOC_GARDEN" "$TEST_PROJECT" \
@@ -82,19 +82,19 @@ load codeguide_helper
     --no-init
 
   run grep "^- axis_why:" "$DOCS_ROOT/task/TASK-100.md"
-  [[ "$output" == *"SOLID principle applied"* ]]
+  assert_contains "$output" "SOLID principle applied"
 
   run grep "^- axis_where:" "$DOCS_ROOT/task/TASK-100.md"
-  [[ "$output" == *"Service layer"* ]]
+  assert_contains "$output" "Service layer"
 
   run grep "^- axis_verify:" "$DOCS_ROOT/task/TASK-100.md"
-  [[ "$output" == *"Unit tests added"* ]]
+  assert_contains "$output" "Unit tests added"
 }
 
 @test "infer_task_id: explicit --task-id has highest priority" {
   run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "EXPLICIT-99" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"task_id: EXPLICIT-99"* ]]
+  assert_contains "$output" "task_id: EXPLICIT-99"
 }
 
 @test "infer_task_id: branch pattern takes priority over latest task file" {
@@ -108,7 +108,7 @@ load codeguide_helper
   # But we verify the explicit task-id still works correctly
   run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "BRANCH-42" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"task_id: BRANCH-42"* ]]
+  assert_contains "$output" "task_id: BRANCH-42"
 }
 
 @test "skills package root can resolve to parent project docs root" {
@@ -169,7 +169,7 @@ EOF
 
   run "$VALIDATE" "$app_dir" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"docs directory exists"* ]]
+  assert_contains "$output" "docs directory is missing: $expected_docs_root"
 
   rm -rf "$workspace"
 }
@@ -202,7 +202,7 @@ EOF
     --no-init
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Concrete --approval-ref"* ]]
+  assert_contains "$output" "Concrete --approval-ref"
   run test ! -f "$DOCS_ROOT/orchestration/orch-approved-placeholder-01/ORCH.md"
   [ "$status" -eq 0 ]
 
@@ -215,7 +215,7 @@ EOF
     --approved-next-step "pending_user_approval"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Concrete --approval-ref"* ]]
+  assert_contains "$output" "Concrete --approval-ref"
   run test ! -f "$DOCS_ROOT/orchestration/run-approved-placeholder-01/ORCH.md"
   [ "$status" -eq 0 ]
 
@@ -255,7 +255,7 @@ exit 99'
     --approved-next-step "run external reviewers"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Concrete --approval-ref"* ]]
+  assert_contains "$output" "Concrete --approval-ref"
   run test ! -e "$TEST_WORKSPACE/agy-approved-placeholder-called"
   [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/agy-approved-placeholder-called-2"
@@ -273,7 +273,7 @@ exit 99'
       --risk-preflight-recorded-by "$identity"
 
     [ "$status" -ne 0 ]
-    [[ "$output" == *"--risk-preflight-recorded-by must identify the main-thread supervising lead architect"* ]]
+    assert_contains "$output" "--risk-preflight-recorded-by must identify the main-thread supervising lead architect"
   done
 
   "$DOC_GARDEN" "$TEST_PROJECT" \
@@ -314,7 +314,7 @@ EOF
 
     run "$VALIDATE" "$TEST_PROJECT" --mode strict
     [ "$status" -ne 0 ]
-    [[ "$output" == *"risk_preflight_recorded_by must identify the main-thread supervising lead architect"* ]]
+    assert_contains "$output" "risk_preflight_recorded_by must identify the main-thread supervising lead architect"
   done
 }
 
@@ -329,7 +329,7 @@ EOF
   # Verify the row is under ## Planned section
   run grep "^- TASK-300 |" "$index"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"planned"* ]]
+  assert_contains "$output" "planned"
 
   # Move to in_progress
   "$DOC_GARDEN" "$TEST_PROJECT" \
@@ -344,7 +344,7 @@ EOF
   [ "$count" -eq 1 ]
 
   run grep "^- TASK-300 |" "$index"
-  [[ "$output" == *"in_progress"* ]]
+  assert_contains "$output" "in_progress"
 }
 
 @test "task-index prevents duplicate rows" {
@@ -371,7 +371,7 @@ EOF
   count=$(grep -c "^- TASK-400 |" "$index")
   [ "$count" -eq 1 ]
   run grep "^- TASK-400 |" "$index"
-  [[ "$output" == *"done"* ]]
+  assert_contains "$output" "done"
 }
 
 # ========== P1: change-scope branching ==========
@@ -379,13 +379,13 @@ EOF
 @test "run_codeguide reports docs-only scope by default" {
   run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "500" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"change_scope: docs-only"* ]]
+  assert_contains "$output" "change_scope: docs-only"
 }
 
 @test "run_codeguide forwards risk_level into generated docs" {
   run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "risk-run-01" --mode advisory --risk-level "critical"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"risk_level: critical"* ]]
+  assert_contains "$output" "risk_level: critical"
 
   run grep "^- risk_level: critical" "$DOCS_ROOT/task/TASK-risk-run-01.md"
   [ "$status" -eq 0 ]
@@ -396,7 +396,7 @@ EOF
 @test "run_codeguide fails clearly when option value is missing" {
   run "$RUN_CODEGUIDE" "$TEST_PROJECT" --mode
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Option --mode requires a value"* ]]
+  assert_contains "$output" "Option --mode requires a value"
 }
 
 @test "run_codeguide requires risk preflight before delegated orchestration" {
@@ -406,7 +406,7 @@ EOF
     --execution-mode "supervisor_subagents"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"--risk-preflight-status is required before delegated orchestration"* ]]
+  assert_contains "$output" "--risk-preflight-status is required before delegated orchestration"
   run test ! -f "$DOCS_ROOT/orchestration/run-preflight-gate-01/ORCH.md"
   [ "$status" -eq 0 ]
 }
@@ -435,8 +435,8 @@ EOF
     --runtime-test-cmd "echo test-pass" \
     --runtime-allow-list "$allow_file"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"change_scope: code-or-runtime"* ]]
-  [[ "$output" == *"test-pass"* ]]
+  assert_contains "$output" "change_scope: code-or-runtime"
+  assert_contains "$output" "test-pass"
 }
 
 @test "run_codeguide passes shadow note through to project shadow" {
@@ -448,7 +448,7 @@ EOF
 
   run grep "^- latest_change_note:" "$DOCS_ROOT/shadow/project-shadow.md"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"search and navigation updated"* ]]
+  assert_contains "$output" "search and navigation updated"
 }
 
 @test "SKILL.md documents pre-orchestration risk approval gate" {
@@ -491,7 +491,7 @@ EOF
   local index="$DOCS_ROOT/decisions/decision-index.md"
   run grep "^- decision-d-sec-01.md |" "$index"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"proposed"* ]]
+  assert_contains "$output" "proposed"
 
   # Move to accepted
   "$DOC_GARDEN" "$TEST_PROJECT" \
@@ -505,7 +505,7 @@ EOF
   count=$(grep -c "^- decision-d-sec-01.md |" "$index")
   [ "$count" -eq 1 ]
   run grep "^- decision-d-sec-01.md |" "$index"
-  [[ "$output" == *"accepted"* ]]
+  assert_contains "$output" "accepted"
 }
 
 @test "decision-index prevents duplicate rows" {
@@ -535,7 +535,7 @@ EOF
   count=$(grep -c "^- decision-d-dup-01.md |" "$index")
   [ "$count" -eq 1 ]
   run grep "^- decision-d-dup-01.md |" "$index"
-  [[ "$output" == *"superseded"* ]]
+  assert_contains "$output" "superseded"
 }
 
 @test "decision-index migrates legacy table format" {
@@ -587,8 +587,8 @@ EOF
   # TEST_PROJECT is created with mktemp, not a git repo
   run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "nogit-01" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Not a git repository"* ]]
-  [[ "$output" == *"task_id: nogit-01"* ]]
+  assert_contains "$output" "Not a git repository"
+  assert_contains "$output" "task_id: nogit-01"
 }
 
 @test "run_codeguide in non-git falls back to latest task file when no explicit id" {
@@ -602,7 +602,7 @@ EOF
   run "$RUN_CODEGUIDE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
   # Should pick up the existing task file since no branch can be inferred
-  [[ "$output" == *"task_id: existing-77"* ]]
+  assert_contains "$output" "task_id: existing-77"
 }
 
 @test "run_codeguide in non-git requires --task-id when multiple active tasks exist" {
@@ -620,8 +620,8 @@ EOF
 
   run "$RUN_CODEGUIDE" "$TEST_PROJECT" --mode advisory
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Multiple active tasks detected"* ]]
-  [[ "$output" == *"Use --task-id"* ]]
+  assert_contains "$output" "Multiple active tasks detected"
+  assert_contains "$output" "Use --task-id"
 }
 
 @test "run_codeguide in non-git with no tasks uses timestamp fallback" {
@@ -636,7 +636,7 @@ EOF
   run "$RUN_CODEGUIDE" "$fresh_project" --mode advisory
   [ "$status" -eq 0 ]
   # Timestamp fallback starts with "A" followed by digits
-  [[ "$output" == *"task_id: A2"* ]]
+  assert_contains "$output" "task_id: A2"
   rm -rf "$fresh_workspace"
 }
 
@@ -662,7 +662,7 @@ EOF
 
   run "$RUN_CODEGUIDE" "$proj" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"task_id: cg-77"* ]]
+  assert_contains "$output" "task_id: cg-77"
   run test -f "$proj/docs/task/TASK-cg-77.md"
   [ "$status" -eq 0 ]
 

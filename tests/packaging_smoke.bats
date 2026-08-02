@@ -115,17 +115,17 @@ PY
 
   run PACKAGING_SMOKE --skill-root "$root" --no-exit-code
   [ "$status" -eq 0 ]
-  [[ "$output" == *"# Packaging Smoke Report ($root)"* ]]
-  [[ "$output" == *"## DEV-ARTIFACT summary"* ]]
-  [[ "$output" == *".git/**: "* ]]
-  [[ "$output" == *"__pycache__/**: 2"* ]]
-  [[ "$output" == *"*.pyc: 1"* ]]
-  [[ "$output" == *".DS_Store: 2"* ]]
-  [[ "$output" == *"UNKNOWN (4)"* ]]
-  [[ "$output" == *"  test"* ]]
-  [[ "$output" == *"  weird folder/file.txt"* ]]
-  [[ "$output" == *"  scripts2/evil.py"* ]]
-  [[ "$output" == *"  tests-legacy/old.py"* ]]
+  assert_contains "$output" "# Packaging Smoke Report ($(cd "$root" && pwd -P))"
+  assert_contains "$output" "## DEV-ARTIFACT summary"
+  assert_contains "$output" ".git/**: "
+  assert_contains "$output" "__pycache__/**: 2"
+  assert_contains "$output" "*.pyc: 1"
+  assert_contains "$output" ".DS_Store: 2"
+  assert_contains "$output" "UNKNOWN (4)"
+  assert_contains "$output" "  test"
+  assert_contains "$output" "  weird folder/file.txt"
+  assert_contains "$output" "  scripts2/evil.py"
+  assert_contains "$output" "  tests-legacy/old.py"
 }
 
 @test "packaging smoke exits 0 by default when nothing is UNKNOWN" {
@@ -138,7 +138,7 @@ PY
 
   run PACKAGING_SMOKE --skill-root "$root"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"unknown_count: 0"* ]]
+  assert_contains "$output" "unknown_count: 0"
 }
 
 @test "packaging smoke --no-exit-code stays 0 even though UNKNOWN paths are reported" {
@@ -147,7 +147,7 @@ PY
 
   run PACKAGING_SMOKE --skill-root "$root" --no-exit-code
   [ "$status" -eq 0 ]
-  [[ "$output" == *"unknown_count: 4"* ]]
+  assert_contains "$output" "unknown_count: 4"
 }
 
 @test "packaging smoke classifies a symlink by its own path and never follows it into another tree" {
@@ -227,7 +227,7 @@ PY
 @test "packaging smoke exits 2 with an error when --skill-root is not a directory" {
   run PACKAGING_SMOKE --skill-root "$TEST_WORKSPACE/does-not-exist"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"error:"* ]]
+  assert_contains "$output" "error:"
 }
 
 @test "packaging smoke rejects an unknown --format value with exit 2 (argparse contract)" {
@@ -238,12 +238,12 @@ PY
 @test "packaging smoke runs against the real skill root without crashing and reports well-formed sections" {
   run PACKAGING_SMOKE --no-exit-code
   [ "$status" -eq 0 ]
-  [[ "$output" == *"# Packaging Smoke Report"* ]]
-  [[ "$output" == *"- ship_count:"* ]]
-  [[ "$output" == *"- dev_artifact_count:"* ]]
-  [[ "$output" == *"- unknown_count:"* ]]
-  [[ "$output" == *"## DEV-ARTIFACT summary"* ]]
-  [[ "$output" == *"## UNKNOWN"* ]]
+  assert_contains "$output" "# Packaging Smoke Report"
+  assert_contains "$output" "- ship_count:"
+  assert_contains "$output" "- dev_artifact_count:"
+  assert_contains "$output" "- unknown_count:"
+  assert_contains "$output" "## DEV-ARTIFACT summary"
+  assert_contains "$output" "## UNKNOWN"
 
   local ship_line ship_count
   ship_line="$(printf '%s\n' "$output" | grep '^- ship_count:')"

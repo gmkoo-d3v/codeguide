@@ -46,8 +46,8 @@ EOF
 @test "check_env --help prints usage and exits 0" {
   run bash "$CHECK_ENV" --help
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Usage:"* ]]
-  [[ "$output" == *"--skip-pytest"* ]]
+  assert_contains "$output" "Usage:"
+  assert_contains "$output" "--skip-pytest"
 }
 
 @test "check_env passes with a complete stub toolchain" {
@@ -56,7 +56,7 @@ EOF
 
   run env PATH="$stub_dir:/usr/bin:/bin" bash "$CHECK_ENV"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[RESULT] Environment check passed."* ]]
+  assert_contains "$output" "[RESULT] Environment check passed."
 }
 
 @test "check_env fails with remediation when bats is missing" {
@@ -66,8 +66,8 @@ EOF
 
   run env PATH="$stub_dir:/usr/bin:/bin" bash "$CHECK_ENV"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"bats not found on PATH"* ]]
-  [[ "$output" == *"remediation:"* ]]
+  assert_contains "$output" "bats not found on PATH"
+  assert_contains "$output" "remediation:"
 }
 
 @test "check_env fails when pytest is not importable and passes with --skip-pytest" {
@@ -76,27 +76,27 @@ EOF
 
   run env PATH="$stub_dir:/usr/bin:/bin" bash "$CHECK_ENV"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"pytest is not importable"* ]]
+  assert_contains "$output" "pytest is not importable"
 
   run env PATH="$stub_dir:/usr/bin:/bin" bash "$CHECK_ENV" --skip-pytest
   [ "$status" -eq 0 ]
-  [[ "$output" == *"pytest check skipped"* ]]
+  assert_contains "$output" "pytest check skipped"
 }
 
 @test "check_env rejects unknown options" {
   run bash "$CHECK_ENV" --frobnicate
   [ "$status" -eq 2 ]
-  [[ "$output" == *"Unknown option"* ]]
+  assert_contains "$output" "Unknown option"
 }
 
 @test "check_all --help prints the gate description and exits 0" {
   run bash "$CHECK_ALL" --help
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Single quality gate"* ]]
+  assert_contains "$output" "Single quality gate"
 }
 
 @test "check_all rejects unknown options" {
   run bash "$CHECK_ALL" --frobnicate
   [ "$status" -eq 2 ]
-  [[ "$output" == *"Unknown option"* ]]
+  assert_contains "$output" "Unknown option"
 }

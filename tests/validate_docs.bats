@@ -129,7 +129,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] external review await gate not satisfied for TASK-await-gate-requested-01: external_review_status=requested"* ]]
+  assert_contains "$output" "[WARN] external review await gate not satisfied for TASK-await-gate-requested-01: external_review_status=requested"
 }
 
 @test "validate_docs advisory warns when dependent external review is not requested" {
@@ -137,7 +137,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] external review await gate not satisfied for TASK-await-gate-not-requested-01: external_review_status=not_requested"* ]]
+  assert_contains "$output" "[WARN] external review await gate not satisfied for TASK-await-gate-not-requested-01: external_review_status=not_requested"
 }
 
 @test "validate_docs advisory warns when dependent external review is blocked" {
@@ -145,7 +145,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] external review await gate not satisfied for TASK-await-gate-blocked-01: external_review_status=blocked"* ]]
+  assert_contains "$output" "[WARN] external review await gate not satisfied for TASK-await-gate-blocked-01: external_review_status=blocked"
 }
 
 @test "validate_docs advisory warns when ingested review lacks required route accept" {
@@ -155,7 +155,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] external review await gate missing accepted route artifact for claude:current"* ]]
+  assert_contains "$output" "[WARN] external review await gate missing accepted route artifact for claude:current"
 }
 
 @test "validate_docs advisory passes when ingested review has all required route accepts" {
@@ -165,8 +165,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" != *"[WARN] external review await gate"* ]]
-  [[ "$output" == *"[PASS] external review await gate satisfied for PLAN-await-gate-accept-01-v1.0"* ]]
+  refute_contains "$output" "[WARN] external review await gate"
+  assert_contains "$output" "[PASS] external review await gate satisfied for PLAN-await-gate-accept-01-v1.0"
 }
 
 @test "validate_docs advisory warns when waived review lacks ref or reason" {
@@ -174,7 +174,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] external review await gate waiver requires concrete external_review_waiver_ref and external_review_waiver_reason"* ]]
+  assert_contains "$output" "[WARN] external review await gate waiver requires concrete external_review_waiver_ref and external_review_waiver_reason"
 }
 
 @test "validate_docs advisory passes when waived review has concrete ref and reason" {
@@ -182,8 +182,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" != *"[WARN] external review await gate"* ]]
-  [[ "$output" == *"[PASS] external review await gate waived with concrete provenance"* ]]
+  refute_contains "$output" "[WARN] external review await gate"
+  assert_contains "$output" "[PASS] external review await gate waived with concrete provenance"
 }
 
 @test "validate_docs advisory does not warn independent task when ORCH does not require implementation review" {
@@ -191,7 +191,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" != *"[WARN] external review await gate"* ]]
+  refute_contains "$output" "[WARN] external review await gate"
 }
 
 @test "validate_docs advisory warns when dependent task misses external_review_status" {
@@ -199,7 +199,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] external review await gate requires external_review_status for TASK-await-gate-missing-status-01"* ]]
+  assert_contains "$output" "[WARN] external review await gate requires external_review_status for TASK-await-gate-missing-status-01"
 }
 
 @test "validate_docs advisory warns when implementation-start review omits consumes_plan_ref" {
@@ -207,7 +207,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] external review await gate requires same-task consumes_plan_ref for TASK-await-gate-no-consumes-01"* ]]
+  assert_contains "$output" "[WARN] external review await gate requires same-task consumes_plan_ref for TASK-await-gate-no-consumes-01"
 }
 
 @test "validate_docs advisory warns when external_review_status is outside allowlist enum" {
@@ -215,7 +215,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] external review await gate has invalid external_review_status for TASK-await-gate-invalid-status-01: skipped"* ]]
+  assert_contains "$output" "[WARN] external review await gate has invalid external_review_status for TASK-await-gate-invalid-status-01: skipped"
 }
 
 @test "validate_docs advisory warns when external_review_required_for is outside allowlist enum" {
@@ -223,7 +223,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] invalid orchestration.external_review_required_for value in "*": before_implementation (allowed: plan_acceptance|implementation_start|commit|close)"* ]]
+  assert_contains "$output" "[WARN] invalid orchestration.external_review_required_for value in "
+  assert_contains "$output" ": before_implementation (allowed: plan_acceptance|implementation_start|commit|close)"
 }
 
 @test "validate_docs advisory warns when ingested result_ref directory is absent" {
@@ -231,7 +232,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] external review await gate result_ref directory missing or not a directory"* ]]
+  assert_contains "$output" "[WARN] external review await gate result_ref directory missing or not a directory"
 }
 
 @test "validate_docs advisory warns when waived review uses placeholder values" {
@@ -239,7 +240,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] external review await gate waiver requires concrete external_review_waiver_ref and external_review_waiver_reason"* ]]
+  assert_contains "$output" "[WARN] external review await gate waiver requires concrete external_review_waiver_ref and external_review_waiver_reason"
 }
 
 @test "validate_docs advisory warns when ingested review routes are empty or unparseable" {
@@ -249,7 +250,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] external review await gate requires non-empty required_review_routes"* ]]
+  assert_contains "$output" "[WARN] external review await gate requires non-empty required_review_routes"
 }
 
 @test "validate_docs advisory warns when required review route is not registry resolvable" {
@@ -259,7 +260,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] external review await gate required_review_routes must use registered colon route: agy:not-a-real-route"* ]]
+  assert_contains "$output" "[WARN] external review await gate required_review_routes must use registered colon route: agy:not-a-real-route"
 }
 
 @test "validate_docs rejects legacy root orchestration paths" {
@@ -272,8 +273,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"legacy root orchestration file is not supported"* ]]
-  [[ "$output" == *"legacy external CLI handoff root is not supported"* ]]
+  assert_contains "$output" "legacy root orchestration file is not supported"
+  assert_contains "$output" "legacy external CLI handoff root is not supported"
 }
 
 @test "validate_docs strict fails on an orphaned orchestration capsule with no matching task file" {
@@ -287,9 +288,9 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"orphaned orchestration capsule with no matching task file"* ]]
-  [[ "$output" == *"docs/orchestration/ghost-capsule-01"* ]]
-  [[ "$output" == *"TASK-ghost-capsule-01.md"* ]]
+  assert_contains "$output" "orphaned orchestration capsule with no matching task file"
+  assert_contains "$output" "docs/orchestration/ghost-capsule-01"
+  assert_contains "$output" "TASK-ghost-capsule-01.md"
 }
 
 @test "validate_docs advisory warns when an orchestration capsule is missing its task-index row" {
@@ -310,8 +311,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] orphaned orchestration capsule: task-index missing row for TASK-capsule-no-index-01"* ]]
-  [[ "$output" != *"orphaned orchestration capsule with no matching task file"* ]]
+  assert_contains "$output" "[WARN] orphaned orchestration capsule: task-index missing row for TASK-capsule-no-index-01"
+  refute_contains "$output" "orphaned orchestration capsule with no matching task file"
 }
 
 @test "validate_docs advisory does not warn when an orchestration capsule is properly registered" {
@@ -333,7 +334,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" != *"orphaned orchestration capsule"* ]]
+  refute_contains "$output" "orphaned orchestration capsule"
 }
 
 @test "validate_docs strict fails when docs/plan/_archive exists" {
@@ -341,8 +342,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"physical archive directory violates the no-archive policy"* ]]
-  [[ "$output" == *"docs/plan/_archive"* ]]
+  assert_contains "$output" "physical archive directory violates the no-archive policy"
+  assert_contains "$output" "docs/plan/_archive"
 }
 
 @test "validate_docs advisory warns when docs/task/_archive exists" {
@@ -350,8 +351,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] physical archive directory violates the no-archive policy"* ]]
-  [[ "$output" == *"docs/task/_archive"* ]]
+  assert_contains "$output" "[WARN] physical archive directory violates the no-archive policy"
+  assert_contains "$output" "docs/task/_archive"
 }
 
 @test "validate_docs strict fails when docs/orchestration/_archive exists" {
@@ -359,14 +360,14 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"physical archive directory violates the no-archive policy"* ]]
-  [[ "$output" == *"docs/orchestration/_archive"* ]]
+  assert_contains "$output" "physical archive directory violates the no-archive policy"
+  assert_contains "$output" "docs/orchestration/_archive"
 }
 
 @test "validate_docs advisory does not warn about archive directories when none exist" {
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" != *"violates the no-archive policy"* ]]
+  refute_contains "$output" "violates the no-archive policy"
 }
 
 @test "validate_docs advisory warns when durable docs reference a gitignored tmp/ path" {
@@ -397,9 +398,9 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] docs reference a gitignored tmp/ path (${DOCS_ROOT}/task/TASK-tmp-ref-fixture-01.md:"* ]]
-  [[ "$output" == *"[WARN] docs reference a gitignored tmp/ path (${DOCS_ROOT}/plan/PLAN-tmp-ref-fixture-01-v1.0.md:"* ]]
-  [[ "$output" == *"[WARN] docs reference a gitignored tmp/ path (${DOCS_ROOT}/orchestration/tmp-ref-fixture-01/INDEX.md:"* ]]
+  assert_contains "$output" "[WARN] docs reference a gitignored tmp/ path (${DOCS_ROOT}/task/TASK-tmp-ref-fixture-01.md:"
+  assert_contains "$output" "[WARN] docs reference a gitignored tmp/ path (${DOCS_ROOT}/plan/PLAN-tmp-ref-fixture-01-v1.0.md:"
+  assert_contains "$output" "[WARN] docs reference a gitignored tmp/ path (${DOCS_ROOT}/orchestration/tmp-ref-fixture-01/INDEX.md:"
 }
 
 @test "validate_docs strict mode does not flag gitignored tmp/ path references" {
@@ -413,7 +414,7 @@ EOF
 EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
-  [[ "$output" != *"gitignored tmp/ path"* ]]
+  refute_contains "$output" "gitignored tmp/ path"
 }
 
 @test "validate_docs advisory does not warn about tmp/ path references inside a fenced code block" {
@@ -431,7 +432,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" != *"gitignored tmp/ path"* ]]
+  refute_contains "$output" "gitignored tmp/ path"
 }
 
 @test "validate_docs advisory completes on a multi-file corpus (ISSUE-20260802 crash regression)" {
@@ -544,6 +545,26 @@ EOF
   assert_contains "$output" "[WARN] docs reference a deleted _archive path (${DOCS_ROOT}/plan/PLAN-mixed-scan-01-v1.0.md:"
 }
 
+@test "validate_docs advisory reports both classes when one line matches tmp and _archive" {
+  # The single-pass rewrite originally
+  # used `next` between the two rules, which silently dropped the _archive finding
+  # for any line that also matched tmp/. The independent audit of that fix caught
+  # it; this pins the independence of the two classes.
+  cat > "$DOCS_ROOT/task/TASK-dual-class-01.md" <<'EOF'
+# TASK-dual-class-01
+
+- title: dual class fixture
+- status: planned
+- owner: test
+- note: see /tmp/scratch.md and docs/plan/_archive/PLAN-old-v0.9.md for the prior draft
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "docs reference a gitignored tmp/ path (${DOCS_ROOT}/task/TASK-dual-class-01.md:6)"
+  assert_contains "$output" "docs reference a deleted _archive path (${DOCS_ROOT}/task/TASK-dual-class-01.md:6)"
+}
+
 @test "validate_docs strict mode fails on empty required fields" {
   "$DOC_GARDEN" "$TEST_PROJECT" \
     --task-id "200" \
@@ -562,7 +583,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"empty"* ]] || [[ "$output" == *"FAIL"* ]]
+  assert_contains "$output" "empty" || assert_contains "$output" "FAIL"
 }
 
 @test "validate_docs strict audits effect_map markers and confirmed fields" {
@@ -589,8 +610,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"confirmed record requires evidence_type"* ]]
-  [[ "$output" == *"shadow effect_map"* ]]
+  assert_contains "$output" "confirmed record requires evidence_type"
+  assert_contains "$output" "shadow effect_map"
 
   cat > "$effect_file" <<'EOF'
 # Effects
@@ -615,8 +636,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"deterministic_code record requires evidence_rule_id"* ]]
-  [[ "$output" == *"deterministic_code record requires evidence_probe_result_hash"* ]]
+  assert_contains "$output" "deterministic_code record requires evidence_rule_id"
+  assert_contains "$output" "deterministic_code record requires evidence_probe_result_hash"
 
   cat > "$effect_file" <<'EOF'
 # Effects
@@ -651,9 +672,9 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"evidence_rule_id is not compatible with effect_type"* ]]
-  [[ "$output" == *"anchor_file must match evidence ref path"* ]]
-  [[ "$output" == *"probe artifact must exist"* ]]
+  assert_contains "$output" "evidence_rule_id is not compatible with effect_type"
+  assert_contains "$output" "anchor_file must match evidence ref path"
+  assert_contains "$output" "probe artifact must exist"
 }
 
 @test "validate_docs strict audits deterministic_runtime envelope metadata" {
@@ -727,9 +748,9 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"deterministic_runtime record requires evidence_artifact_media_type"* ]]
-  [[ "$output" == *"deterministic_runtime record requires evidence_ignored_nondeterministic_fields"* ]]
-  [[ "$output" == *"deterministic_runtime record requires evidence_scenario_scope"* ]]
+  assert_contains "$output" "deterministic_runtime record requires evidence_artifact_media_type"
+  assert_contains "$output" "deterministic_runtime record requires evidence_ignored_nondeterministic_fields"
+  assert_contains "$output" "deterministic_runtime record requires evidence_scenario_scope"
 
   cat > "$effect_file" <<EOF
 # Effects
@@ -771,10 +792,10 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"deterministic_runtime evidence_scenario_scope must match"* ]]
-  [[ "$output" == *"deterministic_runtime evidence_setter_symbol_path must match"* ]]
-  [[ "$output" == *"deterministic_runtime evidence_setter_module_hash must be sha256"* ]]
-  [[ "$output" == *"deterministic_runtime evidence_expiry_or_invalidation_rule must be timestamp, binding_change, or manual_revocation"* ]]
+  assert_contains "$output" "deterministic_runtime evidence_scenario_scope must match"
+  assert_contains "$output" "deterministic_runtime evidence_setter_symbol_path must match"
+  assert_contains "$output" "deterministic_runtime evidence_setter_module_hash must be sha256"
+  assert_contains "$output" "deterministic_runtime evidence_expiry_or_invalidation_rule must be timestamp, binding_change, or manual_revocation"
 
   cat > "$effect_file" <<EOF
 # Effects
@@ -860,7 +881,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"deterministic_runtime evidence_selected_fields must not contain duplicate field names"* ]]
+  assert_contains "$output" "deterministic_runtime evidence_selected_fields must not contain duplicate field names"
 
   cat > "$effect_file" <<EOF
 # Effects
@@ -903,7 +924,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"deterministic_runtime evidence_selected_fields supports only top-level field names"* ]]
+  assert_contains "$output" "deterministic_runtime evidence_selected_fields supports only top-level field names"
 
   cat > "$effect_file" <<EOF
 # Effects
@@ -987,7 +1008,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"deterministic_runtime evidence envelope is not supported by the v1 validity matrix"* ]]
+  assert_contains "$output" "deterministic_runtime evidence envelope is not supported by the v1 validity matrix"
 
   cat > "$effect_file" <<EOF
 # Effects
@@ -1030,7 +1051,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"evidence_canonical_output_type is only valid for custom-declared canonicalization"* ]]
+  assert_contains "$output" "evidence_canonical_output_type is only valid for custom-declared canonicalization"
 
   cat > "$effect_file" <<EOF
 # Effects
@@ -1072,7 +1093,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"evidence_ignored_nondeterministic_fields must be [] for whole_artifact unless canonicalization is custom-declared"* ]]
+  assert_contains "$output" "evidence_ignored_nondeterministic_fields must be [] for whole_artifact unless canonicalization is custom-declared"
 
   cat > "$effect_file" <<EOF
 # Effects
@@ -1116,7 +1137,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"deterministic_runtime evidence_artifact_hash must match scoped trace artifact"* ]]
+  assert_contains "$output" "deterministic_runtime evidence_artifact_hash must match scoped trace artifact"
 }
 
 @test "validate_docs strict accepts canonical probe coverage for valid effect_map evidence" {
@@ -1173,7 +1194,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow effect_map records valid"* ]]
+  assert_contains "$output" "shadow effect_map records valid"
 }
 
 @test "validate_docs strict audits review_queue metadata" {
@@ -1191,7 +1212,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"ttl_days"* ]]
+  assert_contains "$output" "ttl_days"
 }
 
 @test "validate_docs strict allows mixed review_queue with deferred and bounded question" {
@@ -1238,7 +1259,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow review_queue source refs are bounded"* ]]
+  assert_contains "$output" "shadow review_queue source refs are bounded"
 }
 
 @test "validate_docs strict fails when policy rule registry has no mappings" {
@@ -1272,7 +1293,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"shadow rule registry missing rules block"* ]] || [[ "$output" == *"must contain at least one rule id mapping"* ]]
+  assert_contains "$output" "shadow rule registry missing rules block" || assert_contains "$output" "must contain at least one rule id mapping"
 }
 
 @test "validate_docs strict fails when rule registry has rule ids but no primary validator mappings" {
@@ -1288,10 +1309,10 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"must contain at least one primary validator mapping"* ]]
+  assert_contains "$output" "must contain at least one primary validator mapping"
   # Full attributable literal for check_rule_registry_has_mappings
   # (rule-coverage matrix arbiter).
-  [[ "$output" == *"shadow rule registry must contain at least one primary validator mapping: "* ]]
+  assert_contains "$output" "shadow rule registry must contain at least one primary validator mapping: "
 }
 
 @test "validate_docs strict completes and cleanly fails when the rule registry rules block is present but has zero rule id mappings" {
@@ -1345,11 +1366,11 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"shadow rule registry declares rules block"* ]]
+  assert_contains "$output" "shadow rule registry declares rules block"
   # Full attributable literal for check_rule_registry_has_mappings.
-  [[ "$output" == *"shadow rule registry must contain at least one rule id mapping: "* ]]
+  assert_contains "$output" "shadow rule registry must contain at least one rule id mapping: "
   # Proves the run reached the end instead of aborting mid-pipeline.
-  [[ "$output" == *"[RESULT]"* ]]
+  assert_contains "$output" "[RESULT]"
 }
 
 @test "validate_docs strict completes and cleanly fails when a rule id has zero allowed_effect_types mappings" {
@@ -1410,11 +1431,11 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"shadow rule registry contains rule id mappings (1)"* ]]
+  assert_contains "$output" "shadow rule registry contains rule id mappings (1)"
   # Full attributable literal for check_rule_registry_has_mappings.
-  [[ "$output" == *"shadow rule registry must declare allowed_effect_types for every rule (0/1): "* ]]
+  assert_contains "$output" "shadow rule registry must declare allowed_effect_types for every rule (0/1): "
   # Proves the run reached the end instead of aborting mid-pipeline.
-  [[ "$output" == *"[RESULT]"* ]]
+  assert_contains "$output" "[RESULT]"
 }
 
 @test "validate_docs strict fails on invalid policy fallback risk enum" {
@@ -1423,7 +1444,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"max_promotion_risk must be low|medium"* ]]
+  assert_contains "$output" "max_promotion_risk must be low|medium"
 }
 
 @test "validate_docs strict fails when policy promotion gate contract drifts" {
@@ -1432,7 +1453,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"regex_only.forbidden_field must be validator_result"* ]]
+  assert_contains "$output" "regex_only.forbidden_field must be validator_result"
 }
 
 @test "validate_docs strict fails when promotion gate token appears only outside scoped block" {
@@ -1445,7 +1466,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"regex_only.max_effective_risk must be medium"* ]]
+  assert_contains "$output" "regex_only.max_effective_risk must be medium"
 }
 
 @test "validate_docs strict fails when fallback mapping lacks its own cap" {
@@ -1453,7 +1474,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"fallback mapping missing fallback_max_risk"* ]]
+  assert_contains "$output" "fallback mapping missing fallback_max_risk"
 }
 
 @test "validate_docs strict fails when validator evidence type mismatches rule evidence branch" {
@@ -1461,7 +1482,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"primary validator evidence_type mismatch"* ]]
+  assert_contains "$output" "primary validator evidence_type mismatch"
 }
 
 @test "validate_docs strict fails when rule registry primary reference is not a declared catalog id" {
@@ -1473,11 +1494,11 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"jpa.repository.save_missing@v1"* ]]
+  assert_contains "$output" "jpa.repository.save_missing@v1"
   # Full attributable literal for check_rule_registry_refs_exist
   # (rule-coverage matrix arbiter).
-  [[ "$output" == *"rule registry references unknown "* ]]
-  [[ "$output" == *"rule registry references unknown primary validator catalog id: jpa.repository.save_missing@v1"* ]]
+  assert_contains "$output" "rule registry references unknown "
+  assert_contains "$output" "rule registry references unknown primary validator catalog id: jpa.repository.save_missing@v1"
 }
 
 @test "validate_docs strict fails when policy roots leave fenced yaml blocks" {
@@ -1485,7 +1506,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"must define validators inside a fenced yaml block"* ]]
+  assert_contains "$output" "must define validators inside a fenced yaml block"
 }
 
 @test "validate_docs strict fails when validator catalog probe coverage metadata is missing" {
@@ -1493,7 +1514,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"must declare source_probe_only"* ]]
+  assert_contains "$output" "must declare source_probe_only"
   # Full attributable literal for check_catalog_probe_coverage (rule-coverage
   # matrix arbiter). Deliberately NOT the "implemented_primary_v1 id must be
   # declared/implemented..." family: those exact literals are ALSO emitted
@@ -1504,7 +1525,7 @@ EOF
   # paren) has no python-side counterpart: shadow_policy_loader.py's
   # equivalent message ends at "source_probe_only" with no trailing "(", so it
   # cannot satisfy this candidate.
-  [[ "$output" == *"shadow validator catalog must declare source_probe_only ("* ]]
+  assert_contains "$output" "shadow validator catalog must declare source_probe_only ("
 }
 
 @test "validate_docs strict fails when catalog coverage id is undeclared" {
@@ -1512,7 +1533,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"implemented_primary_v1 id must be declared in validators block"* ]]
+  assert_contains "$output" "implemented_primary_v1 id must be declared in validators block"
 }
 
 @test "validate_docs strict fails when catalog claims unimplemented probe primary" {
@@ -1520,7 +1541,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"implemented_primary_v1 id must be implemented by shadow_evidence_probe.py"* ]]
+  assert_contains "$output" "implemented_primary_v1 id must be implemented by shadow_evidence_probe.py"
 }
 
 @test "validate_docs strict ignores validator ids declared outside validators block" {
@@ -1538,7 +1559,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"implemented_primary_v1 id must be declared in validators block"* ]]
+  assert_contains "$output" "implemented_primary_v1 id must be declared in validators block"
 }
 
 @test "validate_docs strict fails when adapter metadata drifts from catalog" {
@@ -1546,12 +1567,12 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"evidence_type must match AdapterRegistry"* ]]
+  assert_contains "$output" "evidence_type must match AdapterRegistry"
   # Same fixture also exercises check_policy_loader_contract: the strict
   # policy-loader parity check (shadow_policy_loader.py --check-parity)
   # surfaces this exact drift through its own fail() wrapper. Full
   # attributable literal (rule-coverage matrix arbiter).
-  [[ "$output" == *"shadow policy loader strict contract failed: "* ]]
+  assert_contains "$output" "shadow policy loader strict contract failed: "
 }
 
 @test "validate_docs strict fails when fallback regex evidence type mismatches rule evidence branch" {
@@ -1559,7 +1580,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"fallback regex evidence_type mismatch"* ]]
+  assert_contains "$output" "fallback regex evidence_type mismatch"
 }
 
 @test "validate_docs advisory warns when supervisor_subagents ORCH capsule has no agent fields or delegation_status" {
@@ -1587,8 +1608,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] orchestration execution_mode=supervisor_subagents requires at least one non-empty agent field (planner_agents/reviewer_agents/implementation_agents/validation_agents) for TASK-orch-contradiction-01"* ]]
-  [[ "$output" == *"[WARN] orchestration execution_mode=supervisor_subagents requires a non-empty delegation_status for TASK-orch-contradiction-01"* ]]
+  assert_contains "$output" "[WARN] orchestration execution_mode=supervisor_subagents requires at least one non-empty agent field (planner_agents/reviewer_agents/implementation_agents/validation_agents) for TASK-orch-contradiction-01"
+  assert_contains "$output" "[WARN] orchestration execution_mode=supervisor_subagents requires a non-empty delegation_status for TASK-orch-contradiction-01"
 }
 
 @test "validate_docs advisory warns when an ingested ORCH capsule lacks required_review_routes or external_review_result_ref" {
@@ -1596,8 +1617,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] orchestration external_review_status=ingested requires a non-empty required_review_routes for TASK-orch-ingested-contradiction-01"* ]]
-  [[ "$output" == *"[WARN] orchestration external_review_status=ingested requires a non-empty external_review_result_ref for TASK-orch-ingested-contradiction-01"* ]]
+  assert_contains "$output" "[WARN] orchestration external_review_status=ingested requires a non-empty required_review_routes for TASK-orch-ingested-contradiction-01"
+  assert_contains "$output" "[WARN] orchestration external_review_status=ingested requires a non-empty external_review_result_ref for TASK-orch-ingested-contradiction-01"
 }
 
 @test "validate_docs advisory does not warn when ORCH capsule fields are mutually consistent" {
@@ -1628,8 +1649,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" != *"execution_mode=supervisor_subagents requires"* ]]
-  [[ "$output" != *"external_review_status=ingested requires"* ]]
+  refute_contains "$output" "execution_mode=supervisor_subagents requires"
+  refute_contains "$output" "external_review_status=ingested requires"
 }
 
 @test "validate_docs strict mode does not apply ORCH semantic-contradiction checks" {
@@ -1659,8 +1680,8 @@ EOF
 EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
-  [[ "$output" != *"execution_mode=supervisor_subagents requires"* ]]
-  [[ "$output" != *"external_review_status=ingested requires"* ]]
+  refute_contains "$output" "execution_mode=supervisor_subagents requires"
+  refute_contains "$output" "external_review_status=ingested requires"
 }
 
 @test "validate_docs strict fails when supervisor_subagents orchestration fields are blank" {
@@ -1693,7 +1714,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"planner_agents"* ]] || [[ "$output" == *"implementation_agents"* ]] || [[ "$output" == *"validation_agents"* ]]
+  assert_contains "$output" "planner_agents" || assert_contains "$output" "implementation_agents" || assert_contains "$output" "validation_agents"
 }
 
 @test "validate_docs strict fails when delegated orchestration preflight is blocked" {
@@ -1734,11 +1755,11 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"orchestration risk preflight must be pass or approved"* ]]
+  assert_contains "$output" "orchestration risk preflight must be pass or approved"
   # Full attributable literal for check_orchestration_file_for_task
   # (rule-coverage matrix arbiter): includes the rest of the leading literal
   # that the fragment above truncates before the $orchestration_file expansion.
-  [[ "$output" == *"orchestration risk preflight must be pass or approved before delegated/external review: "* ]]
+  assert_contains "$output" "orchestration risk preflight must be pass or approved before delegated/external review: "
 }
 
 @test "validate_docs strict fails when approved preflight leaves approval_required false" {
@@ -1781,7 +1802,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"risk_preflight_status=approved requires approval_required=true"* ]]
+  assert_contains "$output" "risk_preflight_status=approved requires approval_required=true"
 }
 
 @test "validate_docs strict fails when supervisor_subagents task has no evaluator report" {
@@ -1819,7 +1840,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"missing evaluator report for active task TASK-report-strict-01"* ]]
+  assert_contains "$output" "missing evaluator report for active task TASK-report-strict-01"
 }
 
 @test "validate_docs advisory mode passes with empty fields (warns only)" {
@@ -1859,11 +1880,11 @@ make_empty_graph_gate_source_repo() {
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"[FAIL] shadow graph is empty"* ]]
-  [[ "$output" == *"shadow_coverage_report.py"* ]]
+  assert_contains "$output" "[FAIL] shadow graph is empty"
+  assert_contains "$output" "shadow_coverage_report.py"
   # Full attributable literal (rule-coverage matrix arbiter): the entire
   # fail() message has no $ interpolation, so this is the whole candidate.
-  [[ "$output" == *"shadow graph is empty: no bucket declares a unit and no shadow doc declares source_of_truth_paths, though the source repo has trackable files to document. Author shadow units; see shadow_coverage_report.py for the coverage gap"* ]]
+  assert_contains "$output" "shadow graph is empty: no bucket declares a unit and no shadow doc declares source_of_truth_paths, though the source repo has trackable files to document. Author shadow units; see shadow_coverage_report.py for the coverage gap"
 }
 
 @test "validate_docs advisory warns (does not fail) on an entirely empty shadow graph" {
@@ -1873,12 +1894,12 @@ make_empty_graph_gate_source_repo() {
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] shadow graph is empty"* ]]
+  assert_contains "$output" "[WARN] shadow graph is empty"
 }
 
 @test "validate_docs shadow empty-graph gate never fires without a reachable source repo" {
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
-  [[ "$output" != *"shadow graph is empty"* ]]
+  refute_contains "$output" "shadow graph is empty"
 }
 
 @test "validate_docs shadow empty-graph gate does not fire once a bucket declares a unit" {
@@ -1892,7 +1913,7 @@ make_empty_graph_gate_source_repo() {
 EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
-  [[ "$output" != *"shadow graph is empty"* ]]
+  refute_contains "$output" "shadow graph is empty"
 }
 
 @test "validate_docs shadow empty-graph gate does not fire once any shadow doc declares source_of_truth_paths" {
@@ -1907,7 +1928,7 @@ EOF
 EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
-  [[ "$output" != *"shadow graph is empty"* ]]
+  refute_contains "$output" "shadow graph is empty"
 }
 
 @test "validate_docs strict fails when required shadow bucket index is missing" {
@@ -1915,7 +1936,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"shadow bucket index (apps) is missing"* ]]
+  assert_contains "$output" "shadow bucket index (apps) is missing"
 }
 
 @test "validate_docs strict fails when tracked shadow last_updated is blank or future" {
@@ -1924,7 +1945,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"last_updated is present but empty in shadow router"* ]]
+  assert_contains "$output" "last_updated is present but empty in shadow router"
 
   "$INIT_SCAFFOLD" "$TEST_PROJECT"
   sed -i.bak 's/^- last_updated:.*$/- last_updated: 2999-01-01T00:00:00Z/' "$DOCS_ROOT/shadow/project-shadow.md"
@@ -1932,7 +1953,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"last_updated must not be in the future in shadow router"* ]]
+  assert_contains "$output" "last_updated must not be in the future in shadow router"
 }
 
 @test "validate_docs strict fails when active task has no linked plan file" {
@@ -1946,7 +1967,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"missing plan file for active task TASK-301"* ]]
+  assert_contains "$output" "missing plan file for active task TASK-301"
 }
 
 @test "validate_docs strict fails on invalid evaluator label in report file" {
@@ -1984,7 +2005,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"invalid evaluator report file name format"* ]] || [[ "$output" == *"invalid evaluator in PLAN-qa-01-v1.0-review-gpt-r01.md"* ]]
+  assert_contains "$output" "invalid evaluator report file name format" || assert_contains "$output" "invalid evaluator in PLAN-qa-01-v1.0-review-gpt-r01.md"
 }
 
 @test "validate_docs strict fails on invalid task risk_level enum" {
@@ -2004,7 +2025,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"invalid task.risk_level value"* ]]
+  assert_contains "$output" "invalid task.risk_level value"
 }
 
 @test "validate_docs advisory warns on invalid decision risk_level enum" {
@@ -2026,7 +2047,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"invalid decision.risk_level value"* ]]
+  assert_contains "$output" "invalid decision.risk_level value"
 }
 
 @test "validate_docs advisory warns when active task omits risk_level" {
@@ -2081,7 +2102,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"risk_level is recommended for active task TASK-risk-missing-01"* ]]
+  assert_contains "$output" "risk_level is recommended for active task TASK-risk-missing-01"
 }
 
 @test "validate_docs strict passes legacy evaluator report without review_style" {
@@ -2171,7 +2192,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"requested_changes is present but empty in evaluator report"* ]]
+  assert_contains "$output" "requested_changes is present but empty in evaluator report"
 }
 
 @test "validate_docs strict requires evaluator report for latest plan version" {
@@ -2241,7 +2262,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"missing evaluator report for active task TASK-latest-report-01 latest plan v1.1"* ]]
+  assert_contains "$output" "missing evaluator report for active task TASK-latest-report-01 latest plan v1.1"
 }
 
 @test "validate_docs strict rejects stale evaluator report for latest plan" {
@@ -2296,7 +2317,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"missing fresh evaluator report for active task TASK-stale-report-01 latest plan v1.0"* ]]
+  assert_contains "$output" "missing fresh evaluator report for active task TASK-stale-report-01 latest plan v1.0"
 }
 
 @test "validate_docs strict rejects evaluator report task identity mismatch" {
@@ -2351,7 +2372,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"evaluator report identity mismatch"* ]] || [[ "$output" == *"task_id mismatch between file name and field"* ]]
+  assert_contains "$output" "evaluator report identity mismatch" || assert_contains "$output" "task_id mismatch between file name and field"
 }
 
 @test "validate_docs strict fails when high-risk task has only standard review" {
@@ -2407,7 +2428,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"missing adversarial evaluator report for high-risk task TASK-highrisk-01"* ]]
+  assert_contains "$output" "missing adversarial evaluator report for high-risk task TASK-highrisk-01"
 }
 
 @test "validate_docs strict fails when linked high-risk decision has only standard review" {
@@ -2475,7 +2496,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"decision-linkedrisk-dec-01.md risk_level=critical"* ]]
+  assert_contains "$output" "decision-linkedrisk-dec-01.md risk_level=critical"
 }
 
 @test "validate_docs strict fails when adversarial evaluator report omits rebuttal fields" {
@@ -2516,7 +2537,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"counterproposal"* ]] || [[ "$output" == *"rebuttal"* ]] || [[ "$output" == *"residual_risk"* ]]
+  assert_contains "$output" "counterproposal" || assert_contains "$output" "rebuttal" || assert_contains "$output" "residual_risk"
 }
 
 @test "validate_docs strict passes when high-risk task has adversarial review" {
@@ -2594,7 +2615,7 @@ EOF
 @test "validate_docs fails clearly when option value is missing" {
   run "$VALIDATE" "$TEST_PROJECT" --mode
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Option --mode requires a value"* ]]
+  assert_contains "$output" "Option --mode requires a value"
 }
 
 @test "validate_docs fails clearly when numeric option is invalid" {
@@ -2605,7 +2626,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --max-task-lines notanumber
   [ "$status" -ne 0 ]
-  [[ "$output" == *"--max-task-lines must be a positive integer"* ]]
+  assert_contains "$output" "--max-task-lines must be a positive integer"
 }
 
 @test "validate_docs strict fails on invalid task status enum" {
@@ -2624,7 +2645,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"invalid task.status value"* ]]
+  assert_contains "$output" "invalid task.status value"
 }
 
 @test "validate_docs advisory warns on invalid decision enum values" {
@@ -2641,8 +2662,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"invalid decision.scope_type value"* ]]
-  [[ "$output" == *"invalid decision.status value"* ]]
+  assert_contains "$output" "invalid decision.scope_type value"
+  assert_contains "$output" "invalid decision.status value"
 }
 
 @test "validate_docs secret scan skips default template files" {
@@ -2663,9 +2684,9 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"potential secret values detected"* ]] || [[ "$output" == *"OPENAI API key assignment"* ]]
-  [[ "$output" == *"[REDACTED_SECRET]"* ]]
-  [[ "$output" != *"sk-proj-12345678901234567890"* ]]
+  assert_contains "$output" "potential secret values detected" || assert_contains "$output" "OPENAI API key assignment"
+  assert_contains "$output" "[REDACTED_SECRET]"
+  refute_contains "$output" "sk-proj-12345678901234567890"
 }
 
 @test "validate_docs secret scan catches Google Gemini API key formats" {
@@ -2680,9 +2701,9 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"potential secret values detected"* ]] || [[ "$output" == *"yaml/env-style secret assignments"* ]]
-  [[ "$output" == *"[REDACTED_SECRET]"* ]]
-  [[ "$output" != *"$google_key"* ]]
+  assert_contains "$output" "potential secret values detected" || assert_contains "$output" "yaml/env-style secret assignments"
+  assert_contains "$output" "[REDACTED_SECRET]"
+  refute_contains "$output" "$google_key"
 }
 
 @test "validate_docs secret scan allows provider variable names without values" {
@@ -2699,7 +2720,7 @@ EOF
 @test "validate_docs reports missing rg for secret scanning" {
   run env PATH="/usr/bin:/bin" "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"ripgrep (rg) is required for secret scanning"* ]]
+  assert_contains "$output" "ripgrep (rg) is required for secret scanning"
 }
 
 # ========== P2: task-index status section movement ==========
@@ -2721,7 +2742,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"legacy shadow shim"* ]] || [[ "$output" == *"redirect_shim"* ]]
+  assert_contains "$output" "legacy shadow shim" || assert_contains "$output" "redirect_shim"
 }
 
 @test "validate_docs strict passes with a valid root-level redirect shim" {
@@ -2760,7 +2781,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"decision index missing row for decision-dot.a.md"* ]]
+  assert_contains "$output" "decision index missing row for decision-dot.a.md"
 }
 
 # ========== Task-index reverse integrity (no physical archive policy) ==========
@@ -2778,7 +2799,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"task-index row for TASK-idx-stale-01 has no matching task file"* ]]
+  assert_contains "$output" "task-index row for TASK-idx-stale-01 has no matching task file"
 }
 
 @test "validate_docs strict fails when a task-index row sits under the wrong status section" {
@@ -2796,7 +2817,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"task-index section mismatch for TASK-idx-mismatch-01: task file status is done but row is listed under Planned"* ]]
+  assert_contains "$output" "task-index section mismatch for TASK-idx-mismatch-01: task file status is done but row is listed under Planned"
 }
 
 @test "validate_docs strict fails on duplicate task-index rows for the same task" {
@@ -2812,7 +2833,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"task-index has duplicate rows for TASK-idx-dup-01"* ]]
+  assert_contains "$output" "task-index has duplicate rows for TASK-idx-dup-01"
 }
 
 # ========== Issue tracker current/resolved consistency ==========
@@ -2839,7 +2860,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"is status: resolved but still lives in docs/issues/current/"* ]]
+  assert_contains "$output" "is status: resolved but still lives in docs/issues/current/"
 }
 
 @test "validate_docs strict fails on a current issue missing its current/README index row" {
@@ -2863,7 +2884,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"docs/issues/current/README.md missing index row for ISSUE-20260101-no-row.md"* ]]
+  assert_contains "$output" "docs/issues/current/README.md missing index row for ISSUE-20260101-no-row.md"
 }
 
 @test "validate_docs strict fails when a resolved issue has no paired resolution doc" {
@@ -2888,7 +2909,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"resolved issue ISSUE-20260101-missing-resolution.md has no paired resolution doc"* ]]
+  assert_contains "$output" "resolved issue ISSUE-20260101-missing-resolution.md has no paired resolution doc"
 }
 
 @test "validate_docs strict fails on an orphaned resolution doc with no paired issue file" {
@@ -2906,7 +2927,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"resolution doc RESOLUTION-20260101-orphan.md has no paired issue file"* ]]
+  assert_contains "$output" "resolution doc RESOLUTION-20260101-orphan.md has no paired issue file"
 }
 
 @test "validate_docs strict tolerates a status field with trailing parenthetical notes for task-index section match" {
@@ -2923,7 +2944,7 @@ EOF
   rm -f "$DOCS_ROOT/task/TASK-idx-decorated-01.md.bak"
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
-  [[ "$output" != *"task-index section mismatch"* ]]
+  refute_contains "$output" "task-index section mismatch"
 }
 
 @test "validate_docs advisory continues past a missing orchestration field instead of aborting" {
@@ -2934,8 +2955,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[RESULT]"* ]]
-  [[ "$output" == *"primary_author_tool is missing"* ]]
+  assert_contains "$output" "[RESULT]"
+  assert_contains "$output" "primary_author_tool is missing"
 }
 
 @test "validate_docs strict passes with a well-formed resolved issue and paired resolution doc" {
@@ -2984,9 +3005,9 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"owner is recommended for in_progress task TASK-claim-owner-01"* ]]
-  [[ "$output" != *"claimed_at is recommended for in_progress task"* ]]
-  [[ "$output" != *"claim directory is recommended for in_progress task"* ]]
+  assert_contains "$output" "owner is recommended for in_progress task TASK-claim-owner-01"
+  refute_contains "$output" "claimed_at is recommended for in_progress task"
+  refute_contains "$output" "claim directory is recommended for in_progress task"
 }
 
 @test "validate_docs advisory warns when an in_progress task is missing claimed_at" {
@@ -2995,9 +3016,9 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"claimed_at is recommended for in_progress task TASK-claim-time-01"* ]]
-  [[ "$output" != *"owner is recommended for in_progress task"* ]]
-  [[ "$output" != *"claim directory is recommended for in_progress task"* ]]
+  assert_contains "$output" "claimed_at is recommended for in_progress task TASK-claim-time-01"
+  refute_contains "$output" "owner is recommended for in_progress task"
+  refute_contains "$output" "claim directory is recommended for in_progress task"
 }
 
 @test "validate_docs advisory warns when an in_progress task has no claim directory" {
@@ -3006,10 +3027,10 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"claim directory is recommended for in_progress task TASK-claim-dir-01: mkdir"* ]]
-  [[ "$output" == *"docs/task/.claims/claim-dir-01/"* ]]
-  [[ "$output" != *"owner is recommended for in_progress task"* ]]
-  [[ "$output" != *"claimed_at is recommended for in_progress task"* ]]
+  assert_contains "$output" "claim directory is recommended for in_progress task TASK-claim-dir-01: mkdir"
+  assert_contains "$output" "docs/task/.claims/claim-dir-01/"
+  refute_contains "$output" "owner is recommended for in_progress task"
+  refute_contains "$output" "claimed_at is recommended for in_progress task"
 }
 
 @test "validate_docs advisory does not warn when the claim contract is fully satisfied" {
@@ -3019,9 +3040,9 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" != *"owner is recommended for in_progress task"* ]]
-  [[ "$output" != *"claimed_at is recommended for in_progress task"* ]]
-  [[ "$output" != *"claim directory is recommended for in_progress task"* ]]
+  refute_contains "$output" "owner is recommended for in_progress task"
+  refute_contains "$output" "claimed_at is recommended for in_progress task"
+  refute_contains "$output" "claim directory is recommended for in_progress task"
 }
 
 @test "validate_docs strict fails on a stale claim directory whose task already left in_progress" {
@@ -3030,7 +3051,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"stale claim directory for TASK-claim-stale-01 (status=done): remove"* ]]
+  assert_contains "$output" "stale claim directory for TASK-claim-stale-01 (status=done): remove"
 }
 
 @test "validate_docs strict fails on an orphaned claim directory with no matching task file" {
@@ -3038,8 +3059,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"orphaned claim directory with no matching task file"* ]]
-  [[ "$output" == *"docs/task/.claims/claim-ghost-01"* ]]
+  assert_contains "$output" "orphaned claim directory with no matching task file"
+  assert_contains "$output" "docs/task/.claims/claim-ghost-01"
 }
 
 # ========== Resume capsule (session-resume-contract.md) ==========
@@ -3076,8 +3097,8 @@ write_strict_clean_resume_fixture() {
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"resume capsule missing for in_progress task TASK-resume-missing-01"* ]]
-  [[ "$output" == *"doc_garden.sh --task-id resume-missing-01 --resume-checkpoint"* ]]
+  assert_contains "$output" "resume capsule missing for in_progress task TASK-resume-missing-01"
+  assert_contains "$output" "doc_garden.sh --task-id resume-missing-01 --resume-checkpoint"
 }
 
 @test "validate_docs advisory does not nudge adoption once any resume_* field is present" {
@@ -3088,7 +3109,7 @@ write_strict_clean_resume_fixture() {
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" != *"resume capsule missing for in_progress task"* ]]
+  refute_contains "$output" "resume capsule missing for in_progress task"
 }
 
 @test "validate_docs strict does not fail an in_progress task with no resume_* fields at all" {
@@ -3096,8 +3117,8 @@ write_strict_clean_resume_fixture() {
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -eq 0 ]
-  [[ "$output" != *"resume_next_action is present but empty"* ]]
-  [[ "$output" != *"resume_last_verified is present but empty"* ]]
+  refute_contains "$output" "resume_next_action is present but empty"
+  refute_contains "$output" "resume_last_verified is present but empty"
 }
 
 @test "validate_docs strict fails when resume_next_action is present but empty" {
@@ -3107,8 +3128,8 @@ write_strict_clean_resume_fixture() {
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"resume_next_action is present but empty for in_progress task TASK-resume-empty-next-01"* ]]
-  [[ "$output" != *"resume_last_verified is present but empty"* ]]
+  assert_contains "$output" "resume_next_action is present but empty for in_progress task TASK-resume-empty-next-01"
+  refute_contains "$output" "resume_last_verified is present but empty"
 }
 
 @test "validate_docs strict fails when resume_last_verified is present but empty" {
@@ -3118,8 +3139,8 @@ write_strict_clean_resume_fixture() {
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"resume_last_verified is present but empty for in_progress task TASK-resume-empty-verified-01"* ]]
-  [[ "$output" != *"resume_next_action is present but empty"* ]]
+  assert_contains "$output" "resume_last_verified is present but empty for in_progress task TASK-resume-empty-verified-01"
+  refute_contains "$output" "resume_next_action is present but empty"
 }
 
 @test "validate_docs strict passes when resume_next_action and resume_last_verified are both truthfully filled" {
@@ -3129,8 +3150,8 @@ write_strict_clean_resume_fixture() {
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -eq 0 ]
-  [[ "$output" != *"resume_next_action is present but empty"* ]]
-  [[ "$output" != *"resume_last_verified is present but empty"* ]]
+  refute_contains "$output" "resume_next_action is present but empty"
+  refute_contains "$output" "resume_last_verified is present but empty"
 }
 
 @test "validate_docs strict does not fail when resume_state_revision is present but non-numeric" {
@@ -3141,7 +3162,7 @@ write_strict_clean_resume_fixture() {
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] resume_state_revision is present but non-numeric for in_progress task TASK-resume-revision-strict-01"* ]]
+  assert_contains "$output" "[WARN] resume_state_revision is present but non-numeric for in_progress task TASK-resume-revision-strict-01"
 }
 
 @test "validate_docs advisory warns when resume_state_revision is present but non-numeric" {
@@ -3152,7 +3173,7 @@ write_strict_clean_resume_fixture() {
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] resume_state_revision is present but non-numeric for in_progress task TASK-resume-revision-advisory-01"* ]]
+  assert_contains "$output" "[WARN] resume_state_revision is present but non-numeric for in_progress task TASK-resume-revision-advisory-01"
 }
 
 @test "validate_docs does not warn about resume_state_revision when it is a valid integer" {
@@ -3163,7 +3184,7 @@ write_strict_clean_resume_fixture() {
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -eq 0 ]
-  [[ "$output" != *"resume_state_revision is present but non-numeric"* ]]
+  refute_contains "$output" "resume_state_revision is present but non-numeric"
 }
 
 @test "validate_docs advisory warns when a bucket index overview_doc reference does not resolve" {
@@ -3175,11 +3196,11 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow navigation reference does not resolve"* ]]
-  [[ "$output" == *"overview_doc -> apps/app-a/overview.md"* ]]
+  assert_contains "$output" "shadow navigation reference does not resolve"
+  assert_contains "$output" "overview_doc -> apps/app-a/overview.md"
   # Full attributable literal (rule-coverage matrix arbiter): includes the
   # trailing ": " that the fragment above omits.
-  [[ "$output" == *"shadow navigation reference does not resolve: "* ]]
+  assert_contains "$output" "shadow navigation reference does not resolve: "
 }
 
 @test "validate_docs advisory warns when a redirect shim canonical_path does not resolve" {
@@ -3199,8 +3220,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow navigation reference does not resolve"* ]]
-  [[ "$output" == *"canonical_path -> docs/shadow/apps/app-a/overview.md"* ]]
+  assert_contains "$output" "shadow navigation reference does not resolve"
+  assert_contains "$output" "canonical_path -> docs/shadow/apps/app-a/overview.md"
 }
 
 @test "validate_docs advisory warns when a unit overview next_docs reference dangles" {
@@ -3221,10 +3242,10 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow navigation reference does not resolve"* ]]
-  [[ "$output" == *"next_docs -> apps/app-a/auth.md"* ]]
+  assert_contains "$output" "shadow navigation reference does not resolve"
+  assert_contains "$output" "next_docs -> apps/app-a/auth.md"
   # source_of_truth code paths are not .md and must not be flagged by this check
-  [[ "$output" != *"src/app_a/auth.py"* ]]
+  refute_contains "$output" "src/app_a/auth.py"
 }
 
 @test "validate_docs advisory passes navigation links when every referenced doc exists" {
@@ -3252,8 +3273,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow navigation references resolve to real files"* ]]
-  [[ "$output" != *"shadow navigation reference does not resolve"* ]]
+  assert_contains "$output" "shadow navigation references resolve to real files"
+  refute_contains "$output" "shadow navigation reference does not resolve"
 }
 
 @test "validate_docs strict skips the advisory navigation link check (recommended tier)" {
@@ -3266,7 +3287,7 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   # A dangling nav reference alone must not turn strict red, and the advisory-only
   # navigation warning must not be emitted in strict mode.
-  [[ "$output" != *"shadow navigation reference does not resolve"* ]]
+  refute_contains "$output" "shadow navigation reference does not resolve"
 }
 
 @test "validate_docs advisory resolves Markdown-link next_docs syntax without a false positive" {
@@ -3289,7 +3310,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" != *"shadow navigation reference does not resolve"* ]]
+  refute_contains "$output" "shadow navigation reference does not resolve"
 }
 
 @test "validate_docs advisory ignores navigation references inside fenced code examples" {
@@ -3310,7 +3331,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" != *"never-created.md"* ]]
+  refute_contains "$output" "never-created.md"
 }
 
 @test "validate_docs advisory catches a dangling reference in a nested-list next_docs block" {
@@ -3327,8 +3348,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow navigation reference does not resolve"* ]]
-  [[ "$output" == *"next_docs -> apps/app-a/missing-leaf.md"* ]]
+  assert_contains "$output" "shadow navigation reference does not resolve"
+  assert_contains "$output" "next_docs -> apps/app-a/missing-leaf.md"
 }
 
 @test "validate_docs advisory does not let an unrelated same-named file mask a dangling shadow ref" {
@@ -3347,8 +3368,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow navigation reference does not resolve"* ]]
-  [[ "$output" == *"next_docs -> apps/app-a/api.md"* ]]
+  assert_contains "$output" "shadow navigation reference does not resolve"
+  assert_contains "$output" "next_docs -> apps/app-a/api.md"
 }
 
 @test "validate_docs advisory de-duplicates a repeated dangling navigation reference" {
@@ -3388,8 +3409,8 @@ EOF
   _seed_source_digest_overview
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow source-of-truth digests verified against current source"* ]]
-  [[ "$output" != *"digest drift"* ]]
+  assert_contains "$output" "shadow source-of-truth digests verified against current source"
+  refute_contains "$output" "digest drift"
 }
 
 @test "validate_docs advisory warns on source-of-truth digest drift when source content changes" {
@@ -3397,8 +3418,8 @@ EOF
   printf 'def login():\n    return False  # changed\n' > "$TEST_PROJECT/src/auth.py"
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow source-of-truth digest drift"* ]]
-  [[ "$output" == *"apps/app-a/overview.md"* ]]
+  assert_contains "$output" "shadow source-of-truth digest drift"
+  assert_contains "$output" "apps/app-a/overview.md"
 }
 
 @test "validate_docs advisory warns when a declared source-of-truth path is deleted" {
@@ -3406,7 +3427,7 @@ EOF
   rm "$TEST_PROJECT/src/auth.py"
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow source-of-truth declared path does not exist: src/auth.py"* ]]
+  assert_contains "$output" "shadow source-of-truth declared path does not exist: src/auth.py"
 }
 
 @test "validate_docs advisory is silent about source digest when a doc does not opt in" {
@@ -3422,15 +3443,15 @@ EOF
 EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" != *"digest drift"* ]]
-  [[ "$output" != *"source-of-truth digests verified"* ]]
+  refute_contains "$output" "digest drift"
+  refute_contains "$output" "source-of-truth digests verified"
 }
 
 @test "validate_docs strict skips the advisory source-of-truth digest check" {
   _seed_source_digest_overview
   printf 'def login():\n    return False\n' > "$TEST_PROJECT/src/auth.py"
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
-  [[ "$output" != *"digest drift"* ]]
+  refute_contains "$output" "digest drift"
 }
 
 @test "doc_garden does not write or alter source_of_truth_digest (freshness must stay content-bound)" {
@@ -3461,7 +3482,7 @@ EOF
   printf 'b=2\n' > "$TEST_PROJECT/src/b.py"
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow source-of-truth digest drift"* ]]
+  assert_contains "$output" "shadow source-of-truth digest drift"
 }
 
 @test "shadow source digest --write does not corrupt the pure nested-bullet form" {
@@ -3484,8 +3505,8 @@ EOF
   run python3 "$SCRIPTS_DIR/shadow_source_digest.py" \
     "$DOCS_ROOT/shadow/apps/app-a/overview.md" --project-root "$TEST_PROJECT" --check
   [ "$status" -eq 0 ]
-  [[ "$output" == *"status: ok"* ]]
-  [[ "$output" != *"no_paths"* ]]
+  assert_contains "$output" "status: ok"
+  refute_contains "$output" "no_paths"
 }
 
 @test "validate_docs advisory warns when a declared source-of-truth path escapes the project root" {
@@ -3501,7 +3522,7 @@ EOF
 EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"escapes the project root: ../outside.txt"* ]]
+  assert_contains "$output" "escapes the project root: ../outside.txt"
 }
 
 @test "doc_garden does not ADD a source_of_truth_digest to a doc that has none" {
@@ -3516,7 +3537,7 @@ EOF
 EOF
   "$DOC_GARDEN" "$TEST_PROJECT" --task-id t-noadd --task-title x --task-status in_progress --shadow-note "touch" >/dev/null 2>&1
   run grep -c 'source_of_truth_digest' "$DOCS_ROOT/shadow/apps/app-a/overview.md"
-  [[ "$output" == "0" ]]
+  assert_equal "$output" "0"
 }
 
 @test "validate_docs advisory warns on a dead source_of_truth path in a digest-less doc" {
@@ -3531,7 +3552,7 @@ EOF
 EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow source_of_truth path does not exist: src/gone.py"* ]]
+  assert_contains "$output" "shadow source_of_truth path does not exist: src/gone.py"
 }
 
 @test "validate_docs advisory warns on an escaping source_of_truth path in a digest-less doc" {
@@ -3546,7 +3567,7 @@ EOF
 EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow source_of_truth path escapes the project root: ../outside.txt"* ]]
+  assert_contains "$output" "shadow source_of_truth path escapes the project root: ../outside.txt"
 }
 
 @test "validate_docs advisory is silent when digest-less source_of_truth paths all exist" {
@@ -3561,8 +3582,8 @@ EOF
 EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow source_of_truth_paths all resolve to real in-project files"* ]]
-  [[ "$output" != *"source_of_truth path does not exist"* ]]
+  assert_contains "$output" "shadow source_of_truth_paths all resolve to real in-project files"
+  refute_contains "$output" "source_of_truth path does not exist"
 }
 
 @test "validate_docs does not double-warn a dead source when the doc carries a digest" {
@@ -3582,8 +3603,8 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
   # The digest check reports the missing source; the paths-exist check must NOT also fire.
-  [[ "$output" == *"shadow source-of-truth declared path does not exist: src/auth.py"* ]]
-  [[ "$output" != *"shadow source_of_truth path does not exist: src/auth.py"* ]]
+  assert_contains "$output" "shadow source-of-truth declared path does not exist: src/auth.py"
+  refute_contains "$output" "shadow source_of_truth path does not exist: src/auth.py"
 }
 
 @test "validate_docs advisory is not silenced by an EMPTY source_of_truth_digest field" {
@@ -3600,7 +3621,7 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
   # A bare (empty) digest line must NOT let the dead source escape the check.
-  [[ "$output" == *"shadow source_of_truth path does not exist: src/gone.py"* ]]
+  assert_contains "$output" "shadow source_of_truth path does not exist: src/gone.py"
 }
 
 @test "validate_docs advisory is not silenced by a fenced source_of_truth_digest example" {
@@ -3619,7 +3640,7 @@ EOF
 EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow source_of_truth path does not exist: src/gone.py"* ]]
+  assert_contains "$output" "shadow source_of_truth path does not exist: src/gone.py"
 }
 
 @test "validate_docs does not abort the whole run on a malformed (NUL-byte) source path" {
@@ -3630,7 +3651,7 @@ EOF
   # The malformed path must be handled (missing), and the script must run to the end
   # (the final [RESULT] line proves it did not abort mid-run under set -e).
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[RESULT]"* ]]
+  assert_contains "$output" "[RESULT]"
 }
 
 @test "validate_docs advisory passes a well-formed unit overview schema" {
@@ -3644,7 +3665,7 @@ EOF
 EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow unit/concern docs have valid schema"* ]]
+  assert_contains "$output" "shadow unit/concern docs have valid schema"
 }
 
 @test "validate_docs advisory warns when a unit overview is missing home_bucket" {
@@ -3657,7 +3678,7 @@ EOF
 EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow unit overview missing home_bucket"* ]]
+  assert_contains "$output" "shadow unit overview missing home_bucket"
 }
 
 @test "validate_docs advisory warns when a unit overview home_bucket is not a known bucket" {
@@ -3671,7 +3692,7 @@ EOF
 EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"home_bucket is not a known bucket (widgets)"* ]]
+  assert_contains "$output" "home_bucket is not a known bucket (widgets)"
 }
 
 @test "validate_docs advisory warns when a concern leaf is missing concern_id" {
@@ -3684,10 +3705,10 @@ EOF
 EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow concern leaf missing concern_id"* ]]
+  assert_contains "$output" "shadow concern leaf missing concern_id"
   # Full attributable literal (rule-coverage matrix arbiter): includes the
   # trailing ": " that the fragment above omits.
-  [[ "$output" == *"shadow concern leaf missing concern_id: "* ]]
+  assert_contains "$output" "shadow concern leaf missing concern_id: "
 }
 
 @test "validate_docs strict skips the advisory unit schema check" {
@@ -3699,7 +3720,7 @@ EOF
 - last_updated: 2026-01-01T00:00:00Z
 EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
-  [[ "$output" != *"shadow unit overview missing home_bucket"* ]]
+  refute_contains "$output" "shadow unit overview missing home_bucket"
 }
 
 @test "validate_docs advisory does not treat a fenced doc_role example as a carrier doc" {
@@ -3716,8 +3737,8 @@ An overview looks like:
 EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" != *"shadow unit overview missing"* ]]
-  [[ "$output" != *"shadow unit/concern docs have valid schema"* ]]
+  refute_contains "$output" "shadow unit overview missing"
+  refute_contains "$output" "shadow unit/concern docs have valid schema"
 }
 
 @test "validate_docs advisory surfaces an indented unit overview instead of skipping it" {
@@ -3726,7 +3747,7 @@ EOF
     > "$DOCS_ROOT/shadow/apps/app-a/overview.md"
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow unit overview missing home_bucket"* ]]
+  assert_contains "$output" "shadow unit overview missing home_bucket"
 }
 
 @test "validate_docs advisory passes a well-formed concern leaf" {
@@ -3740,7 +3761,7 @@ EOF
 EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow unit/concern docs have valid schema"* ]]
+  assert_contains "$output" "shadow unit/concern docs have valid schema"
 }
 
 @test "validate_docs advisory takes the first non-empty concern_id, ignoring an empty stub" {
@@ -3749,7 +3770,7 @@ EOF
     > "$DOCS_ROOT/shadow/apps/app-a/auth.md"
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" != *"shadow concern leaf missing concern_id"* ]]
+  refute_contains "$output" "shadow concern leaf missing concern_id"
 }
 
 @test "validate_docs advisory warns when a done task's capsule still says delegation_status active" {
@@ -3772,13 +3793,13 @@ EOF
 EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
-  [[ "$output" == *"delegation_status 'active' contradicts task status done"* ]]
+  assert_contains "$output" "delegation_status 'active' contradicts task status done"
 
   # Promoted to strict per quality-baseline review r01 C1: the ledger
   # contradiction is a strict failure too, not an advisory-only warning.
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"delegation_status 'active' contradicts task status done"* ]]
+  assert_contains "$output" "delegation_status 'active' contradicts task status done"
 }
 
 @test "validate_docs advisory validates delegation_status enum on planned-task capsules" {
@@ -3801,8 +3822,8 @@ EOF
 EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
-  [[ "$output" == *"orchestration.delegation_status"* ]]
-  [[ "$output" == *"totally_bogus_value"* ]]
+  assert_contains "$output" "orchestration.delegation_status"
+  assert_contains "$output" "totally_bogus_value"
 }
 
 @test "validate_docs advisory warns on dangling _archive path references" {
@@ -3818,8 +3839,8 @@ EOF
 EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
-  [[ "$output" == *"reference a deleted _archive path"* ]]
-  [[ "$output" == *"PLAN-archive-ref-01-v1.0.md"* ]]
+  assert_contains "$output" "reference a deleted _archive path"
+  assert_contains "$output" "PLAN-archive-ref-01-v1.0.md"
 }
 
 @test "empty-graph gate ignores scaffold-only docs projects (routers are not source)" {
@@ -3831,14 +3852,14 @@ EOF
   git -C "$parent" -c user.email=t@t -c user.name=t commit -qm init
 
   run "$VALIDATE" "$parent" --mode strict
-  [[ "$output" != *"shadow graph is empty"* ]]
+  refute_contains "$output" "shadow graph is empty"
 
   printf 'x=1\n' > "$parent/src.py"
   git -C "$parent" add -A
   git -C "$parent" -c user.email=t@t -c user.name=t commit -qm code
 
   run "$VALIDATE" "$parent" --mode strict
-  [[ "$output" == *"shadow graph is empty"* ]]
+  assert_contains "$output" "shadow graph is empty"
 }
 
 @test "empty-graph gate is not silenced by a garbage unit line" {
@@ -3857,7 +3878,7 @@ p.write_text(p.read_text().replace("- no units detected yet", "- x"))
 PY
 
   run "$VALIDATE" "$parent" --mode advisory
-  [[ "$output" == *"shadow graph is empty"* ]]
+  assert_contains "$output" "shadow graph is empty"
 
   python3 - "$parent/docs/shadow/apps/_index.md" <<'PY'
 import sys
@@ -3867,7 +3888,7 @@ p.write_text(p.read_text().replace("- x", "- billing-service:\n  - overview_doc:
 PY
 
   run "$VALIDATE" "$parent" --mode advisory
-  [[ "$output" != *"shadow graph is empty"* ]]
+  refute_contains "$output" "shadow graph is empty"
 }
 
 @test "validate_docs advisory warns when a solo ORCH names delegated agents" {
@@ -3890,7 +3911,7 @@ EOF
 EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
-  [[ "$output" == *"execution_mode=solo contradicts non-empty delegated agent fields"* ]]
+  assert_contains "$output" "execution_mode=solo contradicts non-empty delegated agent fields"
 }
 
 # --- Terminal task statuses (superseded/cancelled) and retroactivity rules ---
@@ -3932,8 +3953,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -eq 0 ]
-  [[ "$output" != *"missing plan file for active task TASK-term-pass-01"* ]]
-  [[ "$output" != *"missing evaluator report"*"TASK-term-pass-01"* ]]
+  refute_contains "$output" "missing plan file for active task TASK-term-pass-01"
+  [[ "$output" != *"missing evaluator report"*"TASK-term-pass-01"* ]] || false
 }
 
 @test "validate_docs strict fails superseded task without disposition" {
@@ -3941,7 +3962,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"disposition is present but empty in superseded task"* ]]
+  assert_contains "$output" "disposition is present but empty in superseded task"
 }
 
 @test "validate_docs strict fails cancelled task without a disposition field" {
@@ -3951,7 +3972,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"disposition is missing in cancelled task"* ]]
+  assert_contains "$output" "disposition is missing in cancelled task"
 }
 
 @test "validate_docs flags task-index section mismatch for terminal statuses" {
@@ -3959,7 +3980,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"task-index section mismatch for TASK-term-idx-01"* ]]
+  assert_contains "$output" "task-index section mismatch for TASK-term-idx-01"
 }
 
 @test "validate_docs strict skips plan size cap and completeness fields for terminal task artifacts" {
@@ -3972,9 +3993,9 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -eq 0 ]
-  [[ "$output" == *"plan size cap skipped for terminal task artifact (status=superseded)"* ]]
-  [[ "$output" == *"plan completeness fields skipped for terminal task artifact"* ]]
-  [[ "$output" != *"scope is missing in plan"* ]]
+  assert_contains "$output" "plan size cap skipped for terminal task artifact (status=superseded)"
+  assert_contains "$output" "plan completeness fields skipped for terminal task artifact"
+  refute_contains "$output" "scope is missing in plan"
 }
 
 @test "validate_docs strict still enforces plan size cap and scope for active tasks" {
@@ -3994,8 +4015,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"plan document is too large"* ]]
-  [[ "$output" == *"scope is missing in plan"* ]]
+  assert_contains "$output" "plan document is too large"
+  assert_contains "$output" "scope is missing in plan"
 }
 
 @test "validate_docs flags superseded task whose capsule delegation_status is still planned in both modes" {
@@ -4003,11 +4024,11 @@ EOF
   printf '%s\n' "- disposition: superseded by TASK-successor-01" >> "$DOCS_ROOT/task/TASK-term-deleg-01.md"
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
-  [[ "$output" == *"orchestration delegation_status 'planned' contradicts terminal task status superseded"* ]]
+  assert_contains "$output" "orchestration delegation_status 'planned' contradicts terminal task status superseded"
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"orchestration delegation_status 'planned' contradicts terminal task status superseded"* ]]
+  assert_contains "$output" "orchestration delegation_status 'planned' contradicts terminal task status superseded"
 }
 
 @test "validate_docs strict passes done task whose evaluator report covers an earlier plan version" {
@@ -4078,7 +4099,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -eq 0 ]
-  [[ "$output" == *"evaluator report exists in plan lineage for done task TASK-lineage-done-01"* ]]
+  assert_contains "$output" "evaluator report exists in plan lineage for done task TASK-lineage-done-01"
 }
 
 @test "validate_docs strict fails done task with no evaluator report anywhere in the lineage" {
@@ -4118,7 +4139,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"missing evaluator report in plan lineage for done task TASK-lineage-miss-01"* ]]
+  assert_contains "$output" "missing evaluator report in plan lineage for done task TASK-lineage-miss-01"
 }
 
 @test "validate_docs strict allows empty adversarial debate fields on accept verdict" {
@@ -4168,7 +4189,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -eq 0 ]
-  [[ "$output" != *"objection is present but empty"* ]]
+  refute_contains "$output" "objection is present but empty"
 }
 
 @test "validate_docs strict still requires adversarial debate fields on revise verdict" {
@@ -4218,7 +4239,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"objection is present but empty in adversarial evaluator report"* ]]
+  assert_contains "$output" "objection is present but empty in adversarial evaluator report"
 }
 
 @test "validate_docs strict requires residual_risk even on adversarial accept verdict" {
@@ -4268,7 +4289,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"residual_risk is present but empty in adversarial evaluator report"* ]]
+  assert_contains "$output" "residual_risk is present but empty in adversarial evaluator report"
 }
 
 @test "validate_docs strict lineage gate ignores a report naming a phantom plan version" {
@@ -4324,7 +4345,7 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"missing evaluator report in plan lineage for done task TASK-lineage-phantom-01"* ]]
+  assert_contains "$output" "missing evaluator report in plan lineage for done task TASK-lineage-phantom-01"
 }
 
 @test "validate_docs strict keeps active-task gates on a status with a parenthetical note" {
@@ -4334,8 +4355,8 @@ EOF
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
-  [[ "$output" == *"invalid task.status value"* ]]
-  [[ "$output" == *"missing plan file for active task TASK-noted-status-01"* ]]
+  assert_contains "$output" "invalid task.status value"
+  assert_contains "$output" "missing plan file for active task TASK-noted-status-01"
 }
 
 @test "init_docs_scaffold task-index template includes terminal status sections" {
@@ -4413,7 +4434,7 @@ assert set(obj.keys()) == {"mode","project_root","format_version","issues","coun
 @test "validate_docs --format json rejects an invalid format value" {
   run "$VALIDATE" "$TEST_PROJECT" --format xml
   [ "$status" -eq 1 ]
-  [[ "$output" == *"[ERROR] Invalid format: xml"* ]]
+  assert_contains "$output" "[ERROR] Invalid format: xml"
 }
 
 @test "validate_docs --format json captures the emitting check-function name as issue id" {
@@ -4479,13 +4500,13 @@ EOF
   # The stderr side still carries the diagnostics.
   run bash -c "\"$VALIDATE\" \"$TEST_PROJECT\" --format json --bogus-option 2>&1 1>/dev/null"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"[ERROR] Unknown option: --bogus-option"* ]]
-  [[ "$output" == *"Usage:"* ]]
+  assert_contains "$output" "[ERROR] Unknown option: --bogus-option"
+  assert_contains "$output" "Usage:"
 
   # -h/--help keeps usage on stdout and exits 0.
   run bash -c "\"$VALIDATE\" --help 2>/dev/null"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Usage:"* ]]
+  assert_contains "$output" "Usage:"
 }
 
 @test "validate_docs --format json survives hostile message content (quotes, backslash, tab, non-ASCII)" {

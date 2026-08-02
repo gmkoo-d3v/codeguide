@@ -12,7 +12,7 @@ load codeguide_helper
     --runtime-allow-list "$allow_file"
 
   # 'echo' is not in the allow-list, so it should be blocked
-  [[ "$output" == *"BLOCKED"* ]]
+  assert_contains "$output" "BLOCKED"
 }
 
 @test "runtime-cmd blocks chained shell syntax in allow-list mode" {
@@ -25,8 +25,8 @@ load codeguide_helper
     --runtime-allow-list "$allow_file"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"unsafe shell syntax"* ]]
-  [[ "$output" != *"[RUN] Runtime test:"* ]]
+  assert_contains "$output" "unsafe shell syntax"
+  refute_contains "$output" "[RUN] Runtime test:"
 }
 
 @test "runtime-cmd blocks ampersand shell syntax in allow-list mode" {
@@ -39,8 +39,8 @@ load codeguide_helper
     --runtime-allow-list "$allow_file"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"unsafe shell syntax"* ]]
-  [[ "$output" != *"[RUN] Runtime test:"* ]]
+  assert_contains "$output" "unsafe shell syntax"
+  refute_contains "$output" "[RUN] Runtime test:"
 }
 
 @test "runtime-cmd passes with allow-list match" {
@@ -53,8 +53,8 @@ load codeguide_helper
     --runtime-allow-list "$allow_file"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"allowed-output"* ]]
-  [[ "$output" != *"BLOCKED"* ]]
+  assert_contains "$output" "allowed-output"
+  refute_contains "$output" "BLOCKED"
 }
 
 @test "runtime-cmd allow-list supports executable+subcommand matching" {
@@ -67,8 +67,8 @@ load codeguide_helper
     --runtime-allow-list "$allow_file"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[RUN] Runtime test: uname -a"* ]]
-  [[ "$output" != *"BLOCKED"* ]]
+  assert_contains "$output" "[RUN] Runtime test: uname -a"
+  refute_contains "$output" "BLOCKED"
 }
 
 @test "runtime-cmd blocks when executable+subcommand is not allow-listed" {
@@ -81,8 +81,8 @@ load codeguide_helper
     --runtime-allow-list "$allow_file"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"BLOCKED"* ]]
-  [[ "$output" == *"uname -a"* ]]
+  assert_contains "$output" "BLOCKED"
+  assert_contains "$output" "uname -a"
 }
 
 @test "runtime-cmd allow-list supports prefix patterns" {
@@ -95,7 +95,7 @@ load codeguide_helper
     --runtime-allow-list "$allow_file"
 
   # 'npx' should NOT match 'npm*' prefix since npx != npm
-  [[ "$output" == *"BLOCKED"* ]]
+  assert_contains "$output" "BLOCKED"
 }
 
 @test "runtime-cmd requires allow-list in code-or-runtime mode" {
@@ -104,8 +104,8 @@ load codeguide_helper
     --runtime-test-cmd "echo free-run"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"requires --runtime-allow-list"* ]]
-  [[ "$output" == *"BLOCKED"* ]]
+  assert_contains "$output" "requires --runtime-allow-list"
+  assert_contains "$output" "BLOCKED"
 }
 
 @test "runtime-cmd uses bash -c instead of eval" {
@@ -120,7 +120,7 @@ load codeguide_helper
     --runtime-allow-list "$allow_file"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"safe-execution"* ]]
+  assert_contains "$output" "safe-execution"
   unset __CODEGUIDE_TEST_VAR
 }
 
@@ -167,7 +167,7 @@ exit 99'
     --review-round "r01"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"--risk-preflight-status is required"* ]]
+  assert_contains "$output" "--risk-preflight-status is required"
   run test ! -e "$TEST_WORKSPACE/gemini-called"
   [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/claude-called"
@@ -181,7 +181,7 @@ exit 99'
     --risk-preflight-status "pass"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"External CLI review requires explicit user approval provenance"* ]]
+  assert_contains "$output" "External CLI review requires explicit user approval provenance"
   run test ! -e "$TEST_WORKSPACE/gemini-called"
   [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/claude-called"
@@ -195,7 +195,7 @@ exit 99'
     --risk-preflight-status "approval_required"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"external review is stopped before orchestration/delegation"* ]]
+  assert_contains "$output" "external review is stopped before orchestration/delegation"
   run test ! -e "$TEST_WORKSPACE/gemini-called"
   [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/claude-called"
@@ -282,9 +282,9 @@ exit 99'
     --approved-next-step "run external review ext-review-01 v1.0 r01"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[OK] evaluator=agy"* ]]
-  [[ "$output" == *"[OK] evaluator=claude"* ]]
-  [[ "$output" == *"No new plan version was created automatically."* ]]
+  assert_contains "$output" "[OK] evaluator=agy"
+  assert_contains "$output" "[OK] evaluator=claude"
+  assert_contains "$output" "No new plan version was created automatically."
 
   run test -f "$DOCS_ROOT/report/PLAN-ext-review-01-v1.0-review-agy-current-r01.md"
   [ "$status" -eq 0 ]
@@ -327,7 +327,7 @@ exit 99'
   local handoff_dir
   handoff_dir="$(external_handoff_dir "ext-review-01" "v1.0" "r01")"
   [ -n "$handoff_dir" ]
-  [[ "$handoff_dir" =~ /[A-Z][a-z]{2}[0-9]{2}_[0-9]{4}/ext-review-01/v1\.0/r01$ ]]
+  [[ "$handoff_dir" =~ /ext-review-01/external-cli/v1\.0/r01$ ]] || false
   run test -f "$handoff_dir/agy-current.request.md"
   [ "$status" -eq 0 ]
   run test -f "$handoff_dir/agy-current.response.md"
@@ -469,9 +469,9 @@ exit 99'
     --reviewer "claude"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[OK] evaluator=claude"* ]]
-  [[ "$output" != *"evaluator=gemini"* ]]
-  [[ "$output" != *"evaluator=codex"* ]]
+  assert_contains "$output" "[OK] evaluator=claude"
+  refute_contains "$output" "evaluator=gemini"
+  refute_contains "$output" "evaluator=codex"
 
   run test -f "$DOCS_ROOT/report/PLAN-ext-review-07-v1.0-review-claude-current-r07.md"
   [ "$status" -eq 0 ]
@@ -540,10 +540,10 @@ exit 99'
     --manual-handoff-only
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[MANUAL] evaluator=agy"* ]]
-  [[ "$output" == *"[MANUAL] evaluator=claude"* ]]
-  [[ "$output" == *"manual_handoff_only=true"* ]]
-  [[ "$output" == *"--ingest-manual-responses"* ]]
+  assert_contains "$output" "[MANUAL] evaluator=agy"
+  assert_contains "$output" "[MANUAL] evaluator=claude"
+  assert_contains "$output" "manual_handoff_only=true"
+  assert_contains "$output" "--ingest-manual-responses"
   run test ! -e "$TEST_WORKSPACE/gemini-called"
   [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/claude-called"
@@ -595,8 +595,8 @@ EOF
     --ingest-manual-responses
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[OK] evaluator=agy"* ]]
-  [[ "$output" == *"[OK] evaluator=claude"* ]]
+  assert_contains "$output" "[OK] evaluator=agy"
+  assert_contains "$output" "[OK] evaluator=claude"
   run test ! -e "$TEST_WORKSPACE/gemini-called"
   [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/claude-called"
@@ -688,8 +688,8 @@ EOF'
     --adversarial-evaluator "codex"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[FAIL] evaluator=claude"* ]]
-  [[ "$output" == *"[OK] evaluator=codex style=adversarial"* ]]
+  assert_contains "$output" "[FAIL] evaluator=claude"
+  assert_contains "$output" "[OK] evaluator=codex requested_route=codex:current actual_route=codex:current quota_fallback=false style=adversarial"
 
   run test -f "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-current-r02.md"
   [ "$status" -eq 0 ]
@@ -713,7 +713,7 @@ EOF'
   local handoff_dir
   handoff_dir="$(external_handoff_dir "ext-review-02" "v1.0" "r02")"
   [ -n "$handoff_dir" ]
-  [[ "$handoff_dir" =~ /[A-Z][a-z]{2}[0-9]{2}_[0-9]{4}/ext-review-02/v1\.0/r02$ ]]
+  [[ "$handoff_dir" =~ /ext-review-02/external-cli/v1\.0/r02$ ]] || false
   run test -f "$handoff_dir/codex-current.request.md"
   [ "$status" -eq 0 ]
   run test -f "$handoff_dir/codex-current.response.md"
@@ -826,9 +826,9 @@ EOF'
     --approved-next-step "run external review ext-review-04 v1.0 r04"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"auto-selecting adversarial evaluator=agy:current"* ]]
-  [[ "$output" == *"[OK] evaluator=agy style=adversarial"* ]]
-  [[ "$output" == *"[OK] evaluator=codex style=standard"* ]]
+  assert_contains "$output" "auto-selecting adversarial evaluator=agy:current"
+  assert_contains "$output" "[OK] evaluator=agy requested_route=agy:current actual_route=agy:current quota_fallback=false style=adversarial"
+  assert_contains "$output" "[OK] evaluator=codex requested_route=codex:current actual_route=codex:current quota_fallback=false style=standard"
 
   run test -f "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-agy-current-r04.md"
   [ "$status" -eq 0 ]
@@ -840,7 +840,7 @@ EOF'
   local handoff_dir
   handoff_dir="$(external_handoff_dir "ext-review-04" "v1.0" "r04")"
   [ -n "$handoff_dir" ]
-  [[ "$handoff_dir" =~ /[A-Z][a-z]{2}[0-9]{2}_[0-9]{4}/ext-review-04/v1\.0/r04$ ]]
+  [[ "$handoff_dir" =~ /ext-review-04/external-cli/v1\.0/r04$ ]] || false
   run test -f "$handoff_dir/agy-current.request.md"
   [ "$status" -eq 0 ]
   run test -f "$handoff_dir/agy-current.response.md"
@@ -923,8 +923,8 @@ exit 4'
     --approved-next-step "run external review ext-review-03 v1.0 r03"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"[FAIL] evaluator=agy"* ]]
-  [[ "$output" == *"[FAIL] evaluator=codex"* ]]
+  assert_contains "$output" "[FAIL] evaluator=agy"
+  assert_contains "$output" "[FAIL] evaluator=codex"
   run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-03-v1.0-review-agy-current-r03.md"
   [ "$status" -eq 0 ]
   run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-03-v1.0-review-codex-current-r03.md"
@@ -1014,7 +1014,7 @@ EOF'
     --approved-next-step "run external review ext-review-05 v1.0 r05"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Required adversarial review did not complete successfully"* ]]
+  assert_contains "$output" "Required adversarial review did not complete successfully"
   run test -f "$DOCS_ROOT/report/PLAN-ext-review-05-v1.0-review-codex-current-r05.md"
   [ "$status" -eq 0 ]
 }
@@ -1073,7 +1073,7 @@ exit 0'
     --approved-next-step "run external review ext-review-06 v1.0 r06"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"[FAIL] evaluator=codex"* ]]
+  assert_contains "$output" "[FAIL] evaluator=codex"
   run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-06-v1.0-review-codex-current-r06.md"
   [ "$status" -eq 0 ]
 
@@ -1132,9 +1132,9 @@ EOF
     --task-phase "planning"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Quota exhausted for route 'agy:gemini-3.6-flash-medium' (quota_group=agy-gemini-shared)"* ]]
-  [[ "$output" == *"Switch the globally selected model in runner 'agy'"* ]]
-  [[ "$output" == *"Do not auto-edit runner settings"* ]]
+  assert_contains "$output" "Quota exhausted for route 'agy:gemini-3.6-flash-medium' (quota_group=agy-gemini-shared)"
+  assert_contains "$output" "Switch the globally selected model in runner 'agy'"
+  assert_contains "$output" "Do not auto-edit runner settings"
 
   run grep -- "--add-dir" "$TEST_WORKSPACE/agy-calls.log"
   [ "$status" -eq 0 ]
@@ -1192,9 +1192,9 @@ EOF
     --task-phase "code"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Quota exhausted for route 'agy:gemini-3.6-flash-medium' (quota_group=agy-gemini-shared)"* ]]
-  [[ "$output" == *"Switch the globally selected model in runner 'agy'"* ]]
-  [[ "$output" == *"Do not auto-edit runner settings"* ]]
+  assert_contains "$output" "Quota exhausted for route 'agy:gemini-3.6-flash-medium' (quota_group=agy-gemini-shared)"
+  assert_contains "$output" "Switch the globally selected model in runner 'agy'"
+  assert_contains "$output" "Do not auto-edit runner settings"
 
   run grep -- "--add-dir" "$TEST_WORKSPACE/agy-calls-code.log"
   [ "$status" -eq 0 ]
@@ -1246,9 +1246,9 @@ EOF
     --approved-next-step "run external review ext-fallback-fail"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Quota exhausted for route 'claude:opus-4.8' (quota_group=claude-direct-subscription)"* ]]
-  [[ "$output" == *"Switch the globally selected model in runner 'claude'"* ]]
-  [[ "$output" != *"Registry fallback succeeded"* ]]
+  assert_contains "$output" "Quota exhausted for route 'claude:opus-4.8' (quota_group=claude-direct-subscription)"
+  assert_contains "$output" "Switch the globally selected model in runner 'claude'"
+  refute_contains "$output" "Registry fallback succeeded"
   run grep -E -- '(^|[[:space:]])--model([[:space:]]|$)' "$TEST_WORKSPACE/claude-calls-fail.log"
   [ "$status" -eq 0 ]
   run grep -- "opus-4.8" "$TEST_WORKSPACE/claude-calls-fail.log"
@@ -1414,7 +1414,7 @@ exit 1'
     --approved-next-step "run external review ext-claude-model-blocked"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Model unavailable or access blocked for route 'claude:opus-4.8'"* ]]
+  assert_contains "$output" "Model unavailable or access blocked for route 'claude:opus-4.8'"
   local handoff_dir
   handoff_dir="$(external_handoff_dir "ext-claude-model-blocked" "v1.0" "r01")"
   [ -n "$handoff_dir" ]
@@ -1460,9 +1460,9 @@ exit 1'
     --approved-next-step "run external review ext-claude-auth-blocked"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Runner authentication unavailable for route 'claude:opus-4.8'"* ]]
-  [[ "$output" == *"sandbox/keychain permission boundary"* ]]
-  [[ "$output" == *"user-approved unsandboxed path"* ]]
+  assert_contains "$output" "Runner authentication unavailable for route 'claude:opus-4.8'"
+  assert_contains "$output" "Codex/app sandbox"
+  assert_contains "$output" "user-approved unsandboxed path"
   local handoff_dir
   handoff_dir="$(external_handoff_dir "ext-claude-auth-blocked" "v1.0" "r01")"
   [ -n "$handoff_dir" ]
@@ -1480,12 +1480,12 @@ exit 1'
   [ "$status" -eq 0 ]
   local registry_output="$output"
 
-  [[ "$registry_output" == *$'model\tcodex:gpt-5.6-sol\tcodex\tgpt-5.6-sol'* ]]
-  [[ "$registry_output" == *$'model\tcodex:gpt-5.6-terra\tcodex\tgpt-5.6-terra'* ]]
-  [[ "$registry_output" == *$'model\tcodex:gpt-5.6-luna\tcodex\tgpt-5.6-luna'* ]]
-  [[ "$registry_output" == *$'model\tclaude:fable-5\tclaude\tclaude-fable-5'* ]]
-  [[ "$registry_output" == *$'model\tclaude:sonnet-5\tclaude\tclaude-sonnet-5'* ]]
-  [[ "$registry_output" == *$'model\tclaude:opus-4.8\tclaude\topus-4.8'* ]]
+  assert_contains "$registry_output" $'model\tcodex:gpt-5.6-sol\tcodex\tgpt-5.6-sol'
+  assert_contains "$registry_output" $'model\tcodex:gpt-5.6-terra\tcodex\tgpt-5.6-terra'
+  assert_contains "$registry_output" $'model\tcodex:gpt-5.6-luna\tcodex\tgpt-5.6-luna'
+  assert_contains "$registry_output" $'model\tclaude:fable-5\tclaude\tclaude-fable-5'
+  assert_contains "$registry_output" $'model\tclaude:sonnet-5\tclaude\tclaude-sonnet-5'
+  assert_contains "$registry_output" $'model\tclaude:opus-4.8\tclaude\topus-4.8'
 }
 
 @test "run_external_plan_reviews loads runner routes from registry override and still stops on quota" {
@@ -1587,8 +1587,8 @@ EOF
     --approved-next-step "run external review ext-registry-override"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Quota exhausted for route 'agy:new-gemini' (quota_group=agy-future-gemini)"* ]]
-  [[ "$output" == *"Switch the globally selected model in runner 'agy'"* ]]
+  assert_contains "$output" "Quota exhausted for route 'agy:new-gemini' (quota_group=agy-future-gemini)"
+  assert_contains "$output" "Switch the globally selected model in runner 'agy'"
 
   run grep -- "--add-dir" "$TEST_WORKSPACE/agy-registry-calls.log"
   [ "$status" -eq 0 ]
@@ -1604,8 +1604,8 @@ EOF
   run env CODEGUIDE_MODEL_REGISTRY="$TEST_WORKSPACE/missing-registry.json" bash "$RUN_EXTERNAL_REVIEWS" --help
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Usage:"* ]]
-  [[ "$output" != *"Model registry not found"* ]]
+  assert_contains "$output" "Usage:"
+  refute_contains "$output" "Model registry not found"
 }
 
 @test "run_external_plan_reviews rejects invalid task phase before fallback routing" {
@@ -1620,7 +1620,7 @@ EOF
     --task-phase "cod"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"[ERROR] Invalid --task-phase: cod"* ]]
+  assert_contains "$output" "[ERROR] Invalid --task-phase: cod"
 }
 
 @test "run_external_plan_reviews unregistered reviewer route fails closed before invocation" {
@@ -1658,8 +1658,8 @@ exit 1'
     --approved-next-step "run external review ext-unknown-model"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"resolves to unregistered model 'future-model'"* ]]
-  [[ "$output" != *"Registry fallback succeeded"* ]]
+  assert_contains "$output" "resolves to unregistered model 'future-model'"
+  refute_contains "$output" "Registry fallback succeeded"
 }
 
 @test "run_external_plan_reviews rejects registry fallback targets outside known routes" {
@@ -1715,7 +1715,7 @@ EOF
     --approved-next-step "run external review ext-bad-fallback"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"references unknown model route"* ]]
+  assert_contains "$output" "references unknown model route"
 }
 
 @test "run_external_plan_reviews stops after first exhausted route without fallback invocation" {
@@ -1757,8 +1757,8 @@ exit 1'
     --approved-next-step "run external review ext-fallback-exhausted"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Quota exhausted for route 'agy:gemini-3.6-flash-medium' (quota_group=agy-gemini-shared)"* ]]
-  [[ "$output" == *"Switch the globally selected model in runner 'agy'"* ]]
+  assert_contains "$output" "Quota exhausted for route 'agy:gemini-3.6-flash-medium' (quota_group=agy-gemini-shared)"
+  assert_contains "$output" "Switch the globally selected model in runner 'agy'"
   run test ! -e "$TEST_WORKSPACE/claude-fallback-called"
   [ "$status" -eq 0 ]
 }
@@ -1839,11 +1839,11 @@ EOF'
   run python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-neutral" --dry-run
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"agy --add-dir"* ]]
-  [[ "$output" == *"claude -p"* ]]
-  [[ "$output" == *"codex exec"* ]]
-  [[ "$output" != *"--model"* ]]
-  [[ "$output" != *" -m "* ]]
+  assert_contains "$output" "agy --add-dir"
+  assert_contains "$output" "claude -p"
+  assert_contains "$output" "codex exec"
+  refute_contains "$output" "--model"
+  refute_contains "$output" " -m "
 }
 
 @test "external_review_runner treats any coordinator's own current route as manual/current-thread, not only codex" {
@@ -1854,16 +1854,16 @@ EOF'
   [ "$status" -eq 0 ]
   run grep -A2 '"id": "claude:current"' "$DOCS_ROOT/orchestration/runner-coordinator-neutral/current-task/debate.json"
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"role": "participant"'* ]]
-  [[ "$output" == *'"runner_route": "manual/current-thread"'* ]]
+  assert_contains "$output" '"role": "participant"'
+  assert_contains "$output" '"runner_route": "manual/current-thread"'
   run grep '"runner_route": "agy:current"' "$DOCS_ROOT/orchestration/runner-coordinator-neutral/current-task/debate.json"
   [ "$status" -eq 0 ]
 
   run python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-coordinator-neutral" --dry-run
 
   [ "$status" -eq 0 ]
-  [[ "$output" != *"claude -p"* ]]
-  [[ "$output" == *"agy --add-dir"* ]]
+  refute_contains "$output" "claude -p"
+  assert_contains "$output" "agy --add-dir"
 }
 
 @test "external_review_runner executes agy with current CLI flags and preconfigured model selection" {
@@ -1926,7 +1926,7 @@ EOF'
   # Second run without --force must skip and warn, and must NOT invoke the CLI again.
   run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-skip-warn"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] skipping participant agy:gemini-3.6-flash-high: response already exists (use --force to rerun)"* ]]
+  assert_contains "$output" "[WARN] skipping participant agy:gemini-3.6-flash-high: response already exists (use --force to rerun)"
   run cat "$TEST_WORKSPACE/runner-skip-warn-agy.count"
   [ "$output" = "x" ]
 }
@@ -1956,7 +1956,7 @@ EOF'
   # Rerunning with --force must invoke the CLI again (no skip warning either).
   run env PATH="$mock_bin:$PATH" python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-force-rerun" --force
   [ "$status" -eq 0 ]
-  [[ "$output" != *"[WARN] skipping participant"* ]]
+  refute_contains "$output" "[WARN] skipping participant"
   run cat "$TEST_WORKSPACE/runner-force-rerun-agy.count"
   [ "$output" = "xx" ]
 }
@@ -2182,10 +2182,13 @@ EOF'
     --adversarial-all
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[OK] evaluator=claude"*"style=adversarial"* ]]
-  [[ "$output" == *"[OK] evaluator=agy"*"style=adversarial"* ]]
-  [[ "$output" == *"[OK] evaluator=codex"*"style=adversarial"* ]]
-  [[ "$output" != *"style=standard"* ]]
+  # One contiguous needle per evaluator: splitting these into "[OK] evaluator=X" plus a
+  # bare "style=adversarial" would let ANY line supply the style and stop binding the
+  # style to the evaluator that must carry it (review finding, 2026-08-02).
+  assert_contains "$output" "[OK] evaluator=claude requested_route=claude:sonnet-5 actual_route=claude:sonnet-5 quota_fallback=false style=adversarial"
+  assert_contains "$output" "[OK] evaluator=agy requested_route=agy:current actual_route=agy:current quota_fallback=false style=adversarial"
+  assert_contains "$output" "[OK] evaluator=codex requested_route=codex:current actual_route=codex:current quota_fallback=false style=adversarial"
+  refute_contains "$output" "style=standard"
 
   run grep -- "--model" "$TEST_WORKSPACE/claude-args.log"
   [ "$status" -eq 0 ]
@@ -2277,10 +2280,12 @@ EOF'
     --allow-partial-review
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"[FAIL] evaluator=agy"*"style=adversarial"* ]]
-  [[ "$output" == *"[OK] evaluator=claude"*"style=adversarial"* ]]
-  [[ "$output" == *"Required adversarial review did not complete successfully"* ]]
-  [[ "$output" == *"agy:current"* ]]
+  # Contiguous needles: this site has no refute_contains "style=standard" backstop, so a
+  # split pair would pass even if agy's own line reported style=standard.
+  assert_contains "$output" "[FAIL] evaluator=agy route=agy:current style=adversarial"
+  assert_contains "$output" "[OK] evaluator=claude requested_route=claude:current actual_route=claude:current quota_fallback=false style=adversarial"
+  assert_contains "$output" "Required adversarial review did not complete successfully"
+  assert_contains "$output" "agy:current"
 }
 
 @test "run_external_plan_reviews --adversarial-cross-check auto-selects registry vendor peer and cross-vendor reviewers" {
@@ -2373,11 +2378,14 @@ EOF'
     --adversarial-cross-check
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"auto-selected reviewers=claude:sonnet-5 agy:current codex:current"* ]]
-  [[ "$output" == *"[OK] evaluator=claude"*"style=adversarial"* ]]
-  [[ "$output" == *"[OK] evaluator=agy"*"style=adversarial"* ]]
-  [[ "$output" == *"[OK] evaluator=codex"*"style=adversarial"* ]]
-  [[ "$output" != *"style=standard"* ]]
+  assert_contains "$output" "auto-selected reviewers=claude:sonnet-5 agy:current codex:current"
+  # One contiguous needle per evaluator: splitting these into "[OK] evaluator=X" plus a
+  # bare "style=adversarial" would let ANY line supply the style and stop binding the
+  # style to the evaluator that must carry it (review finding, 2026-08-02).
+  assert_contains "$output" "[OK] evaluator=claude requested_route=claude:sonnet-5 actual_route=claude:sonnet-5 quota_fallback=false style=adversarial"
+  assert_contains "$output" "[OK] evaluator=agy requested_route=agy:current actual_route=agy:current quota_fallback=false style=adversarial"
+  assert_contains "$output" "[OK] evaluator=codex requested_route=codex:current actual_route=codex:current quota_fallback=false style=adversarial"
+  refute_contains "$output" "style=standard"
 
   run grep -- "--model" "$TEST_WORKSPACE/claude-args.log"
   [ "$status" -eq 0 ]
@@ -2438,7 +2446,7 @@ exit 99'
     --adversarial-cross-check
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"--adversarial-cross-check cannot be combined with --reviewer"* ]]
+  assert_contains "$output" "--adversarial-cross-check cannot be combined with --reviewer"
   run test ! -e "$TEST_WORKSPACE/agy-called"
   [ "$status" -eq 0 ]
   run test ! -e "$TEST_WORKSPACE/claude-called"
@@ -2500,7 +2508,7 @@ EOF'
     --approved-next-step "run external review ext-effort-01 v1.0 r01"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[OK] evaluator=codex"* ]]
+  assert_contains "$output" "[OK] evaluator=codex"
   run grep -- "--model" "$TEST_WORKSPACE/codex-effort-args.log"
   [ "$status" -eq 0 ]
   run grep -x -- "gpt-5.6-sol" "$TEST_WORKSPACE/codex-effort-args.log"
@@ -2516,9 +2524,9 @@ EOF'
   run python3 "$EXTERNAL_REVIEW_RUNNER" --project-root "$TEST_PROJECT" run-once --task-id "runner-effort" --dry-run
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"codex exec"* ]]
-  [[ "$output" == *"--model gpt-5.6-sol"* ]]
-  [[ "$output" == *"model_reasoning_effort=high"* ]]
+  assert_contains "$output" "codex exec"
+  assert_contains "$output" "--model gpt-5.6-sol"
+  assert_contains "$output" "model_reasoning_effort=high"
 }
 
 @test "run_external_plan_reviews blocks sandboxed claude invocation with non-sandboxed remediation" {
@@ -2562,8 +2570,8 @@ EOF'
     --approved-next-step "run external review ext-sandbox-01 v1.0 r01"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Codex sandbox detected"* ]]
-  [[ "$output" == *"non-sandboxed"* ]]
+  assert_contains "$output" "Codex sandbox detected"
+  assert_contains "$output" "non-sandboxed"
   run test -e "$TEST_WORKSPACE/claude-sandbox-called"
   [ "$status" -ne 0 ]
 }
@@ -2627,7 +2635,7 @@ EOF'
     --approved-next-step "run external review ext-sandbox-02 v1.0 r01"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[OK] evaluator=claude"* ]]
+  assert_contains "$output" "[OK] evaluator=claude"
   run test -e "$TEST_WORKSPACE/claude-falsy-called"
   [ "$status" -eq 0 ]
 }
@@ -2666,7 +2674,7 @@ echo "- verdict: accept"'
     --approved-next-step "run external review ext-sandbox-03 v1.0 r01"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Codex sandbox detected"* ]]
+  assert_contains "$output" "Codex sandbox detected"
   run test -e "$TEST_WORKSPACE/claude-net-called"
   [ "$status" -ne 0 ]
 }
@@ -2702,7 +2710,7 @@ PY
 
   run python3 "$SCRIPTS_DIR/ai_model_registry.py" emit-shell "$bad_registry"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"control characters"* ]]
+  assert_contains "$output" "control characters"
 }
 
 @test "model registry rejects cli_effort on non-codex runners" {
@@ -2737,7 +2745,7 @@ PY
 
   run python3 "$SCRIPTS_DIR/ai_model_registry.py" emit-shell "$bad_registry"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"cli_effort is only supported for codex_cli runners"* ]]
+  assert_contains "$output" "cli_effort is only supported for codex_cli runners"
 }
 
 @test "sandbox guard trims whitespace before truthiness (parity with python)" {
@@ -2780,7 +2788,7 @@ EOF'
     --approved-next-step "run external review ext-sandbox-04 v1.0 r01"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[OK] evaluator=claude"* ]]
+  assert_contains "$output" "[OK] evaluator=claude"
   run test -e "$TEST_WORKSPACE/claude-pad-called"
   [ "$status" -eq 0 ]
 
@@ -2847,7 +2855,7 @@ echo "- verdict: accept"'
     --approved-next-step "run external review ext-sandbox-05 v1.0 r01"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Codex sandbox detected"* ]]
+  assert_contains "$output" "Codex sandbox detected"
   run test -e "$TEST_WORKSPACE/claude2-called"
   [ "$status" -ne 0 ]
 }

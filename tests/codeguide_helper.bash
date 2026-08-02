@@ -209,6 +209,12 @@ EOF
 assert_contains() {
   local haystack="$1"
   local needle="$2"
+  # An empty needle is true for every haystack, so it asserts nothing: reject it
+  # rather than let a mis-quoted expansion look like a passing check.
+  if [[ -z "$needle" ]]; then
+    printf 'assert_contains called with an empty needle (asserts nothing)\n' >&2
+    return 1
+  fi
   if [[ "$haystack" != *"$needle"* ]]; then
     printf 'assert_contains failed\n  expected to find: %s\n  in: %s\n' "$needle" "$haystack" >&2
     return 1

@@ -162,7 +162,7 @@ load codeguide_helper
 @test "check_english_docs passes for curated codeguide markdown" {
   run "$CHECK_ENGLISH_DOCS" "$(cd "$SCRIPTS_DIR/.." && pwd)"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"English-only"* ]]
+  assert_contains "$output" "English-only"
 }
 
 @test "check_english_docs rejects fenced code blocks in structural indexes" {
@@ -180,7 +180,7 @@ EOF
 
   run "$CHECK_ENGLISH_DOCS" "$workspace"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"fenced code block is not allowed in structural index files"* ]]
+  assert_contains "$output" "fenced code block is not allowed in structural index files"
 }
 
 @test "check_english_docs requires explicit md pointers in index entries" {
@@ -196,7 +196,7 @@ EOF
 
   run "$CHECK_ENGLISH_DOCS" "$workspace"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"index entry must include a backtick-wrapped .md pointer"* ]]
+  assert_contains "$output" "index entry must include a backtick-wrapped .md pointer"
 }
 
 @test "check_english_docs detects indented star index entries without md pointers" {
@@ -212,7 +212,7 @@ EOF
 
   run "$CHECK_ENGLISH_DOCS" "$workspace"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"index entry must include a backtick-wrapped .md pointer"* ]]
+  assert_contains "$output" "index entry must include a backtick-wrapped .md pointer"
 }
 
 @test "check_english_docs fails on Korean text outside research exclusions" {
@@ -233,7 +233,7 @@ EOF
 
   run "$CHECK_ENGLISH_DOCS" "$workspace"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"notes.md"* ]]
+  assert_contains "$output" "notes.md"
 
   rm -rf "$workspace"
 }
@@ -297,7 +297,7 @@ EOF
 @test "init_docs_scaffold fails on non-existent target" {
   run "$INIT_SCAFFOLD" "/tmp/nonexistent_codeguide_test_dir_$$"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"ERROR"* ]]
+  assert_contains "$output" "ERROR"
 }
 
 @test "init_docs_scaffold fails when docs path is a file" {
@@ -310,7 +310,7 @@ EOF
 
   run "$INIT_SCAFFOLD" "$proj"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"not a directory"* ]]
+  assert_contains "$output" "not a directory"
 
   rm -rf "$workspace"
 }
@@ -318,7 +318,7 @@ EOF
 @test "init_docs_scaffold shows help with --help" {
   run "$INIT_SCAFFOLD" --help
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Usage"* ]]
+  assert_contains "$output" "Usage"
 }
 
 @test "init_docs_scaffold creates DOC-GOVERNANCE with new sections" {

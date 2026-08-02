@@ -28,7 +28,8 @@ Options:
                        environment contract stage.
   --suite <name>       Restrict the bats stage to a named file subset:
                          fast     - check_env.bats, codeguide_paths.bats,
-                                    scaffold_english.bats
+                                    scaffold_english.bats,
+                                    assertion_helpers.bats
                          contract - validate_docs.bats, doc_garden.bats,
                                     run_codeguide.bats
                          external - external_review.bats
@@ -106,7 +107,8 @@ SUITE_FILES=()
 set_suite_files() {
   case "$1" in
     fast)
-      SUITE_FILES=(check_env.bats codeguide_paths.bats scaffold_english.bats)
+      SUITE_FILES=(check_env.bats codeguide_paths.bats scaffold_english.bats
+        assertion_helpers.bats)
       ;;
     contract)
       SUITE_FILES=(validate_docs.bats doc_garden.bats run_codeguide.bats)

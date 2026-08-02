@@ -13,10 +13,10 @@ TESTS_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")" && pwd)"
 @test "codeguide with no args prints usage listing every subcommand and exits 0" {
   run "$CODEGUIDE"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Usage:"* ]]
+  assert_contains "$output" "Usage:"
   for sub in doctor check validate docs-sync scaffold review \
     shadow-impact shadow-coverage shadow-metrics shadow-digest; do
-    [[ "$output" == *"$sub"* ]]
+    assert_contains "$output" "$sub"
   done
 }
 
@@ -37,9 +37,9 @@ TESTS_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")" && pwd)"
 @test "codeguide rejects an unknown subcommand: exits 2 with usage on stderr" {
   run --separate-stderr "$CODEGUIDE" bogus-subcommand
   [ "$status" -eq 2 ]
-  [[ "$stderr" == *"Unknown subcommand: bogus-subcommand"* ]]
-  [[ "$stderr" == *"Usage:"* ]]
-  [[ "$output" != *"Unknown subcommand"* ]]
+  assert_contains "$stderr" "Unknown subcommand: bogus-subcommand"
+  assert_contains "$stderr" "Usage:"
+  refute_contains "$output" "Unknown subcommand"
 }
 
 @test "codeguide <subcommand> --help delegates verbatim to that tool's own usage" {
@@ -49,7 +49,7 @@ TESTS_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")" && pwd)"
     [ -z "$sub" ] && continue
     run "$CODEGUIDE" "$sub" --help
     [ "$status" -eq 0 ]
-    [[ "$output" == *"$hint"* ]]
+    assert_contains "$output" "$hint"
   done <<'TABLE'
 doctor|check_env.sh
 check|check_all.sh
@@ -67,7 +67,7 @@ TABLE
 @test "codeguide validate runs end-to-end in advisory mode on a scratch scaffold" {
   run "$CODEGUIDE" validate "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Docs validation passed."* ]]
+  assert_contains "$output" "Docs validation passed."
 }
 
 @test "codeguide docs-sync preserves a quoted multi-word --task-title (arg-vector survival)" {
@@ -82,7 +82,7 @@ TABLE
 
   run cat "$DOCS_ROOT/task/TASK-front-cli-quote-01.md"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"- title: hello there general"* ]]
+  assert_contains "$output" "- title: hello there general"
 }
 
 # --- suites (check_all.sh --suite) -----------------------------------------
@@ -90,23 +90,23 @@ TABLE
 @test "check_all --suite fast runs only the fast suite files" {
   local expected=0
   local f
-  for f in check_env.bats codeguide_paths.bats scaffold_english.bats; do
+  for f in check_env.bats codeguide_paths.bats scaffold_english.bats assertion_helpers.bats; do
     expected=$(( expected + $(grep -c '^@test' "$TESTS_DIR/$f") ))
   done
 
   run bash "$CHECK_ALL" "$TEST_PROJECT" --suite fast --skip-pytest
   [ "$status" -eq 0 ]
-  [[ "$output" == *"1..${expected}"* ]]
-  [[ "$output" == *"[PASS] bats suite (--suite fast: 3 file(s))"* ]]
-  [[ "$output" == *"[SKIP] pytest suite (tests/)"* ]]
+  assert_contains "$output" "1..${expected}"
+  assert_contains "$output" "[PASS] bats suite (--suite fast: 4 file(s))"
+  assert_contains "$output" "[SKIP] pytest suite (tests/)"
   # A test title that only exists in a contract-suite file must not run.
-  [[ "$output" != *"validate_docs advisory warns when dependent external review is requested"* ]]
+  refute_contains "$output" "validate_docs advisory warns when dependent external review is requested"
 }
 
 @test "check_all rejects an unknown --suite name" {
   run bash "$CHECK_ALL" "$TEST_PROJECT" --suite bogus
   [ "$status" -eq 2 ]
-  [[ "$output" == *"Unknown suite: bogus"* ]]
+  assert_contains "$output" "Unknown suite: bogus"
 }
 
 @test "check_all --suite fails loudly before any stage when a suite member file is missing" {
@@ -118,8 +118,8 @@ TABLE
 
   run bash "$skill_copy/scripts/check_all.sh" "$TEST_PROJECT" --suite fast
   [ "$status" -eq 2 ]
-  [[ "$output" == *"Suite 'fast' references a missing test file: tests/codeguide_paths.bats"* ]]
-  [[ "$output" != *"[STAGE]"* ]]
+  assert_contains "$output" "Suite 'fast' references a missing test file: tests/codeguide_paths.bats"
+  refute_contains "$output" "[STAGE]"
 }
 
 # --- packaging gate (check_all.sh packaging-smoke stage) --------------------
@@ -147,8 +147,8 @@ TABLE
 
   run bash "$skill_copy/scripts/check_all.sh" "$TEST_PROJECT" --suite fast --skip-pytest
   [ "$status" -ne 0 ]
-  [[ "$output" == *"[FAIL] packaging smoke (packaging_smoke.py)"* ]]
-  [[ "$output" == *"[RESULT] Quality gate failed; see stages marked FAIL above."* ]]
+  assert_contains "$output" "[FAIL] packaging smoke (packaging_smoke.py)"
+  assert_contains "$output" "[RESULT] Quality gate failed; see stages marked FAIL above."
 }
 
 # --- artifacts (check_all.sh --artifacts) -----------------------------------
@@ -158,7 +158,7 @@ TABLE
 
   run bash "$CHECK_ALL" "$TEST_PROJECT" --suite fast --skip-pytest --artifacts "$artifacts_dir"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[ARTIFACTS] $artifacts_dir"* ]]
+  assert_contains "$output" "[ARTIFACTS] $artifacts_dir"
 
   local log
   for log in 01-env-contract.log 02-bats-suite.log 03-pytest-suite.log \
@@ -203,12 +203,12 @@ for line in lines:
 
   run bash "$CHECK_ALL" "$TEST_PROJECT" --suite fast --skip-pytest --metrics-out "$metrics_file"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[PASS] environment contract (check_env.sh --skip-pytest)"* ]]
-  [[ "$output" == *"[PASS] bats suite (--suite fast: 3 file(s))"* ]]
-  [[ "$output" == *"[SKIP] pytest suite (tests/)"* ]]
-  [[ "$output" == *"[PASS] strict docs validation (validate_docs.sh)"* ]]
-  [[ "$output" == *"[PASS] English docs policy (check_english_docs.sh)"* ]]
-  [[ "$output" == *"[PASS] packaging smoke (packaging_smoke.py)"* ]]
+  assert_contains "$output" "[PASS] environment contract (check_env.sh --skip-pytest)"
+  assert_contains "$output" "[PASS] bats suite (--suite fast: 4 file(s))"
+  assert_contains "$output" "[SKIP] pytest suite (tests/)"
+  assert_contains "$output" "[PASS] strict docs validation (validate_docs.sh)"
+  assert_contains "$output" "[PASS] English docs policy (check_english_docs.sh)"
+  assert_contains "$output" "[PASS] packaging smoke (packaging_smoke.py)"
 
   run python3 -c '
 import json
@@ -226,7 +226,7 @@ assert record["overall"] == "pass", record
 
 results = {s["name"]: s for s in record["stages"]}
 assert results["environment contract (check_env.sh --skip-pytest)"]["result"] == "PASS"
-assert results["bats suite (--suite fast: 3 file(s))"]["result"] == "PASS"
+assert results["bats suite (--suite fast: 4 file(s))"]["result"] == "PASS"
 assert results["pytest suite (tests/)"]["result"] == "SKIP"
 assert results["pytest suite (tests/)"]["duration_s"] == 0
 assert results["strict docs validation (validate_docs.sh)"]["result"] == "PASS"
@@ -244,7 +244,7 @@ for stage in record["stages"]:
 
   run bash "$CHECK_ALL" "$TEST_PROJECT" --suite fast --skip-pytest --metrics-out "$metrics_file"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[PASS] packaging smoke (packaging_smoke.py)"* ]]
+  assert_contains "$output" "[PASS] packaging smoke (packaging_smoke.py)"
 
   run python3 -c '
 import json
@@ -276,11 +276,11 @@ assert stage["duration_s"] >= 0, stage
   run bash "$CHECK_ALL" "$TEST_PROJECT" --suite fast --skip-pytest
   local baseline_status="$status"
   [ "$baseline_status" -ne 0 ]
-  [[ "$output" == *"[FAIL] strict docs validation (validate_docs.sh)"* ]]
+  assert_contains "$output" "[FAIL] strict docs validation (validate_docs.sh)"
 
   run bash "$CHECK_ALL" "$TEST_PROJECT" --suite fast --skip-pytest --metrics-out "$metrics_file"
   [ "$status" -eq "$baseline_status" ]
-  [[ "$output" == *"[FAIL] strict docs validation (validate_docs.sh)"* ]]
+  assert_contains "$output" "[FAIL] strict docs validation (validate_docs.sh)"
 
   run python3 -c '
 import json
@@ -297,7 +297,7 @@ assert len(failing) == 1, record
 assert failing[0]["name"] == "strict docs validation (validate_docs.sh)", failing[0]
 
 passing = {s["name"]: s for s in record["stages"] if s["result"] == "PASS"}
-assert "bats suite (--suite fast: 3 file(s))" in passing
+assert "bats suite (--suite fast: 4 file(s))" in passing
 assert "environment contract (check_env.sh --skip-pytest)" in passing
 ' "$metrics_file"
   [ "$status" -eq 0 ]
@@ -306,5 +306,5 @@ assert "environment contract (check_env.sh --skip-pytest)" in passing
 @test "check_all --metrics-out without a value exits 2" {
   run bash "$CHECK_ALL" "$TEST_PROJECT" --metrics-out
   [ "$status" -eq 2 ]
-  [[ "$output" == *"--metrics-out requires a value"* ]]
+  assert_contains "$output" "--metrics-out requires a value"
 }

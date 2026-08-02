@@ -77,9 +77,9 @@ make_skills_layout() {
 
   run codeguide_source_root "$parent"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"$(physical_path "$parent")"* ]]
-  [[ "$output" == *"nested skill-package repo"* ]]
-  [[ "$output" == *".codeguide-source-root"* ]]
+  assert_contains "$output" "$(physical_path "$parent")"
+  assert_contains "$output" "nested skill-package repo"
+  assert_contains "$output" ".codeguide-source-root"
 }
 
 @test "source root: ordinary repo is never hijacked by a vendored skill-package child repo" {
@@ -91,8 +91,8 @@ make_skills_layout() {
 
   run codeguide_source_root "$project"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"$(physical_path "$project")"* ]]
-  [[ "$output" != *"vendored-skill"* ]] || [[ "$output" == *"was not selected"* ]]
+  assert_contains "$output" "$(physical_path "$project")"
+  refute_contains "$output" "vendored-skill" || assert_contains "$output" "was not selected"
 }
 
 @test "source root: invoked from inside the skill repo resolves to that repo" {
@@ -142,7 +142,7 @@ make_skills_layout() {
 
   CODEGUIDE_SOURCE_ROOT="$TEST_WORKSPACE/does-not-exist" run codeguide_source_root "$parent"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"CODEGUIDE_SOURCE_ROOT is not a readable directory"* ]]
+  assert_contains "$output" "CODEGUIDE_SOURCE_ROOT is not a readable directory"
 }
 
 @test "source root: multiple skill-package repos are ambiguous and fail loudly" {
@@ -153,7 +153,7 @@ make_skills_layout() {
 
   run codeguide_source_root "$parent"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Multiple skill-package source repositories"* ]]
+  assert_contains "$output" "Multiple skill-package source repositories"
 }
 
 python_source_root() {
@@ -207,7 +207,7 @@ PY
 
   run codeguide_source_root "$parent"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"does not resolve inside a git repository"* ]]
+  assert_contains "$output" "does not resolve inside a git repository"
 
   [ -z "$(python_source_root "$parent" 2>/dev/null)" ]
 }
@@ -238,7 +238,7 @@ PY
 
   CODEGUIDE_SOURCE_ROOT="$override" run codeguide_source_root "$parent"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"does not resolve inside a git repository"* ]]
+  assert_contains "$output" "does not resolve inside a git repository"
 
   [ -z "$(CODEGUIDE_SOURCE_ROOT="$override" python_source_root "$parent" 2>/dev/null)" ]
 }

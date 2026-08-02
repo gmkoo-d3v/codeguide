@@ -24,9 +24,9 @@ EOF
   _seed_overview_with_source "- source_of_truth_paths: src/auth.py"
   run IMPACT_REPORT --project-root "$TEST_PROJECT" --changed-file src/auth.py
   [ "$status" -eq 0 ]
-  [[ "$output" == *"need_refresh: 1"* ]]
-  [[ "$output" == *"NEEDS REFRESH: docs/shadow/apps/app-a/overview.md"* ]]
-  [[ "$output" == *"src/auth.py"* ]]
+  assert_contains "$output" "need_refresh: 1"
+  assert_contains "$output" "NEEDS REFRESH: docs/shadow/apps/app-a/overview.md"
+  assert_contains "$output" "src/auth.py"
 }
 
 @test "impact report treats a shadow doc as ok when it changed alongside its source" {
@@ -34,16 +34,16 @@ EOF
   run IMPACT_REPORT --project-root "$TEST_PROJECT" \
     --changed-file src/auth.py --changed-file docs/shadow/apps/app-a/overview.md
   [ "$status" -eq 0 ]
-  [[ "$output" == *"need_refresh: 0"* ]]
-  [[ "$output" == *"ok (refreshed alongside sources): docs/shadow/apps/app-a/overview.md"* ]]
+  assert_contains "$output" "need_refresh: 0"
+  assert_contains "$output" "ok (refreshed alongside sources): docs/shadow/apps/app-a/overview.md"
 }
 
 @test "impact report reports no impact when the changed file is unrelated" {
   _seed_overview_with_source "- source_of_truth_paths: src/auth.py"
   run IMPACT_REPORT --project-root "$TEST_PROJECT" --changed-file src/unrelated.py
   [ "$status" -eq 0 ]
-  [[ "$output" == *"impacted_shadow_docs: 0"* ]]
-  [[ "$output" == *"no shadow doc declares any changed source"* ]]
+  assert_contains "$output" "impacted_shadow_docs: 0"
+  assert_contains "$output" "no shadow doc declares any changed source"
 }
 
 @test "impact report shows a distinct coverage-gap line when zero shadow docs declare source_of_truth_paths" {
@@ -57,9 +57,9 @@ EOF
 EOF
   run IMPACT_REPORT --project-root "$TEST_PROJECT" --changed-file src/auth.py
   [ "$status" -eq 0 ]
-  [[ "$output" == *"impacted_shadow_docs: 0"* ]]
-  [[ "$output" == *"no shadow doc declares any source_of_truth_paths (coverage gap; run shadow_coverage_report.py)"* ]]
-  [[ "$output" != *"no shadow doc declares any changed source"* ]]
+  assert_contains "$output" "impacted_shadow_docs: 0"
+  assert_contains "$output" "no shadow doc declares any source_of_truth_paths (coverage gap; run shadow_coverage_report.py)"
+  refute_contains "$output" "no shadow doc declares any changed source"
 }
 
 @test "impact report resolves the mixed inline+nested source_of_truth_paths form" {
@@ -67,8 +67,8 @@ EOF
   # Change only the NESTED path; it must still be recognized as an impacted source.
   run IMPACT_REPORT --project-root "$TEST_PROJECT" --changed-file src/pay.py
   [ "$status" -eq 0 ]
-  [[ "$output" == *"NEEDS REFRESH: docs/shadow/apps/app-a/overview.md"* ]]
-  [[ "$output" == *"src/pay.py"* ]]
+  assert_contains "$output" "NEEDS REFRESH: docs/shadow/apps/app-a/overview.md"
+  assert_contains "$output" "src/pay.py"
 }
 
 @test "impact report --exit-code returns 1 when a shadow doc needs refresh" {
@@ -89,7 +89,7 @@ EOF
 EOF
   run IMPACT_REPORT --project-root "$TEST_PROJECT" --changed-file src/auth.py
   [ "$status" -eq 0 ]
-  [[ "$output" == *"impacted_shadow_docs: 0"* ]]
+  assert_contains "$output" "impacted_shadow_docs: 0"
 }
 
 @test "impact report working-tree mode flags unrefreshed source changes in a git repo" {
@@ -103,14 +103,14 @@ EOF
   printf 'a=2\n' > "$TEST_PROJECT/src/auth.py"
   run IMPACT_REPORT --project-root "$TEST_PROJECT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"NEEDS REFRESH: docs/shadow/apps/app-a/overview.md"* ]]
+  assert_contains "$output" "NEEDS REFRESH: docs/shadow/apps/app-a/overview.md"
 }
 
 @test "impact report errors clearly when there is no git repo and no explicit change set" {
   _seed_overview_with_source "- source_of_truth_paths: src/auth.py"
   run IMPACT_REPORT --project-root "$TEST_PROJECT"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"not inside a git repository"* ]]
+  assert_contains "$output" "not inside a git repository"
 }
 
 @test "impact report handles project_root that is a subproject below the git root" {
@@ -135,8 +135,8 @@ EOF
   # git root (one level up) is used only to expand the diff paths.
   run IMPACT_REPORT --project-root "$sub"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"impacted_shadow_docs: 1"* ]]
-  [[ "$output" == *"NEEDS REFRESH: docs/shadow/apps/app-a/overview.md"* ]]
+  assert_contains "$output" "impacted_shadow_docs: 1"
+  assert_contains "$output" "NEEDS REFRESH: docs/shadow/apps/app-a/overview.md"
 }
 
 @test "impact report still flags a source that was renamed away (no-renames)" {
@@ -149,8 +149,8 @@ EOF
   git -C "$TEST_PROJECT" mv src/auth.py src/auth_renamed.py
   run IMPACT_REPORT --project-root "$TEST_PROJECT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"NEEDS REFRESH: docs/shadow/apps/app-a/overview.md"* ]]
-  [[ "$output" == *"src/auth.py"* ]]
+  assert_contains "$output" "NEEDS REFRESH: docs/shadow/apps/app-a/overview.md"
+  assert_contains "$output" "src/auth.py"
 }
 
 @test "impact report works in a fresh repo with no commits (unborn HEAD)" {
@@ -161,14 +161,14 @@ EOF
   # No commit at all; everything is untracked. Must not crash.
   run IMPACT_REPORT --project-root "$TEST_PROJECT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"impacted_shadow_docs: 1"* ]]
+  assert_contains "$output" "impacted_shadow_docs: 1"
 }
 
 @test "impact report rejects combining --range with --changed-file" {
   _seed_overview_with_source "- source_of_truth_paths: src/auth.py"
   run IMPACT_REPORT --project-root "$TEST_PROJECT" --range HEAD --changed-file src/auth.py
   [ "$status" -ne 0 ]
-  [[ "$output" == *"mutually exclusive"* ]]
+  assert_contains "$output" "mutually exclusive"
 }
 
 @test "impact report --range mode reports impact across a commit range" {
@@ -182,7 +182,7 @@ EOF
   git -C "$TEST_PROJECT" commit -qam change-source
   run IMPACT_REPORT --project-root "$TEST_PROJECT" --range HEAD~1..HEAD
   [ "$status" -eq 0 ]
-  [[ "$output" == *"NEEDS REFRESH: docs/shadow/apps/app-a/overview.md"* ]]
+  assert_contains "$output" "NEEDS REFRESH: docs/shadow/apps/app-a/overview.md"
 }
 
 _seed_split_root_layout() {
@@ -215,8 +215,8 @@ EOF
 
   run IMPACT_REPORT --project-root "$SPLIT_PARENT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"need_refresh: 0"* ]]
-  [[ "$output" == *"ok (refreshed alongside sources)"* ]]
+  assert_contains "$output" "need_refresh: 0"
+  assert_contains "$output" "ok (refreshed alongside sources)"
 }
 
 @test "impact report split-root: untouched shadow doc still needs refresh" {
@@ -224,8 +224,8 @@ EOF
 
   run IMPACT_REPORT --project-root "$SPLIT_PARENT" --exit-code
   [ "$status" -eq 1 ]
-  [[ "$output" == *"need_refresh: 1"* ]]
-  [[ "$output" == *"NEEDS REFRESH"* ]]
+  assert_contains "$output" "need_refresh: 1"
+  assert_contains "$output" "NEEDS REFRESH"
 }
 
 _seed_split_root_layout_untracked() {
@@ -254,10 +254,10 @@ EOF
 
   run IMPACT_REPORT --project-root "$SPLIT_PARENT" --exit-code
   [ "$status" -eq 0 ]
-  [[ "$output" == *"refresh_unknown: 1"* ]]
-  [[ "$output" == *"refresh state unknown"* ]]
-  [[ "$output" == *"refresh detection is unavailable"* ]]
-  [[ "$output" != *"NEEDS REFRESH"* ]]
+  assert_contains "$output" "refresh_unknown: 1"
+  assert_contains "$output" "refresh state unknown"
+  assert_contains "$output" "refresh detection is unavailable"
+  refute_contains "$output" "NEEDS REFRESH"
 }
 
 @test "impact report split-root without a docs repo keeps --changed-file refresh detection" {
@@ -266,6 +266,6 @@ EOF
   run IMPACT_REPORT --project-root "$SPLIT_PARENT" \
     --changed-file skillpkg/src.py --changed-file docs/shadow/apps/app-a/overview.md
   [ "$status" -eq 0 ]
-  [[ "$output" == *"need_refresh: 0"* ]]
-  [[ "$output" == *"ok (refreshed alongside sources)"* ]]
+  assert_contains "$output" "need_refresh: 0"
+  assert_contains "$output" "ok (refreshed alongside sources)"
 }

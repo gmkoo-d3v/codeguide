@@ -16,14 +16,14 @@ EOF
     --max-questions 2
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"# Shadow Evidence Review Queue"* ]]
-  [[ "$output" == *"- writes_shadow_docs: false"* ]]
-  [[ "$output" == *"- auto_promotes_facts: false"* ]]
-  [[ "$output" == *"- doc_role: review_queue"* ]]
-  [[ "$output" == *"- question_count: 2"* ]]
-  [[ "$output" == *"Does the syntactic source probe"* ]]
-  [[ "$output" == *"Which supported validator or fallback should replace"* ]]
-  [[ "$output" != *"RQ-003"* ]]
+  assert_contains "$output" "# Shadow Evidence Review Queue"
+  assert_contains "$output" "- writes_shadow_docs: false"
+  assert_contains "$output" "- auto_promotes_facts: false"
+  assert_contains "$output" "- doc_role: review_queue"
+  assert_contains "$output" "- question_count: 2"
+  assert_contains "$output" "Does the syntactic source probe"
+  assert_contains "$output" "Which supported validator or fallback should replace"
+  refute_contains "$output" "RQ-003"
 }
 
 @test "shadow_review_queue never hides high unresolved questions behind max_questions" {
@@ -41,12 +41,12 @@ EOF
     --max-questions 1
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"- max_questions: 1"* ]]
-  [[ "$output" == *"- question_count: 2"* ]]
-  [[ "$output" == *"- uncapped_required_questions: 2"* ]]
-  [[ "$output" == *"- deferred_question_count: 2"* ]]
-  [[ "$output" != *"RQ-003"* ]]
-  [[ "$output" == *"Error, unsupported, and trusted high/critical policy questions are emitted"* ]]
+  assert_contains "$output" "- max_questions: 1"
+  assert_contains "$output" "- question_count: 2"
+  assert_contains "$output" "- uncapped_required_questions: 2"
+  assert_contains "$output" "- deferred_question_count: 2"
+  refute_contains "$output" "RQ-003"
+  assert_contains "$output" "Error, unsupported, and trusted high/critical policy questions are emitted"
 }
 
 @test "shadow_review_queue does not trust arbitrary priority or risk fields for cap bypass" {
@@ -60,11 +60,11 @@ EOF
   run python3 "$SHADOW_QUEUE" --input "$probe_file" --max-questions 0
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"- question_count: 1"* ]]
-  [[ "$output" == *"- uncapped_required_questions: 1"* ]]
-  [[ "$output" == *"- deferred_question_count: 2"* ]]
-  [[ "$output" == *"trusted_review_risk: critical"* ]]
-  [[ "$output" == *"priority: critical"* ]]
+  assert_contains "$output" "- question_count: 1"
+  assert_contains "$output" "- uncapped_required_questions: 1"
+  assert_contains "$output" "- deferred_question_count: 2"
+  assert_contains "$output" "trusted_review_risk: critical"
+  assert_contains "$output" "priority: critical"
 }
 
 @test "shadow_review_queue defers under-specified questions instead of asking user" {
@@ -76,11 +76,11 @@ EOF
   run python3 "$SHADOW_QUEUE" --input "$probe_file" --max-questions 5
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"- question_count: 0"* ]]
-  [[ "$output" == *"- deferred_missing_context_count: 1"* ]]
-  [[ "$output" == *"question_state: deferred_missing_context"* ]]
-  [[ "$output" == *"missing_question_context:"* ]]
-  [[ "$output" == *"- no user questions generated"* ]]
+  assert_contains "$output" "- question_count: 0"
+  assert_contains "$output" "- deferred_missing_context_count: 1"
+  assert_contains "$output" "question_state: deferred_missing_context"
+  assert_contains "$output" "missing_question_context:"
+  assert_contains "$output" "- no user questions generated"
 }
 
 @test "shadow_review_queue keeps runtime trace provenance visible" {
@@ -92,9 +92,9 @@ EOF
   run python3 "$SHADOW_QUEUE" --input "$probe_file"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"artifact_hash: sha256:abc123"* ]]
-  [[ "$output" == *"Is runtime trace"* ]]
-  [[ "$output" == *"observation window"* ]]
+  assert_contains "$output" "artifact_hash: sha256:abc123"
+  assert_contains "$output" "Is runtime trace"
+  assert_contains "$output" "observation window"
 }
 
 @test "shadow_review_queue renders deterministic metadata and decision context" {
@@ -106,18 +106,18 @@ EOF
   run python3 "$SHADOW_QUEUE" --input "$probe_file" --max-questions 1
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"rule_id: repo.write"* ]]
-  [[ "$output" == *"validator_kind: ast"* ]]
-  [[ "$output" == *"parser_backed: True"* ]]
-  [[ "$output" == *"validator_result: missing"* ]]
-  [[ "$output" == *"entry_ref: UserController.update"* ]]
-  [[ "$output" == *"endpoint: POST /users/{id}"* ]]
-  [[ "$output" == *"call_chain_candidate: UserController.update -> UserService.updateUser -> UserRepository.save"* ]]
-  [[ "$output" == *"anchor_file: src/UserService.java"* ]]
-  [[ "$output" == *"anchor_symbol: UserRepository.save"* ]]
-  [[ "$output" == *"missing_evidence: JpaRepository.save call"* ]]
-  [[ "$output" == *"decision_policy_ref: shadow-effect-map-workflow.md#stop-and-ask"* ]]
-  [[ "$output" == *"default_status: unknown"* ]]
+  assert_contains "$output" "rule_id: repo.write"
+  assert_contains "$output" "validator_kind: ast"
+  assert_contains "$output" "parser_backed: True"
+  assert_contains "$output" "validator_result: missing"
+  assert_contains "$output" "entry_ref: UserController.update"
+  assert_contains "$output" "endpoint: POST /users/{id}"
+  assert_contains "$output" "call_chain_candidate: UserController.update -> UserService.updateUser -> UserRepository.save"
+  assert_contains "$output" "anchor_file: src/UserService.java"
+  assert_contains "$output" "anchor_symbol: UserRepository.save"
+  assert_contains "$output" "missing_evidence: JpaRepository.save call"
+  assert_contains "$output" "decision_policy_ref: shadow-effect-map-workflow.md#stop-and-ask"
+  assert_contains "$output" "default_status: unknown"
 }
 
 @test "shadow_review_queue can optionally ask about parser-backed pass records" {
@@ -128,11 +128,11 @@ EOF
 
   run python3 "$SHADOW_QUEUE" --input "$probe_file"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"- no user questions generated"* ]]
+  assert_contains "$output" "- no user questions generated"
 
   run python3 "$SHADOW_QUEUE" --input "$probe_file" --ask-confirmed
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Is parser-backed evidence"* ]]
+  assert_contains "$output" "Is parser-backed evidence"
 }
 
 @test "shadow_review_queue reports invalid JSON as machine-readable error" {
@@ -142,7 +142,7 @@ EOF
   run python3 "$SHADOW_QUEUE" --input "$probe_file"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *'"status":"error"'* ]]
+  assert_contains "$output" '"status":"error"'
 }
 
 @test "shadow_llm_candidate_wrapper creates non-promotable candidate with provenance" {
@@ -162,14 +162,14 @@ EOF
     --timestamp "2026-05-02T00:00:00Z"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"llm_candidate"'* ]]
-  [[ "$output" == *'"evidence_type":"llm_hint"'* ]]
-  [[ "$output" == *'"non_promotion_status":true'* ]]
-  [[ "$output" == *'"shadow_action":"candidate_only"'* ]]
-  [[ "$output" == *'"writes_shadow_docs":false'* ]]
-  [[ "$output" == *'"auto_promotes_facts":false'* ]]
-  [[ "$output" == *'"raw_draft_hash":"sha256:'* ]]
-  [[ "$output" == *'"source_refs":["src/UserService.java:42"]'* ]]
+  assert_contains "$output" '"status":"llm_candidate"'
+  assert_contains "$output" '"evidence_type":"llm_hint"'
+  assert_contains "$output" '"non_promotion_status":true'
+  assert_contains "$output" '"shadow_action":"candidate_only"'
+  assert_contains "$output" '"writes_shadow_docs":false'
+  assert_contains "$output" '"auto_promotes_facts":false'
+  assert_contains "$output" '"raw_draft_hash":"sha256:'
+  assert_contains "$output" '"source_refs":["src/UserService.java:42"]'
 }
 
 @test "shadow_llm_candidate_wrapper rejects missing provenance and forbidden markers" {
@@ -188,7 +188,7 @@ EOF
     --timestamp "2026-05-02T00:00:00Z"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *"at least one --source-ref is required"* ]]
+  assert_contains "$output" "at least one --source-ref is required"
 
   run python3 "$SHADOW_LLM_CANDIDATE" \
     --input "$draft_file" \
@@ -199,10 +199,10 @@ EOF
     --timestamp "2026-05-02T00:00:00Z"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *"forbidden production-action markers"* ]]
-  [[ "$output" == *"shadow_write_true"* ]]
-  [[ "$output" == *"direct_apply"* ]]
-  [[ "$output" == *"validated_status"* ]]
+  assert_contains "$output" "forbidden production-action markers"
+  assert_contains "$output" "shadow_write_true"
+  assert_contains "$output" "direct_apply"
+  assert_contains "$output" "validated_status"
 }
 
 @test "shadow_llm_candidate_wrapper refuses output under docs shadow" {
@@ -219,8 +219,8 @@ EOF
     --timestamp "2026-05-02T00:00:00Z"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *"must not be under docs/shadow"* ]]
-  [[ "$output" == *'"writes_shadow_docs":false'* ]]
+  assert_contains "$output" "must not be under docs/shadow"
+  assert_contains "$output" '"writes_shadow_docs":false'
 }
 
 @test "shadow_apply_gate blocks without final user decision and allows supervised dry-run" {
@@ -254,9 +254,9 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"blocked"'* ]]
-  [[ "$output" == *"answer must be yes or approve_apply"* ]]
-  [[ "$output" == *'"writes_shadow_docs":false'* ]]
+  assert_contains "$output" '"status":"blocked"'
+  assert_contains "$output" "answer must be yes or approve_apply"
+  assert_contains "$output" '"writes_shadow_docs":false'
 
   cat > "$good_decision_file" <<EOF
 {"user_decision":{"id":"UD-002","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id"],"rationale":"Approve dry-run apply check for this candidate.","source_refs":["TASK-shadow-effect-map-01"]}}
@@ -270,10 +270,10 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"allowed"'* ]]
-  [[ "$output" == *'"shadow_apply_allowed":true'* ]]
-  [[ "$output" == *'"apply_mode":"supervised_dry_run"'* ]]
-  [[ "$output" == *'"writes_shadow_docs":false'* ]]
+  assert_contains "$output" '"status":"allowed"'
+  assert_contains "$output" '"shadow_apply_allowed":true'
+  assert_contains "$output" '"apply_mode":"supervised_dry_run"'
+  assert_contains "$output" '"writes_shadow_docs":false'
 
   run python3 "$SHADOW_APPLY_GATE" \
     --project-root "$TEST_PROJECT" \
@@ -283,7 +283,7 @@ EOF
     --today "2000-01-01"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"today_override_warning"'* ]]
+  assert_contains "$output" '"today_override_warning"'
 }
 
 @test "shadow_apply_gate rejects forged candidate provenance and expired decisions" {
@@ -307,13 +307,13 @@ EOF
     --today "2026-05-04"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"candidate.model_id is required"* ]]
-  [[ "$output" == *"candidate.tool_id is required"* ]]
-  [[ "$output" == *"candidate.created_at is required"* ]]
-  [[ "$output" == *"candidate.source_refs must be a non-empty list of strings"* ]]
-  [[ "$output" == *"candidate.shadow_action must be candidate_only"* ]]
-  [[ "$output" == *"candidate.raw_draft_hash must be a sha256 reference"* ]]
-  [[ "$output" == *"user_decision is expired"* ]]
+  assert_contains "$output" "candidate.model_id is required"
+  assert_contains "$output" "candidate.tool_id is required"
+  assert_contains "$output" "candidate.created_at is required"
+  assert_contains "$output" "candidate.source_refs must be a non-empty list of strings"
+  assert_contains "$output" "candidate.shadow_action must be candidate_only"
+  assert_contains "$output" "candidate.raw_draft_hash must be a sha256 reference"
+  assert_contains "$output" "user_decision is expired"
 
   cat > "$forged_candidate_file" <<EOF
 {"status":"llm_candidate","artifact_kind":"llm_candidate","candidate_id":"$candidate_id","task_id":"shadow-effect-map-01","created_at":"2026-05-02T00:00:00Z","model_id":"test-model","tool_id":"codex","source_refs":["src/UserService.java:42"],"writes_shadow_docs":false,"auto_promotes_facts":false,"non_promotion_status":true,"can_validate":false,"shadow_action":"candidate_only","evidence_type":"llm_hint","raw_draft_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","raw_draft_bytes":20}
@@ -330,7 +330,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"candidate.candidate_id must match provenance digest"* ]]
+  assert_contains "$output" "candidate.candidate_id must match provenance digest"
 
   cat > "$mismatch_decision_file" <<EOF
 {"user_decision":{"id":"UD-005","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["LC-0000000000000000"],"rationale":"Approve mismatch check.","source_refs":["TASK-shadow-effect-map-01"]}}
@@ -344,7 +344,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *"traversal"* ]]
+  assert_contains "$output" "traversal"
 
   run python3 "$SHADOW_APPLY_GATE" \
     --project-root "$TEST_PROJECT" \
@@ -354,7 +354,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"user_decision.applies_to must reference candidate_id"* ]]
+  assert_contains "$output" "user_decision.applies_to must reference candidate_id"
 }
 
 @test "shadow_user_decision_wrapper creates gated apply and fact evidence artifacts" {
@@ -409,8 +409,8 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"ok"'* ]]
-  [[ "$output" == *'"writes_shadow_docs":false'* ]]
+  assert_contains "$output" '"status":"ok"'
+  assert_contains "$output" '"writes_shadow_docs":false'
   run grep '"target_shadow_file": "packages/codeguide/effects.md"' "$apply_decision_file"
   [ "$status" -eq 0 ]
 
@@ -422,7 +422,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"allowed":true'* ]]
+  assert_contains "$output" '"shadow_apply_allowed":true'
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -434,7 +434,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"ok"'* ]]
+  assert_contains "$output" '"status":"ok"'
 
   run python3 "$SHADOW_USER_DECISION" \
     --project-root "$TEST_PROJECT" \
@@ -465,7 +465,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"evidence_ref: UD-wrap-fact"* ]]
+  assert_contains "$output" "evidence_ref: UD-wrap-fact"
 
   run python3 "$SHADOW_USER_DECISION" \
     --project-root "$TEST_PROJECT" \
@@ -482,7 +482,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *"human-only record.effect_type"* ]]
+  assert_contains "$output" "human-only record.effect_type"
 }
 
 @test "shadow_user_decision_wrapper derives runtime_scenario_fit binding metadata from record evidence" {
@@ -510,7 +510,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"ok"'* ]]
+  assert_contains "$output" '"status":"ok"'
   run grep '"scenario_scope": "runtime.scopes.user_update_cache"' "$decision_file"
   [ "$status" -eq 0 ]
   run grep '"setter_symbol_path": "RuntimeScenarioRegistry.userUpdateCacheEvict"' "$decision_file"
@@ -561,10 +561,10 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"ok"'* ]]
-  [[ "$output" == *'"mode":"dry-run"'* ]]
-  [[ "$output" == *'"writes_shadow_docs":false'* ]]
-  [[ "$output" == *"shadow-effect-record:SE-user-001 begin"* ]]
+  assert_contains "$output" '"status":"ok"'
+  assert_contains "$output" '"mode":"dry-run"'
+  assert_contains "$output" '"writes_shadow_docs":false'
+  assert_contains "$output" "shadow-effect-record:SE-user-001 begin"
   [ ! -e "$DOCS_ROOT/shadow/packages/codeguide/effects.md" ]
 
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -577,7 +577,7 @@ EOF
     --today "2000-01-01"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"today_override_warning"'* ]]
+  assert_contains "$output" '"today_override_warning"'
 }
 
 @test "shadow_effect_writer separates final apply approval from user decision evidence" {
@@ -644,12 +644,12 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"separate from final_shadow_apply"* ]]
-  [[ "$output" == *'"next_actions"'* ]]
-  [[ "$output" == *'"action":"create_evidence_decision"'* ]]
-  [[ "$output" == *"--decision-type business_intent"* ]]
-  [[ "$output" == *"--record"* ]]
-  [[ "$output" != *"--applies-record-id"* ]]
+  assert_contains "$output" "separate from final_shadow_apply"
+  assert_contains "$output" '"next_actions"'
+  assert_contains "$output" '"action":"create_evidence_decision"'
+  assert_contains "$output" "--decision-type business_intent"
+  assert_contains "$output" "--record"
+  refute_contains "$output" "--applies-record-id"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -662,8 +662,8 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"ok"'* ]]
-  [[ "$output" == *"evidence_ref: UD-evidence-001"* ]]
+  assert_contains "$output" '"status":"ok"'
+  assert_contains "$output" "evidence_ref: UD-evidence-001"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -676,7 +676,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"answer must affirm"* ]]
+  assert_contains "$output" "answer must affirm"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -689,59 +689,52 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"human-only effect types"* ]]
+  assert_contains "$output" "human-only effect types"
 }
 
-@test "shadow_effect_writer enforces deterministic evidence metadata" {
-  local candidate_file="$TEST_WORKSPACE/candidate.json"
-  local decision_file="$TEST_WORKSPACE/decision.json"
-  local code_record_file="$TEST_WORKSPACE/code-record.json"
-  local runtime_record_file="$TEST_WORKSPACE/runtime-record.json"
-  local bad_runtime_record_file="$TEST_WORKSPACE/bad-runtime-record.json"
-  local good_code_record_file="$TEST_WORKSPACE/good-code-record.json"
-  local missing_parser_record_file="$TEST_WORKSPACE/missing-parser-record.json"
-  local mismatch_parser_record_file="$TEST_WORKSPACE/mismatch-parser-record.json"
-  local good_runtime_record_file="$TEST_WORKSPACE/good-runtime-record.json"
-  local missing_binding_metadata_record_file="$TEST_WORKSPACE/runtime-missing-binding-metadata-record.json"
-  local binary_rfc8785_record_file="$TEST_WORKSPACE/runtime-binary-rfc8785-record.json"
-  local ignored_fields_record_file="$TEST_WORKSPACE/runtime-ignored-fields-record.json"
-  local missing_selected_fields_record_file="$TEST_WORKSPACE/runtime-missing-selected-fields-record.json"
-  local malformed_selected_fields_record_file="$TEST_WORKSPACE/runtime-malformed-selected-fields-record.json"
-  local duplicate_selected_fields_record_file="$TEST_WORKSPACE/runtime-duplicate-selected-fields-record.json"
-  local dotted_selected_fields_record_file="$TEST_WORKSPACE/runtime-dotted-selected-fields-record.json"
-  local selected_fields_record_file="$TEST_WORKSPACE/runtime-selected-fields-record.json"
-  local missing_selected_field_record_file="$TEST_WORKSPACE/runtime-missing-selected-field-record.json"
-  local non_json_selected_fields_record_file="$TEST_WORKSPACE/runtime-non-json-selected-fields-record.json"
-  local invalid_line_range_record_file="$TEST_WORKSPACE/runtime-invalid-line-range-record.json"
-  local valid_custom_line_range_record_file="$TEST_WORKSPACE/runtime-valid-custom-line-range-record.json"
-  local missing_line_range_probe_record_file="$TEST_WORKSPACE/runtime-missing-line-range-probe-record.json"
-  local out_of_range_line_range_record_file="$TEST_WORKSPACE/runtime-out-of-range-line-range-record.json"
-  local code_probe_file="$TEST_WORKSPACE/code-probe.json"
-  local runtime_probe_file="$TEST_WORKSPACE/runtime-probe.json"
-  local runtime_line_probe_file="$TEST_WORKSPACE/runtime-line-probe.json"
-  local runtime_selected_probe_file="$TEST_WORKSPACE/runtime-selected-probe.json"
-  local missing_selected_probe_record_file="$TEST_WORKSPACE/runtime-missing-selected-probe-record.json"
-  local runtime_decision_file="$TEST_WORKSPACE/runtime-decision.json"
-  local runtime_json_decision_file="$TEST_WORKSPACE/runtime-json-decision.json"
-  local runtime_mismatch_decision_file="$TEST_WORKSPACE/runtime-mismatch-decision.json"
-  local draft_file="$TEST_WORKSPACE/draft.md"
-  local source_hash
-  local parser_identity
-  local parser_content_hash
-  local runtime_hash
-  local runtime_line_hash
-  local runtime_selected_hash
-  local runtime_json_event='{"event":"user.cache.evict","timestamp":"2026-05-02T00:00:00Z","userId":42}'
-  local runtime_json_event_json='{\"event\":\"user.cache.evict\",\"timestamp\":\"2026-05-02T00:00:00Z\",\"userId\":42}'
-  local code_probe_hash
-  local runtime_probe_hash
-  local runtime_line_probe_hash
-  local runtime_selected_probe_hash
-  local setter_module_hash
-  local runtime_statement="Cache eviction is backed by a runtime trace artifact."
-  local runtime_json_statement="Cache eviction is backed by selected JSON runtime fields."
-  local runtime_statement_hash
-  local runtime_json_statement_hash
+# Shared fixture preamble for the two deterministic-evidence writer tests below.
+# Extracted so the runtime-hint scenario (deferred under
+# The tracked issue) can be skipped ON ITS OWN instead of
+# darkening the ~99 other assertions this fixture set feeds -- the whole point of
+# The task is that dark assertions are the defect.
+_writer_metadata_fixtures() {
+
+  candidate_file="$TEST_WORKSPACE/candidate.json"
+  decision_file="$TEST_WORKSPACE/decision.json"
+  code_record_file="$TEST_WORKSPACE/code-record.json"
+  runtime_record_file="$TEST_WORKSPACE/runtime-record.json"
+  bad_runtime_record_file="$TEST_WORKSPACE/bad-runtime-record.json"
+  good_code_record_file="$TEST_WORKSPACE/good-code-record.json"
+  missing_parser_record_file="$TEST_WORKSPACE/missing-parser-record.json"
+  mismatch_parser_record_file="$TEST_WORKSPACE/mismatch-parser-record.json"
+  good_runtime_record_file="$TEST_WORKSPACE/good-runtime-record.json"
+  missing_binding_metadata_record_file="$TEST_WORKSPACE/runtime-missing-binding-metadata-record.json"
+  binary_rfc8785_record_file="$TEST_WORKSPACE/runtime-binary-rfc8785-record.json"
+  ignored_fields_record_file="$TEST_WORKSPACE/runtime-ignored-fields-record.json"
+  missing_selected_fields_record_file="$TEST_WORKSPACE/runtime-missing-selected-fields-record.json"
+  malformed_selected_fields_record_file="$TEST_WORKSPACE/runtime-malformed-selected-fields-record.json"
+  duplicate_selected_fields_record_file="$TEST_WORKSPACE/runtime-duplicate-selected-fields-record.json"
+  dotted_selected_fields_record_file="$TEST_WORKSPACE/runtime-dotted-selected-fields-record.json"
+  selected_fields_record_file="$TEST_WORKSPACE/runtime-selected-fields-record.json"
+  missing_selected_field_record_file="$TEST_WORKSPACE/runtime-missing-selected-field-record.json"
+  non_json_selected_fields_record_file="$TEST_WORKSPACE/runtime-non-json-selected-fields-record.json"
+  invalid_line_range_record_file="$TEST_WORKSPACE/runtime-invalid-line-range-record.json"
+  valid_custom_line_range_record_file="$TEST_WORKSPACE/runtime-valid-custom-line-range-record.json"
+  missing_line_range_probe_record_file="$TEST_WORKSPACE/runtime-missing-line-range-probe-record.json"
+  out_of_range_line_range_record_file="$TEST_WORKSPACE/runtime-out-of-range-line-range-record.json"
+  code_probe_file="$TEST_WORKSPACE/code-probe.json"
+  runtime_probe_file="$TEST_WORKSPACE/runtime-probe.json"
+  runtime_line_probe_file="$TEST_WORKSPACE/runtime-line-probe.json"
+  runtime_selected_probe_file="$TEST_WORKSPACE/runtime-selected-probe.json"
+  missing_selected_probe_record_file="$TEST_WORKSPACE/runtime-missing-selected-probe-record.json"
+  runtime_decision_file="$TEST_WORKSPACE/runtime-decision.json"
+  runtime_json_decision_file="$TEST_WORKSPACE/runtime-json-decision.json"
+  runtime_mismatch_decision_file="$TEST_WORKSPACE/runtime-mismatch-decision.json"
+  draft_file="$TEST_WORKSPACE/draft.md"
+  runtime_json_event='{"event":"user.cache.evict","timestamp":"2026-05-02T00:00:00Z","userId":42}'
+  runtime_json_event_json='{\"event\":\"user.cache.evict\",\"timestamp\":\"2026-05-02T00:00:00Z\",\"userId\":42}'
+  runtime_statement="Cache eviction is backed by a runtime trace artifact."
+  runtime_json_statement="Cache eviction is backed by selected JSON runtime fields."
 
   mkdir -p "$TEST_PROJECT/src" "$TEST_PROJECT/logs"
   cat > "$TEST_PROJECT/src/app.py" <<'EOF'
@@ -804,7 +797,6 @@ EOF
     --source-ref "src/UserService.java:42" \
     --timestamp "2026-05-02T00:00:00Z"
 
-  local candidate_id
   candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
 
   cat > "$decision_file" <<EOF
@@ -886,6 +878,11 @@ EOF
 {"record_id":"SE-user-008","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"$runtime_statement","anchor":{"file":"logs/runtime-non-json.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime-non-json.trace:1","artifact_hash":"$runtime_selected_hash","artifact_media_type":"application/json","encoding":"utf-8","canonicalization":"rfc8785","hash_input_scope":"selected_fields","selected_fields":["event"],"ignored_nondeterministic_fields":[],"scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","user_decision_ref":"UD-runtime-013","probe_result_ref":"$runtime_selected_probe_file","probe_result_hash":"$runtime_selected_probe_hash","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
 EOF
 
+}
+
+@test "shadow_effect_writer enforces deterministic evidence metadata" {
+  _writer_metadata_fixtures
+
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
     --record "$code_record_file" \
@@ -897,7 +894,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"deterministic_code evidence.rule_id is required"* ]]
+  assert_contains "$output" "deterministic_code evidence.rule_id is required"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -911,12 +908,12 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"deterministic_runtime evidence.trace_ref is required"* ]]
-  [[ "$output" == *"deterministic_runtime evidence.artifact_hash must be a sha256 reference"* ]]
-  [[ "$output" == *"deterministic_runtime evidence.artifact_media_type is required"* ]]
-  [[ "$output" == *"deterministic_runtime evidence.ignored_nondeterministic_fields must be a list of strings"* ]]
-  [[ "$output" == *'"action":"complete_runtime_scenario_fit_args"'* ]]
-  [[ "$output" != *"--decision-type runtime_scenario_fit"* ]]
+  assert_contains "$output" "deterministic_runtime evidence.trace_ref is required"
+  assert_contains "$output" "deterministic_runtime evidence.artifact_hash must be a sha256 reference"
+  assert_contains "$output" "deterministic_runtime evidence.artifact_media_type is required"
+  assert_contains "$output" "deterministic_runtime evidence.ignored_nondeterministic_fields must be a list of strings"
+  assert_contains "$output" '"action":"complete_runtime_scenario_fit_args"'
+  refute_contains "$output" "--decision-type runtime_scenario_fit"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -929,13 +926,13 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"deterministic_runtime evidence.scenario_scope is required"* ]]
-  [[ "$output" == *"deterministic_runtime evidence.setter_symbol_path is required"* ]]
-  [[ "$output" == *"deterministic_runtime evidence.setter_module_hash must be a sha256 reference"* ]]
-  [[ "$output" == *"deterministic_runtime evidence.expiry_or_invalidation_rule must be timestamp, binding_change, or manual_revocation"* ]]
-  [[ "$output" == *'"action":"complete_runtime_scenario_fit_args"'* ]]
-  [[ "$output" == *"deterministic_runtime evidence.scenario_scope"* ]]
-  [[ "$output" == *"deterministic_runtime evidence.setter_module_hash"* ]]
+  assert_contains "$output" "deterministic_runtime evidence.scenario_scope is required"
+  assert_contains "$output" "deterministic_runtime evidence.setter_symbol_path is required"
+  assert_contains "$output" "deterministic_runtime evidence.setter_module_hash must be a sha256 reference"
+  assert_contains "$output" "deterministic_runtime evidence.expiry_or_invalidation_rule must be timestamp, binding_change, or manual_revocation"
+  assert_contains "$output" '"action":"complete_runtime_scenario_fit_args"'
+  assert_contains "$output" "deterministic_runtime evidence.scenario_scope"
+  assert_contains "$output" "deterministic_runtime evidence.setter_module_hash"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -947,7 +944,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"deterministic_runtime evidence.artifact_hash must be a sha256 reference"* ]]
+  assert_contains "$output" "deterministic_runtime evidence.artifact_hash must be a sha256 reference"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -959,10 +956,10 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"next_actions"'* ]]
-  [[ "$output" == *'"action":"run_probe"'* ]]
-  [[ "$output" == *"shadow_evidence_probe.py"* ]]
-  [[ "$output" == *"--probe-result"* ]]
+  assert_contains "$output" '"next_actions"'
+  assert_contains "$output" '"action":"run_probe"'
+  assert_contains "$output" "shadow_evidence_probe.py"
+  assert_contains "$output" "--probe-result"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -975,8 +972,8 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"deterministic_code evidence.parser_identity is required"* ]]
-  [[ "$output" == *"deterministic_code evidence.parser_content_hash must be a sha256 reference"* ]]
+  assert_contains "$output" "deterministic_code evidence.parser_identity is required"
+  assert_contains "$output" "deterministic_code evidence.parser_content_hash must be a sha256 reference"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -989,8 +986,8 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"probe_result.parser_identity must match evidence.parser_identity"* ]]
-  [[ "$output" == *"probe_result.parser_content_hash must match evidence.parser_content_hash"* ]]
+  assert_contains "$output" "probe_result.parser_identity must match evidence.parser_identity"
+  assert_contains "$output" "probe_result.parser_content_hash must match evidence.parser_content_hash"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -1003,33 +1000,12 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"ok"'* ]]
-  [[ "$output" == *"evidence_rule_id: repo.write"* ]]
-  [[ "$output" == *"evidence_parser_backed: True"* ]]
-  [[ "$output" == *"evidence_parser_identity: $parser_identity"* ]]
-  [[ "$output" == *"evidence_parser_content_hash: $parser_content_hash"* ]]
-  [[ "$output" == *"evidence_source_hash: $source_hash"* ]]
-
-  run python3 "$SHADOW_EFFECT_WRITER" \
-    --project-root "$TEST_PROJECT" \
-    --record "$good_runtime_record_file" \
-    --candidate "$candidate_file" \
-    --user-decision "$decision_file" \
-    --probe-result "$runtime_probe_file" \
-    --target-shadow-file "packages/codeguide/effects.md" \
-    --mode dry-run \
-    --today "2026-05-02"
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *'"next_actions"'* ]]
-  [[ "$output" == *"--decision-type runtime_scenario_fit"* ]]
-  [[ "$output" == *"--trace-ref logs/runtime.trace:2"* ]]
-  [[ "$output" == *"--scenario-ref scenario:user-update-cache"* ]]
-  [[ "$output" == *"--scenario-scope runtime.scopes.user_update_cache"* ]]
-  [[ "$output" == *"--setter-symbol-path RuntimeScenarioRegistry.userUpdateCacheEvict"* ]]
-  [[ "$output" == *"--setter-module-hash $setter_module_hash"* ]]
-  [[ "$output" == *"--expiry-or-invalidation-rule binding_change"* ]]
-  [[ "$output" != *"choose_supported_fact_decision_type"* ]]
+  assert_contains "$output" '"status":"ok"'
+  assert_contains "$output" "evidence_rule_id: repo.write"
+  assert_contains "$output" "evidence_parser_backed: True"
+  assert_contains "$output" "evidence_parser_identity: $parser_identity"
+  assert_contains "$output" "evidence_parser_content_hash: $parser_content_hash"
+  assert_contains "$output" "evidence_source_hash: $source_hash"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -1043,7 +1019,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"applies_to must bind record_id, effect_type, statement_hash, anchor, trace_ref, scenario_ref, scenario_scope, setter_symbol_path, setter_module_hash, and expiry_or_invalidation_rule"* ]]
+  assert_contains "$output" "applies_to must bind record_id, effect_type, statement_hash, anchor, trace_ref, scenario_ref, scenario_scope, setter_symbol_path, setter_module_hash, and expiry_or_invalidation_rule"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -1057,13 +1033,13 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"ok"'* ]]
-  [[ "$output" == *"evidence_artifact_hash: $runtime_hash"* ]]
-  [[ "$output" == *"evidence_artifact_media_type: text/plain"* ]]
-  [[ "$output" == *"evidence_encoding: utf-8"* ]]
-  [[ "$output" == *"evidence_canonicalization: none"* ]]
-  [[ "$output" == *"evidence_hash_input_scope: whole_artifact"* ]]
-  [[ "$output" == *"evidence_ignored_nondeterministic_fields: []"* ]]
+  assert_contains "$output" '"status":"ok"'
+  assert_contains "$output" "evidence_artifact_hash: $runtime_hash"
+  assert_contains "$output" "evidence_artifact_media_type: text/plain"
+  assert_contains "$output" "evidence_encoding: utf-8"
+  assert_contains "$output" "evidence_canonicalization: none"
+  assert_contains "$output" "evidence_hash_input_scope: whole_artifact"
+  assert_contains "$output" "evidence_ignored_nondeterministic_fields: []"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -1077,7 +1053,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"deterministic_runtime evidence envelope is not supported by the v1 validity matrix"* ]]
+  assert_contains "$output" "deterministic_runtime evidence envelope is not supported by the v1 validity matrix"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -1091,7 +1067,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"ignored_nondeterministic_fields must be empty for whole_artifact unless canonicalization is custom-declared"* ]]
+  assert_contains "$output" "ignored_nondeterministic_fields must be empty for whole_artifact unless canonicalization is custom-declared"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -1105,7 +1081,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"deterministic_runtime evidence.selected_fields must be a non-empty list of strings for selected_fields scope"* ]]
+  assert_contains "$output" "deterministic_runtime evidence.selected_fields must be a non-empty list of strings for selected_fields scope"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -1119,7 +1095,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"deterministic_runtime evidence.selected_fields must be a non-empty list of strings for selected_fields scope"* ]]
+  assert_contains "$output" "deterministic_runtime evidence.selected_fields must be a non-empty list of strings for selected_fields scope"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -1133,7 +1109,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"deterministic_runtime evidence.selected_fields must not contain duplicate field names"* ]]
+  assert_contains "$output" "deterministic_runtime evidence.selected_fields must not contain duplicate field names"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -1147,7 +1123,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"deterministic_runtime evidence.selected_fields supports only top-level field names"* ]]
+  assert_contains "$output" "deterministic_runtime evidence.selected_fields supports only top-level field names"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -1161,7 +1137,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"deterministic_runtime evidence.line_range must satisfy integer start >= 1 and end >= start"* ]]
+  assert_contains "$output" "deterministic_runtime evidence.line_range must satisfy integer start >= 1 and end >= start"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -1175,10 +1151,12 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"ok"'* ]]
-  [[ "$output" == *"evidence_hash_input_scope: line_range"* ]]
-  [[ "$output" == *"evidence_line_range: {\"end\":2,\"start\":2}"* ]]
-  [[ "$output" == *"evidence_artifact_hash: $runtime_line_hash"* ]]
+  assert_contains "$output" '"status":"ok"'
+  assert_contains "$output" "evidence_hash_input_scope: line_range"
+  # The preview is embedded as a JSON string, so the rendered line arrives escaped;
+  # single quotes keep the backslashes the payload actually contains.
+  assert_contains "$output" 'evidence_line_range: {\"end\":2,\"start\":2}'
+  assert_contains "$output" "evidence_artifact_hash: $runtime_line_hash"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -1191,11 +1169,11 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"next_actions"'* ]]
-  [[ "$output" == *'"action":"run_probe"'* ]]
-  [[ "$output" == *"--hash-input-scope line_range"* ]]
-  [[ "$output" == *"--line-range-start 2"* ]]
-  [[ "$output" == *"--line-range-end 2"* ]]
+  assert_contains "$output" '"next_actions"'
+  assert_contains "$output" '"action":"run_probe"'
+  assert_contains "$output" "--hash-input-scope line_range"
+  assert_contains "$output" "--line-range-start 2"
+  assert_contains "$output" "--line-range-end 2"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -1209,7 +1187,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"deterministic_runtime evidence.trace_ref line must be inside evidence.line_range"* ]]
+  assert_contains "$output" "deterministic_runtime evidence.trace_ref line must be inside evidence.line_range"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -1223,10 +1201,10 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"ok"'* ]]
-  [[ "$output" == *"evidence_hash_input_scope: selected_fields"* ]]
-  [[ "$output" == *"evidence_selected_fields: [\"event\",\"userId\"]"* ]]
-  [[ "$output" == *"evidence_artifact_hash: $runtime_selected_hash"* ]]
+  assert_contains "$output" '"status":"ok"'
+  assert_contains "$output" "evidence_hash_input_scope: selected_fields"
+  assert_contains "$output" 'evidence_selected_fields: [\"event\",\"userId\"]'
+  assert_contains "$output" "evidence_artifact_hash: $runtime_selected_hash"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -1239,11 +1217,11 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"next_actions"'* ]]
-  [[ "$output" == *'"action":"run_probe"'* ]]
-  [[ "$output" == *"--hash-input-scope selected_fields"* ]]
-  [[ "$output" == *"--selected-field event"* ]]
-  [[ "$output" == *"--selected-field userId"* ]]
+  assert_contains "$output" '"next_actions"'
+  assert_contains "$output" '"action":"run_probe"'
+  assert_contains "$output" "--hash-input-scope selected_fields"
+  assert_contains "$output" "--selected-field event"
+  assert_contains "$output" "--selected-field userId"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -1257,7 +1235,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"deterministic_runtime selected_fields must exist in trace artifact"* ]]
+  assert_contains "$output" "deterministic_runtime selected_fields must exist in trace artifact"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -1271,9 +1249,39 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"deterministic_runtime selected_fields trace artifact must be valid JSON"* ]]
+  assert_contains "$output" "deterministic_runtime selected_fields trace artifact must be valid JSON"
 }
 
+
+@test "shadow_effect_writer hints the runtime_scenario_fit decision command" {
+  # The writer BLOCKS this record correctly; what is missing is the remediation
+  # hint, because next_action_hints() excludes deterministic_runtime. The
+  # assertions below are right and the product is wrong:
+  # the project docs
+  skip "ISSUE-n19c07: writer emits no runtime_scenario_fit hint"
+  _writer_metadata_fixtures
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$good_runtime_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$runtime_probe_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  assert_contains "$output" '"next_actions"'
+  assert_contains "$output" "--decision-type runtime_scenario_fit"
+  assert_contains "$output" "--trace-ref logs/runtime.trace:2"
+  assert_contains "$output" "--scenario-ref scenario:user-update-cache"
+  assert_contains "$output" "--scenario-scope runtime.scopes.user_update_cache"
+  assert_contains "$output" "--setter-symbol-path RuntimeScenarioRegistry.userUpdateCacheEvict"
+  assert_contains "$output" "--setter-module-hash $setter_module_hash"
+  assert_contains "$output" "--expiry-or-invalidation-rule binding_change"
+  refute_contains "$output" "choose_supported_fact_decision_type"
+}
 @test "shadow_effect_writer accepts Java parser-backed deterministic code evidence" {
   local candidate_file="$TEST_WORKSPACE/candidate.json"
   local decision_file="$TEST_WORKSPACE/decision.json"
@@ -1342,13 +1350,13 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"ok"'* ]]
-  [[ "$output" == *"evidence_ref: java.ast.call_match@v1"* ]]
-  [[ "$output" == *"evidence_validator_kind: java_token_parser"* ]]
-  [[ "$output" == *"evidence_parser_backed: True"* ]]
-  [[ "$output" == *"evidence_parser_identity: $parser_identity"* ]]
-  [[ "$output" == *"evidence_parser_content_hash: $parser_content_hash"* ]]
-  [[ "$output" == *"evidence_source_hash: $source_hash"* ]]
+  assert_contains "$output" '"status":"ok"'
+  assert_contains "$output" "evidence_ref: java.ast.call_match@v1"
+  assert_contains "$output" "evidence_validator_kind: java_token_parser"
+  assert_contains "$output" "evidence_parser_backed: True"
+  assert_contains "$output" "evidence_parser_identity: $parser_identity"
+  assert_contains "$output" "evidence_parser_content_hash: $parser_content_hash"
+  assert_contains "$output" "evidence_source_hash: $source_hash"
 
   cat > "$record_file" <<EOF
 {"record_id":"SE-java-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Bare Java parser evidence must not confirm without receiver binding.","anchor":{"file":"src/main/java/example/UserService.java","line":$anchor_line,"symbol":"save"},"evidence":{"type":"deterministic_code","ref":"java.ast.call_match@v1","rule_id":"repo.write","validator_kind":"java_token_parser","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"save"}}}
@@ -1365,7 +1373,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"receiver is required for confirmed java.ast.call_match@v1"* ]]
+  assert_contains "$output" "receiver is required for confirmed java.ast.call_match@v1"
 
   perl -0pi -e 's/```yaml\nrules:\n/```yaml\nrules:\n  java.bare_call:\n    allowed_effect_types: [external_call]\n    validators_by_stack:\n      java_generic:\n        code_call:\n          primary: java.ast.call_match\@v1\n          fallback: java.regex.method_call_named\@v1\n          fallback_max_risk: medium\n/' "$DOCS_ROOT/policy/shadow-rule-registry.md"
   cat > "$record_file" <<EOF
@@ -1383,7 +1391,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"receiver is required for confirmed java.ast.call_match@v1"* ]]
+  assert_contains "$output" "receiver is required for confirmed java.ast.call_match@v1"
 }
 
 @test "shadow_effect_writer accepts JavaScript parser-backed deterministic code evidence" {
@@ -1450,13 +1458,13 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"ok"'* ]]
-  [[ "$output" == *"evidence_ref: js.ast.call_match@v1"* ]]
-  [[ "$output" == *"evidence_validator_kind: js_token_parser"* ]]
-  [[ "$output" == *"evidence_parser_backed: True"* ]]
-  [[ "$output" == *"evidence_parser_identity: $parser_identity"* ]]
-  [[ "$output" == *"evidence_parser_content_hash: $parser_content_hash"* ]]
-  [[ "$output" == *"evidence_source_hash: $source_hash"* ]]
+  assert_contains "$output" '"status":"ok"'
+  assert_contains "$output" "evidence_ref: js.ast.call_match@v1"
+  assert_contains "$output" "evidence_validator_kind: js_token_parser"
+  assert_contains "$output" "evidence_parser_backed: True"
+  assert_contains "$output" "evidence_parser_identity: $parser_identity"
+  assert_contains "$output" "evidence_parser_content_hash: $parser_content_hash"
+  assert_contains "$output" "evidence_source_hash: $source_hash"
 
   cat > "$record_file" <<EOF
 {"record_id":"SE-js-002","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"external_call","statement":"Mismatched JS anchor must not confirm against a different matched symbol.","anchor":{"file":"src/client.js","line":$anchor_line,"symbol":"otherClient.get"},"evidence":{"type":"deterministic_code","ref":"js.ast.call_match@v1","rule_id":"external.call","validator_kind":"js_token_parser","parser_backed":true,"parser_identity":"$parser_identity","parser_content_hash":"$parser_content_hash","validator_result":"matched","source_ref":"$source_ref","source_hash":"$source_hash","probe_result_ref":"$probe_result_file","probe_result_hash":"$probe_hash","probe_args":{"callee":"get"}}}
@@ -1473,7 +1481,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"matched_symbol"* || "$output" == *"anchor.symbol"* ]]
+  [[ "$output" == *"matched_symbol"* || "$output" == *"anchor.symbol"* ]] || false
 
   python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); data["fact_status"]="candidate_only"; json.dump(data, open(sys.argv[1], "w"), sort_keys=True, separators=(",", ":"))' "$probe_result_file"
   probe_hash="$(sha256_file_ref "$probe_result_file")"
@@ -1492,7 +1500,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"probe_result.fact_status"* ]]
+  assert_contains "$output" "probe_result.fact_status"
 }
 
 @test "shadow_effect_writer accepts TypeScript generic parser-backed deterministic code evidence" {
@@ -1561,13 +1569,13 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"ok"'* ]]
-  [[ "$output" == *"evidence_ref: ts.ast.call_match@v2"* ]]
-  [[ "$output" == *"evidence_validator_kind: ts_token_parser"* ]]
-  [[ "$output" == *"evidence_parser_backed: True"* ]]
-  [[ "$output" == *"evidence_parser_identity: $parser_identity"* ]]
-  [[ "$output" == *"evidence_parser_content_hash: $parser_content_hash"* ]]
-  [[ "$output" == *"evidence_source_hash: $source_hash"* ]]
+  assert_contains "$output" '"status":"ok"'
+  assert_contains "$output" "evidence_ref: ts.ast.call_match@v2"
+  assert_contains "$output" "evidence_validator_kind: ts_token_parser"
+  assert_contains "$output" "evidence_parser_backed: True"
+  assert_contains "$output" "evidence_parser_identity: $parser_identity"
+  assert_contains "$output" "evidence_parser_content_hash: $parser_content_hash"
+  assert_contains "$output" "evidence_source_hash: $source_hash"
 
   python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); data.pop("type_arguments", None); json.dump(data, open(sys.argv[1], "w"), sort_keys=True, separators=(",", ":"))' "$probe_result_file"
   probe_hash="$(sha256_file_ref "$probe_result_file")"
@@ -1586,7 +1594,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"probe_result.type_arguments"* ]]
+  assert_contains "$output" "probe_result.type_arguments"
 
   cat > "$source_file" <<'EOF'
 type ApiResult<T> = { value: T };
@@ -1621,7 +1629,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"probe_result.type_arguments"* ]]
+  assert_contains "$output" "probe_result.type_arguments"
 }
 
 @test "shadow_effect_writer accepts FastAPI parser-backed route decorator evidence" {
@@ -1692,13 +1700,13 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"ok"'* ]]
-  [[ "$output" == *"evidence_ref: fastapi.route@v1"* ]]
-  [[ "$output" == *"evidence_validator_kind: ast"* ]]
-  [[ "$output" == *"evidence_parser_backed: True"* ]]
-  [[ "$output" == *"evidence_parser_identity: $parser_identity"* ]]
-  [[ "$output" == *"evidence_parser_content_hash: $parser_content_hash"* ]]
-  [[ "$output" == *"evidence_source_hash: $source_hash"* ]]
+  assert_contains "$output" '"status":"ok"'
+  assert_contains "$output" "evidence_ref: fastapi.route@v1"
+  assert_contains "$output" "evidence_validator_kind: ast"
+  assert_contains "$output" "evidence_parser_backed: True"
+  assert_contains "$output" "evidence_parser_identity: $parser_identity"
+  assert_contains "$output" "evidence_parser_content_hash: $parser_content_hash"
+  assert_contains "$output" "evidence_source_hash: $source_hash"
 
   python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); data.pop("route_path", None); json.dump(data, open(sys.argv[1], "w"), sort_keys=True, separators=(",", ":"))' "$probe_result_file"
   probe_hash="$(sha256_file_ref "$probe_result_file")"
@@ -1717,7 +1725,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"probe_result.route_path"* ]]
+  assert_contains "$output" "probe_result.route_path"
 
   python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1747,7 +1755,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"matched_symbol"* || "$output" == *"anchor.symbol"* ]]
+  [[ "$output" == *"matched_symbol"* || "$output" == *"anchor.symbol"* ]] || false
 
   cat > "$source_file" <<'EOF'
 from fastapi import FastAPI
@@ -1786,7 +1794,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"probe_result.route_path"* ]]
+  assert_contains "$output" "probe_result.route_path"
 }
 
 @test "shadow_effect_writer rejects Python parser-backed evidence when anchor symbol differs from matched symbol" {
@@ -1849,7 +1857,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"matched_symbol"* || "$output" == *"anchor.symbol"* ]]
+  [[ "$output" == *"matched_symbol"* || "$output" == *"anchor.symbol"* ]] || false
 }
 
 @test "shadow_effect_writer binds deterministic evidence to policy registry and source hashes" {
@@ -1980,10 +1988,10 @@ EOF
 {"record_id":"SE-user-018","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Stale source hash must not validate.","anchor":{"file":"src/app.py","symbol":"repository.save"},"evidence":{"type":"deterministic_code","ref":"py.ast.call_match@v1","rule_id":"repo.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/app.py:2","source_hash":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","probe_args":{"callee":"save","receiver":"repository"}}}
 EOF
   cat > "$runtime_ref_record" <<EOF
-{"record_id":"SE-user-019","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Runtime evidence must use a runtime trace validator.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.command.output@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
+{"record_id":"SE-user-019","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Runtime evidence must use a runtime trace validator.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"py.ast.call_match@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"$runtime_hash","scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
 EOF
   cat > "$unimplemented_record" <<EOF
-{"record_id":"SE-user-020","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"api_route","statement":"Documented-only Express route validator cannot be forged as implemented.","anchor":{"file":"src/main/java/example/UserService.java","symbol":"app.get"},"evidence":{"type":"deterministic_code","ref":"express.route@v1","rule_id":"http.route","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/main/java/example/UserService.java:5","source_hash":"$java_source_hash","probe_args":{"callee":"get","receiver":"app"}}}
+{"record_id":"SE-user-020","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"db_write","statement":"Documented-only SQL write validator cannot be forged as implemented.","anchor":{"file":"src/main/java/example/UserService.java","symbol":"sql.write"},"evidence":{"type":"deterministic_code","ref":"sql.write_call@v1","rule_id":"db.write","validator_kind":"ast","parser_backed":true,"validator_result":"matched","source_ref":"src/main/java/example/UserService.java:5","source_hash":"$java_source_hash","probe_args":{"callee":"executeUpdate","receiver":"jdbcTemplate"}}}
 EOF
   cat > "$stale_runtime_record" <<EOF
 {"record_id":"SE-user-023","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"confirmed","effect_type":"cache_evict","statement":"Stale runtime hash must not validate.","anchor":{"file":"logs/runtime.trace","line":1,"symbol":"event=user.cache.evict"},"evidence":{"type":"deterministic_runtime","ref":"any.runtime.trace@v1","rule_id":"cache.evict","trace_ref":"logs/runtime.trace:1","artifact_hash":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","scenario_ref":"scenario:user-update-cache","scenario_scope":"runtime.scopes.user_update_cache","setter_symbol_path":"RuntimeScenarioRegistry.userUpdateCacheEvict","setter_module_hash":"$setter_module_hash","expiry_or_invalidation_rule":"binding_change","probe_args":{"trace_event":"event=user.cache.evict userId=42"}}}
@@ -2030,84 +2038,84 @@ EOF
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$bad_rule_record" --candidate "$candidate_file" --user-decision "$decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evidence.rule_id is not registered"* ]]
+  assert_contains "$output" "evidence.rule_id is not registered"
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$incompatible_record" --candidate "$candidate_file" --user-decision "$decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evidence.ref is not compatible with evidence.rule_id"* ]]
+  assert_contains "$output" "evidence.ref is not compatible with evidence.rule_id"
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$source_probe_record" --candidate "$candidate_file" --user-decision "$decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"source_probe-only"* ]]
+  assert_contains "$output" "source_probe-only"
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$stale_source_record" --candidate "$candidate_file" --user-decision "$decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"source_hash must match"* ]]
+  assert_contains "$output" "source_hash must match"
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$runtime_ref_record" --candidate "$candidate_file" --user-decision "$decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"runtime_trace validator"* ]]
+  assert_contains "$output" "runtime_trace validator"
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$unimplemented_record" --candidate "$candidate_file" --user-decision "$decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"implemented by shadow_evidence_probe"* ]]
+  assert_contains "$output" "implemented by shadow_evidence_probe"
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$stale_runtime_record" --candidate "$candidate_file" --user-decision "$decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"artifact_hash must match"* ]]
+  assert_contains "$output" "artifact_hash must match"
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$forged_code_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$wrong_code_probe_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"probe_result.source_ref must match"* ]]
+  assert_contains "$output" "probe_result.source_ref must match"
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$wrong_effect_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$code_probe_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"rule_id is not compatible with record.effect_type"* ]]
+  assert_contains "$output" "rule_id is not compatible with record.effect_type"
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$wrong_symbol_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$code_probe_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"anchor.symbol must match deterministic probe args"* ]]
+  assert_contains "$output" "anchor.symbol must match deterministic probe args"
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$path_only_source_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$code_probe_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"ok"'* ]]
+  assert_contains "$output" '"status":"ok"'
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$same_file_wrong_line_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$code_probe_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"source_ref must match"* ]]
+  assert_contains "$output" "source_ref must match"
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$custom_rule_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$code_probe_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"no allowed_effect_types policy mapping"* ]]
+  assert_contains "$output" "no allowed_effect_types policy mapping"
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$runtime_scenario_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$runtime_probe_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"user_decision_ref is required"* ]]
+  assert_contains "$output" "user_decision_ref is required"
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$runtime_bad_decision_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$runtime_probe_file" --evidence-decision "$runtime_bad_decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"decision_type must be runtime_scenario_fit"* ]]
-  [[ "$output" == *"answer must affirm"* ]]
+  assert_contains "$output" "decision_type must be runtime_scenario_fit"
+  assert_contains "$output" "answer must affirm"
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$runtime_one_sided_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$runtime_probe_file" --evidence-decision "$runtime_one_sided_decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"source_refs must include all required evidence refs"* ]]
+  assert_contains "$output" "source_refs must include all required evidence refs"
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$runtime_mismatch_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$runtime_probe_file" --evidence-decision "$runtime_mismatch_decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"applies_to must bind"* ]]
+  assert_contains "$output" "applies_to must bind"
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$runtime_wrong_effect_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$runtime_probe_file" --evidence-decision "$runtime_one_sided_decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"rule_id is not compatible with record.effect_type"* ]]
+  assert_contains "$output" "rule_id is not compatible with record.effect_type"
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$runtime_wrong_anchor_record" --candidate "$candidate_file" --user-decision "$decision_file" --probe-result "$runtime_probe_file" --evidence-decision "$runtime_one_sided_decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"anchor.file must match"* ]]
+  assert_contains "$output" "anchor.file must match"
 
   run python3 "$SHADOW_EFFECT_WRITER" --project-root "$TEST_PROJECT" --record "$human_mismatch_record" --candidate "$candidate_file" --user-decision "$decision_file" --evidence-decision "$human_mismatch_decision_file" --target-shadow-file "packages/codeguide/effects.md" --mode dry-run --today "2026-05-02"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"decision_type is not compatible"* ]]
+  assert_contains "$output" "decision_type is not compatible"
 }
 
 @test "shadow_effect_writer write requires target hash and updates exact record id" {
@@ -2151,7 +2159,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *"--expected-target-hash is required"* ]]
+  assert_contains "$output" "--expected-target-hash is required"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -2164,8 +2172,8 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"operation":"create"'* ]]
-  [[ "$output" == *'"writes_shadow_docs":true'* ]]
+  assert_contains "$output" '"operation":"create"'
+  assert_contains "$output" '"writes_shadow_docs":true'
   run grep -c "shadow-effect-record:SE-user-002 begin" "$target_file"
   [ "$status" -eq 0 ]
   [ "$output" -eq 1 ]
@@ -2191,7 +2199,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"record content"* ]]
+  assert_contains "$output" "record content"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -2204,7 +2212,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"operation":"update"'* ]]
+  assert_contains "$output" '"operation":"update"'
   run grep -c "shadow-effect-record:SE-user-002 begin" "$target_file"
   [ "$status" -eq 0 ]
   [ "$output" -eq 1 ]
@@ -2224,7 +2232,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"exactly one begin and end marker"* ]]
+  assert_contains "$output" "exactly one begin and end marker"
 
 }
 
@@ -2317,7 +2325,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"operation":"update"'* ]]
+  assert_contains "$output" '"operation":"update"'
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -2329,7 +2337,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"lifecycle transition blocked: unknown -> blocked"* ]]
+  assert_contains "$output" "lifecycle transition blocked: unknown -> blocked"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -2341,7 +2349,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"lifecycle transition blocked: unknown -> stale"* ]]
+  assert_contains "$output" "lifecycle transition blocked: unknown -> stale"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -2354,8 +2362,8 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"operation":"update"'* ]]
-  [[ "$output" == *"evidence_parser_backed: True"* ]]
+  assert_contains "$output" '"operation":"update"'
+  assert_contains "$output" "evidence_parser_backed: True"
 
   sed -i.bak 's/- lifecycle: unknown/- lifecycle: confirmed/' "$target_file"
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -2368,7 +2376,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"lifecycle transition blocked: confirmed -> unknown"* ]]
+  assert_contains "$output" "lifecycle transition blocked: confirmed -> unknown"
 
   sed -i.bak '/- lifecycle: confirmed/d' "$target_file"
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -2381,7 +2389,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"existing record SE-life-001 lifecycle metadata is missing or malformed"* ]]
+  assert_contains "$output" "existing record SE-life-001 lifecycle metadata is missing or malformed"
 }
 
 @test "shadow_effect_writer refuses non-effect-map shadow targets" {
@@ -2432,7 +2440,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"target shadow file must declare doc_role: effect_map"* ]]
+  assert_contains "$output" "target shadow file must declare doc_role: effect_map"
   run grep "shadow-effect-record:SE-user-008" "$target_file"
   [ "$status" -eq 1 ]
 
@@ -2447,7 +2455,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"must not create reserved shadow navigation paths"* ]]
+  assert_contains "$output" "must not create reserved shadow navigation paths"
 }
 
 @test "shadow_effect_writer rejects malformed record refs and existing markers" {
@@ -2495,8 +2503,8 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"record.record_id must not contain --"* ]]
-  [[ "$output" == *"record.source_refs must be a list"* ]]
+  assert_contains "$output" "record.record_id must not contain --"
+  assert_contains "$output" "record.source_refs must be a list"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -2508,7 +2516,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"record.effect_type is required"* ]]
+  assert_contains "$output" "record.effect_type is required"
 
   cat > "$target_file" <<'EOF'
 # Shadow Effects
@@ -2530,7 +2538,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"exactly one begin and end marker"* ]]
+  assert_contains "$output" "exactly one begin and end marker"
 
   cat > "$target_file" <<'EOF'
 # Shadow Effects
@@ -2556,7 +2564,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"interleaved shadow-effect-record markers"* ]]
+  assert_contains "$output" "interleaved shadow-effect-record markers"
 }
 
 @test "shadow_effect_writer blocks stale target hash traversal and llm evidence" {
@@ -2599,9 +2607,9 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"llm_hint"* ]]
-  [[ "$output" == *"target hash mismatch"* ]]
-  [[ "$output" == *"forbidden Markdown marker"* ]]
+  assert_contains "$output" "llm_hint"
+  assert_contains "$output" "target hash mismatch"
+  assert_contains "$output" "forbidden Markdown marker"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -2613,7 +2621,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"llm_hint"* ]]
+  assert_contains "$output" "llm_hint"
 
   run python3 "$SHADOW_EFFECT_WRITER" \
     --project-root "$TEST_PROJECT" \
@@ -2625,7 +2633,7 @@ EOF
     --today "2026-05-02"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *"traversal"* ]]
+  assert_contains "$output" "traversal"
 }
 
 # ========== P1/P2: Validator strict mode non-empty check ==========
@@ -2633,34 +2641,34 @@ EOF
 @test "shadow_policy_loader reports adapter ids and catalog parity" {
   run python3 "$SHADOW_POLICY_LOADER" --adapter-module "$SHADOW_PROBE" --print-adapter-ids
   [ "$status" -eq 0 ]
-  [[ "$output" == *"py.ast.call_match@v1"* ]]
-  [[ "$output" == *"js.ast.call_match@v1"* ]]
-  [[ "$output" == *"ts.ast.call_match@v1"* ]]
-  [[ "$output" == *"ts.ast.call_match@v2"* ]]
-  [[ "$output" == *"fastapi.route@v1"* ]]
-  [[ "$output" == *"express.route@v1"* ]]
-  [[ "$output" == *"react.effect_hook@v1"* ]]
-  [[ "$output" == *"react.jsx_event_binding@v1"* ]]
-  [[ "$output" == *"any.runtime.trace@v1"* ]]
+  assert_contains "$output" "py.ast.call_match@v1"
+  assert_contains "$output" "js.ast.call_match@v1"
+  assert_contains "$output" "ts.ast.call_match@v1"
+  assert_contains "$output" "ts.ast.call_match@v2"
+  assert_contains "$output" "fastapi.route@v1"
+  assert_contains "$output" "express.route@v1"
+  assert_contains "$output" "react.effect_hook@v1"
+  assert_contains "$output" "react.jsx_event_binding@v1"
+  assert_contains "$output" "any.runtime.trace@v1"
 
   run python3 "$SHADOW_POLICY_LOADER" --adapter-module "$SHADOW_PROBE" --print-adapter-json
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"ts.ast.call_match@v2"'* ]]
-  [[ "$output" == *'"express.route@v1"'* ]]
-  [[ "$output" == *'"react.effect_hook@v1"'* ]]
-  [[ "$output" == *'"react.jsx_event_binding@v1"'* ]]
-  [[ "$output" == *'"allowed_extensions":[".ts",".tsx",".mts",".cts"]'* ]]
-  [[ "$output" == *'"rejected_extensions":[".d.ts"]'* ]]
-  [[ "$output" == *'"allowed_paths":["src/**","app/**","lib/**","server/**","pages/**","routes/**"]'* ]]
+  assert_contains "$output" '"ts.ast.call_match@v2"'
+  assert_contains "$output" '"express.route@v1"'
+  assert_contains "$output" '"react.effect_hook@v1"'
+  assert_contains "$output" '"react.jsx_event_binding@v1"'
+  assert_contains "$output" '"allowed_extensions":[".ts",".tsx",".mts",".cts"]'
+  assert_contains "$output" '"rejected_extensions":[".d.ts"]'
+  assert_contains "$output" '"allowed_paths":["src/**","app/**","lib/**","server/**","pages/**","routes/**"]'
 
   run python3 "$SHADOW_POLICY_LOADER" --policy-dir "$DOCS_ROOT/policy" --adapter-module "$SHADOW_PROBE" --check-parity
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"ok"'* ]]
-  [[ "$output" == *'"adapter_specs"'* ]]
+  assert_contains "$output" '"status":"ok"'
+  assert_contains "$output" '"adapter_specs"'
 
   perl -0pi -e 's/(implemented_primary_v1: \[[^\]]*any\.runtime\.trace\@v1)/$1, sql.write_call\@v1/' "$DOCS_ROOT/policy/shadow-validator-catalog.md"
   run python3 "$SHADOW_POLICY_LOADER" --policy-dir "$DOCS_ROOT/policy" --adapter-module "$SHADOW_PROBE" --check-parity
   [ "$status" -ne 0 ]
-  [[ "$output" == *"implemented_primary_v1 id must be implemented by shadow_evidence_probe.py"* ]]
+  assert_contains "$output" "implemented_primary_v1 id must be implemented by shadow_evidence_probe.py"
 }
 

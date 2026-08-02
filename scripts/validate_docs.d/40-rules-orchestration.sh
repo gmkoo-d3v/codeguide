@@ -336,9 +336,19 @@ check_tmp_path_references() {
       FNR == 1 { infence = 0 }
       /^[[:space:]]*(```|~~~)/ { infence = !infence; next }
       infence { next }
-      /codeguide\/tmp\// { printf "tmp %s:%d\n", FILENAME, FNR; next }
-      /(^|[^A-Za-z0-9_.-])\/tmp\// { printf "tmp %s:%d\n", FILENAME, FNR; next }
-      /docs\/(plan|task|orchestration)\/_archive\// { printf "arc %s:%d\n", FILENAME, FNR }
+      {
+        # The two classes are INDEPENDENT: one line can reference both a tmp/
+        # path and a dead _archive path, and it must report both. The pre-fix
+        # code got that right by scanning the file twice; collapsing to one pass
+        # with `next` between the rules silently dropped the second finding
+        # (caught by the independent audit of the tracked issue).
+        # Within the tmp class the two patterns overlap, so guard that one with a flag.
+        tmp_hit = 0
+        if ($0 ~ /codeguide\/tmp\//) { tmp_hit = 1 }
+        else if ($0 ~ /(^|[^A-Za-z0-9_.-])\/tmp\//) { tmp_hit = 1 }
+        if (tmp_hit) { printf "tmp %s:%d\n", FILENAME, FNR }
+        if ($0 ~ /docs\/(plan|task|orchestration)\/_archive\//) { printf "arc %s:%d\n", FILENAME, FNR }
+      }
     ' 2>/dev/null
   )
 }

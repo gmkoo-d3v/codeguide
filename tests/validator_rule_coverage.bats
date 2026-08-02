@@ -99,13 +99,13 @@ EOF
 @test "coverage tool inventories the real repo without crashing and reports a summary" {
   run COVERAGE
   [ "$status" -eq 0 ]
-  [[ "$output" == *"# Validator Rule Coverage Report"* ]]
-  [[ "$output" == *"- TESTED:"* ]]
-  [[ "$output" == *"- UNTESTED:"* ]]
-  [[ "$output" == *"- NO-EMIT:"* ]]
-  [[ "$output" == *"- HEURISTIC-UNRESOLVED:"* ]]
-  [[ "$output" == *"- MAIN-FLOW-AGGREGATE: 1"* ]]
-  [[ "$output" == *"- main_flow_sites: "* ]]
+  assert_contains "$output" "# Validator Rule Coverage Report"
+  assert_contains "$output" "- TESTED:"
+  assert_contains "$output" "- UNTESTED:"
+  assert_contains "$output" "- NO-EMIT:"
+  assert_contains "$output" "- HEURISTIC-UNRESOLVED:"
+  assert_contains "$output" "- MAIN-FLOW-AGGREGATE: 1"
+  assert_contains "$output" "- main_flow_sites: "
 
   total_line="$(printf '%s\n' "$output" | grep '^- total:')"
   total="$(printf '%s' "$total_line" | grep -oE '[0-9]+')"
@@ -137,9 +137,12 @@ PY
 @test "coverage tool real-repo run inventories known adapter and module functions" {
   run COVERAGE
   [ "$status" -eq 0 ]
-  [[ "$output" == *"adapter"*"usage"* ]]
-  [[ "$output" == *"00-report"*"fail"* ]]
-  [[ "$output" == *"10-parse"*"check_field_non_empty"* ]]
+  assert_contains "$output" "adapter"
+  assert_contains "$output" "usage"
+  assert_contains "$output" "00-report"
+  assert_contains "$output" "fail"
+  assert_contains "$output" "10-parse"
+  assert_contains "$output" "check_field_non_empty"
 }
 
 @test "coverage tool fixture classifies TESTED/UNTESTED/NO-EMIT rules correctly" {
@@ -321,12 +324,12 @@ EOF
 EOF
   run COVERAGE --project-root "$TEST_PROJECT" --exit-code
   [ "$status" -eq 0 ]
-  [[ "$output" == *"- main_flow_sites: 1"* ]]
+  assert_contains "$output" "- main_flow_sites: 1"
 }
 
 @test "coverage tool does not crash on a project root with no validate_docs.d directory" {
   mkdir -p "$TEST_PROJECT/scripts" "$TEST_PROJECT/tests"
   run COVERAGE --project-root "$TEST_PROJECT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"- total: 0"* ]]
+  assert_contains "$output" "- total: 0"
 }

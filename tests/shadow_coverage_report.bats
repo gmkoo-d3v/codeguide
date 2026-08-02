@@ -24,31 +24,31 @@ EOF
   _seed_project_with_coverage "src/mod_a"
   run COVERAGE --project-root "$TEST_PROJECT" --changed-file src/mod_b/y.py
   [ "$status" -eq 0 ]
-  [[ "$output" == *"uncovered: 1"* ]]
-  [[ "$output" == *"UNCOVERED: src/mod_b/y.py"* ]]
+  assert_contains "$output" "uncovered: 1"
+  assert_contains "$output" "UNCOVERED: src/mod_b/y.py"
 }
 
 @test "coverage report treats a source under a documented directory as covered" {
   _seed_project_with_coverage "src/mod_a"
   run COVERAGE --project-root "$TEST_PROJECT" --changed-file src/mod_a/x.py
   [ "$status" -eq 0 ]
-  [[ "$output" == *"uncovered: 0"* ]]
-  [[ "$output" == *"every changed source is documented"* ]]
+  assert_contains "$output" "uncovered: 0"
+  assert_contains "$output" "every changed source is documented"
 }
 
 @test "coverage report treats an exactly-declared source file as covered" {
   _seed_project_with_coverage "src/mod_b/y.py"
   run COVERAGE --project-root "$TEST_PROJECT" --changed-file src/mod_b/y.py
   [ "$status" -eq 0 ]
-  [[ "$output" == *"uncovered: 0"* ]]
+  assert_contains "$output" "uncovered: 0"
 }
 
 @test "coverage report does not treat a changed doc as source needing coverage" {
   _seed_project_with_coverage "src/mod_a"
   run COVERAGE --project-root "$TEST_PROJECT" --changed-file docs/shadow/apps/app-a/overview.md
   [ "$status" -eq 0 ]
-  [[ "$output" == *"changed_source_files: 0"* ]]
-  [[ "$output" == *"no changed source files to check"* ]]
+  assert_contains "$output" "changed_source_files: 0"
+  assert_contains "$output" "no changed source files to check"
 }
 
 @test "coverage report --exit-code returns 1 when a source is uncovered" {
@@ -67,7 +67,7 @@ EOF
   printf 'b=2\n' > "$TEST_PROJECT/src/mod_b/y.py"
   run COVERAGE --project-root "$TEST_PROJECT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"UNCOVERED: src/mod_b/y.py"* ]]
+  assert_contains "$output" "UNCOVERED: src/mod_b/y.py"
 }
 
 @test "coverage report ignores source_of_truth_paths under _deprecated" {
@@ -83,15 +83,15 @@ EOF
   # The only doc that "covers" src/mod_b is deprecated, so the source is uncovered.
   run COVERAGE --project-root "$TEST_PROJECT" --changed-file src/mod_b/y.py
   [ "$status" -eq 0 ]
-  [[ "$output" == *"UNCOVERED: src/mod_b/y.py"* ]]
+  assert_contains "$output" "UNCOVERED: src/mod_b/y.py"
 }
 
 @test "coverage report flags an undocumented directory passed via --changed-file" {
   _seed_project_with_coverage "src/mod_a"
   run COVERAGE --project-root "$TEST_PROJECT" --changed-file src/mod_b
   [ "$status" -eq 0 ]
-  [[ "$output" == *"changed_source_files: 1"* ]]
-  [[ "$output" == *"UNCOVERED: src/mod_b"* ]]
+  assert_contains "$output" "changed_source_files: 1"
+  assert_contains "$output" "UNCOVERED: src/mod_b"
 }
 
 @test "coverage report does not let a blanket '.' declaration cover the whole project" {
@@ -105,7 +105,7 @@ EOF
 EOF
   run COVERAGE --project-root "$TEST_PROJECT" --changed-file src/mod_b/y.py
   [ "$status" -eq 0 ]
-  [[ "$output" == *"UNCOVERED: src/mod_b/y.py"* ]]
+  assert_contains "$output" "UNCOVERED: src/mod_b/y.py"
 }
 
 @test "coverage report does not crash on a malformed (NUL-byte) declared path" {
@@ -115,7 +115,7 @@ EOF
   run COVERAGE --project-root "$TEST_PROJECT" --changed-file src/mod_b/y.py
   # Must run to completion (header printed), not abort with a traceback.
   [ "$status" -eq 0 ]
-  [[ "$output" == *"# Shadow Coverage Report"* ]]
+  assert_contains "$output" "# Shadow Coverage Report"
 }
 
 @test "coverage report scopes to project_root and ignores a sibling subproject change" {
@@ -139,6 +139,6 @@ EOF
   # and must not leak an absolute path.
   run COVERAGE --project-root "$TEST_WORKSPACE/api"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"changed_source_files: 0"* ]]
-  [[ "$output" != *"/other/"* ]]
+  assert_contains "$output" "changed_source_files: 0"
+  refute_contains "$output" "/other/"
 }

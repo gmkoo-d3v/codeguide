@@ -11,7 +11,7 @@ load codeguide_helper
 
   run cat "$DOCS_ROOT/decisions/decision-path-001.md"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"- context: Use path C:\\new\\folder"* ]]
+  assert_contains "$output" "- context: Use path C:\\new\\folder"
 }
 
 @test "doc_garden writes shared risk_level to task and decision docs" {
@@ -96,7 +96,7 @@ load codeguide_helper
     --no-init
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"External CLI review requires --risk-preflight-status approved"* ]]
+  assert_contains "$output" "External CLI review requires --risk-preflight-status approved"
   run test ! -f "$DOCS_ROOT/orchestration/orch-external-pass-01/ORCH.md"
   [ "$status" -eq 0 ]
 }
@@ -144,7 +144,7 @@ load codeguide_helper
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" != *"invalid orchestration.review_mode"* ]]
+  refute_contains "$output" "invalid orchestration.review_mode"
 }
 
 @test "orchestration enum contract stays aligned across references and producers" {
@@ -180,7 +180,7 @@ load codeguide_helper
   # layout-agnostic.
   run grep -rF "check_enum_membership \"\$review_mode\" \"orchestration.review_mode\"" "$repo_root/scripts/validate_docs.sh" "$repo_root/scripts/validate_docs.d"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"external_cli current_task_debate agy_subagents claude_subagents codex_subagents"* ]]
+  assert_contains "$output" "external_cli current_task_debate agy_subagents claude_subagents codex_subagents"
 }
 
 @test "doc_garden scaffold orchestration validates without enum template warnings" {
@@ -192,7 +192,7 @@ load codeguide_helper
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  [[ "$output" != *"invalid orchestration."* ]]
+  refute_contains "$output" "invalid orchestration."
 }
 
 @test "doc_garden rejects external-runner as risk preflight recorder" {
@@ -203,7 +203,7 @@ load codeguide_helper
     --no-init
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"--risk-preflight-recorded-by must identify the main-thread supervising lead architect"* ]]
+  assert_contains "$output" "--risk-preflight-recorded-by must identify the main-thread supervising lead architect"
 }
 
 @test "doc_garden refreshes shadow graph and keeps change note router-only" {
@@ -221,7 +221,7 @@ load codeguide_helper
 
   run grep "^- latest_change_note:" "$DOCS_ROOT/shadow/project-shadow.md"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"graph refresh"* ]]
+  assert_contains "$output" "graph refresh"
 
   run grep "^- latest_change_note:" "$DOCS_ROOT/shadow/_global.md"
   [ "$status" -ne 0 ]
@@ -318,13 +318,13 @@ load codeguide_helper
     --shadow-refresh-mode "git_diff" \
     --no-init
   [ "$status" -ne 0 ]
-  [[ "$output" == *"--shadow-git-range is required"* ]]
+  assert_contains "$output" "--shadow-git-range is required"
 }
 
 @test "doc_garden fails clearly when option value is missing" {
   run "$DOC_GARDEN" "$TEST_PROJECT" --task-id
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Option --task-id requires a value"* ]]
+  assert_contains "$output" "Option --task-id requires a value"
 }
 
 @test "doc_garden requires risk preflight before delegated orchestration is recorded" {
@@ -337,7 +337,7 @@ load codeguide_helper
     --no-init
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"requires --risk-preflight-status"* ]]
+  assert_contains "$output" "requires --risk-preflight-status"
   run test ! -f "$DOCS_ROOT/orchestration/doc-preflight-gate-01/ORCH.md"
   [ "$status" -eq 0 ]
 }
@@ -345,13 +345,13 @@ load codeguide_helper
 @test "doc_garden rejects invalid task id characters" {
   run "$DOC_GARDEN" "$TEST_PROJECT" --task-id ".*" --task-title "bad id" --no-init
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Invalid --task-id value"* ]]
+  assert_contains "$output" "Invalid --task-id value"
 }
 
 @test "doc_garden rejects invalid decision id characters" {
   run "$DOC_GARDEN" "$TEST_PROJECT" --decision-id "[" --decision-title "bad id" --selected-option "x" --no-init
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Invalid --decision-id value"* ]]
+  assert_contains "$output" "Invalid --decision-id value"
 }
 
 @test "doc_garden rejects invalid task status enum" {
@@ -361,7 +361,7 @@ load codeguide_helper
     --task-status "working" \
     --no-init
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Invalid --task-status"* ]]
+  assert_contains "$output" "Invalid --task-status"
 }
 
 @test "doc_garden rejects invalid scope type enum" {
@@ -372,7 +372,7 @@ load codeguide_helper
     --selected-option "x" \
     --no-init
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Invalid --scope-type"* ]]
+  assert_contains "$output" "Invalid --scope-type"
 }
 
 @test "doc_garden rejects invalid decision status enum" {
@@ -383,7 +383,7 @@ load codeguide_helper
     --selected-option "x" \
     --no-init
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Invalid --decision-status"* ]]
+  assert_contains "$output" "Invalid --decision-status"
 }
 
 # ========== decision-index section-based movement ==========
@@ -527,7 +527,7 @@ make_resume_source_repo() {
 
   local changed_line
   changed_line="$(grep "^- resume_changed_files:" "$task_file")"
-  [[ "$changed_line" == *" (+4 more)" ]]
+  [[ "$changed_line" == *" (+4 more)" ]] || false
   # Exactly 10 capped entries before the suffix.
   local entries
   entries="${changed_line#- resume_changed_files: }"
@@ -547,7 +547,7 @@ make_resume_source_repo() {
 
   run "$DOC_GARDEN" "$TEST_PROJECT" --task-id "resume-nosource-01" --resume-checkpoint
   [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] Not a git repository: no source repo reachable"* ]]
+  assert_contains "$output" "[WARN] Not a git repository: no source repo reachable"
 
   local task_file="$DOCS_ROOT/task/TASK-resume-nosource-01.md"
   run grep "^- resume_source_head: no-source-repo$" "$task_file"
@@ -599,19 +599,19 @@ make_resume_source_repo() {
 @test "doc_garden rejects --resume-checkpoint without --task-id" {
   run "$DOC_GARDEN" "$TEST_PROJECT" --resume-checkpoint
   [ "$status" -ne 0 ]
-  [[ "$output" == *"--resume-checkpoint requires --task-id"* ]]
+  assert_contains "$output" "--resume-checkpoint requires --task-id"
 }
 
 @test "doc_garden rejects resume pass-through options without --resume-checkpoint" {
   run "$DOC_GARDEN" "$TEST_PROJECT" --task-id "resume-guard-01" --resume-next-action "x" --no-init
   [ "$status" -ne 0 ]
-  [[ "$output" == *"require --resume-checkpoint"* ]]
+  assert_contains "$output" "require --resume-checkpoint"
 }
 
 @test "doc_garden rejects --resume-checkpoint for a task file that does not exist yet" {
   run "$DOC_GARDEN" "$TEST_PROJECT" --task-id "resume-missing-01" --resume-checkpoint
   [ "$status" -ne 0 ]
-  [[ "$output" == *"requires an existing task file"* ]]
+  assert_contains "$output" "requires an existing task file"
 }
 
 @test "resume checkpoint records an unborn source-repo HEAD instead of dying" {

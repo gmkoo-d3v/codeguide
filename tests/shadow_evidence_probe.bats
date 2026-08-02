@@ -8,8 +8,8 @@ load codeguide_helper
     --validator-id "java.ast.call_match@v99"
 
   [ "$status" -eq 2 ]
-  [[ "$output" == *'"status":"unsupported"'* ]]
-  [[ "$output" == *'"validator_id":"java.ast.call_match@v99"'* ]]
+  assert_contains "$output" '"status":"unsupported"'
+  assert_contains "$output" '"validator_id":"java.ast.call_match@v99"'
 }
 
 @test "shadow_evidence_probe uses Python AST for real calls and ignores comments or strings" {
@@ -32,12 +32,12 @@ EOF
     --callee "save_user"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"parser_backed":true'* ]]
-  [[ "$output" == *'"validator_result":"matched"'* ]]
-  [[ "$output" == *'"source_hash":"sha256:'* ]]
-  [[ "$output" == *'"parser_identity":"shadow_evidence_probe.py:py.ast.call_match@v1:ast"'* ]]
-  [[ "$output" == *'"parser_content_hash":"'"$parser_content_hash"'"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"parser_backed":true'
+  assert_contains "$output" '"validator_result":"matched"'
+  assert_contains "$output" '"source_hash":"sha256:'
+  assert_contains "$output" '"parser_identity":"shadow_evidence_probe.py:py.ast.call_match@v1:ast"'
+  assert_contains "$output" '"parser_content_hash":"'"$parser_content_hash"'"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -46,9 +46,9 @@ EOF
     --callee "delete_user"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
-  [[ "$output" == *'"parser_identity":"shadow_evidence_probe.py:py.ast.call_match@v1:ast"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
+  assert_contains "$output" '"parser_identity":"shadow_evidence_probe.py:py.ast.call_match@v1:ast"'
 }
 
 @test "shadow_evidence_probe rejects Python AST primary evidence from test paths" {
@@ -65,9 +65,9 @@ EOF
     --callee "save_user"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *'"status":"error"'* ]]
-  [[ "$output" == *'"validator_id":"py.ast.call_match@v1"'* ]]
-  [[ "$output" == *"primary validator"* ]]
+  assert_contains "$output" '"status":"error"'
+  assert_contains "$output" '"validator_id":"py.ast.call_match@v1"'
+  assert_contains "$output" "primary validator"
 }
 
 @test "shadow_evidence_probe uses Python AST for real decorators" {
@@ -93,8 +93,8 @@ EOF
     --decorator "router.post"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"parser_backed":true'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"parser_backed":true'
 }
 
 @test "shadow_evidence_probe FastAPI route parser-backed matcher validates decorator and literal route path" {
@@ -130,13 +130,13 @@ EOF
     --route-path "/users"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"validator_id":"fastapi.route@v1"'* ]]
-  [[ "$output" == *'"validator_kind":"ast"'* ]]
-  [[ "$output" == *'"parser_backed":true'* ]]
-  [[ "$output" == *'"matched_symbol":"app.post"'* ]]
-  [[ "$output" == *'"http_method":"post"'* ]]
-  [[ "$output" == *'"route_path":"/users"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"validator_id":"fastapi.route@v1"'
+  assert_contains "$output" '"validator_kind":"ast"'
+  assert_contains "$output" '"parser_backed":true'
+  assert_contains "$output" '"matched_symbol":"app.post"'
+  assert_contains "$output" '"http_method":"post"'
+  assert_contains "$output" '"route_path":"/users"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -146,8 +146,8 @@ EOF
     --route-path "/missing"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -157,8 +157,8 @@ EOF
     --route-path "/users"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *'"status":"error"'* ]]
-  [[ "$output" == *"primary validator"* ]]
+  assert_contains "$output" '"status":"error"'
+  assert_contains "$output" "primary validator"
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -168,8 +168,8 @@ EOF
     --route-path "/api-route"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *'"status":"error"'* ]]
-  [[ "$output" == *"FastAPI route method"* ]]
+  assert_contains "$output" '"status":"error"'
+  assert_contains "$output" "FastAPI route method"
 }
 
 @test "shadow_evidence_probe fastapi.dependency@v1 parser-backed matcher validates explicit route dependencies" {
@@ -254,13 +254,13 @@ EOF
     --source-file "src/routes.py"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"validator_id":"fastapi.dependency@v1"'* ]]
-  [[ "$output" == *'"evidence_type":"code_reference"'* ]]
-  [[ "$output" == *'"validator_kind":"ast"'* ]]
-  [[ "$output" == *'"parser_backed":true'* ]]
-  [[ "$output" == *'"matched_symbol":"get_current_user"'* ]]
-  [[ "$output" == *'"parser_identity":"shadow_evidence_probe.py:fastapi.dependency@v1:ast"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"validator_id":"fastapi.dependency@v1"'
+  assert_contains "$output" '"evidence_type":"code_reference"'
+  assert_contains "$output" '"validator_kind":"ast"'
+  assert_contains "$output" '"parser_backed":true'
+  assert_contains "$output" '"matched_symbol":"get_current_user"'
+  assert_contains "$output" '"parser_identity":"shadow_evidence_probe.py:fastapi.dependency@v1:ast"'
 
   cat > "$TEST_PROJECT/src/routes.py" <<'EOF'
 from typing import Annotated
@@ -282,8 +282,8 @@ EOF
     --source-file "src/routes.py"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"matched_symbol":"get_current_user"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"matched_symbol":"get_current_user"'
 
   cat > "$TEST_PROJECT/src/routes.py" <<'EOF'
 from fastapi import Depends, FastAPI
@@ -304,8 +304,8 @@ EOF
     --source-file "src/routes.py"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"matched_symbol":"audit_dependency"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"matched_symbol":"audit_dependency"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -313,8 +313,8 @@ EOF
     --source-file "src/plain_depends.py"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -322,8 +322,8 @@ EOF
     --source-file "src/local_fastapi_names.py"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -331,8 +331,8 @@ EOF
     --source-file "src/non_fastapi_route.py"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -340,8 +340,8 @@ EOF
     --source-file "tests/routes.py"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *'"status":"error"'* ]]
-  [[ "$output" == *"primary validator"* ]]
+  assert_contains "$output" '"status":"error"'
+  assert_contains "$output" "primary validator"
 }
 
 @test "shadow_evidence_probe express.route@v1 tier1 parser-backed route matcher validates literal routes and rejects non-routes" {
@@ -394,13 +394,13 @@ EOF
     --route-path "/users"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"validator_id":"express.route@v1"'* ]]
-  [[ "$output" == *'"validator_result":"matched"'* ]]
-  [[ "$output" == *'"matched_symbol":"app.get"'* ]]
-  [[ "$output" == *'"http_method":"get"'* ]]
-  [[ "$output" == *'"route_path":"/users"'* ]]
-  [[ "$output" == *'"parser_backed":true'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"validator_id":"express.route@v1"'
+  assert_contains "$output" '"validator_result":"matched"'
+  assert_contains "$output" '"matched_symbol":"app.get"'
+  assert_contains "$output" '"http_method":"get"'
+  assert_contains "$output" '"route_path":"/users"'
+  assert_contains "$output" '"parser_backed":true'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -409,9 +409,9 @@ EOF
     --route-path "/users"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"validator_kind":"ts_token_parser"'* ]]
-  [[ "$output" == *'"parser_identity":"shadow_evidence_probe.py:express.route@v1:ts_token_parser"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"validator_kind":"ts_token_parser"'
+  assert_contains "$output" '"parser_identity":"shadow_evidence_probe.py:express.route@v1:ts_token_parser"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -420,8 +420,8 @@ EOF
     --route-path "/missing"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -429,8 +429,8 @@ EOF
     --source-file "src/use-only.js"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -439,8 +439,8 @@ EOF
     --route-path "/users"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -449,8 +449,8 @@ EOF
     --route-path "/users"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -459,8 +459,8 @@ EOF
     --route-path "/users"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *'"status":"error"'* ]]
-  [[ "$output" == *"primary validator"* ]]
+  assert_contains "$output" '"status":"error"'
+  assert_contains "$output" "primary validator"
 }
 
 @test "shadow_evidence_probe react.effect_hook@v1 tier1 parser-backed matcher validates React imports and rejects non-hooks" {
@@ -532,12 +532,12 @@ EOF
     --source-file "src/named.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"validator_id":"react.effect_hook@v1"'* ]]
-  [[ "$output" == *'"validator_result":"matched"'* ]]
-  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
-  [[ "$output" == *'"dependency_status":"absent_argument"'* ]]
-  [[ "$output" == *'"parser_backed":true'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"validator_id":"react.effect_hook@v1"'
+  assert_contains "$output" '"validator_result":"matched"'
+  assert_contains "$output" '"matched_symbol":"useEffect"'
+  assert_contains "$output" '"dependency_status":"absent_argument"'
+  assert_contains "$output" '"parser_backed":true'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -545,8 +545,8 @@ EOF
     --source-file "src/namespace.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"matched_symbol":"R.useEffect"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"matched_symbol":"R.useEffect"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -554,8 +554,8 @@ EOF
     --source-file "src/default.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"matched_symbol":"R.useEffect"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"matched_symbol":"R.useEffect"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -563,8 +563,8 @@ EOF
     --source-file "src/aliased.jsx"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -572,8 +572,8 @@ EOF
     --source-file "src/rebound.jsx"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -581,8 +581,8 @@ EOF
     --source-file "src/non-react.jsx"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -590,8 +590,8 @@ EOF
     --source-file "src/masked.jsx"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -599,8 +599,8 @@ EOF
     --source-file "tests/effect.spec.jsx"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *'"status":"error"'* ]]
-  [[ "$output" == *"primary validator"* ]]
+  assert_contains "$output" '"status":"error"'
+  assert_contains "$output" "primary validator"
 }
 
 @test "shadow_evidence_probe react.effect_hook@v1 reports dependency_status syntax metadata" {
@@ -700,8 +700,8 @@ EOF
     --source-file "src/deps-absent.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
-  [[ "$output" == *'"dependency_status":"absent_argument"'* ]]
+  assert_contains "$output" '"matched_symbol":"useEffect"'
+  assert_contains "$output" '"dependency_status":"absent_argument"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -709,8 +709,8 @@ EOF
     --source-file "src/deps-zero-args.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
-  [[ "$output" == *'"dependency_status":"missing_or_non_array_unknown"'* ]]
+  assert_contains "$output" '"matched_symbol":"useEffect"'
+  assert_contains "$output" '"dependency_status":"missing_or_non_array_unknown"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -718,8 +718,8 @@ EOF
     --source-file "src/deps-empty.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
-  [[ "$output" == *'"dependency_status":"empty_array"'* ]]
+  assert_contains "$output" '"matched_symbol":"useEffect"'
+  assert_contains "$output" '"dependency_status":"empty_array"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -727,8 +727,8 @@ EOF
     --source-file "src/deps-identifiers.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
-  [[ "$output" == *'"dependency_status":"literal_identifier"'* ]]
+  assert_contains "$output" '"matched_symbol":"useEffect"'
+  assert_contains "$output" '"dependency_status":"literal_identifier"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -736,8 +736,8 @@ EOF
     --source-file "src/deps-members.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
-  [[ "$output" == *'"dependency_status":"member_expression"'* ]]
+  assert_contains "$output" '"matched_symbol":"useEffect"'
+  assert_contains "$output" '"dependency_status":"member_expression"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -745,8 +745,8 @@ EOF
     --source-file "src/deps-non-array-literal.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
-  [[ "$output" == *'"dependency_status":"non_array_literal"'* ]]
+  assert_contains "$output" '"matched_symbol":"useEffect"'
+  assert_contains "$output" '"dependency_status":"non_array_literal"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -754,8 +754,8 @@ EOF
     --source-file "src/deps-numeric-literal.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
-  [[ "$output" == *'"dependency_status":"non_array_literal"'* ]]
+  assert_contains "$output" '"matched_symbol":"useEffect"'
+  assert_contains "$output" '"dependency_status":"non_array_literal"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -763,8 +763,8 @@ EOF
     --source-file "src/deps-spread.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
-  [[ "$output" == *'"dependency_status":"spread_or_computed_unsupported"'* ]]
+  assert_contains "$output" '"matched_symbol":"useEffect"'
+  assert_contains "$output" '"dependency_status":"spread_or_computed_unsupported"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -772,8 +772,8 @@ EOF
     --source-file "src/deps-computed.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
-  [[ "$output" == *'"dependency_status":"spread_or_computed_unsupported"'* ]]
+  assert_contains "$output" '"matched_symbol":"useEffect"'
+  assert_contains "$output" '"dependency_status":"spread_or_computed_unsupported"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -781,8 +781,8 @@ EOF
     --source-file "src/deps-alias.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
-  [[ "$output" == *'"dependency_status":"destructured_or_alias_unknown"'* ]]
+  assert_contains "$output" '"matched_symbol":"useEffect"'
+  assert_contains "$output" '"dependency_status":"destructured_or_alias_unknown"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -790,8 +790,8 @@ EOF
     --source-file "src/deps-unknown.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"matched_symbol":"useEffect"'* ]]
-  [[ "$output" == *'"dependency_status":"missing_or_non_array_unknown"'* ]]
+  assert_contains "$output" '"matched_symbol":"useEffect"'
+  assert_contains "$output" '"dependency_status":"missing_or_non_array_unknown"'
 }
 
 @test "shadow_evidence_probe react.jsx_event_binding@v1 reports syntax-only event binding metadata" {
@@ -848,12 +848,12 @@ EOF
     --source-file "src/direct-identifier.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"validator_id":"react.jsx_event_binding@v1"'* ]]
-  [[ "$output" == *'"validator_result":"matched"'* ]]
-  [[ "$output" == *'"event_prop":"onClick"'* ]]
-  [[ "$output" == *'"event_handler_binding_status":"direct_identifier"'* ]]
-  [[ "$output" == *'"promotion_limit":"none"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"validator_id":"react.jsx_event_binding@v1"'
+  assert_contains "$output" '"validator_result":"matched"'
+  assert_contains "$output" '"event_prop":"onClick"'
+  assert_contains "$output" '"event_handler_binding_status":"direct_identifier"'
+  assert_contains "$output" '"promotion_limit":"none"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -861,7 +861,7 @@ EOF
     --source-file "src/direct-member.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"event_handler_binding_status":"direct_member_expression"'* ]]
+  assert_contains "$output" '"event_handler_binding_status":"direct_member_expression"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -869,7 +869,7 @@ EOF
     --source-file "src/inline-function.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"event_handler_binding_status":"inline_function_unknown"'* ]]
+  assert_contains "$output" '"event_handler_binding_status":"inline_function_unknown"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -877,7 +877,7 @@ EOF
     --source-file "src/conditional.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"event_handler_binding_status":"conditional_unknown"'* ]]
+  assert_contains "$output" '"event_handler_binding_status":"conditional_unknown"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -885,8 +885,8 @@ EOF
     --source-file "src/computed.jsx"
 
   [ "$status" -eq 2 ]
-  [[ "$output" == *'"status":"unsupported"'* ]]
-  [[ "$output" == *'"event_handler_binding_status":"computed_or_spread_unsupported"'* ]]
+  assert_contains "$output" '"status":"unsupported"'
+  assert_contains "$output" '"event_handler_binding_status":"computed_or_spread_unsupported"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -894,8 +894,8 @@ EOF
     --source-file "src/spread.jsx"
 
   [ "$status" -eq 2 ]
-  [[ "$output" == *'"status":"unsupported"'* ]]
-  [[ "$output" == *'"event_handler_binding_status":"computed_or_spread_unsupported"'* ]]
+  assert_contains "$output" '"status":"unsupported"'
+  assert_contains "$output" '"event_handler_binding_status":"computed_or_spread_unsupported"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -903,9 +903,9 @@ EOF
     --source-file "src/nonallowlisted.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"validator_result":"non_allowlisted_event_like_prop"'* ]]
-  [[ "$output" == *'"event_handler_binding_status":"non_allowlisted_event_like_prop"'* ]]
-  [[ "$output" == *'"event_prop":"onclick"'* ]]
+  assert_contains "$output" '"validator_result":"non_allowlisted_event_like_prop"'
+  assert_contains "$output" '"event_handler_binding_status":"non_allowlisted_event_like_prop"'
+  assert_contains "$output" '"event_prop":"onclick"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -913,8 +913,8 @@ EOF
     --source-file "src/no-events.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"validator_result":"absent"'* ]]
-  [[ "$output" == *'"event_handler_binding_status":"absent"'* ]]
+  assert_contains "$output" '"validator_result":"absent"'
+  assert_contains "$output" '"event_handler_binding_status":"absent"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -922,8 +922,8 @@ EOF
     --source-file "src/no-jsx.js"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 }
 
 @test "shadow_evidence_probe react.jsx_event_binding@v1 ignores non-event props and rejects excluded test paths" {
@@ -945,7 +945,7 @@ EOF
     --source-file "src/props-only.jsx"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"validator_result":"absent"'* ]]
+  assert_contains "$output" '"validator_result":"absent"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -953,8 +953,8 @@ EOF
     --source-file "tests/click.spec.jsx"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *'"status":"error"'* ]]
-  [[ "$output" == *"primary validator"* ]]
+  assert_contains "$output" '"status":"error"'
+  assert_contains "$output" "primary validator"
 }
 
 @test "shadow_evidence_probe regex fallback emits fallback_result only" {
@@ -977,13 +977,13 @@ EOF
     --source-file "src/main/java/example/UserService.java"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"probe_status":"pass"'* ]]
-  [[ "$output" == *'"fact_status":"candidate_only"'* ]]
-  [[ "$output" == *'"fallback_result":"matched"'* ]]
-  [[ "$output" == *'"evidence_field":"fallback_result"'* ]]
-  [[ "$output" == *'"source_hash":"sha256:'* ]]
-  [[ "$output" != *'"validator_result"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"probe_status":"pass"'
+  assert_contains "$output" '"fact_status":"candidate_only"'
+  assert_contains "$output" '"fallback_result":"matched"'
+  assert_contains "$output" '"evidence_field":"fallback_result"'
+  assert_contains "$output" '"source_hash":"sha256:'
+  refute_contains "$output" '"validator_result"'
 }
 
 @test "shadow_evidence_probe JavaScript regex fallback accepts synced non-src roots" {
@@ -1011,9 +1011,9 @@ EOF
     --callee "post"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"fallback_result":"matched"'* ]]
-  [[ "$output" == *'"source_ref":"server/routes.js:2"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"fallback_result":"matched"'
+  assert_contains "$output" '"source_ref":"server/routes.js:2"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1022,9 +1022,9 @@ EOF
     --callee "post"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"fallback_result":"matched"'* ]]
-  [[ "$output" == *'"source_ref":"pages/api.js:2"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"fallback_result":"matched"'
+  assert_contains "$output" '"source_ref":"pages/api.js:2"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1033,9 +1033,9 @@ EOF
     --callee "post"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"fallback_result":"matched"'* ]]
-  [[ "$output" == *'"source_ref":"routes/users.js:2"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"fallback_result":"matched"'
+  assert_contains "$output" '"source_ref":"routes/users.js:2"'
 }
 
 @test "shadow_evidence_probe Java primary source_probe is scoped and non-parser-backed" {
@@ -1056,15 +1056,15 @@ EOF
     --source-file "src/main/java/example/UserService.java"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"probe_status":"pass"'* ]]
-  [[ "$output" == *'"fact_status":"candidate_only"'* ]]
-  [[ "$output" == *'"validator_kind":"source_probe"'* ]]
-  [[ "$output" == *'"parser_backed":false'* ]]
-  [[ "$output" == *'"promotion_limit":"medium"'* ]]
-  [[ "$output" == *'"source_hash":"sha256:'* ]]
-  [[ "$output" != *'"parser_identity"'* ]]
-  [[ "$output" != *'"parser_content_hash"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"probe_status":"pass"'
+  assert_contains "$output" '"fact_status":"candidate_only"'
+  assert_contains "$output" '"validator_kind":"source_probe"'
+  assert_contains "$output" '"parser_backed":false'
+  assert_contains "$output" '"promotion_limit":"medium"'
+  assert_contains "$output" '"source_hash":"sha256:'
+  refute_contains "$output" '"parser_identity"'
+  refute_contains "$output" '"parser_content_hash"'
 }
 
 @test "shadow_evidence_probe Java parser-backed call matcher ignores comments and strings" {
@@ -1089,13 +1089,13 @@ EOF
     --receiver "userRepository"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"probe_status":"pass"'* ]]
-  [[ "$output" == *'"fact_status":"deterministic_evidence"'* ]]
-  [[ "$output" == *'"validator_kind":"java_token_parser"'* ]]
-  [[ "$output" == *'"parser_backed":true'* ]]
-  [[ "$output" == *'"matched_symbol":"userRepository.save"'* ]]
-  [[ "$output" == *'"source_hash":"sha256:'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"probe_status":"pass"'
+  assert_contains "$output" '"fact_status":"deterministic_evidence"'
+  assert_contains "$output" '"validator_kind":"java_token_parser"'
+  assert_contains "$output" '"parser_backed":true'
+  assert_contains "$output" '"matched_symbol":"userRepository.save"'
+  assert_contains "$output" '"source_hash":"sha256:'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1105,8 +1105,8 @@ EOF
     --receiver "userRepository"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 }
 
 @test "shadow_evidence_probe Java parser-backed call matcher rejects declarations and test paths" {
@@ -1151,9 +1151,9 @@ EOF
     --callee "save"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"matched_symbol":"save"'* ]]
-  [[ "$output" == *'"source_ref":"src/main/java/example/UserService.java:15"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"matched_symbol":"save"'
+  assert_contains "$output" '"source_ref":"src/main/java/example/UserService.java:19"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1162,8 +1162,8 @@ EOF
     --callee "UserService"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1172,8 +1172,8 @@ EOF
     --callee "value"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1183,8 +1183,8 @@ EOF
     --receiver "missingReceiver"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1194,8 +1194,8 @@ EOF
     --receiver "userRepository"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *'"status":"error"'* ]]
-  [[ "$output" == *"outside allowed_paths"* ]]
+  assert_contains "$output" '"status":"error"'
+  assert_contains "$output" "outside allowed_paths"
 }
 
 @test "shadow_evidence_probe Java parser-backed call matcher handles generic-style syntax" {
@@ -1221,8 +1221,8 @@ EOF
     --receiver "userRepository"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"matched_symbol":"userRepository.save"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"matched_symbol":"userRepository.save"'
 }
 
 @test "shadow_evidence_probe JavaScript parser-backed call matcher ignores comments strings declarations and test paths" {
@@ -1255,11 +1255,11 @@ EOF
     --receiver "apiClient"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"fact_status":"deterministic_evidence"'* ]]
-  [[ "$output" == *'"validator_kind":"js_token_parser"'* ]]
-  [[ "$output" == *'"parser_backed":true'* ]]
-  [[ "$output" == *'"matched_symbol":"apiClient.post"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"fact_status":"deterministic_evidence"'
+  assert_contains "$output" '"validator_kind":"js_token_parser"'
+  assert_contains "$output" '"parser_backed":true'
+  assert_contains "$output" '"matched_symbol":"apiClient.post"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1268,8 +1268,8 @@ EOF
     --callee "delete"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1278,7 +1278,7 @@ EOF
     --callee "fetch"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"matched_symbol":"fetch"'* ]]
+  assert_contains "$output" '"matched_symbol":"fetch"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1288,8 +1288,8 @@ EOF
     --receiver "missingClient"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 
   cat > "$TEST_PROJECT/src/client.test.js" <<'EOF'
 apiClient.post("/users");
@@ -1303,8 +1303,8 @@ EOF
     --receiver "apiClient"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *'"status":"error"'* ]]
-  [[ "$output" == *"primary validator"* ]]
+  assert_contains "$output" '"status":"error"'
+  assert_contains "$output" "primary validator"
 }
 
 @test "shadow_evidence_probe JavaScript parser-backed call matcher rejects nested excluded paths" {
@@ -1325,8 +1325,8 @@ EOF
       --receiver "apiClient"
 
     [ "$status" -eq 64 ]
-    [[ "$output" == *'"status":"error"'* ]]
-    [[ "$output" == *"excluded for primary validator"* ]]
+    assert_contains "$output" '"status":"error"'
+    assert_contains "$output" "excluded for primary validator"
   done
 }
 
@@ -1344,8 +1344,8 @@ EOF
     --receiver "apiClient"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 }
 
 @test "shadow_evidence_probe JavaScript parser-backed call matcher supports optional chaining receiver calls" {
@@ -1364,8 +1364,8 @@ EOF
     --receiver "client"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"matched_symbol":"client.post"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"matched_symbol":"client.post"'
 }
 
 @test "shadow_evidence_probe TypeScript parser-backed call matcher rejects signatures and declaration files" {
@@ -1397,9 +1397,9 @@ EOF
     --receiver "client"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"validator_kind":"ts_token_parser"'* ]]
-  [[ "$output" == *'"matched_symbol":"client.post"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"validator_kind":"ts_token_parser"'
+  assert_contains "$output" '"matched_symbol":"client.post"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1408,9 +1408,9 @@ EOF
     --callee "post"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *'"status":"error"'* ]]
-  [[ "$output" == *"primary validator"* ]]
-  [[ "$output" == *"extension is rejected"* ]]
+  assert_contains "$output" '"status":"error"'
+  assert_contains "$output" "primary validator"
+  assert_contains "$output" "extension is rejected"
 }
 
 @test "shadow_evidence_probe TypeScript parser-backed call matcher rejects nested excluded paths" {
@@ -1431,8 +1431,8 @@ EOF
       --receiver "client"
 
     [ "$status" -eq 64 ]
-    [[ "$output" == *'"status":"error"'* ]]
-    [[ "$output" == *"excluded for primary validator"* ]]
+    assert_contains "$output" '"status":"error"'
+    assert_contains "$output" "excluded for primary validator"
   done
 }
 
@@ -1452,8 +1452,8 @@ EOF
     --receiver "client"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"validator_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"validator_result":"not_found"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1463,10 +1463,10 @@ EOF
     --receiver "client"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"validator_id":"ts.ast.call_match@v2"'* ]]
-  [[ "$output" == *'"matched_symbol":"client.post"'* ]]
-  [[ "$output" == *'"type_arguments":true'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"validator_id":"ts.ast.call_match@v2"'
+  assert_contains "$output" '"matched_symbol":"client.post"'
+  assert_contains "$output" '"type_arguments":true'
 }
 
 @test "shadow_evidence_probe JS and TS parser-backed matchers reject cross-extension files" {
@@ -1495,8 +1495,8 @@ EOF
     --receiver "client"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"matched_symbol":"client.post"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"matched_symbol":"client.post"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1506,8 +1506,8 @@ EOF
     --receiver "client"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"matched_symbol":"client.post"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"matched_symbol":"client.post"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1517,7 +1517,7 @@ EOF
     --receiver "client"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *'"status":"error"'* ]]
+  assert_contains "$output" '"status":"error"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1527,7 +1527,7 @@ EOF
     --receiver "client"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *'"status":"error"'* ]]
+  assert_contains "$output" '"status":"error"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1537,7 +1537,7 @@ EOF
     --receiver "client"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *'"status":"error"'* ]]
+  assert_contains "$output" '"status":"error"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1547,7 +1547,7 @@ EOF
     --receiver "client"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *'"status":"error"'* ]]
+  assert_contains "$output" '"status":"error"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1557,7 +1557,7 @@ EOF
     --receiver "client"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *'"status":"error"'* ]]
+  assert_contains "$output" '"status":"error"'
 }
 
 @test "shadow_evidence_probe regex fallback ignores comments and strings" {
@@ -1579,8 +1579,8 @@ EOF
     --source-file "src/main/java/example/CommentOnly.java"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
-  [[ "$output" == *'"fallback_result":"not_found"'* ]]
+  assert_contains "$output" '"status":"fail"'
+  assert_contains "$output" '"fallback_result":"not_found"'
 }
 
 @test "shadow_evidence_probe rejects fallback evidence from excluded paths" {
@@ -1599,8 +1599,8 @@ EOF
     --source-file "src/test/java/example/UserServiceTest.java"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *'"status":"error"'* ]]
-  [[ "$output" == *"outside allowed_paths"* || "$output" == *"excluded"* ]]
+  assert_contains "$output" '"status":"error"'
+  assert_contains "$output" "outside allowed_paths" || assert_contains "$output" "excluded"
 }
 
 @test "shadow_evidence_probe rejects primary source_probe evidence from excluded paths" {
@@ -1619,9 +1619,9 @@ EOF
     --source-file "src/test/java/example/UserServiceTest.java"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *'"status":"error"'* ]]
-  [[ "$output" == *'"validator_id":"jpa.repository.save@v1"'* ]]
-  [[ "$output" == *"primary validator"* ]]
+  assert_contains "$output" '"status":"error"'
+  assert_contains "$output" '"validator_id":"jpa.repository.save@v1"'
+  assert_contains "$output" "primary validator"
 }
 
 @test "shadow_evidence_probe runtime trace requires exact explicit event line" {
@@ -1638,14 +1638,14 @@ EOF
     --trace-event "event=user.cache.evict userId=42"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"status":"pass"'* ]]
-  [[ "$output" == *'"probe_status":"pass"'* ]]
-  [[ "$output" == *'"fact_status":"deterministic_evidence"'* ]]
-  [[ "$output" == *'"evidence_type":"runtime_trace"'* ]]
-  [[ "$output" == *'"artifact_hash":"sha256:'* ]]
-  [[ "$output" == *'"trace_ref":"logs/runtime.trace:2"'* ]]
-  [[ "$output" != *'"parser_identity"'* ]]
-  [[ "$output" != *'"parser_content_hash"'* ]]
+  assert_contains "$output" '"status":"pass"'
+  assert_contains "$output" '"probe_status":"pass"'
+  assert_contains "$output" '"fact_status":"deterministic_evidence"'
+  assert_contains "$output" '"evidence_type":"runtime_trace"'
+  assert_contains "$output" '"artifact_hash":"sha256:'
+  assert_contains "$output" '"trace_ref":"logs/runtime.trace:2"'
+  refute_contains "$output" '"parser_identity"'
+  refute_contains "$output" '"parser_content_hash"'
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1654,7 +1654,7 @@ EOF
     --trace-event "user.cache.evict"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *'"status":"fail"'* ]]
+  assert_contains "$output" '"status":"fail"'
 }
 
 @test "shadow_evidence_probe runtime trace rejects duplicate and dotted selected fields" {
@@ -1673,9 +1673,9 @@ EOF
     --selected-field "event"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *'"status":"error"'* ]]
-  [[ "$output" == *'"validator_id":"any.runtime.trace@v1"'* ]]
-  [[ "$output" == *"--selected-field must not contain duplicates"* ]]
+  assert_contains "$output" '"status":"error"'
+  assert_contains "$output" '"validator_id":"any.runtime.trace@v1"'
+  assert_contains "$output" "--selected-field must not contain duplicates"
 
   run python3 "$SHADOW_PROBE" \
     --project-root "$TEST_PROJECT" \
@@ -1686,9 +1686,9 @@ EOF
     --selected-field "payload.event"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *'"status":"error"'* ]]
-  [[ "$output" == *'"validator_id":"any.runtime.trace@v1"'* ]]
-  [[ "$output" == *"selected_fields scope supports only top-level field names"* ]]
+  assert_contains "$output" '"status":"error"'
+  assert_contains "$output" '"validator_id":"any.runtime.trace@v1"'
+  assert_contains "$output" "selected_fields scope supports only top-level field names"
 }
 
 @test "shadow_evidence_probe rejects traversal and does not write shadow docs" {
@@ -1717,7 +1717,7 @@ EOF
     --callee "save_user"
 
   [ "$status" -eq 64 ]
-  [[ "$output" == *"traversal"* ]]
-  [[ "$output" == *'"validator_id":"py.ast.call_match@v1"'* ]]
+  assert_contains "$output" "traversal"
+  assert_contains "$output" '"validator_id":"py.ast.call_match@v1"'
 }
 

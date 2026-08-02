@@ -17,8 +17,8 @@ EOF
 @test "nav graph report finds no orphans in a fresh scaffold" {
   run NAVGRAPH --project-root "$TEST_PROJECT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"router_present: yes"* ]]
-  [[ "$output" == *"orphans: 0"* ]]
+  assert_contains "$output" "router_present: yes"
+  assert_contains "$output" "orphans: 0"
 }
 
 @test "nav graph report flags an overview that no bucket index links" {
@@ -26,8 +26,8 @@ EOF
   printf '# o\n- doc_role: unit_overview\n- home_bucket: apps\n' > "$DOCS_ROOT/shadow/apps/app-a/overview.md"
   run NAVGRAPH --project-root "$TEST_PROJECT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"orphans: 1"* ]]
-  [[ "$output" == *"ORPHAN: docs/shadow/apps/app-a/overview.md"* ]]
+  assert_contains "$output" "orphans: 1"
+  assert_contains "$output" "ORPHAN: docs/shadow/apps/app-a/overview.md"
 }
 
 @test "nav graph report treats an overview linked from its bucket index as reachable" {
@@ -36,8 +36,8 @@ EOF
   _link_overview_in_bucket app-a
   run NAVGRAPH --project-root "$TEST_PROJECT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"orphans: 0"* ]]
-  [[ "$output" == *"apps/app-a/overview.md: 2 hops"* ]]
+  assert_contains "$output" "orphans: 0"
+  assert_contains "$output" "apps/app-a/overview.md: 2 hops"
 }
 
 @test "nav graph report reaches a concern leaf via next_docs but orphans an unlinked one" {
@@ -49,9 +49,9 @@ EOF
   _link_overview_in_bucket app-a
   run NAVGRAPH --project-root "$TEST_PROJECT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"apps/app-a/auth.md: 3 hops"* ]]
-  [[ "$output" == *"ORPHAN: docs/shadow/apps/app-a/lonely.md"* ]]
-  [[ "$output" != *"ORPHAN: docs/shadow/apps/app-a/auth.md"* ]]
+  assert_contains "$output" "apps/app-a/auth.md: 3 hops"
+  assert_contains "$output" "ORPHAN: docs/shadow/apps/app-a/lonely.md"
+  refute_contains "$output" "ORPHAN: docs/shadow/apps/app-a/auth.md"
 }
 
 @test "nav graph report --exit-code returns 1 when an orphan exists" {
@@ -72,7 +72,7 @@ EOF
   run NAVGRAPH --project-root "$TEST_PROJECT"
   [ "$status" -eq 0 ]
   # effect_map is an intentional side-path, not orphan-eligible.
-  [[ "$output" == *"orphans: 0"* ]]
+  assert_contains "$output" "orphans: 0"
 }
 
 @test "nav graph report ignores docs under _deprecated" {
@@ -81,15 +81,15 @@ EOF
     > "$DOCS_ROOT/shadow/_deprecated/apps/app-a/overview.md"
   run NAVGRAPH --project-root "$TEST_PROJECT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"orphans: 0"* ]]
+  assert_contains "$output" "orphans: 0"
 }
 
 @test "nav graph report reports a missing router instead of crashing" {
   rm -f "$DOCS_ROOT/shadow/project-shadow.md"
   run NAVGRAPH --project-root "$TEST_PROJECT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"router_present: no"* ]]
-  [[ "$output" == *"router is missing"* ]]
+  assert_contains "$output" "router_present: no"
+  assert_contains "$output" "router is missing"
 }
 
 @test "nav graph report does not attach a post-fence bullet to a nav field (fence reset)" {
@@ -112,7 +112,7 @@ EOF
   run NAVGRAPH --project-root "$TEST_PROJECT"
   [ "$status" -eq 0 ]
   # ghost.md must NOT be treated as a next_docs target, so it stays an orphan.
-  [[ "$output" == *"ORPHAN: docs/shadow/apps/app-a/ghost.md"* ]]
+  assert_contains "$output" "ORPHAN: docs/shadow/apps/app-a/ghost.md"
 }
 
 @test "nav graph report resolves the git root when given a subproject path" {
@@ -124,8 +124,8 @@ EOF
   # docs/shadow is at the git root; passing the subdir must climb, not no-op.
   run NAVGRAPH --project-root "$TEST_PROJECT/sub"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shadow_docs: 7"* ]]
-  [[ "$output" != *"no shadow dir"* ]]
+  assert_contains "$output" "shadow_docs: 7"
+  refute_contains "$output" "no shadow dir"
 }
 
 @test "nav graph report reaches a carrier through a redirect_shim canonical_path" {
@@ -144,7 +144,7 @@ EOF
   printf '# o\n- doc_role: unit_overview\n- home_bucket: apps\n' > "$DOCS_ROOT/shadow/apps/app-a/overview.md"
   run NAVGRAPH --project-root "$TEST_PROJECT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"orphans: 0"* ]]
+  assert_contains "$output" "orphans: 0"
 }
 
 @test "nav graph report surfaces a doc with an unrecognized doc_role as unclassified" {
@@ -153,8 +153,8 @@ EOF
     > "$DOCS_ROOT/shadow/apps/app-a/typo.md"
   run NAVGRAPH --project-root "$TEST_PROJECT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"unclassified: 1"* ]]
-  [[ "$output" == *"UNCLASSIFIED: docs/shadow/apps/app-a/typo.md"* ]]
+  assert_contains "$output" "unclassified: 1"
+  assert_contains "$output" "UNCLASSIFIED: docs/shadow/apps/app-a/typo.md"
 }
 
 @test "nav graph report orphans a bucket index the router does not link" {
@@ -162,5 +162,5 @@ EOF
     "$DOCS_ROOT/shadow/project-shadow.md"
   run NAVGRAPH --project-root "$TEST_PROJECT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ORPHAN: docs/shadow/apps/_index.md"* ]]
+  assert_contains "$output" "ORPHAN: docs/shadow/apps/_index.md"
 }
