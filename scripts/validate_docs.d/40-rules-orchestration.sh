@@ -311,37 +311,35 @@ check_orchestration_semantic_contradictions() {
 # external-cli *.response.md payload: external tool responses legitimately
 # quote arbitrary filesystem paths that are not durable-doc references. Skips
 # fenced code examples using the same fence-aware idiom as extract_shadow_field.
+# One awk pass over the whole file list, not two process substitutions per file:
+# on bash 3.2 (stock macOS) the per-file nested form corrupted the shell heap and
+# killed the run with a fatal signal in a later phase once a corpus exceeded a
+# handful of task files. `FNR == 1`
+# resets the fence state at each file boundary, so fence handling stays per-file.
 check_tmp_path_references() {
-  local file_path
-  local match_line_no
+  local finding
 
-  while IFS= read -r file_path; do
-    [[ -z "$file_path" ]] && continue
-    while IFS= read -r match_line_no; do
-      [[ -z "$match_line_no" ]] && continue
-      fail "docs reference a gitignored tmp/ path (${file_path}:${match_line_no})"
-    done < <(awk '
-      /^[[:space:]]*(```|~~~)/ { infence = !infence; next }
-      infence { next }
-      /codeguide\/tmp\// { print NR; next }
-      /(^|[^A-Za-z0-9_.-])\/tmp\// { print NR }
-    ' "$file_path" 2>/dev/null)
-    # Dangling archive references: the no-archive policy deletes _archive
-    # directories, so any surviving path reference into one is a broken link.
-    while IFS= read -r match_line_no; do
-      [[ -z "$match_line_no" ]] && continue
-      fail "docs reference a deleted _archive path (${file_path}:${match_line_no})"
-    done < <(awk '
-      /^[[:space:]]*(```|~~~)/ { infence = !infence; next }
-      infence { next }
-      /docs\/(plan|task|orchestration)\/_archive\// { print NR }
-    ' "$file_path" 2>/dev/null)
+  while IFS= read -r finding; do
+    [[ -z "$finding" ]] && continue
+    case "$finding" in
+      "tmp "*) fail "docs reference a gitignored tmp/ path (${finding#tmp })" ;;
+      # Dangling archive references: the no-archive policy deletes _archive
+      # directories, so any surviving path reference into one is a broken link.
+      "arc "*) fail "docs reference a deleted _archive path (${finding#arc })" ;;
+    esac
   done < <(
     {
       find "$TASK_DIR" -maxdepth 1 -type f -name '*.md' 2>/dev/null
       find "$PLAN_DIR" -maxdepth 1 -type f -name '*.md' 2>/dev/null
       find "$ORCHESTRATION_DIR" -mindepth 2 -maxdepth 2 -type f \( -name 'INDEX.md' -o -name 'ORCH.md' \) 2>/dev/null
-    } | sort
+    } | sort | tr '\n' '\0' | xargs -0 awk '
+      FNR == 1 { infence = 0 }
+      /^[[:space:]]*(```|~~~)/ { infence = !infence; next }
+      infence { next }
+      /codeguide\/tmp\// { printf "tmp %s:%d\n", FILENAME, FNR; next }
+      /(^|[^A-Za-z0-9_.-])\/tmp\// { printf "tmp %s:%d\n", FILENAME, FNR; next }
+      /docs\/(plan|task|orchestration)\/_archive\// { printf "arc %s:%d\n", FILENAME, FNR }
+    ' 2>/dev/null
   )
 }
 

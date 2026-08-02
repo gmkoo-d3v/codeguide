@@ -434,6 +434,116 @@ EOF
   [[ "$output" != *"gitignored tmp/ path"* ]]
 }
 
+@test "validate_docs advisory completes on a multi-file corpus (ISSUE-20260802 crash regression)" {
+  # Regression guard for the tracked issue: every other
+  # fixture validates a near-empty scaffold, so the per-file nested process
+  # substitutions in check_tmp_path_references never ran often enough to corrupt
+  # the bash 3.2 heap and kill the run with a fatal signal in a later phase.
+  # The trigger is the SIZE OF ITS SCAN LIST (task + plan + ORCH files), not the
+  # task count: measured on the pre-fix function, 30 tasks (92 files) survived
+  # and 45 tasks (137 files) died deterministically, so this fixture builds 50.
+  # Tasks are `done` (not `planned`) on purpose: a terminal task pulls in the
+  # plan/report/ORCH lineage checks, and the crash needed that per-task work in
+  # addition to the long scan list.
+  local i id
+  for ((i=1; i<=50; i++)); do
+    id="$(printf 'bulk-fixture-%03d' "$i")"
+    cat > "$DOCS_ROOT/task/TASK-${id}.md" <<EOF
+# TASK-${id}
+
+- title: bulk corpus fixture ${i}
+- status: done
+- owner: test
+- risk_level: low
+- axis_why: fixture
+- axis_where: fixture
+- axis_verify: fixture
+- last_updated: 2026-08-01T00:00:00Z
+EOF
+    cat > "$DOCS_ROOT/plan/PLAN-${id}-v1.0.md" <<EOF
+# PLAN-${id}-v1.0
+
+- task_id: ${id}
+- plan_version: v1.0
+- objective: bulk corpus fixture ${i}
+- scope: fixture
+- owner: test
+- last_updated: 2026-08-01T00:00:00Z
+EOF
+    cat > "$DOCS_ROOT/report/PLAN-${id}-v1.0-review-claude-sonnet-5-r01.md" <<EOF
+# PLAN-${id}-v1.0 review (claude)
+
+- task_id: ${id}
+- plan_version: v1.0
+- evaluator: claude
+- review_style: standard
+- review_round: r01
+- verdict: accept
+- summary: fixture
+- residual_risk: none
+- last_updated: 2026-08-01T00:00:00Z
+EOF
+    mkdir -p "$DOCS_ROOT/orchestration/${id}"
+    cat > "$DOCS_ROOT/orchestration/${id}/ORCH.md" <<EOF
+# ORCH-${id}
+
+- task_id: ${id}
+- execution_mode: solo
+- delegation_note: fixture
+- last_updated: 2026-08-01T00:00:00Z
+EOF
+    printf -- '- TASK-%s | done | bulk corpus fixture %d\n' "$id" "$i" >> "$DOCS_ROOT/task/task-index.md"
+  done
+
+  # `env -i` is load-bearing, not hygiene: the crash is heap-layout sensitive and
+  # bats' own environment masks it (a plain `run "$VALIDATE"` passes even against
+  # the pre-fix function, while the identical corpus dies outside the harness).
+  # Under a minimal environment the pre-fix function reproduces the fatal signal
+  # inside bats, which is what makes this a real guard rather than a smoke test.
+  run env -i PATH="$PATH" HOME="$HOME" bash "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  # The crash killed the shell mid-run: no [RESULT] line and a 128+signal status.
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[RESULT]"* ]]
+}
+
+@test "validate_docs advisory reports tmp and _archive references from the same corpus scan" {
+  # The single-pass scan emits both finding classes from one awk invocation:
+  # prove they do not shadow each other and that per-file fence state resets.
+  cat > "$DOCS_ROOT/task/TASK-mixed-scan-01.md" <<'EOF'
+# TASK-mixed-scan-01
+
+- title: mixed scan fixture
+- status: planned
+- owner: test
+- notes: see /tmp/scratch-notes.md for the working draft
+EOF
+
+  cat > "$DOCS_ROOT/plan/PLAN-mixed-scan-01-v1.0.md" <<'EOF'
+# PLAN-mixed-scan-01-v1.0
+
+- task_id: mixed-scan-01
+- plan_version: v1.0
+- objective: mixed scan fixture
+- prior_round: docs/plan/_archive/PLAN-mixed-scan-01-v0.9.md
+EOF
+
+  # An unterminated fence in an EARLIER file must not silence a later file.
+  cat > "$DOCS_ROOT/plan/PLAN-aaa-fence-leak-01-v1.0.md" <<'EOF'
+# PLAN-aaa-fence-leak-01-v1.0
+
+- task_id: aaa-fence-leak-01
+- plan_version: v1.0
+- objective: unterminated fence
+```
+still inside the fence at end of file
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[WARN] docs reference a gitignored tmp/ path (${DOCS_ROOT}/task/TASK-mixed-scan-01.md:"* ]]
+  [[ "$output" == *"[WARN] docs reference a deleted _archive path (${DOCS_ROOT}/plan/PLAN-mixed-scan-01-v1.0.md:"* ]]
+}
+
 @test "validate_docs strict mode fails on empty required fields" {
   "$DOC_GARDEN" "$TEST_PROJECT" \
     --task-id "200" \
