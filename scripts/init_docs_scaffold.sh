@@ -886,6 +886,7 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 - Create `_deprecated/` and `_obsolete/` under `docs/shadow/` for archived bodies and obsolete material.
 - Preserve this default read path:
   - `project-shadow.md -> <bucket>/_index.md -> <bucket>/<unit>/overview.md -> concern leaf`
+- Declare rationale with the optional `linked_decisions` field on `unit_overview` and `concern_leaf` docs only: an inline comma list of repo-relative `docs/decisions/decision-<id>.md` capsules that currently govern the unit or concern. It is the "why" hop of the read path, taken only when the question is why; an absent or empty field is silent. Curate it (about five entries), do not accumulate history — `decision-index.md` is the full record. Advisory validation resolves each entry and warns on superseded targets; `scripts/shadow_rationale_report.py` derives the reverse direction on demand instead of storing backlinks. Field grammar and semantics live in the skill'"'"'s `references/shadow-system-contract.md`.
 
 ## Shadow freshness
 
