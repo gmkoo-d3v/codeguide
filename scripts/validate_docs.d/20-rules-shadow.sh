@@ -1041,6 +1041,219 @@ check_shadow_unit_schema() {
   fi
 }
 
+# Advisory-only (recommended tier, gated by the caller): hop-2 unit selection.
+# A bucket-index unit row must carry a `selection_summary` -- one line an agent
+# reads to decide whether opening that unit's overview is worth it -- and it must
+# be a byte-PREFIX of the overview's `unit_summary`. The prefix is the whole point:
+# it binds the row to a doc one hop deeper that has to stay true, so drift on
+# either side is detectable without a vocabulary or a tokenizer. This replaced
+# `secondary_tags`, which nothing read and whose three live pairs had all silently
+# diverged.
+check_shadow_selection_summary() {
+  local issue_output
+
+  issue_output="$(python3 - "$SHADOW_DIR" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+shadow_dir = Path(sys.argv[1])
+MAX_LEN = 250
+# A floor, not proof of usefulness: it only rules out degenerate values that cannot
+# discriminate anything. No check can prove a sentence actually distinguishes a unit.
+MIN_LEN = 12
+fence = chr(96) * 3
+
+unit_re = re.compile(r"^-\s+([A-Za-z0-9._-]+)\s*:\s*$")
+child_re = re.compile(r"^\s+-\s*([a-z_]+)\s*:\s*(.*?)\s*$")
+summary_re = re.compile(r"^\s*-\s*unit_summary\s*:\s*(\S.*?)\s*$")
+
+
+def content_lines(path):
+    try:
+        raw = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    out, in_fence = [], False
+    for line in raw:
+        stripped = line.lstrip()
+        if stripped.startswith(fence) or stripped.startswith("~~~"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        out.append(line)
+    return out
+
+
+issues = []
+for index in sorted(shadow_dir.glob("*/_index.md")):
+    unit, fields, last_field = None, {}, None
+
+    def flush(unit, fields):
+        if unit is None:
+            return
+        overview = fields.get("overview_doc", "")
+        selection = fields.get("selection_summary", "")
+        if not overview:
+            # The navigation-link check only follows references that EXIST, so a row
+            # with no overview_doc at all is reported by nothing else.
+            issues.append((str(index), unit, "no_overview", ""))
+            return
+        if not selection:
+            issues.append((str(index), unit, "missing", ""))
+            return
+        if fields.get("selection_summary__multiline"):
+            issues.append((str(index), unit, "multiline", ""))
+            return
+        if len(selection) < MIN_LEN:
+            issues.append((str(index), unit, "too_short", str(len(selection))))
+            return
+        if len(selection) > MAX_LEN:
+            issues.append((str(index), unit, "too_long", str(len(selection))))
+            return
+        # overview_doc is written relative to the BUCKET directory ("unit/overview.md").
+        # The navigation-link check accepts EITHER base but tries the shadow root
+        # first; this check tries the bucket dir first because that is the base the
+        # template in the contract uses, so the two can only disagree for a name
+        # that resolves under both -- in which case nav-link reports nothing and this
+        # check reads the bucket-local file, which is the one the row meant.
+        target = index.parent / overview
+        if not target.is_file():
+            target = shadow_dir / overview
+        if not target.is_file():
+            return  # a dangling overview_doc belongs to the nav-link check
+        summary = ""
+        for line in content_lines(target):
+            match = summary_re.match(line)
+            if match:
+                summary = match.group(1).strip()
+                break
+        if not summary:
+            issues.append((str(index), unit, "no_summary", overview))
+        elif not summary.startswith(selection):
+            issues.append((str(index), unit, "not_prefix", overview))
+
+    in_units = False
+    for line in content_lines(index):
+        # Bound the scan to the "## Units" section. Without it, any column-0 bullet
+        # with an empty value parses as a unit row -- including `- bucket:` and
+        # `- last_updated:` straight from the Bucket Registry Template, which then
+        # report as rows with no overview_doc. Same section gate as
+        # bucket_index_has_units() further up this file.
+        if line.startswith("## "):
+            flush(unit, fields)
+            unit, fields, last_field = None, {}, None
+            in_units = line.strip() == "## Units"
+            continue
+        if not in_units:
+            continue
+        unit_match = unit_re.match(line)
+        if unit_match:
+            flush(unit, fields)
+            unit, fields, last_field = unit_match.group(1), {}, None
+            continue
+        child = child_re.match(line)
+        if child and unit is not None:
+            fields[child.group(1)] = child.group(2).strip()
+            last_field = child.group(1)
+            continue
+        # An indented non-bullet line continues the previous field. The contract says
+        # one line, so record it rather than silently reading only the first line.
+        if unit is not None and last_field and line.startswith(" ") and line.strip():
+            fields[last_field + "__multiline"] = "yes"
+            continue
+    flush(unit, fields)
+
+for item in issues:
+    print("\t".join(item))
+PY
+)"
+
+  local index_file
+  local unit
+  local kind
+  local detail
+  local problems=0
+
+  if [[ -n "$issue_output" ]]; then
+    while IFS=$'\t' read -r index_file unit kind detail; do
+      [[ -n "$index_file" ]] || continue
+      case "$kind" in
+        missing)
+          fail "shadow bucket unit is missing selection_summary (${unit}): $index_file"
+          ;;
+        no_overview)
+          fail "shadow bucket unit row has no overview_doc (${unit}): $index_file"
+          ;;
+        multiline)
+          fail "shadow selection_summary must be a single line (${unit}): $index_file"
+          ;;
+        too_short)
+          fail "shadow selection_summary is too short to select anything (${unit}, ${detail} chars): $index_file"
+          ;;
+        too_long)
+          fail "shadow selection_summary exceeds 250 characters (${unit}, ${detail}): $index_file"
+          ;;
+        no_summary)
+          fail "shadow selection_summary target overview has no unit_summary (${unit} -> ${detail}): $index_file"
+          ;;
+        not_prefix)
+          fail "shadow selection_summary is not a prefix of the overview unit_summary (${unit} -> ${detail}); the row and the overview opening have drifted apart: $index_file"
+          ;;
+      esac
+      problems=1
+    done <<< "$issue_output"
+  fi
+
+  # The replaced field must not creep back in: nothing reads it, and its three
+  # live pairs had already diverged when it was removed.
+  # Fence-aware, and blind to the archive trees: a doc quoting the old contract in a
+  # fenced example is not a regression, and _deprecated/_obsolete bodies are frozen
+  # history that must not be rewritten to satisfy a new field.
+  local stale_tags
+  stale_tags="$(python3 - "$SHADOW_DIR" <<'TAGPY'
+import re
+import sys
+from pathlib import Path
+
+shadow_dir = Path(sys.argv[1])
+fence = chr(96) * 3
+field_re = re.compile(r"^\s*-\s*secondary_tags\s*:")
+
+for doc in sorted(shadow_dir.rglob("*.md")):
+    parts = doc.relative_to(shadow_dir).parts
+    if parts and parts[0] in ("_deprecated", "_obsolete"):
+        continue
+    try:
+        lines = doc.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        continue
+    in_fence = False
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith(fence) or stripped.startswith("~~~"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if field_re.match(line):
+            print(doc)
+            break
+TAGPY
+)"
+  if [[ -n "$stale_tags" ]]; then
+    while IFS= read -r stale_file; do
+      [[ -n "$stale_file" ]] && fail "shadow doc still declares the removed secondary_tags field; use selection_summary on the bucket row instead: $stale_file"
+    done <<< "$stale_tags"
+    problems=1
+  fi
+
+  if (( problems == 0 )); then
+    pass "shadow bucket rows carry a selection_summary that prefixes their unit overview"
+  fi
+}
+
 # Advisory-only (recommended tier, gated by the caller like the navigation-link
 # check): `linked_decisions` is the authored rationale edge -- the "why does this
 # code exist" hop of the read path.

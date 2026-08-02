@@ -4799,3 +4799,218 @@ EOF
   [ "$status" -eq 0 ]
   assert_contains "$output" "shadow linked_decisions has an empty member"
 }
+
+# --- hop-2 selection_summary ---
+
+_selection_fixture() {
+  # $1 = row selection_summary, $2 = overview unit_summary
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/_index.md" <<EOF
+# Shadow Bucket Index
+
+- doc_role: bucket_index
+- bucket: apps
+- last_updated: 2026-08-01T00:00:00Z
+
+## Units
+- app-a:
+  - overview_doc: app-a/overview.md
+  - selection_summary: $1
+EOF
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<EOF
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: apps
+- unit_summary: $2
+- last_updated: 2026-08-01T00:00:00Z
+EOF
+}
+
+@test "validate_docs advisory accepts a selection_summary that prefixes the unit_summary" {
+  _selection_fixture "Auth service." "Auth service. Owns login, token refresh, and session revocation."
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow bucket rows carry a selection_summary that prefixes their unit overview"
+}
+
+@test "validate_docs advisory flags selection_summary drift from the row side" {
+  _selection_fixture "Billing service." "Auth service. Owns login, token refresh, and session revocation."
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow selection_summary is not a prefix of the overview unit_summary (app-a -> app-a/overview.md)"
+}
+
+@test "validate_docs advisory flags selection_summary drift from the overview side" {
+  # The row is untouched; the overview opening was rewritten. Same finding, which is
+  # the point of binding the two: neither side can drift unnoticed.
+  _selection_fixture "Auth service." "Identity service. Owns login, token refresh, and session revocation."
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow selection_summary is not a prefix of the overview unit_summary"
+}
+
+@test "validate_docs advisory flags a missing selection_summary on a unit row" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/_index.md" <<EOF
+# Shadow Bucket Index
+
+- doc_role: bucket_index
+- bucket: apps
+- last_updated: 2026-08-01T00:00:00Z
+
+## Units
+- app-a:
+  - overview_doc: app-a/overview.md
+EOF
+  printf '# o\n\n- doc_role: unit_overview\n- home_bucket: apps\n- unit_summary: Auth service.\n' \
+    > "$DOCS_ROOT/shadow/apps/app-a/overview.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow bucket unit is missing selection_summary (app-a)"
+}
+
+@test "validate_docs advisory flags an over-cap selection_summary" {
+  local long
+  long="$(python3 -c "print('x' * 251)")"
+  _selection_fixture "$long" "$long and more"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow selection_summary exceeds 250 characters (app-a, 251)"
+}
+
+@test "validate_docs advisory flags an overview with no unit_summary to prefix" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/_index.md" <<EOF
+# Shadow Bucket Index
+
+- doc_role: bucket_index
+- bucket: apps
+- last_updated: 2026-08-01T00:00:00Z
+
+## Units
+- app-a:
+  - overview_doc: app-a/overview.md
+  - selection_summary: Auth service.
+EOF
+  printf '# o\n\n- doc_role: unit_overview\n- home_bucket: apps\n' > "$DOCS_ROOT/shadow/apps/app-a/overview.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow selection_summary target overview has no unit_summary (app-a -> app-a/overview.md)"
+}
+
+@test "validate_docs advisory flags the removed secondary_tags field if it comes back" {
+  _selection_fixture "Auth service." "Auth service. Owns login."
+  printf -- '- secondary_tags: shell, python\n' >> "$DOCS_ROOT/shadow/apps/app-a/overview.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow doc still declares the removed secondary_tags field"
+}
+
+@test "validate_docs strict mode skips the selection_summary check entirely" {
+  _selection_fixture "Billing service." "Auth service. Owns login."
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  refute_contains "$output" "selection_summary"
+}
+
+@test "validate_docs advisory flags a unit row with no overview_doc" {
+  # The navigation-link check only follows references that exist, so nothing else
+  # reports a row that points nowhere (external review r01).
+  mkdir -p "$DOCS_ROOT/shadow/apps"
+  cat > "$DOCS_ROOT/shadow/apps/_index.md" <<EOF
+# Shadow Bucket Index
+
+- doc_role: bucket_index
+- bucket: apps
+- last_updated: 2026-08-01T00:00:00Z
+
+## Units
+- app-a:
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow bucket unit row has no overview_doc (app-a)"
+}
+
+@test "validate_docs advisory flags a multi-line selection_summary continuation" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/_index.md" <<EOF
+# Shadow Bucket Index
+
+- doc_role: bucket_index
+- bucket: apps
+- last_updated: 2026-08-01T00:00:00Z
+
+## Units
+- app-a:
+  - overview_doc: app-a/overview.md
+  - selection_summary: Auth service.
+    a sneaky continuation line
+EOF
+  printf '# o\n\n- doc_role: unit_overview\n- home_bucket: apps\n- unit_summary: Auth service. Owns login.\n' \
+    > "$DOCS_ROOT/shadow/apps/app-a/overview.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow selection_summary must be a single line (app-a)"
+}
+
+@test "validate_docs advisory flags a degenerate one-character selection_summary" {
+  _selection_fixture "A" "A short summary that starts with A."
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow selection_summary is too short to select anything (app-a, 1 chars)"
+}
+
+@test "validate_docs advisory ignores secondary_tags in fenced examples and archive trees" {
+  _selection_fixture "Auth service." "Auth service. Owns login."
+  mkdir -p "$DOCS_ROOT/shadow/_deprecated/old"
+  printf '# old\n\n- doc_role: unit_overview\n- secondary_tags: legacy\n' \
+    > "$DOCS_ROOT/shadow/_deprecated/old/overview.md"
+  cat >> "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<EOF
+
+The removed field looked like this:
+
+\`\`\`
+- secondary_tags: shell, python
+\`\`\`
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  # Frozen history and a quoted example are not regressions.
+  refute_contains "$output" "still declares the removed secondary_tags field"
+}
+
+@test "validate_docs advisory flags a selection_summary that is a substring but not a prefix" {
+  # This is the test that pins the word "prefix". Without it, mutating startswith()
+  # to a containment check passes the whole suite and the legislated relation
+  # silently degrades to "appears anywhere" (Opus 5 review r01, finding R01-02).
+  _selection_fixture "Owns login and token refresh." "Auth service. Owns login and token refresh."
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow selection_summary is not a prefix of the overview unit_summary (app-a -> app-a/overview.md)"
+}
+
+@test "validate_docs advisory does not invent unit rows from bucket-index header fields" {
+  # `- bucket:` and `- last_updated:` left empty are the Bucket Registry Template's
+  # own shape; a scan not bounded to "## Units" reads them as rows with no
+  # overview_doc (Opus 5 review r01, finding R01-01).
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/_index.md" <<'EOF'
+# Shadow Bucket Index
+
+- doc_role: bucket_index
+- bucket:
+- last_updated:
+
+## Units
+- app-a:
+  - overview_doc: app-a/overview.md
+  - selection_summary: Auth service.
+EOF
+  printf '# o\n\n- doc_role: unit_overview\n- home_bucket: apps\n- unit_summary: Auth service. Owns login.\n' \
+    > "$DOCS_ROOT/shadow/apps/app-a/overview.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "has no overview_doc"
+  assert_contains "$output" "shadow bucket rows carry a selection_summary that prefixes their unit overview"
+}

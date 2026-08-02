@@ -80,8 +80,18 @@ Use `<project-root>/docs/shadow/<bucket>/_index.md` for unit membership only.
 ## Units
 - unit_id:
   - overview_doc:
-  - secondary_tags:
+  - selection_summary:
 ```
+
+### Unit selection summary
+
+`selection_summary` is the hop-2 field an agent reads to decide WHICH sibling unit is worth opening, before opening any `overview.md`. One line, 12 to 250 characters, saying what distinguishes this unit from its siblings. The lower bound is a floor against degenerate values, not proof of usefulness — no check can prove a sentence actually discriminates.
+
+It must be a prefix of the referenced overview's `unit_summary`, compared after trimming the surrounding whitespace both markdown field values carry anyway. That single rule is the anti-rot mechanism: a keyword list can only be checked for shape, but a prefix binds the row to a doc one hop deeper that must stay true, so drift on EITHER side is detectable without maintaining a vocabulary or tokenizing prose. In practice the natural value is the overview summary's opening sentence, so authoring it costs a copy, not a second act of writing.
+
+`scripts/validate_docs.sh --mode advisory` checks that the row has an `overview_doc` at all, that `selection_summary` is present, single-line (an indented continuation is a finding, not a silent second line), within the length bounds, and a prefix of the target's `unit_summary`. Strict mode skips it (recommended tier).
+
+There is no tag field. Language and tooling facts (`python`, `bats`) are derivable from `owns`/`source_of_truth_paths` and answered more accurately by `rg` and Serena, which index the code and are always current; a hand-maintained copy of them rots and answers nothing new. Conceptual labels belong inside the selection sentence, where they carry a subject and a verb.
 
 ### Unit Overview Template
 
@@ -92,7 +102,6 @@ Use `<project-root>/docs/shadow/<bucket>/<unit>/overview.md` as the landing doc 
 
 - doc_role: unit_overview
 - home_bucket:
-- secondary_tags:
 - unit_summary:
 - owns:
 - entrypoints:

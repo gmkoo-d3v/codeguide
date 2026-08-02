@@ -493,6 +493,11 @@ for bucket in "${SHADOW_BUCKETS[@]}"; do
 
 ## Units
 - no units detected yet
+  (each real unit becomes a row: '- <unit_id>:' with nested '- overview_doc:' and
+   '- selection_summary:' -- one line, 12-250 chars, and a prefix of that
+   overview's unit_summary. The full rule is in this project's
+   docs/DOC-GOVERNANCE.md; the schema lives in the codeguide skill package under
+   references/shadow-system-contract.md, which is NOT copied into this project.)
 "
 done
 
@@ -886,6 +891,7 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 - Create `_deprecated/` and `_obsolete/` under `docs/shadow/` for archived bodies and obsolete material.
 - Preserve this default read path:
   - `project-shadow.md -> <bucket>/_index.md -> <bucket>/<unit>/overview.md -> concern leaf`
+- Give every bucket-index unit row a `selection_summary`: one line, at most 250 characters, saying what distinguishes that unit from its siblings, and required to be a byte-prefix of the referenced overview'"'"'s `unit_summary`. It is the hop-2 field an agent reads to decide which overview is worth opening; the prefix relation is what makes the row checkable instead of decorative. There is no tag field — language and tooling facts are derivable from the code and answered by `rg`/Serena. Advisory validation checks presence, single-line form, the cap, and the prefix.
 - Declare rationale with the optional `linked_decisions` field on `unit_overview` and `concern_leaf` docs only: an inline comma list of repo-relative `docs/decisions/decision-<id>.md` capsules that currently govern the unit or concern. It is the "why" hop of the read path, taken only when the question is why; an absent or empty field is silent. Curate it (about five entries), do not accumulate history — `decision-index.md` is the full record. Advisory validation resolves each entry and warns on superseded targets; `scripts/shadow_rationale_report.py` derives the reverse direction on demand instead of storing backlinks. Field grammar and semantics live in the skill'"'"'s `references/shadow-system-contract.md`.
 
 ## Shadow freshness
