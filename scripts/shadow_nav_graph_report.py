@@ -24,6 +24,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True  # keep the tool read-only: no .pyc writes into scripts/ on import
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from codeguide_paths import resolve_project_root  # DRY: same git-root/skill-parent resolution as item 1
+import shadow_doc_parse  # DRY: one shared answer for fences and field values
 
 # canonical_path is included for parity with the item-1 link check: a router-reachable
 # redirect_shim redirects to the canonical carrier via canonical_path, so it is a real edge.
@@ -33,7 +34,6 @@ RECOGNIZED_ROLES = {
     "router", "global", "bucket_index", "unit_overview", "concern_leaf",
     "effect_map", "review_queue", "redirect_shim",
 }
-_fence = chr(96) * 3
 _inline_re = re.compile(r"^(\s*)-\s*(" + "|".join(NAV_FIELDS) + r")\s*:\s*(\S.*?)\s*$")
 _header_re = re.compile(r"^(\s*)-\s*(" + "|".join(NAV_FIELDS) + r")\s*:\s*$")
 _bullet_re = re.compile(r"^(\s*)-\s+(.*?)\s*$")
@@ -44,14 +44,9 @@ _token_re = re.compile(r"[A-Za-z0-9._/-]+\.md\b")
 
 
 def _content_lines(lines: list[str]):
-    in_fence = False
-    for line in lines:
-        if line.lstrip().startswith(_fence):
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            continue
-        yield line
+    # Shared with the validator so a report and a gate cannot disagree about
+    # whether a line is inside a fence.
+    return shadow_doc_parse.content_lines(lines)
 
 
 def doc_role_of(lines: list[str]) -> str:
@@ -72,13 +67,9 @@ def nav_tokens(lines: list[str]) -> list[tuple[str, str]]:
     tokens: list[tuple[str, str]] = []
     pending: str | None = None
     pending_indent = -1
-    in_fence = False
-    for line in lines:
-        if line.lstrip().startswith(_fence):
-            in_fence = not in_fence
+    for kind, line in shadow_doc_parse.scan(lines):
+        if kind == "boundary":
             pending = None
-            continue
-        if in_fence:
             continue
         inline = _inline_re.match(line)
         if inline:

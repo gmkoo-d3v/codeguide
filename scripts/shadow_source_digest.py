@@ -32,6 +32,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import shadow_doc_parse  # DRY: one shared answer for what a fence is
 try:  # Reuse the repo's git-root resolution so --write and the validator agree.
     from codeguide_paths import resolve_project_root as _resolve_project_root
 except Exception:  # pragma: no cover - fallback when import is unavailable
@@ -43,19 +44,27 @@ DIGEST_FIELD = "source_of_truth_digest"
 _paths_field_re = re.compile(r"^(\s*)-\s*" + PATHS_FIELD + r"\s*:\s*(.*?)\s*$")
 _digest_field_re = re.compile(r"^(\s*)-\s*" + DIGEST_FIELD + r"\s*:\s*(.*?)\s*$")
 _bullet_re = re.compile(r"^(\s*)-\s+(.*?)\s*$")
-_fence_re = re.compile(r"^\s*" + re.escape(chr(96) * 3))
 
 
 def content_lines(lines: list[str]):
-    """Yield (index, line) for lines outside fenced code blocks."""
-    in_fence = False
+    """Yield (index, line) for lines outside fenced code blocks.
+
+    Fence state is computed with the shared marker rule so this reader cannot
+    disagree with the validator about what a fence is, and so a `~~~` marker inside
+    a ``` block does not flip the state (the recorded decision).
+    """
+    open_char = None
+    open_len = 0
     for index, line in enumerate(lines):
-        if _fence_re.match(line):
-            in_fence = not in_fence
+        marker = shadow_doc_parse.fence_marker(line)
+        if open_char is None:
+            if marker is not None:
+                open_char, open_len = marker
+                continue
+            yield index, line
             continue
-        if in_fence:
-            continue
-        yield index, line
+        if marker is not None and marker[0] == open_char and marker[1] >= open_len:
+            open_char, open_len = None, 0
 
 
 def _split_values(value: str) -> list[str]:

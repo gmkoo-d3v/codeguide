@@ -732,10 +732,13 @@ shadow_tree_has_source_declarations() {
 check_shadow_navigation_links() {
   local issue_output
 
-  issue_output="$(python3 - "$SHADOW_DIR" "$PROJECT_ROOT_ABS" "$DOCS_DIR" <<'PY'
+  issue_output="$(python3 - "$SHADOW_DIR" "$PROJECT_ROOT_ABS" "$DOCS_DIR" "$SCRIPT_DIR" <<'PY'
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, sys.argv[4])
+import shadow_doc_parse  # one answer to "is this line inside a fence"
 
 shadow_dir = Path(sys.argv[1])
 project_root = Path(sys.argv[2])
@@ -797,15 +800,11 @@ for md in sorted(shadow_dir.rglob("*.md")):
         lines = md.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
         continue
-    in_fence = False
     pending_field = None
     pending_indent = -1
-    for line in lines:
-        if line.lstrip().startswith(fence):
-            in_fence = not in_fence
+    for kind, line in shadow_doc_parse.scan(lines):
+        if kind == "boundary":
             pending_field = None
-            continue
-        if in_fence:
             continue
         inline = inline_re.match(line)
         if inline:
@@ -981,20 +980,25 @@ check_shadow_source_paths_exist() {
 extract_shadow_field() {
   local file_path="$1"
   local key="$2"
-  awk -v key="$key" '
-    function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
-    /^[[:space:]]*(```|~~~)/ { infence = !infence; next }
-    infence { next }
-    {
-      pat = "^[[:space:]]*-[[:space:]]*" key ":"
-      if ($0 ~ pat) {
-        val = $0
-        sub(pat, "", val)
-        val = trim(val)
-        if (val != "") { print val; exit }
-      }
-    }
-  ' "$file_path" 2>/dev/null
+  # Delegates to the shared reader so this and every other shadow rule answer
+  # "is this line inside a fence" identically.
+  # The awk it replaced toggled on any marker, so a ~~~ inside a ``` block flipped
+  # the state; the shared reader closes only on a same-character marker.
+  python3 - "$file_path" "$key" "$SCRIPT_DIR" <<'FIELDPY' 2>/dev/null
+import sys
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[3])
+import shadow_doc_parse
+
+try:
+    lines = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace").splitlines()
+except OSError:
+    sys.exit(0)
+value = shadow_doc_parse.field_value(lines, sys.argv[2])
+if value:
+    print(value)
+FIELDPY
 }
 
 # Advisory-only (recommended tier): the shadow value-carrier docs (unit_overview,
@@ -1052,10 +1056,13 @@ check_shadow_unit_schema() {
 check_shadow_selection_summary() {
   local issue_output
 
-  issue_output="$(python3 - "$SHADOW_DIR" <<'PY'
+  issue_output="$(python3 - "$SHADOW_DIR" "$SCRIPT_DIR" <<'PY'
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, sys.argv[2])
+import shadow_doc_parse  # shared fence rule
 
 shadow_dir = Path(sys.argv[1])
 MAX_LEN = 250
@@ -1074,16 +1081,7 @@ def content_lines(path):
         raw = path.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
         return []
-    out, in_fence = [], False
-    for line in raw:
-        stripped = line.lstrip()
-        if stripped.startswith(fence) or stripped.startswith("~~~"):
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            continue
-        out.append(line)
-    return out
+    return list(shadow_doc_parse.content_lines(raw))
 
 
 issues = []
@@ -1212,13 +1210,15 @@ PY
   # fenced example is not a regression, and _deprecated/_obsolete bodies are frozen
   # history that must not be rewritten to satisfy a new field.
   local stale_tags
-  stale_tags="$(python3 - "$SHADOW_DIR" <<'TAGPY'
+  stale_tags="$(python3 - "$SHADOW_DIR" "$SCRIPT_DIR" <<'TAGPY'
 import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, sys.argv[2])
+import shadow_doc_parse  # shared fence rule
+
 shadow_dir = Path(sys.argv[1])
-fence = chr(96) * 3
 field_re = re.compile(r"^\s*-\s*secondary_tags\s*:")
 
 for doc in sorted(shadow_dir.rglob("*.md")):
@@ -1229,14 +1229,7 @@ for doc in sorted(shadow_dir.rglob("*.md")):
         lines = doc.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
         continue
-    in_fence = False
-    for line in lines:
-        stripped = line.lstrip()
-        if stripped.startswith(fence) or stripped.startswith("~~~"):
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            continue
+    for line in shadow_doc_parse.content_lines(lines):
         if field_re.match(line):
             print(doc)
             break

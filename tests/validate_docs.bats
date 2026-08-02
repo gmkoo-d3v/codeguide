@@ -5014,3 +5014,133 @@ EOF
   refute_contains "$output" "has no overview_doc"
   assert_contains "$output" "shadow bucket rows carry a selection_summary that prefixes their unit overview"
 }
+
+@test "validate_docs advisory treats a tilde-fenced example as an example in every shadow rule" {
+  # Before the recorded decision the navigation-link check was blind to
+  # ~~~ fences while extract_shadow_field honored them, so this same block was a
+  # dangling reference to one rule and an example to another.
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/_index.md" <<'EOF'
+# Shadow Bucket Index
+
+- doc_role: bucket_index
+- bucket: apps
+- last_updated: 2026-08-01T00:00:00Z
+
+## Units
+- app-a:
+  - overview_doc: app-a/overview.md
+  - selection_summary: Auth service.
+EOF
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: apps
+- unit_summary: Auth service. Owns login.
+- last_updated: 2026-08-01T00:00:00Z
+
+Template example, not a real reference:
+
+~~~
+- next_docs: apps/app-a/does-not-exist.md
+- home_bucket: not-a-bucket
+~~~
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "does-not-exist.md"
+  refute_contains "$output" "home_bucket is not a known bucket"
+}
+
+@test "validate_docs advisory still honors backtick fences after the parser unification" {
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/_index.md" <<'EOF'
+# Shadow Bucket Index
+
+- doc_role: bucket_index
+- bucket: apps
+- last_updated: 2026-08-01T00:00:00Z
+
+## Units
+- app-a:
+  - overview_doc: app-a/overview.md
+  - selection_summary: Auth service.
+EOF
+  {
+    printf '# Shadow Unit Overview\n\n- doc_role: unit_overview\n- home_bucket: apps\n'
+    printf -- '- unit_summary: Auth service. Owns login.\n- last_updated: 2026-08-01T00:00:00Z\n\n'
+    printf '%s\n- next_docs: apps/app-a/also-missing.md\n%s\n' '```' '```'
+  } > "$DOCS_ROOT/shadow/apps/app-a/overview.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "also-missing.md"
+}
+
+@test "validate_docs advisory still sees references OUTSIDE fences (fence handling is not a blanket mute)" {
+  # Positive counterpart to the fenced-example tests. Without it, mutating is_fence
+  # to always-true makes every fence-aware rule a no-op and the negative assertions
+  # all still pass (Opus 5 review r01, finding 3).
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/_index.md" <<'EOF'
+# Shadow Bucket Index
+
+- doc_role: bucket_index
+- bucket: apps
+- last_updated: 2026-08-01T00:00:00Z
+
+## Units
+- app-a:
+  - overview_doc: app-a/overview.md
+  - selection_summary: Auth service.
+EOF
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: apps
+- unit_summary: Auth service. Owns login.
+- next_docs: apps/app-a/genuinely-missing.md
+- last_updated: 2026-08-01T00:00:00Z
+
+~~~
+- next_docs: apps/app-a/only-an-example.md
+~~~
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  # The real reference is reported; the fenced one is not. Both halves matter.
+  assert_contains "$output" "shadow navigation reference does not resolve: next_docs -> apps/app-a/genuinely-missing.md"
+  refute_contains "$output" "only-an-example.md"
+  # And the fence-aware field reader still finds the field it should.
+  refute_contains "$output" "shadow unit overview missing home_bucket"
+}
+
+@test "validate_docs advisory closes a fence only on a same-character marker" {
+  # A ~~~ line inside a ``` block must not flip the state: the first cut of the
+  # shared reader toggled on any marker, which swallowed a real dangling reference
+  # and made the rule print PASS (Opus 5 review r01, finding 1, case A).
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/_index.md" <<'EOF'
+# Shadow Bucket Index
+
+- doc_role: bucket_index
+- bucket: apps
+- last_updated: 2026-08-01T00:00:00Z
+
+## Units
+- app-a:
+  - overview_doc: app-a/overview.md
+  - selection_summary: Auth service.
+EOF
+  {
+    printf '# Shadow Unit Overview\n\n- doc_role: unit_overview\n- home_bucket: apps\n'
+    printf -- '- unit_summary: Auth service. Owns login.\n- last_updated: 2026-08-01T00:00:00Z\n\n'
+    printf 'Documenting fence syntax inside a backtick block:\n\n'
+    printf '%s\n~~~\n%s\n\n' '```' '```'
+    printf -- '- next_docs: apps/app-a/after-the-block.md\n'
+  } > "$DOCS_ROOT/shadow/apps/app-a/overview.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow navigation reference does not resolve: next_docs -> apps/app-a/after-the-block.md"
+}

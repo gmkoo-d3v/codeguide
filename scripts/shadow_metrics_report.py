@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import shadow_doc_parse  # DRY: one shared answer for what a fence is
 try:
     from codeguide_paths import is_skill_package_root as _is_skill_package_root
 except Exception:  # pragma: no cover
@@ -54,12 +55,12 @@ def estimate_tokens(text: str) -> int:
 
 
 def _fence_marker(line: str) -> tuple[str, int] | None:
-    """Return (char, run-length) if the line opens/closes a fenced block, else None."""
-    stripped = line.lstrip()
-    for char in (chr(96), "~"):
-        if stripped.startswith(char * 3):
-            return char, len(stripped) - len(stripped.lstrip(char))
-    return None
+    """Return (char, run-length) if the line opens/closes a fenced block, else None.
+
+    This reader had the CommonMark rule right before the others did; it now delegates
+    so the correct behavior has exactly one home (the recorded decision).
+    """
+    return shadow_doc_parse.fence_marker(line)
 
 
 def classify_lines(text: str) -> tuple[int, int, int]:
