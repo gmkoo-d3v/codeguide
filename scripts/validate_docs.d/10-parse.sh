@@ -122,12 +122,203 @@ escape_ere_literal() {
   printf "%s" "$1" | sed -E 's/[][(){}.^$*+?|\\]/\\&/g'
 }
 
+# SCRIPT_DIR is owned by validate_docs.sh, the shell that owns the run. When this module
+# is sourced on its own -- tests, or any caller that wants only the parsers -- the variable
+# is unbound, and under `set -u` the strip below aborted with "SCRIPT_DIR: unbound variable"
+# instead of degrading. Fall back to this file's own scripts/ directory.
+fence_strip_script_dir() {
+  if [[ -n "${SCRIPT_DIR:-}" ]]; then
+    printf "%s" "$SCRIPT_DIR"
+    return 0
+  fi
+  (cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+}
+
+# A stripped copy is trusted only when it is a readable, NON-EMPTY file that the source
+# document has not outrun. With $2 given the entry is also checked against its source; the
+# staged-write caller omits it, because there the question is only "did the writer produce
+# complete output", not "is this still current".
+#
+# Every writer of a stripped copy -- this module and the corpus pre-strip in
+# validate_docs.sh -- terminates its output with a newline even when the document has no
+# content lines at all, so zero bytes never means "the whole document was fenced". It means
+# truncated, interrupted or poisoned. The previous code trusted `-f` alone, and in a real
+# run that was the ONLY branch ever taken (the pre-strip covers the corpus, so the strip
+# below spawns zero times): a single zero-byte entry therefore made every field on that
+# document read as empty, i.e. a capsule with no metadata -- the worst available answer and
+# the hardest to attribute.
+#
+# The freshness half was asked for in r01 and only the zero-length half shipped, so a
+# document rewritten after the pre-strip was answered from the pre-run snapshot for the
+# rest of the run (r02 finding 7). Its exact strength, stated rather than implied: the
+# test is `source is not STRICTLY newer than entry`, and `-nt` on bash 3.2 compares whole
+# seconds. A rewrite in the same second as the pre-strip is therefore still missed, and
+# equal timestamps must count as fresh -- a scaffold written and validated inside one
+# second is the normal case in the test suite, and rejecting it would send every read back
+# to a per-call python spawn, which is the 29s -> 100s regression the cache exists to
+# prevent.
+fence_cache_entry_usable() {
+  local entry="$1"
+  local src="${2:-}"
+
+  [[ -r "$entry" && -s "$entry" ]] || return 1
+  [[ -z "$src" || ! "$src" -nt "$entry" ]]
+}
+
+# Write the fence-stripped form of $1 to $2. Same grammar (shadow_doc_parse) and same
+# trailing-newline contract as the corpus pre-strip in validate_docs.sh.
+fence_strip_into() {
+  local src="$1"
+  local out="$2"
+  local script_dir
+  script_dir="$(fence_strip_script_dir)"
+
+  python3 - "$src" "$script_dir" > "$out" 2>/dev/null <<'STRIPPY'
+import sys
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[2])
+sys.dont_write_bytecode = True
+import shadow_doc_parse
+
+lines = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace").splitlines()
+sys.stdout.write("\n".join(shadow_doc_parse.content_lines(lines)) + "\n")
+STRIPPY
+}
+
+# Set FENCE_STRIPPED_PATH to a copy of $1 with fenced blocks removed, computed once per file.
+#
+# It assigns a global rather than printing, and it does NOT create the cache root: every
+# caller of extract_field_value uses `$( ... )`, so this function always runs in a SUBSHELL.
+# A cache dir or an EXIT trap created here would be created and destroyed inside that
+# substitution -- measured: slower than no cache at all, plus a leaked temp dir per read.
+# The owning shell creates FENCE_STRIP_CACHE once (validate_docs.sh) and exports it; writes
+# into it from a subshell survive because the filesystem is shared even when variables are not.
+# Sourced outside the validator (tests), the fallback strips per call: correct, just slower.
+fence_stripped_file() {
+  local src="$1"
+  FENCE_STRIPPED_PATH="$src"
+  [[ -f "$src" ]] || return 0
+
+  local dest=""
+  local staged=""
+  if [[ -n "${FENCE_STRIP_CACHE:-}" && -d "$FENCE_STRIP_CACHE" ]]; then
+    dest="$FENCE_STRIP_CACHE/${src#/}"
+    if fence_cache_entry_usable "$dest" "$src"; then
+      FENCE_STRIPPED_PATH="$dest"
+      return 0
+    fi
+    mkdir -p "$(dirname "$dest")" 2>/dev/null || dest=""
+  fi
+  if [[ -z "$dest" ]]; then
+    dest="$(mktemp)" || return 0
+  fi
+
+  # Stage then rename, so no reader can ever be handed a half-written entry, and keep the
+  # ORIGINAL path on ANY failure. Falling back to an empty stripped file would blank every
+  # field the caller asks for, which reads as a document with no metadata at all -- a far
+  # worse failure than the fence-blindness this replaces. An unusable entry that was already
+  # in the cache is removed here rather than served, so the next read retries it.
+  staged="${dest}.strip.$$"
+  if fence_strip_into "$src" "$staged" \
+    && fence_cache_entry_usable "$staged" \
+    && mv -f "$staged" "$dest" 2>/dev/null; then
+    FENCE_STRIPPED_PATH="$dest"
+  else
+    rm -f "$staged" "$dest"
+  fi
+}
+
+# Key-presence probe answered by the SAME grammar as extract_field_value: same
+# fence-stripped copy, same `^- key:` column-0 anchor, same case sensitivity. It takes a
+# KEY and never a caller-supplied regex, which is deliberate -- see below.
+#
+# These two must never diverge. Before the task they agreed by
+# accident, because both were fence-blind. Making only the VALUE reader fence-aware
+# reintroduced the exact defect this line of work exists to end: on a task whose only
+# `- status: in_progress` sits in a quoted template the validator emitted "in-progress task
+# is stale" from a fence-blind probe while every other rule in the same run read the file as
+# `planned` -- one document, two rules, opposite answers.
+#
+# The r01 fix for that shipped a general `field_pattern_present "$file" "$regex"` helper,
+# and r02 found the SAME class one axis over: `^- status:.*in_progress` asks an ANY-LINE
+# question while extract_field_value answers a FIRST-LINE one, so a capsule with
+# `- status: planned` above a later `- status: in_progress` failed the freshness gate in a
+# run that read it as planned. A helper that accepts an arbitrary pattern cannot hold the
+# invariant, because the pattern is where the divergence lives. Presence questions about a
+# VALUE are answered by comparing the value extract_field_value already returned.
+#
+# The anchor is duplicated by hand rather than shared through a variable because a shared
+# ERE fragment reads as configurable; it is not. If you change one of these two anchors,
+# change the other in the same edit -- the bats case "validate_docs answers key presence
+# with the same column-0 anchor the value read uses" fails otherwise.
+field_key_present() {
+  local file_path="$1"
+  local key="$2"
+
+  fence_stripped_file "$file_path"
+  grep -qE "^- ${key}:" "$FENCE_STRIPPED_PATH" 2>/dev/null
+}
+
+# The task-index ROW grammar -- a different question from `- key:`, so it gets its own
+# name rather than a regex argument to the field probe.
+#
+# Three readers asked it, each with its own spelling: two `grep -qE "^- <ref> "` probes in
+# validate_docs.sh and the `while read` walk in 30-rules-task.sh. All three were fence-blind,
+# which the PLAN's residual list defended as "they agree, so move them together or not at
+# all". They agreed on a FALSEHOOD: a task whose only index row sits inside a quoted
+# ``` block was silently accepted by the probes AND assigned a section by the walk, so the
+# validator reported "row is listed under Done" about a row no markdown reader would find
+# They also did not agree: the probes
+# required a space after the ref while the walk did not, so a bare `- TASK-foo` row produced
+# "task-index missing row" from one reader and a section verdict from the other. Moving them
+# together means one fence rule and one row shape, here.
+#
+# The trailing group matches the walk's `^- (TASK-[A-Za-z0-9._-]+)` boundary exactly: a
+# ref ends at whitespace or end of line, so `- TASK-foo-2 planned` is not a row for TASK-foo.
+task_index_row_present() {
+  local index_file="$1"
+  local task_ref="$2"
+
+  fence_stripped_file "$index_file"
+  grep -qE "^- ${task_ref}"'([[:space:]]|$)' "$FENCE_STRIPPED_PATH" 2>/dev/null
+}
+
+# The decision-index ROW grammar, in both the section form and the legacy table form.
+# $2 is already ERE-escaped by the caller (escape_ere_literal), because a decision file
+# name carries dots.
+#
+# Its own named helper for the same reason as the two above: the alternative would be a
+# generic "does this regex match outside fences" helper, and a caller-supplied pattern is
+# where these divergences live. Unlike the task-index rows there is only ONE reader of
+# decision-index.md, so this could not CONTRADICT anything -- but a row that exists only
+# inside a quoted example still silenced "decision index missing row" entirely, which is
+# the same "a template answers for the real thing" hole as the bucket-index unit rows.
+# Found by the task's own axis enumeration, not by a review.
+decision_index_row_present() {
+  local index_file="$1"
+  local decision_base_escaped="$2"
+
+  fence_stripped_file "$index_file"
+  grep -qE "(^- ${decision_base_escaped} \||^\| ${decision_base_escaped} \|)" \
+    "$FENCE_STRIPPED_PATH" 2>/dev/null
+}
+
 # Extract the value part of a "- key: value" line. Returns empty if key missing or value empty.
 extract_field_value() {
   local file_path="$1"
   local key="$2"
   local raw
-  raw="$(grep -E "^- ${key}:" "$file_path" 2>/dev/null | head -n 1 | sed "s/^- ${key}:[[:space:]]*//" || true)"
+  # Fence-aware: a fenced EXAMPLE must never outrank the real field. The fence rule
+  # is shadow_doc_parse, the same one every other reader uses -- a shell-native fence
+  # filter here would be a second implementation of the thing this line of work exists
+  # to end.
+  #
+  # Stripping is cached per FILE, not per field read: a python spawn per read measured
+  # 4x the old grep, and a capsule is read 9-25 times. The `^- key:` column-0 anchoring
+  # and the grep that uses it are unchanged, so this adds fence awareness and nothing else.
+  fence_stripped_file "$file_path"
+  raw="$(grep -E "^- ${key}:" "$FENCE_STRIPPED_PATH" 2>/dev/null | head -n 1 | sed "s/^- ${key}:[[:space:]]*//" || true)"
   # Trim whitespace
   printf "%s" "$raw" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
 }
@@ -139,7 +330,7 @@ check_field_non_empty() {
   local label="$3"
   local value
 
-  if ! grep -qE "^- ${key}:" "$file_path" 2>/dev/null; then
+  if ! field_key_present "$file_path" "$key"; then
     fail "${key} is missing in ${label}: $file_path"
     return 1
   fi
@@ -179,7 +370,7 @@ check_field_exists() {
   local key="$2"
   local label="$3"
 
-  if ! grep -qE "^- ${key}:" "$file_path" 2>/dev/null; then
+  if ! field_key_present "$file_path" "$key"; then
     fail "${key} is missing in ${label}: $file_path"
     return 1
   fi

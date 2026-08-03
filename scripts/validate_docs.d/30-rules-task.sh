@@ -44,8 +44,12 @@ check_resume_capsule_for_task() {
   local field_value
   local revision_value
 
+  # Presence is asked with field_key_present, the same fence-aware grammar the value
+  # reads below use. A fence-blind probe here reported a capsule as DECLARED on the
+  # strength of a quoted template and then failed it as "present but empty", while
+  # suppressing the one truthful finding, "resume capsule missing".
   for field in "${RESUME_CAPSULE_FIELDS[@]}"; do
-    if grep -qE "^- ${field}:" "$task_file" 2>/dev/null; then
+    if field_key_present "$task_file" "$field"; then
       has_any_resume_field="true"
       break
     fi
@@ -57,7 +61,7 @@ check_resume_capsule_for_task() {
 
   if [[ "$MODE" == "strict" ]]; then
     for field in resume_next_action resume_last_verified; do
-      if grep -qE "^- ${field}:" "$task_file" 2>/dev/null; then
+      if field_key_present "$task_file" "$field"; then
         field_value="$(extract_field_value "$task_file" "$field")"
         if [[ -z "$field_value" ]]; then
           fail "${field} is present but empty for in_progress task ${task_ref}: a declared resume capsule must be truthful (references/session-resume-contract.md)"
@@ -66,7 +70,7 @@ check_resume_capsule_for_task() {
     done
   fi
 
-  if grep -qE "^- resume_state_revision:" "$task_file" 2>/dev/null; then
+  if field_key_present "$task_file" "resume_state_revision"; then
     revision_value="$(extract_field_value "$task_file" "resume_state_revision")"
     if [[ ! "$revision_value" =~ ^[0-9]+$ ]]; then
       soft_warn "resume_state_revision is present but non-numeric for in_progress task ${task_ref}: '${revision_value}' ($task_file)"
@@ -107,6 +111,15 @@ check_task_index_integrity() {
 
   all_refs_file="$(mktemp)"
 
+  # Walk the fence-stripped copy, the same bytes task_index_row_present probes. While this
+  # walk was fence-blind it agreed with the two probes on a falsehood: a row inside a quoted
+  # ``` block silenced "task-index missing row" and then earned a section verdict of its
+  # own, so the validator reported "row is listed under Done" about a row no markdown reader
+  # would find. A `## ` heading inside a fence is
+  # gone for the same reason, so a quoted index example can no longer reassign the section
+  # of the real rows below it.
+  fence_stripped_file "$index_file"
+
   while IFS= read -r line; do
     if [[ "$line" =~ ^\#\#\  ]]; then
       section="$line"
@@ -133,7 +146,7 @@ check_task_index_integrity() {
         fi
       fi
     fi
-  done < "$index_file"
+  done < "$FENCE_STRIPPED_PATH"
 
   if [[ -s "$all_refs_file" ]]; then
     while IFS= read -r dup_ref; do

@@ -682,11 +682,22 @@ check_shadow_empty_graph() {
 # schema shape is "- <unit_id>:" (identifier then colon) with indented detail
 # lines; an arbitrary garbage line like "- x" must not be able to silence the
 # empty-graph gate (sonnet P3-r01 finding 2).
+#
+# Reads the fence-stripped copy, for the same reason the sibling
+# shadow_tree_has_source_declarations below is fence-aware: this is the OTHER half of
+# check_shadow_empty_graph, and while it was fence-blind the two halves answered one gate
+# with two grammars. Wrapping a single example unit row in a fence turned the strict
+# `[FAIL] shadow graph is empty` into `[PASS] shadow graph is not empty` -- a quoted
+# template silencing an enforcement gate on a corpus that documents nothing
+# (the task r02 finding 3, reproduced on a fixture with a real
+# git source root; a bare scaffold cannot show it because the gate returns early with no
+# trackable source).
 bucket_index_has_units() {
   local bucket_file="$1"
   local remaining
 
-  remaining="$(awk '/^## Units$/{flag=1; next} /^## /{flag=0} flag && /^- /{print}' "$bucket_file" 2>/dev/null \
+  fence_stripped_file "$bucket_file"
+  remaining="$(awk '/^## Units$/{flag=1; next} /^## /{flag=0} flag && /^- /{print}' "$FENCE_STRIPPED_PATH" 2>/dev/null \
     | grep -vFx -- '- no units detected yet' \
     | grep -E '^- [A-Za-z0-9._-]+:' || true)"
   [[ -n "$remaining" ]]
@@ -859,8 +870,13 @@ check_shadow_source_digest() {
   local line
   local status_line
   while IFS= read -r shadow_doc; do
+    # Cheap fence-BLIND prefilter: it only decides which documents are worth a python
+    # spawn. `checked` is NOT set here, because that made the prefilter the reader --
+    # a document merely QUOTING the field inside a fenced example manufactured
+    # "shadow source-of-truth digests verified against current source" on a corpus where
+    # the fence-aware helper says no_digest and nothing is verified at all
+    # The helper decides.
     grep -qE "^[[:space:]]*-[[:space:]]*source_of_truth_digest:" "$shadow_doc" 2>/dev/null || continue
-    checked=1
     # `if !` keeps a helper crash from aborting the whole run under `set -e`.
     if ! result="$(python3 "$digest_helper" "$shadow_doc" --project-root "$PROJECT_ROOT_ABS" --check 2>/dev/null)"; then
       fail "could not verify shadow source-of-truth digest (helper error): $shadow_doc"
@@ -887,6 +903,11 @@ check_shadow_source_digest() {
       continue
     fi
     case "$status_line" in
+      no_digest)
+        # The only mention of the field was inside a fence, so this document declares
+        # nothing and must not count toward the PASS below.
+        continue
+        ;;
       drift)
         fail "shadow source-of-truth digest drift, source changed since last verification: $shadow_doc; re-verify then rerun scripts/shadow_source_digest.py --write"
         problems=1
@@ -896,6 +917,7 @@ check_shadow_source_digest() {
         problems=1
         ;;
     esac
+    checked=1
   done < <(
     find "$SHADOW_DIR" -type f -name '*.md' \
       ! -path "$SHADOW_DIR/_deprecated/*" \

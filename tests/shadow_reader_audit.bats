@@ -14,7 +14,35 @@ AUDIT() {
   # three classes apart, not reporting zero because it found nothing at all.
   assert_contains "$output" "scripts/shadow_rationale_report.py: direct"
   assert_contains "$output" "scripts/shadow_coverage_report.py: transitive"
-  assert_contains "$output" "scripts/validate_docs.d/10-parse.sh: excluded"
+  assert_contains "$output" "scripts/shadow_policy_loader.py: excluded"
+  # The two readers the task rewired are now compliant, not
+  # excused. Pinning them as `direct` means DROPPING the delegation fails here instead of
+  # quietly reappearing as an exclusion. It does not catch a partial revert: the audit
+  # classifies by naming shadow_doc_parse, so a revert that leaves the import or the
+  # heredoc in place still reads as `direct` -- that case is caught by the mutation-proven
+  # behavior tests in validate_docs.bats and shadow_core.bats, not here.
+  assert_contains "$output" "scripts/validate_docs.d/10-parse.sh: direct"
+  assert_contains "$output" "scripts/shadow_effect_writer.py: direct"
+}
+
+@test "shadow reader audit reports an exclusion that is already compliant" {
+  # A live reader kept in EXCLUSIONS is a silent safety net: drop the delegation later
+  # and the file falls back to `excluded` on an unread reason instead of surfacing as
+  # UNCLASSIFIED. The shipped tree must carry none, and the report must be able to
+  # name one -- both halves, or this proves nothing.
+  run AUDIT
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "already reaches shadow_doc_parse"
+
+  run python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPTS_DIR')
+import shadow_reader_audit as A
+A.EXCLUSIONS['scripts/validate_docs.d/10-parse.sh'] = 'fixture: stale entry for a now-compliant reader'
+sys.exit(A.main(['--skill-root', '$SCRIPTS_DIR/..']))
+"
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "scripts/validate_docs.d/10-parse.sh: excluded but already reaches shadow_doc_parse (direct); drop the exclusion"
 }
 
 @test "shadow reader audit records every exclusion with a reason" {

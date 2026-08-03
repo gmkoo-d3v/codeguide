@@ -435,6 +435,70 @@ EOF
   refute_contains "$output" "gitignored tmp/ path"
 }
 
+@test "validate_docs closes a tmp-scan fence only on a same-character marker" {
+  # The third private fence grammar in the tree, and it carried the toggle-on-any-marker
+  # bug that the recorded decision exists to end: a `~~~` inside a ``` example
+  # -- a template quoting a template, which is what half this corpus is -- flipped the
+  # state, so this rule reported a path the shared reader sees as fence content
+  #
+  cat > "$DOCS_ROOT/plan/PLAN-tmp-tilde-fence-01-v1.0.md" <<'EOF'
+# PLAN-tmp-tilde-fence-01-v1.0
+
+- task_id: tmp-tilde-fence-01
+- plan_version: v1.0
+- objective: a tilde marker inside a backtick fence is content, not a closer
+- scope: fixture
+- assumptions: none
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+```markdown
+~~~
+scratch lives at /tmp/example-scratch/run.log
+~~~
+```
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "gitignored tmp/ path (${DOCS_ROOT}/plan/PLAN-tmp-tilde-fence-01-v1.0.md:"
+
+  # A longer opener is not closed by a shorter marker either (CommonMark, and the case
+  # that makes a template-quoting-a-template swallow the rest of the document).
+  cat > "$DOCS_ROOT/plan/PLAN-tmp-long-fence-01-v1.0.md" <<'EOF'
+# PLAN-tmp-long-fence-01-v1.0
+
+- task_id: tmp-long-fence-01
+- plan_version: v1.0
+- objective: a 3-backtick line does not close a 4-backtick opener
+- scope: fixture
+- assumptions: none
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+````markdown
+```
+scratch lives at /tmp/example-scratch/run.log
+```
+````
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "gitignored tmp/ path (${DOCS_ROOT}/plan/PLAN-tmp-long-fence-01-v1.0.md:"
+
+  # Positive half: the same reference OUTSIDE the block is still reported, in the same
+  # file, so this is fence tracking and not a blanket mute.
+  cat >> "$DOCS_ROOT/plan/PLAN-tmp-tilde-fence-01-v1.0.md" <<'EOF'
+
+Real reference: /tmp/really-outside/run.log
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "[WARN] docs reference a gitignored tmp/ path (${DOCS_ROOT}/plan/PLAN-tmp-tilde-fence-01-v1.0.md:"
+}
+
 @test "validate_docs advisory completes on a multi-file corpus (ISSUE-20260802 crash regression)" {
   # Regression guard for the tracked issue: every other
   # fixture validates a near-empty scaffold, so the per-file nested process
@@ -2784,6 +2848,48 @@ EOF
   assert_contains "$output" "decision index missing row for decision-dot.a.md"
 }
 
+@test "validate_docs reads a decision-index row quoted inside a fence as no row at all" {
+  # decision-index.md has only ONE reader, so this could never CONTRADICT a second one --
+  # but a row that exists only inside a quoted example still silenced the check outright,
+  # which is the same "a template answers for the real thing" hole as the bucket-index unit
+  # rows and the task-index rows. Found by the task's own axis
+  # enumeration rather than by a review.
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --decision-id "fenced-row-01" \
+    --decision-title "Fenced index row" \
+    --selected-option "Option A" \
+    --axis-why "why" \
+    --axis-what "what" \
+    --axis-how "how" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --no-init
+
+  # Sanity: the garden wrote a real row, and the check is silent about it.
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  refute_contains "$output" "decision index missing row for decision-fenced-row-01.md"
+
+  python3 - "$DOCS_ROOT/decisions/decision-index.md" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+lines = path.read_text(encoding="utf-8").splitlines()
+row = next(line for line in lines if line.startswith("- decision-fenced-row-01.md "))
+out = []
+for line in lines:
+    out.append("```markdown" if False else line)
+    if line == row:
+        out[-1] = "```markdown"
+        out.extend([row, "```"])
+path.write_text("\n".join(out) + "\n", encoding="utf-8")
+PY
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "decision index missing row for decision-fenced-row-01.md"
+}
+
 # ========== Task-index reverse integrity (no physical archive policy) ==========
 
 @test "validate_docs strict fails on a stale task-index row with no matching task file" {
@@ -2834,6 +2940,101 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
   assert_contains "$output" "task-index has duplicate rows for TASK-idx-dup-01"
+}
+
+@test "validate_docs reads a task-index row quoted inside a fence as no row at all" {
+  # The ROW grammar had three readers -- two `grep -qE "^- <ref> "` probes in
+  # validate_docs.sh and the `while read` walk here -- and all three were fence-blind. The
+  # PLAN deferred them as "they agree today", which was true and beside the point: they
+  # agreed on a FALSEHOOD. A row that exists only inside a quoted example silenced
+  # "task-index missing row" AND earned a section verdict, so the run said "row is listed
+  # under Done" about a row a markdown reader never sees. Both halves must now say the
+  # index has no row for this task.
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "idx-fenced-01" \
+    --task-title "Fenced row fixture" \
+    --task-status planned \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --no-init
+
+  python3 - "$DOCS_ROOT/task/task-index.md" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+lines = path.read_text(encoding="utf-8").splitlines()
+row = next(line for line in lines if line.startswith("- TASK-idx-fenced-01"))
+# Move the only row for this task under "## Done" AND inside a fence: the section is
+# wrong on purpose, so a fence-blind walk has something untrue to say about it.
+lines = [line for line in lines if line != row]
+out = []
+for line in lines:
+    out.append(line)
+    if line.strip() == "## Done":
+        out.extend(["", "```markdown", row, "```"])
+path.write_text("\n".join(out) + "\n", encoding="utf-8")
+PY
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  # The probe half: the task file has no row, and that is the truthful finding.
+  assert_contains "$output" "task-index missing row for TASK-idx-fenced-01"
+  # The walk half: it must not simultaneously claim the quoted row is listed somewhere.
+  refute_contains "$output" "task-index section mismatch for TASK-idx-fenced-01"
+
+  # Positive half: unfenced, the very same row under the very same wrong section is a real
+  # row, and both halves must say so -- no missing-row finding, one section mismatch.
+  python3 - "$DOCS_ROOT/task/task-index.md" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+path.write_text(text.replace("```markdown\n", "").replace("\n```\n", "\n"), encoding="utf-8")
+PY
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  refute_contains "$output" "task-index missing row for TASK-idx-fenced-01"
+  assert_contains "$output" "task-index section mismatch for TASK-idx-fenced-01: task file status is planned but row is listed under Done"
+}
+
+@test "validate_docs treats a bare task-index row as present in both readers" {
+  # The probes required a space after the ref and the walk did not, so the two disagreed
+  # about `- TASK-foo` with nothing after it: one reported "task-index missing row" while
+  # the other gave the same row a section verdict. One row shape now, in both.
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "idx-bare-01" \
+    --task-title "Bare row fixture" \
+    --task-status planned \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --no-init
+
+  perl -pi -e 's{^- TASK-idx-bare-01 .*$}{- TASK-idx-bare-01}' "$DOCS_ROOT/task/task-index.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  refute_contains "$output" "task-index missing row for TASK-idx-bare-01"
+
+  # Positive half: a DIFFERENT task whose ref merely shares this prefix is still missing,
+  # so the boundary is a boundary and not a blanket match.
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --task-id "idx-bare-01-extra" \
+    --task-title "Prefix collision fixture" \
+    --task-status planned \
+    --axis-why "why" \
+    --axis-where "where" \
+    --axis-verify "verify" \
+    --no-init
+  perl -ni -e 'print unless /^- TASK-idx-bare-01-extra /' "$DOCS_ROOT/task/task-index.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "task-index missing row for TASK-idx-bare-01-extra"
 }
 
 # ========== Issue tracker current/resolved consistency ==========
@@ -3464,6 +3665,48 @@ EOF
   [ "$before" = "$after" ]
 }
 
+@test "a fenced source_of_truth_digest example does not manufacture a verified verdict" {
+  # The prefilter that decides which documents are worth a python spawn is a fence-BLIND
+  # grep, and it used to set `checked` as well -- so a unit overview that merely SHOWS the
+  # reader how to declare a digest produced "[PASS] shadow source-of-truth digests verified
+  # against current source" on a corpus where the fence-aware helper says no_digest and
+  # nothing whatsoever was verified. A PASS that certifies work nobody did is worse than a
+  # missing check.
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- last_updated: 2026-01-01T00:00:00Z
+
+## How to declare a digest
+
+```markdown
+- source_of_truth_paths: src/app.py
+- source_of_truth_digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+```
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "shadow source-of-truth digests verified against current source"
+  # Positive anchor: the shadow rules really did run over this document.
+  assert_contains "$output" "shadow navigation references resolve to real files"
+
+  # Positive half: a REAL declaration in the same document still earns the verdict, so
+  # this is not the check quietly switching itself off.
+  mkdir -p "$TEST_PROJECT/src"
+  printf 'x = 1\n' > "$TEST_PROJECT/src/app.py"
+  perl -pi -e 's{^- last_updated: 2026-01-01T00:00:00Z$}{- source_of_truth_paths: src/app.py\n- source_of_truth_digest: sha256:0\n- last_updated: 2026-01-01T00:00:00Z}' \
+    "$DOCS_ROOT/shadow/apps/app-a/overview.md"
+  python3 "$SCRIPTS_DIR/shadow_source_digest.py" \
+    "$DOCS_ROOT/shadow/apps/app-a/overview.md" --project-root "$TEST_PROJECT" --write >/dev/null
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "shadow source-of-truth digests verified against current source"
+}
+
 @test "shadow source digest detects drift in the mixed inline+nested source_of_truth_paths form" {
   mkdir -p "$TEST_PROJECT/src" "$DOCS_ROOT/shadow/apps/app-a"
   printf 'a=1\n' > "$TEST_PROJECT/src/a.py"
@@ -3741,6 +3984,555 @@ EOF
   refute_contains "$output" "shadow unit/concern docs have valid schema"
 }
 
+# --- extract_field_value fence awareness ---
+#
+# extract_field_value is the validator's GENERAL capsule reader (80 invocations across
+# task, plan, orchestration, decision, issue and report documents), and it used to be a
+# fence-blind `grep -E "^- key:" | head -1`. A quoted TEMPLATE therefore outranked the
+# real field. The three fixtures below all put a deliberately WRONG real value below the
+# example so every case asserts a finding the rule must PRODUCE: a blank fence-stripped
+# copy would say "bucket is missing" and a fence-blind read would say "found widgets",
+# so the expected literal distinguishes all three outcomes rather than only proving
+# silence.
+
+_bucket_index_with_example() {
+  # $1 = the example block, fenced or not -- the only thing that varies across the three
+  mkdir -p "$DOCS_ROOT/shadow/apps"
+  cat > "$DOCS_ROOT/shadow/apps/_index.md" <<EOF
+# Shadow Bucket Index
+
+A unit overview looks like:
+
+$1
+
+- doc_role: bucket_index
+- bucket: not-apps
+- last_updated: 2026-08-01T00:00:00Z
+EOF
+}
+
+@test "validate_docs advisory keeps a bucket index doc_role when the file quotes the unit overview template in a fence" {
+  _bucket_index_with_example '```markdown
+- doc_role: unit_overview
+- bucket: widgets
+```'
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  # Positive: the real fields BELOW the fence are still read, and read correctly.
+  assert_contains "$output" "invalid bucket in shadow bucket index (apps): expected apps, found not-apps"
+  # The regression: the quoted example must not answer for doc_role.
+  refute_contains "$output" "invalid doc_role in shadow bucket index (apps)"
+}
+
+@test "validate_docs advisory still reports the doc_role drift when the same example is NOT fenced" {
+  # Fence awareness must not become a blanket mute: unfenced, this really is a document
+  # declaring two roles, and the first one really is what the reader returns.
+  _bucket_index_with_example '- doc_role: unit_overview
+- bucket: widgets'
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "invalid doc_role in shadow bucket index (apps): expected bucket_index, found unit_overview"
+  assert_contains "$output" "invalid bucket in shadow bucket index (apps): expected apps, found widgets"
+}
+
+@test "validate_docs advisory treats an indented fence marker like a column-0 one" {
+  # The fence markers are indented, the example lines are not: exactly the shape that
+  # the `^- ` anchored grep sees as real fields while a markdown renderer sees an example.
+  _bucket_index_with_example '   ```markdown
+- doc_role: unit_overview
+- bucket: widgets
+   ```'
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "invalid bucket in shadow bucket index (apps): expected apps, found not-apps"
+  refute_contains "$output" "invalid doc_role in shadow bucket index (apps)"
+}
+
+# --- Key-PRESENCE probes answer with the same grammar as the value read
+#     ---
+#
+# Making extract_field_value fence-aware while the `grep -qE "^- key:"` probes beside it
+# stayed fence-blind recreated the defect this line of work exists to remove. Before that
+# change both spellings were blind and therefore AGREED; after it they contradicted each
+# other about the same bytes. Reproduced: a task whose only `- status: in_progress` sat in
+# a quoted template produced "in-progress task is stale by last_updated" from the probe at
+# validate_docs.sh:489 while every other rule in the SAME run read the file as `planned`.
+#
+# Each test below asserts the truthful finding as well as the absence of the false one.
+# A refute alone would also pass if the rule simply stopped running, which is how this
+# repo has shipped tests that proved nothing.
+
+_probe_task_index_row() {
+  # Put a row under a named section. Appending drops it under "## Done" and manufactures
+  # an unrelated section mismatch that would muddy every assertion here.
+  python3 - "$DOCS_ROOT/task/task-index.md" "$1" "$2" <<'PY'
+import sys
+
+path, section, row = sys.argv[1], sys.argv[2], sys.argv[3]
+lines = open(path, encoding="utf-8").read().splitlines()
+out = []
+for line in lines:
+    out.append(line)
+    if line.strip() == section:
+        out.extend(["", row])
+open(path, "w", encoding="utf-8").write("\n".join(out) + "\n")
+PY
+}
+
+_probe_task_file() {
+  # $1 task id, $2 status value, $3 body appended after the capsule (fenced or not).
+  # $3 arrives through a parameter expansion, so any fence markers in it stay literal.
+  cat > "$DOCS_ROOT/task/TASK-${1}.md" <<EOF
+# TASK-${1}
+
+- title: Presence probe fixture
+- objective: presence and value must answer with one grammar
+- acceptance_criteria: the validator emits the truthful finding
+- non_goals: none
+- affected_modules: docs
+- interfaces_changed: none
+- data_migrations: none
+- test_scope: validate_docs
+- risks: none
+- risk_level: low
+- consumes_plan_ref:
+- status: ${2}
+- owner: test
+- claimed_at: 2020-01-01T00:00:00Z
+- due_date:
+- axis_why: fixture
+- axis_where: fixture
+- axis_verify: bats
+- last_updated: 2020-01-01T00:00:00Z
+
+## Quoted template
+
+${3}
+EOF
+}
+
+@test "validate_docs answers in-progress freshness with the status VALUE, not a second read of the document" {
+  # Two fixtures, two axes, one rule. The freshness gate must fire exactly when the
+  # document's status IS in_progress -- the value every other task rule uses -- and must
+  # not be decided by a separate scan that can find a `- status:` line the value reader
+  # never returns. r01 broke this on the FENCE axis (a quoted template answered), r02 on
+  # the OCCURRENCE axis (a later line answered for the first one).
+  _probe_task_file "fence-status-probe-01" "planned" '```
+- status: in_progress
+```'
+  _probe_task_index_row "## Planned" "- TASK-fence-status-probe-01 planned"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  # The false finding: an in-progress freshness verdict on a document the status rule,
+  # the claim rule, the resume rule and the task-index rule all read as `planned`.
+  # Every in-progress-task verdict, PASS or FAIL, day count and all: none of them may be
+  # about this document, because the rule must not have run on it at all.
+  refute_contains "$(printf '%s\n' "$output" | grep 'in-progress task' || true)" \
+    "TASK-fence-status-probe-01.md"
+  # Positive anchor for the same run: the fixture really was scanned as a task, and the
+  # status the rest of the run used is the one this rule must agree with.
+  assert_contains "$output" "task document size OK"
+  refute_contains "$output" "task-index section mismatch for TASK-fence-status-probe-01"
+
+  # OCCURRENCE axis: unfenced, those bytes really are a second column-0 status line -- and
+  # they are still not this document's status, because extract_field_value returns the
+  # FIRST one. An ANY-LINE probe fires here; the value comparison does not.
+  _probe_task_file "fence-status-probe-01" "planned" '- status: in_progress'
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  refute_contains "$(printf '%s\n' "$output" | grep 'in-progress task' || true)" \
+    "TASK-fence-status-probe-01.md"
+  # The same run must still read the document as planned, so the two answers agree.
+  refute_contains "$output" "task-index section mismatch for TASK-fence-status-probe-01"
+  assert_contains "$output" "task document size OK"
+}
+
+@test "validate_docs still reports a genuinely in-progress task as stale by last_updated" {
+  # The positive half of the rule above: deleting the freshness call entirely would pass
+  # both refutes there, so the gate has to be shown firing on a document whose FIRST
+  # `- status:` line really is in_progress.
+  _probe_task_file "real-status-probe-01" "in_progress" 'No quoted template here.'
+  _probe_task_index_row "## In Progress" "- TASK-real-status-probe-01 in_progress"
+  mkdir -p "$DOCS_ROOT/task/.claims/real-status-probe-01"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "in-progress task is stale by last_updated"
+  assert_contains "$output" "days > 7): $DOCS_ROOT/task/TASK-real-status-probe-01.md"
+
+  # And it fires on the value even when the value carries a trailing parenthetical, which
+  # is why the comparison is against the first TOKEN rather than the whole field.
+  _probe_task_file "real-status-probe-01" "in_progress (r02 fix round)" 'No quoted template here.'
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "days > 7): $DOCS_ROOT/task/TASK-real-status-probe-01.md"
+}
+
+@test "validate_docs reads a fenced resume-capsule template as no capsule at all" {
+  _probe_task_file "fence-resume-probe-01" "in_progress" '```
+- resume_next_action:
+- resume_last_verified:
+- resume_state_revision:
+```'
+  _probe_task_index_row "## In Progress" "- TASK-fence-resume-probe-01 in_progress"
+  mkdir -p "$DOCS_ROOT/task/.claims/fence-resume-probe-01"
+
+  # Advisory: the truthful finding. The fence-blind probe at 30-rules-task.sh:48 read the
+  # quoted template as a declared capsule and suppressed exactly this line.
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  assert_contains "$output" "resume capsule missing for in_progress task TASK-fence-resume-probe-01"
+
+  # Strict: the three findings the fence-blind probes invented about a document that
+  # declares no capsule at all.
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  refute_contains "$output" "resume_next_action is present but empty for in_progress task TASK-fence-resume-probe-01"
+  refute_contains "$output" "resume_last_verified is present but empty for in_progress task TASK-fence-resume-probe-01"
+  refute_contains "$output" "resume_state_revision is present but non-numeric for in_progress task TASK-fence-resume-probe-01"
+
+  # Positive twin: unfenced, all three are true of the document and must be reported.
+  _probe_task_file "fence-resume-probe-01" "in_progress" '- resume_next_action:
+- resume_last_verified:
+- resume_state_revision:'
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  assert_contains "$output" "resume_next_action is present but empty for in_progress task TASK-fence-resume-probe-01"
+  assert_contains "$output" "resume_last_verified is present but empty for in_progress task TASK-fence-resume-probe-01"
+  assert_contains "$output" "resume_state_revision is present but non-numeric for in_progress task TASK-fence-resume-probe-01"
+  refute_contains "$output" "resume capsule missing for in_progress task TASK-fence-resume-probe-01"
+}
+
+@test "validate_docs reports a fenced-only capsule field as missing rather than present-but-empty" {
+  # check_field_exists (advisory) and check_field_non_empty (strict) both probed presence
+  # fence-blind, so a quoted template made a field that is NOT in the capsule report as
+  # "present but empty" under strict and pass silently under advisory.
+  cat > "$DOCS_ROOT/task/TASK-fence-field-probe-01.md" <<'EOF'
+# TASK-fence-field-probe-01
+
+- title: Presence probe fixture
+- objective: a key that exists only inside a fence is not present
+- acceptance_criteria: the validator says missing, not empty
+- non_goals: none
+- affected_modules: docs
+- interfaces_changed: none
+- data_migrations: none
+- test_scope: validate_docs
+- risks: none
+- risk_level: low
+- consumes_plan_ref:
+- status: planned
+- owner: test
+- due_date:
+- axis_where: fixture
+- axis_verify: bats
+- last_updated: 2020-01-01T00:00:00Z
+
+## Quoted template
+
+```
+- axis_why: quoted example
+```
+EOF
+  _probe_task_index_row "## Planned" "- TASK-fence-field-probe-01 planned"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  assert_contains "$output" "axis_why is missing in task file: $DOCS_ROOT/task/TASK-fence-field-probe-01.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  assert_contains "$output" "axis_why is missing in task file: $DOCS_ROOT/task/TASK-fence-field-probe-01.md"
+  refute_contains "$output" "axis_why is present but empty in task file: $DOCS_ROOT/task/TASK-fence-field-probe-01.md"
+
+  # Positive twin for the other branch: a REAL but empty axis_why is still present-but-empty,
+  # so this is not a blanket downgrade of the empty-value rule.
+  perl -pi -e 's{^- axis_where: fixture$}{- axis_why:\n- axis_where: fixture}' \
+    "$DOCS_ROOT/task/TASK-fence-field-probe-01.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  assert_contains "$output" "axis_why is present but empty in task file: $DOCS_ROOT/task/TASK-fence-field-probe-01.md"
+  refute_contains "$output" "axis_why is missing in task file: $DOCS_ROOT/task/TASK-fence-field-probe-01.md"
+}
+
+@test "validate_docs answers key presence with the same column-0 anchor the value read uses" {
+  # The INDENTATION axis, the third way these two readers can disagree about one document
+  # (fence was r01, first-vs-any-occurrence was r02). field_key_present and
+  # extract_field_value both anchor at `^- `; the shared reader tolerates leading space and
+  # this one deliberately does not, which is a recorded residual. What is NOT allowed is
+  # for the two shell readers to disagree: widening only the probe makes an indented field
+  # "present" to the probe and empty to the reader, and the validator then says
+  # "present but empty" about a line that literally reads `  - axis_why: indented value`.
+  # r02's mutant B did exactly that and survived all 616 tests.
+  cat > "$DOCS_ROOT/task/TASK-indent-field-probe-01.md" <<'EOF'
+# TASK-indent-field-probe-01
+
+- title: Indentation probe fixture
+- objective: presence and value use one anchor
+- acceptance_criteria: the validator says missing, not empty
+- non_goals: none
+- affected_modules: docs
+- interfaces_changed: none
+- data_migrations: none
+- test_scope: validate_docs
+- risks: none
+- risk_level: low
+- consumes_plan_ref:
+- status: planned
+- owner: test
+- due_date:
+  - axis_why: indented value the column-0 reader cannot return
+- axis_where: fixture
+- axis_verify: bats
+- last_updated: 2020-01-01T00:00:00Z
+EOF
+  _probe_task_index_row "## Planned" "- TASK-indent-field-probe-01 planned"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  assert_contains "$output" "axis_why is missing in task file: $DOCS_ROOT/task/TASK-indent-field-probe-01.md"
+  refute_contains "$output" "axis_why is present but empty in task file: $DOCS_ROOT/task/TASK-indent-field-probe-01.md"
+
+  # Positive half: at column 0 the same line is read, and its VALUE is returned -- so the
+  # anchor is what decides, not the fixture being unreadable for some other reason.
+  perl -pi -e 's{^  - axis_why: indented value the column-0 reader cannot return$}{- axis_why: column-0 value}' \
+    "$DOCS_ROOT/task/TASK-indent-field-probe-01.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  refute_contains "$output" "axis_why is missing in task file: $DOCS_ROOT/task/TASK-indent-field-probe-01.md"
+  refute_contains "$output" "axis_why is present but empty in task file: $DOCS_ROOT/task/TASK-indent-field-probe-01.md"
+}
+
+# --- The pre-strip cache ---
+#
+# The cache decides which BYTES all 80 extract_field_value call sites read, so it is on the
+# correctness path, not the performance path. Its known failure mode has already been
+# observed once: keying the pre-strip on `doc.resolve()` misses every lookup on macOS,
+# where a workspace under /var/folders resolves to /private/var/folders. That mutant passed
+# the entire suite, which means the fix had no test binding at all.
+
+_python3_call_log_shim() {
+  # Log every python3 argv, then exec the real interpreter. Lets a test see WHICH python
+  # the validator spawned rather than only what it printed -- a cache miss is output-neutral.
+  local shim_dir="$1"
+  local log="$2"
+  local real_python3
+  real_python3="$(command -v python3)"
+  mkdir -p "$shim_dir"
+  cat > "$shim_dir/python3" <<SHIM
+#!/bin/sh
+printf '%s\n' "\$*" >> "$log"
+exec "$real_python3" "\$@"
+SHIM
+  chmod +x "$shim_dir/python3"
+}
+
+_on_demand_strip_count() {
+  # fence_stripped_file is the only python3 invocation shaped `- <doc>.md <scripts dir>`:
+  # the corpus pre-strip passes three arguments, and every other stdin-script call in the
+  # validator passes one, three or four. The positive control below proves this can match.
+  grep -cE '^- [^ ]+\.md [^ ]+$' "$1" 2>/dev/null || true
+}
+
+@test "the pre-strip cache is keyed by the walked docs path, so no field read re-strips" {
+  local shim_dir="$TEST_WORKSPACE/py-shim"
+  local log="$TEST_WORKSPACE/python3-argv.log"
+  local link="$TEST_WORKSPACE/project-link"
+
+  _python3_call_log_shim "$shim_dir" "$log"
+
+  # A docs root reached through a symlink, which is what every macOS run already is:
+  # `mktemp -d` yields /var/folders/... and Path.resolve() rewrites it to /private/var/...
+  # The extra hop makes the same divergence hold on filesystems where /tmp is not a link.
+  ln -s "$TEST_PROJECT" "$link"
+  mkdir -p "$DOCS_ROOT/shadow/apps"
+  cat > "$DOCS_ROOT/shadow/apps/_index.md" <<'EOF'
+# Shadow Bucket Index
+
+A unit overview looks like:
+
+```markdown
+- doc_role: unit_overview
+- bucket: widgets
+```
+
+- doc_role: bucket_index
+- bucket: not-apps
+- last_updated: 2026-08-01T00:00:00Z
+EOF
+
+  : > "$log"
+  run env PATH="$shim_dir:$PATH" "$VALIDATE" "$link" --mode advisory
+  [ "$status" -eq 0 ]
+  # Positive: the corpus pre-strip really ran, and it ran against the WALKED path.
+  assert_contains "$(cat "$log")" "- $link/docs "
+  # Positive: the cached bytes are the fence-stripped ones, so the read is fence-aware.
+  assert_contains "$output" "invalid bucket in shadow bucket index (apps): expected apps, found not-apps"
+  refute_contains "$output" "invalid doc_role in shadow bucket index (apps)"
+  # The binding assertion: a wrongly keyed pre-strip misses every lookup, and every field
+  # read then pays its own strip. Correct output, hundreds of spawns, 27s -> 39s.
+  assert_equal "$(_on_demand_strip_count "$log")" "0"
+
+  # Positive control for the counter itself: an assertion of "zero" is worthless unless
+  # the thing being counted is known to be countable.
+  : > "$log"
+  run env PATH="$shim_dir:$PATH" bash -c \
+    "unset FENCE_STRIP_CACHE; source '$SCRIPTS_DIR/validate_docs.d/10-parse.sh'; extract_field_value '$DOCS_ROOT/shadow/apps/_index.md' doc_role"
+  [ "$status" -eq 0 ]
+  assert_equal "$output" "bucket_index"
+  assert_equal "$(_on_demand_strip_count "$log")" "1"
+}
+
+@test "a zero-byte cache entry is refused and rebuilt instead of blanking every field" {
+  # In a real run the pre-strip covers the whole corpus, so the cache-HIT branch is the
+  # only one ever taken. It validated nothing: one truncated entry made extract_field_value
+  # return empty for every key on that document, which reads as a capsule with no metadata.
+  local doc="$TEST_WORKSPACE/capsule.md"
+  local cache="$TEST_WORKSPACE/fence-cache"
+  printf '# Capsule\n\n```\n- owner: quoted-example\n```\n\n- owner: real-owner\n' > "$doc"
+  mkdir -p "$cache/$(dirname "${doc#/}")"
+  : > "$cache/${doc#/}"
+
+  run bash -c \
+    "export FENCE_STRIP_CACHE='$cache'; source '$SCRIPTS_DIR/validate_docs.d/10-parse.sh'; extract_field_value '$doc' owner"
+  [ "$status" -eq 0 ]
+  assert_equal "$output" "real-owner"
+
+  # Positive: the poisoned entry was replaced by a real stripped copy, not merely bypassed.
+  assert_contains "$(cat "$cache/${doc#/}")" "- owner: real-owner"
+  refute_contains "$(cat "$cache/${doc#/}")" "quoted-example"
+}
+
+@test "a cache entry the source has outrun is refused, and a current one is still served" {
+  # r01 asked for a guard against "a zero-length OR older-than-source entry"; only the
+  # zero-length half shipped, so a document rewritten after the corpus pre-strip was
+  # answered from the pre-run snapshot for the rest of the run (r02 finding 7).
+  local doc="$TEST_WORKSPACE/capsule.md"
+  local cache="$TEST_WORKSPACE/fence-cache"
+  local entry
+
+  printf '# Capsule\n\n- owner: real-owner\n' > "$doc"
+  entry="$cache/${doc#/}"
+  mkdir -p "$(dirname "$entry")"
+
+  # Positive half FIRST, so the negative half below cannot pass by the cache being dead:
+  # an entry the source has NOT outrun is served verbatim, wrong value and all. That the
+  # stale value comes back here is the whole point of having a cache.
+  printf '# Capsule\n\n- owner: cached-owner\n' > "$entry"
+  touch "$doc"
+  sleep 1
+  touch "$entry"
+  run bash -c \
+    "export FENCE_STRIP_CACHE='$cache'; source '$SCRIPTS_DIR/validate_docs.d/10-parse.sh'; extract_field_value '$doc' owner"
+  [ "$status" -eq 0 ]
+  assert_equal "$output" "cached-owner"
+
+  # Negative half: the same entry, now demonstrably older than the document it describes.
+  printf '# Capsule\n\n- owner: cached-owner\n' > "$entry"
+  touch -t 200001010000 "$entry"
+  run bash -c \
+    "export FENCE_STRIP_CACHE='$cache'; source '$SCRIPTS_DIR/validate_docs.d/10-parse.sh'; extract_field_value '$doc' owner"
+  [ "$status" -eq 0 ]
+  assert_equal "$output" "real-owner"
+  # And it was rebuilt rather than merely bypassed, so the next read is fast again.
+  assert_contains "$(cat "$entry")" "- owner: real-owner"
+}
+
+@test "the corpus pre-strip terminates a fully fenced document with a newline, so zero bytes still means corrupt" {
+  # "Zero bytes means the entry is corrupt" is only true while EVERY writer ends its output
+  # with a newline. Drop the trailing newline from the corpus pre-strip and a document with
+  # no content lines at all -- a capsule that is entirely a quoted template -- writes a
+  # legitimate 0-byte entry, which the guard above then refuses on every read. The answer
+  # stays correct and the cache silently stops working for that document, which is exactly
+  # the regression class the cache exists to prevent and is invisible in the output.
+  # r02's mutant F survived all 616 tests.
+  local shim_dir="$TEST_WORKSPACE/py-shim"
+  local log="$TEST_WORKSPACE/python3-argv.log"
+  local doc="$DOCS_ROOT/task/TASK-all-fenced-01.md"
+
+  _python3_call_log_shim "$shim_dir" "$log"
+  # Line 1 opens the fence and the last line closes it: content_lines is empty.
+  printf '```markdown\n# TASK-all-fenced-01\n\n- title: quoted template\n- status: planned\n```\n' > "$doc"
+  _probe_task_index_row "## Planned" "- TASK-all-fenced-01 planned"
+
+  : > "$log"
+  run env PATH="$shim_dir:$PATH" "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  # Positive: the task rules really did read this document, so a strip really was needed.
+  assert_contains "$output" "task document size OK (6/220): $doc"
+  # Positive: and they read the STRIPPED bytes -- every field is inside the fence, so the
+  # capsule is empty, not "planned".
+  assert_contains "$output" "status is missing in task file: $doc"
+  # The binding assertion: the pre-strip's entry was usable, so no read re-stripped it.
+  assert_equal "$(grep -cE "^- $doc [^ ]+$" "$log" || true)" "0"
+
+  # Positive control: this document CAN be counted when it really is stripped on demand.
+  : > "$log"
+  run env PATH="$shim_dir:$PATH" bash -c \
+    "unset FENCE_STRIP_CACHE; source '$SCRIPTS_DIR/validate_docs.d/10-parse.sh'; extract_field_value '$doc' status"
+  [ "$status" -eq 0 ]
+  assert_equal "$output" ""
+  assert_equal "$(grep -cE "^- $doc [^ ]+$" "$log" || true)" "1"
+}
+
+@test "a cache entry becomes visible only when complete, so a concurrent read never sees half a document" {
+  # The shell strip writes to "<entry>.strip.$$" and renames. Without the staging step a
+  # reader that arrives mid-write finds a NON-EMPTY prefix of the document, which the
+  # usable-guard accepts -- every field below the write point then reads as absent, on a
+  # document that has them. Only a reader racing the writer can see the difference, so
+  # that is what this builds; r02's mutant G survived all 616 tests.
+  local doc="$TEST_WORKSPACE/capsule.md"
+  local cache="$TEST_WORKSPACE/fence-cache"
+  local shim_dir="$TEST_WORKSPACE/slow-py"
+  local writer_pid
+
+  # Fence-free, so a plain copy IS the correct stripped output and the slow shim below
+  # stays an honest stand-in for the real strip rather than a wrong one.
+  printf '# Capsule\n\n- owner: real-owner\n- reviewer: real-reviewer\n' > "$doc"
+  mkdir -p "$cache" "$shim_dir"
+  cat > "$shim_dir/python3" <<'SHIM'
+#!/bin/sh
+# Stand-in for the strip: emit the first half, stall, emit the rest. $2 is the source
+# document (the real call is `python3 - <src> <scripts dir>` with the script on stdin).
+head -n 3 "$2"
+sleep 3
+tail -n +4 "$2"
+SHIM
+  chmod +x "$shim_dir/python3"
+
+  (
+    export FENCE_STRIP_CACHE="$cache"
+    export PATH="$shim_dir:$PATH"
+    # shellcheck disable=SC1090
+    source "$SCRIPTS_DIR/validate_docs.d/10-parse.sh"
+    fence_stripped_file "$doc"
+  ) >/dev/null 2>&1 &
+  writer_pid=$!
+
+  sleep 1
+  # Mid-write: the first half is on disk somewhere. `reviewer` lives in the second half.
+  run env PATH="$shim_dir:$PATH" bash -c \
+    "export FENCE_STRIP_CACHE='$cache'; source '$SCRIPTS_DIR/validate_docs.d/10-parse.sh'; extract_field_value '$doc' reviewer"
+  [ "$status" -eq 0 ]
+  assert_equal "$output" "real-reviewer"
+
+  wait "$writer_pid" || true
+  # Positive: the entry that was finally published is the whole document, and the staging
+  # file did not survive as cache litter.
+  assert_contains "$(cat "$cache/${doc#/}")" "- reviewer: real-reviewer"
+  assert_equal "$(find "$cache" -name '*.strip.*' | wc -l | tr -d ' ')" "0"
+}
+
+@test "a failed strip degrades to the original document rather than to an empty one" {
+  # The "on ANY failure keep the original path" guard was unreachable: zero strips ran in a
+  # full validator run. Pointing SCRIPT_DIR at a directory with no shadow_doc_parse makes
+  # the strip fail for real, and the answer must degrade to the fence-BLIND value -- wrong
+  # about fences, but a document's metadata -- never to nothing at all.
+  local doc="$TEST_WORKSPACE/capsule.md"
+  local cache="$TEST_WORKSPACE/fence-cache"
+  printf '# Capsule\n\n```\n- owner: quoted-example\n```\n\n- owner: real-owner\n' > "$doc"
+  mkdir -p "$cache/$(dirname "${doc#/}")" "$TEST_WORKSPACE/no-shared-reader"
+  : > "$cache/${doc#/}"
+
+  run bash -c \
+    "export FENCE_STRIP_CACHE='$cache' SCRIPT_DIR='$TEST_WORKSPACE/no-shared-reader'; source '$SCRIPTS_DIR/validate_docs.d/10-parse.sh'; extract_field_value '$doc' owner"
+  [ "$status" -eq 0 ]
+  assert_equal "$output" "quoted-example"
+}
+
 @test "validate_docs advisory surfaces an indented unit overview instead of skipping it" {
   mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
   printf '# Shadow Unit Overview\n  - doc_role: unit_overview\n  - last_updated: 2026-01-01T00:00:00Z\n' \
@@ -3888,6 +4680,57 @@ p.write_text(p.read_text().replace("- x", "- billing-service:\n  - overview_doc:
 PY
 
   run "$VALIDATE" "$parent" --mode advisory
+  refute_contains "$output" "shadow graph is empty"
+}
+
+@test "empty-graph gate is not silenced by a unit row quoted inside a fence" {
+  # The two halves of check_shadow_empty_graph read the same bucket _index.md:
+  # bucket_index_has_units and shadow_tree_has_source_declarations. The second was
+  # fence-aware on purpose and the first was blind, so a quoted example unit row --
+  # exactly what a bucket index is expected to explain to its next reader -- manufactured
+  # `[PASS] shadow graph is not empty` on a corpus that documents nothing, and the strict
+  # FAIL disappeared. A bare scaffold cannot reproduce it: the gate returns early unless a
+  # git source root has trackable files outside docs/, which is why this fixture commits
+  # src.py first.
+  local parent="$TEST_WORKSPACE/fenced-unit"
+  mkdir -p "$parent"
+  "$INIT_SCAFFOLD" "$parent" >/dev/null
+  git -C "$parent" init --quiet
+  printf 'x=1\n' > "$parent/src.py"
+  git -C "$parent" add -A
+  git -C "$parent" -c user.email=t@t -c user.name=t commit -qm init
+
+  # Control: the untouched scaffold declares no unit, so the gate must fire. Without this
+  # the fenced case below could pass for the wrong reason.
+  run "$VALIDATE" "$parent" --mode strict
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "[FAIL] shadow graph is empty"
+
+  python3 - "$parent/docs/shadow/apps/_index.md" <<'PY'
+import sys
+from pathlib import Path
+p = Path(sys.argv[1])
+p.write_text(p.read_text().replace(
+    "- no units detected yet",
+    "```markdown\n- billing-service:\n  - overview_doc: apps/billing-service/overview.md\n```"))
+PY
+
+  run "$VALIDATE" "$parent" --mode strict
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "[FAIL] shadow graph is empty"
+
+  # Positive half: the same bytes unfenced are a real declaration and must silence it,
+  # so this is fence awareness and not a blanket refusal to see units.
+  python3 - "$parent/docs/shadow/apps/_index.md" <<'PY'
+import sys
+from pathlib import Path
+p = Path(sys.argv[1])
+p.write_text(p.read_text().replace("```markdown\n", "").replace(
+    "  - overview_doc: apps/billing-service/overview.md\n```",
+    "  - overview_doc: apps/billing-service/overview.md"))
+PY
+
+  run "$VALIDATE" "$parent" --mode strict
   refute_contains "$output" "shadow graph is empty"
 }
 

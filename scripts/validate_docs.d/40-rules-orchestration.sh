@@ -310,7 +310,21 @@ check_orchestration_semantic_contradictions() {
 # `/tmp/` path references. Deliberately does NOT touch docs/report/* or any
 # external-cli *.response.md payload: external tool responses legitimately
 # quote arbitrary filesystem paths that are not durable-doc references. Skips
-# fenced code examples using the same fence-aware idiom as extract_shadow_field.
+# fenced code examples.
+#
+# The fence rule below is the CommonMark one the shared reader implements (see
+# `content_lines` in scripts, the recorded decision): a block closes only
+# on a marker of the SAME character and at least the length of the opener, and this
+# awk is asserted equal to it by test. It used to toggle on ANY marker, which is the
+# exact bug the recorded decision exists to end and which
+# extract_shadow_field is on record as having escaped -- a `~~~` line inside a
+# ``` example flipped the state, so this rule reported a gitignored `/tmp/` path
+# on a line the shared reader sees as fence content, and would have missed a real
+# reference in the mirror case (the task r02 finding 8,
+# reproduced). It stays awk rather than delegating: it must scan the whole file
+# list in ONE pass, and the fence-stripped cache is keyed per file, so consuming
+# it here would mean a spawn or a re-read per document.
+#
 # One awk pass over the whole file list, not two process substitutions per file:
 # on bash 3.2 (stock macOS) the per-file nested form corrupted the shell heap and
 # killed the run with a fatal signal in a later phase once a corpus exceeded a
@@ -333,8 +347,21 @@ check_tmp_path_references() {
       find "$PLAN_DIR" -maxdepth 1 -type f -name '*.md' 2>/dev/null
       find "$ORCHESTRATION_DIR" -mindepth 2 -maxdepth 2 -type f \( -name 'INDEX.md' -o -name 'ORCH.md' \) 2>/dev/null
     } | sort | tr '\n' '\0' | xargs -0 awk '
-      FNR == 1 { infence = 0 }
-      /^[[:space:]]*(```|~~~)/ { infence = !infence; next }
+      FNR == 1 { infence = 0; fchar = ""; flen = 0 }
+      /^[[:space:]]*(```|~~~)/ {
+        # Same rule as the shared reader: remember which character
+        # opened the block and how long the run was, and close only on a marker
+        # of that character with at least that length. A shorter or different
+        # marker inside the block is content, not a closer.
+        marker = $0
+        sub(/^[[:space:]]*/, "", marker)
+        mchar = substr(marker, 1, 1)
+        mlen = 0
+        while (substr(marker, mlen + 1, 1) == mchar) { mlen++ }
+        if (infence == 0) { infence = 1; fchar = mchar; flen = mlen }
+        else if (mchar == fchar && mlen >= flen) { infence = 0; fchar = ""; flen = 0 }
+        next
+      }
       infence { next }
       {
         # The two classes are INDEPENDENT: one line can reference both a tmp/

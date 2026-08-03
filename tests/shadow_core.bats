@@ -2458,6 +2458,96 @@ EOF
   assert_contains "$output" "must not create reserved shadow navigation paths"
 }
 
+@test "shadow_effect_writer reads the target doc_role outside fences, both directions" {
+  # leading_metadata_value used to read `- doc_role:` fence-blind, so a document that
+  # merely QUOTED the effect-map header passed target_role_blockers with no blockers and
+  # the writer would append records to it -- while the validator, which reads doc_role
+  # through the shared reader, would never check that file as an effect map. Both
+  # directions are asserted: refusing everything would satisfy half of this test on its
+  # own.
+  local candidate_file="$TEST_WORKSPACE/candidate.json"
+  local decision_file="$TEST_WORKSPACE/decision.json"
+  local record_file="$TEST_WORKSPACE/record.json"
+  local draft_file="$TEST_WORKSPACE/draft.md"
+  local target_file="$DOCS_ROOT/shadow/packages/codeguide/effects.md"
+
+  mkdir -p "$(dirname "$target_file")"
+  printf 'Draft for fenced target role check\n' > "$draft_file"
+  python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --output "$candidate_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "src/UserService.java:42" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  local candidate_id
+  candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
+  cat > "$decision_file" <<EOF
+{"user_decision":{"id":"UD-021","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id","SE-user-021"],"rationale":"Approve fenced target role check.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$record_file" <<EOF
+{"record_id":"SE-user-021","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"unknown","effect_type":"db_write","statement":"Fenced doc_role must not decide the target role.","reason":"Fence-aware target role guard.","anchor":{"file":"src/UserService.java","symbol":"UserRepository.save"},"source_refs":["src/UserService.java:42"]}
+EOF
+
+  # A unit overview that only QUOTES the effect-map header is not an effect map.
+  cat > "$target_file" <<'EOF'
+# Shadow Unit Overview
+
+An effect map opens like this:
+
+```markdown
+- doc_role: effect_map
+```
+
+- doc_role: unit_overview
+- home_bucket: packages
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "target shadow file must declare doc_role: effect_map"
+
+  # The mirror: a genuine effect map that quotes another role above its own field, with
+  # the fence markers INDENTED, must still be writable. The match is on the stripped
+  # line, so this shape tripped the old reader where the shell reader's `^- ` anchor
+  # happened to survive it.
+  cat > "$target_file" <<'EOF'
+# Shadow Effects
+
+Not to be confused with a unit overview:
+
+  ```markdown
+  - doc_role: unit_overview
+  ```
+
+- doc_role: effect_map
+- generated_by: test
+EOF
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 0 ]
+  assert_contains "$output" '"status":"ok"'
+  refute_contains "$output" "target shadow file must declare doc_role: effect_map"
+}
+
 @test "shadow_effect_writer rejects malformed record refs and existing markers" {
   local candidate_file="$TEST_WORKSPACE/candidate.json"
   local decision_file="$TEST_WORKSPACE/decision.json"

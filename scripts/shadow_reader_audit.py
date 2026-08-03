@@ -36,8 +36,16 @@ SHARED = "shadow_doc_parse"
 SHADOW_REF = re.compile(r"docs/shadow|SHADOW_DIR|shadow_dir|shadow_root")
 # ...or implements the shadow document grammar without naming the tree. A generic
 # helper handed a shadow path by its caller is a reader by USE: extract_field_value
-# in validate_docs.d/10-parse.sh names no shadow path and is the worst reader we have.
-DOC_GRAMMAR = re.compile(r"""\^\s*-\s|\^- |- \$\{?key|chr\(96\)|```|~~~""")
+# in validate_docs.d/10-parse.sh names no shadow path, and was the worst reader we
+# had until the task delegated it to the shared reader.
+#
+# `\^-\\` is the bash `[[ =~ ]]` spelling of the same column-0 bullet anchor, where the
+# space after the dash has to be backslash-escaped: `^-\ (TASK-...)`. It was missing, so
+# the file holding the task-index row walk was a candidate only for as long as some
+# unrelated fence literal happened to sit in it, and dropped out the moment one was
+# removed. A discovery rule whose
+# coverage depends on a comment is the spelling-keyed sweep this audit replaced.
+DOC_GRAMMAR = re.compile(r"""\^\s*-\s|\^- |\^-\\|- \$\{?key|chr\(96\)|```|~~~""")
 # Reads document text. Shell readers count via the tools they use on a path.
 DOC_READ = re.compile(
     r"read_text|readlines|\.open\(|open\(|rglob|iterdir|"
@@ -64,28 +72,12 @@ EXCLUSIONS = {
         "Operates on task/plan/orchestration capsules and resume checkpoints, not on shadow "
         "fields. Its markdown reads never resolve a shadow reference."
     ),
-    "scripts/validate_docs.d/10-parse.sh": (
-        "KNOWN LIVE DIVERGENCE, NOT a clean exclusion. extract_field_value is a fence-blind "
-        "`grep -E \"^- key:\" | head -1` used on shadow documents, so a fenced example can "
-        "win over the real field: a bucket _index.md quoting the unit-overview template "
-        "reports doc_role=unit_overview where the shared reader returns bucket_index. "
-        "Rewiring its call sites changes strict-mode findings and needs its own before/after "
-        "evidence. Tracked by the task."
-    ),
-    "scripts/validate_docs.sh": (
-        "Call site of the reader above, not a reader itself: it holds no field grammar and "
-        "reads shadow fields only through extract_field_value. Moves with "
-        "the task."
-    ),
-    "scripts/shadow_effect_writer.py": (
-        "KNOWN NARROWER DIVERGENCE, NOT a clean exclusion. leading_metadata_value reads "
-        "`- doc_role:` from a shadow effect_map with no fence awareness, so a fenced example "
-        "inside the leading metadata block can answer for the real field. Bounded to the "
-        "first 80 lines and to text before the first `## ` heading, which makes it much "
-        "harder to trip than extract_field_value but not impossible. The effect-map grammar "
-        "is out of boundary by the recorded decision; this `doc_role` guard is not "
-        "effect-map-specific. Tracked by the task."
-    ),
+    # scripts/validate_docs.d/10-parse.sh, scripts/validate_docs.sh and
+    # scripts/shadow_effect_writer.py were listed here as KNOWN LIVE DIVERGENCES tracked by
+    # The task. That task rewired extract_field_value and
+    # leading_metadata_value onto the shared reader, so all three now classify as `direct`
+    # and an exclusion for them would be dead text -- see the "Shadowed exclusions" report.
+    #
     # The rest read structured payloads or non-shadow capsules. None resolves a shadow
     # field out of shadow markdown, so none can produce the driver failure mode -- one
     # document, two rules, opposite verdicts.
@@ -102,10 +94,31 @@ EXCLUSIONS = {
     "scripts/run_external_plan_reviews.sh": (
         "Writes and parses external-review handoff files under docs/orchestration; reads no shadow field."
     ),
-    "scripts/validate_docs.d/30-rules-task.sh": "Task/plan capsule rules; reads no shadow field.",
+    # Rewriting this file's private `^- key:` probes as field_key_present calls briefly
+    # dropped it out of the candidate set entirely -- no shadow path named, no DOC_GRAMMAR
+    # match left -- and the audit then printed it as a STALE exclusion where HEAD printed
+    # nothing. Coverage that shrinks as a side effect of a fix is a finding, not a cleanup
+    # The reason below is rewritten to
+    # say what the file is TODAY rather than left as inherited text.
+    "scripts/validate_docs.d/30-rules-task.sh": (
+        "Task/plan capsule rules; reads no shadow field. Its `- key:` field reads and "
+        "presence probes go through 10-parse.sh (extract_field_value / field_key_present), "
+        "which delegate the fence rule to the shared reader. What it still owns is the "
+        "task-index ROW grammar, `^- (TASK-...)`, which is not the `- key:` field grammar "
+        "and is not a shadow document -- it walks the fence-stripped copy so it agrees "
+        "with task_index_row_present, and the binding for that is behavioral, in "
+        "'validate_docs reads a task-index row quoted inside a fence as no row at all'."
+    ),
     "scripts/validate_docs.d/40-rules-orchestration.sh": (
-        "Orchestration capsule rules with their own awk grammar over task/plan/orchestration "
-        "docs. Out of boundary by the recorded decision."
+        "Orchestration capsule rules over task/plan/orchestration docs, not shadow documents. "
+        "Its `- key:` reads go through 10-parse.sh. It keeps ONE private grammar, the awk in "
+        "check_tmp_path_references, because that rule must scan the whole file list in a "
+        "single pass (the tracked issue) and the fence-stripped cache "
+        "is keyed per file. It no longer DIVERGES: the task replaced "
+        "its toggle-on-any-marker state machine with the same CommonMark opener-character/"
+        "length rule the shared reader uses, asserted equal to it by test rather than by "
+        "naming it. Naming it would flip this file to `direct` on a COMMENT, which is the "
+        "audit criterion's known weakness, not evidence of agreement."
     ),
 }
 
@@ -205,6 +218,16 @@ def main(argv: list[str]) -> int:
     print("## Stale exclusions")
     for rel in sorted(set(EXCLUSIONS) - listed):
         print(f"- {rel}: excluded but no longer detected as a shadow-document reader")
+
+    # An exclusion for a file that now reaches the shared reader is not merely dead text:
+    # it is a silent safety net. Remove the delegation later and the file falls back to
+    # "excluded" on the strength of a reason nobody re-read, instead of surfacing as
+    # UNCLASSIFIED. The task produced three of these by making
+    # their files compliant; this report is what stopped them from going unnoticed.
+    print("## Shadowed exclusions")
+    for rel, verdict in rows:
+        if rel in EXCLUSIONS and verdict in ("direct", "transitive"):
+            print(f"- {rel}: excluded but already reaches {SHARED} ({verdict}); drop the exclusion")
 
     return 1 if unclassified else 0
 

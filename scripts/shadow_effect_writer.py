@@ -20,6 +20,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import shadow_doc_parse  # DRY: one shared answer for what a fence is
+
 from shadow_apply_gate import (
     candidate_blockers,
     decision_blockers,
@@ -1624,7 +1627,23 @@ def upsert_record(existing: str, target_ref: str, rendered: str, record_id: str)
 
 
 def leading_metadata_value(existing: str, field_name: str) -> str:
-    for line in existing.splitlines()[:80]:
+    """First `- field:` value in the leading metadata block, fenced examples excluded.
+
+    Fence awareness is not cosmetic here: this feeds target_role_blockers, the guard
+    that decides whether the writer may append effect records to a file. Fence-blind,
+    a unit overview that merely QUOTES the effect-map header passed the guard with no
+    blockers, so records landed in a document the validator -- which reads doc_role
+    through the shared reader -- never checks as an effect map. The mirror case blocked
+    a genuine effect map that quoted another role above its own field. Because the match
+    is on the STRIPPED line, an indented example tripped it too, which the `^- ` anchored
+    shell reader was accidentally immune to.
+
+    The window (80 lines, stop at the first real `## `) and the first-match rule are
+    unchanged; only fenced lines are removed, using the one shared fence rule rather than
+    a second private one (the recorded decision). A `## ` inside a fence no
+    longer ends the scan, which is the same correction in the other direction.
+    """
+    for line in shadow_doc_parse.content_lines(existing.splitlines()[:80]):
         stripped = line.strip()
         if stripped.startswith("## "):
             break

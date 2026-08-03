@@ -202,6 +202,50 @@ source "$SCRIPT_DIR/codeguide_paths.sh"
 
 PROJECT_ROOT_ABS="$(codeguide_resolve_project_root "$PROJECT_ROOT")"
 DOCS_DIR="$(codeguide_docs_root "$PROJECT_ROOT_ABS")"
+
+FENCE_STRIP_CACHE="$(mktemp -d)"
+export FENCE_STRIP_CACHE
+# The cache holds a full plaintext copy of the docs corpus, so it gets a trap the moment
+# it exists rather than only at the secret-scan trap 600 lines below: there is an explicit
+# `exit 1` and an errexit surface in between.
+trap 'rm -rf ${FENCE_STRIP_CACHE:+"$FENCE_STRIP_CACHE"}' EXIT
+# Strip the whole corpus in ONE python pass. Per-file stripping measured 3.2x the
+# baseline validator run (31s -> 100s) because a field read happens hundreds of times
+# and every miss paid a process spawn; one pass up front makes every read a plain grep
+# against the cache, which is what the reads were before fence awareness.
+python3 - "$DOCS_DIR" "$FENCE_STRIP_CACHE" "$SCRIPT_DIR" <<'PRESTRIP' 2>/dev/null || true
+import sys
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[3])
+sys.dont_write_bytecode = True
+import shadow_doc_parse
+
+docs_dir = Path(sys.argv[1])
+cache = Path(sys.argv[2])
+for doc in docs_dir.rglob("*.md"):
+    try:
+        lines = doc.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        continue
+    # Key on the path AS WALKED, never doc.resolve(): the shell side looks the file
+    # up by the path it holds, which is built from DOCS_DIR. On macOS a test workspace
+    # under /var/folders is a symlink to /private/var/folders, so a resolved key misses
+    # every single lookup and every field read silently falls back to a python spawn --
+    # correct output, 100-115s instead of 29s, which is the exact regression this cache
+    # exists to prevent.
+    dest = cache / str(doc).lstrip("/")
+    # Stage then rename: a partial write must never become a served cache entry. The
+    # shell side additionally refuses a zero-byte entry, but the two together are what
+    # make "the cache is either absent or complete" true rather than merely likely.
+    staged = dest.with_name(dest.name + ".part")
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        staged.write_text("\n".join(shadow_doc_parse.content_lines(lines)) + "\n", encoding="utf-8")
+        staged.replace(dest)
+    except OSError:
+        continue
+PRESTRIP
 TASK_DIR="$DOCS_DIR/task"
 TASK_CLAIMS_DIR="$TASK_DIR/.claims"
 SHADOW_DIR="$DOCS_DIR/shadow"
@@ -225,7 +269,7 @@ PASS_COUNT=0
 VALIDATE_JSON_RECORD_FILE=""
 if [[ "$VALIDATE_FORMAT" == "json" ]]; then
   VALIDATE_JSON_RECORD_FILE="$(mktemp)"
-  trap 'rm -f "$VALIDATE_JSON_RECORD_FILE"' EXIT
+  trap 'rm -f "$VALIDATE_JSON_RECORD_FILE"; rm -rf ${FENCE_STRIP_CACHE:+"$FENCE_STRIP_CACHE"}' EXIT
 fi
 
 # Rule modules: themed function libraries split from this file (audit P1).
@@ -294,7 +338,7 @@ if [[ -d "$ORCHESTRATION_DIR" ]]; then
     if [[ ! -f "$orchestration_capsule_task_file" ]]; then
       fail "orphaned orchestration capsule with no matching task file: ${orchestration_task_dir} (expected ${orchestration_capsule_task_file})"
     fi
-    if [[ -f "$TASK_DIR/task-index.md" ]] && ! grep -qE "^- TASK-${orchestration_task_id} " "$TASK_DIR/task-index.md" 2>/dev/null; then
+    if [[ -f "$TASK_DIR/task-index.md" ]] && ! task_index_row_present "$TASK_DIR/task-index.md" "TASK-${orchestration_task_id}"; then
       fail "orphaned orchestration capsule: task-index missing row for TASK-${orchestration_task_id} (capsule: ${orchestration_task_dir})"
     fi
 
@@ -427,6 +471,10 @@ if [[ -d "$TASK_DIR" ]]; then
     task_ref="${task_base%.md}"
     task_id="${task_ref#TASK-}"
     task_status="$(extract_field_value "$task_file" "status")"
+    # Compare only the first token: some task files append a trailing parenthetical
+    # note after the enum value (e.g. "done (Phase 1 r02...)"). Read ONCE here so
+    # every status-conditioned rule below is answered by the same value.
+    task_status_primary="${task_status%% *}"
     task_risk_level="$(normalize_risk_level_value "$(extract_field_value "$task_file" "risk_level")")"
     orchestration_mode=""
     adversarial_source=""
@@ -450,15 +498,20 @@ if [[ -d "$TASK_DIR" ]]; then
     check_enum_membership "$task_status" "task.status" "$task_file" planned in_progress blocked done superseded cancelled || true
     check_enum_membership "$task_risk_level" "task.risk_level" "$task_file" low medium high critical || true
 
-    # Freshness check for in_progress tasks
-    if grep -qE "^- status:.*in_progress" "$task_file" 2>/dev/null; then
+    # Freshness check for in_progress tasks. This asks the VALUE, not a second regex
+    # over the document: there is one status reader, so there is nothing left to
+    # diverge. A probe here was wrong twice for two different reasons -- fence-blind,
+    # it read a quoted template as the status; then fence-aware but ANY-LINE, it read a
+    # later `- status: in_progress` on a document whose status is the FIRST one, and
+    # emitted "in-progress task is stale" in a run whose every other rule said
+    # `planned`.
+    if [[ "$task_status_primary" == "in_progress" ]]; then
       check_freshness_days "$task_file" "$MAX_TASK_AGE_DAYS" "in-progress task"
     fi
 
     # Concurrent session claim contract: recommended (not required) so existing
     # task corpora predating this contract are not broken. See DOC-GOVERNANCE.md
     # "Concurrent session claim contract".
-    task_status_primary="${task_status%% *}"
     if [[ "$task_status_primary" == "in_progress" ]]; then
       task_owner="$(extract_field_value "$task_file" "owner")"
       task_claimed_at="$(extract_field_value "$task_file" "claimed_at")"
@@ -509,7 +562,7 @@ if [[ -d "$TASK_DIR" ]]; then
 
     # Task-index consistency: verify task appears in task-index.md
     if [[ -f "$TASK_DIR/task-index.md" ]]; then
-      if ! grep -qE "^- ${task_ref} " "$TASK_DIR/task-index.md" 2>/dev/null; then
+      if ! task_index_row_present "$TASK_DIR/task-index.md" "$task_ref"; then
         fail "task-index missing row for ${task_ref}"
       fi
     fi
@@ -582,7 +635,7 @@ if [[ -d "$DECISIONS_DIR" ]]; then
 
     # Decision-index consistency (supports both section-based and legacy table format)
     if [[ -f "$DECISIONS_DIR/decision-index.md" ]]; then
-      if ! grep -qE "(^- ${decision_base_escaped} \\||^\\| ${decision_base_escaped} \\|)" "$DECISIONS_DIR/decision-index.md" 2>/dev/null; then
+      if ! decision_index_row_present "$DECISIONS_DIR/decision-index.md" "$decision_base_escaped"; then
         fail "decision index missing row for ${decision_base}"
       fi
     fi
@@ -774,7 +827,13 @@ fi
 
 # --- Secret scanning ---
 TMP_SECRET_REPORT="$(mktemp)"
-trap 'rm -f "$TMP_SECRET_REPORT" ${VALIDATE_JSON_RECORD_FILE:+"$VALIDATE_JSON_RECORD_FILE"}' EXIT
+# FENCE_STRIP_CACHE is NOT created here -- it is created far above, right after DOCS_DIR,
+# because most field reads happen before this point and creating it here measured
+# 100-115s against a 29-30s baseline. It is only torn down here, together with the secret
+# report, by the one trap in the shell that owns the run: a trap set inside
+# fence_stripped_file (10-parse.sh) would fire at the end of whatever subshell first
+# called it, since every caller reaches that function through `$( ... )`.
+trap 'rm -f "$TMP_SECRET_REPORT" ${VALIDATE_JSON_RECORD_FILE:+"$VALIDATE_JSON_RECORD_FILE"}; rm -rf ${FENCE_STRIP_CACHE:+"$FENCE_STRIP_CACHE"}' EXIT
 
 redact_secret_report() {
   perl -pe '
