@@ -218,6 +218,74 @@ EOF
   refute_contains "$output" "app-b"
 }
 
+@test "rationale report does not close a backtick fence on a tilde marker" {
+  # The divergence that the task exists to end. The report used
+  # to toggle fence state on ANY marker, so `~~~` closed the block and the closing
+  # backtick reopened one that ran to end of file: the example leaked out and the
+  # real field below was swallowed. Both errors are asserted here.
+  _capsule report-mixed-01 accepted
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: apps
+
+```
+- linked_decisions: docs/decisions/decision-nowhere-99.md
+~~~
+```
+
+- linked_decisions: docs/decisions/decision-report-mixed-01.md
+- last_updated: 2026-08-01T00:00:00Z
+EOF
+  run RATIONALE --project-root "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "decision-nowhere-99.md"
+  assert_contains "$output" "shadow_docs_with_rationale: 1"
+  assert_contains "$output" "docs/decisions/decision-report-mixed-01.md [accepted]"
+  assert_contains "$output" "problems: 0"
+}
+
+@test "a fence boundary breaks the linked_decisions header-to-bullet binding" {
+  # content_lines() drops fenced lines but hides that a block happened, which would
+  # bind an indented bullet to a header on the far side of the fence. scan() reports
+  # the boundary, which is the rule check_shadow_navigation_links already applies.
+  # Both directions in one test, so it cannot pass by the rule doing nothing:
+  # app-a has a fence between header and bullet (must stay silent), app-b has the
+  # genuine adjacent nested form (must still fire).
+  _capsule report-bind-01 accepted
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a" "$DOCS_ROOT/shadow/apps/app-b"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: apps
+- linked_decisions:
+
+```
+example block
+```
+
+  - docs/decisions/decision-report-bind-01.md
+- last_updated: 2026-08-01T00:00:00Z
+EOF
+  cat > "$DOCS_ROOT/shadow/apps/app-b/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: apps
+- linked_decisions:
+  - docs/decisions/decision-report-bind-01.md
+- last_updated: 2026-08-01T00:00:00Z
+EOF
+  run RATIONALE --project-root "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "docs/shadow/apps/app-a/overview.md: must be an inline comma list"
+  assert_contains "$output" "docs/shadow/apps/app-b/overview.md: must be an inline comma list"
+  assert_contains "$output" "problems: 1"
+}
+
 @test "rationale report ignores a second linked_decisions occurrence" {
   _capsule report-first-01 accepted
   _capsule report-second-01 accepted

@@ -14,8 +14,14 @@ Two modes over ONE parser:
   --lint     tab-separated findings for `check_shadow_linked_decisions` in
              validate_docs.d/20-rules-shadow.sh, which turns them into
              fail/soft_warn lines. Same lineage as shadow_source_digest.py
-             --check, and the reason the grammar cannot drift between the
-             validator and the report: there is only one implementation of it.
+             --check.
+
+The grammar cannot drift between the validator and the report because neither one
+implements it: fences, binding boundaries, and `- key:` values all come from
+shadow_doc_parse (the recorded decision). This file held its own copy of
+that grammar until the task -- a copy that closed a ``` block on
+a `~~~` line, so the one validator rule fed by this tool read shadow documents by a
+different rule than every other shadow rule did.
 
 Deterministic and READ-ONLY: it parses docs and prints; it never writes shadow
 content, never edits a capsule, and never infers an edge from prose.
@@ -35,6 +41,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True  # keep the tool read-only: no .pyc writes into scripts/
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from codeguide_paths import resolve_project_root  # DRY: same git-root/skill-parent resolution as the sibling reports
+import shadow_doc_parse  # DRY: one shared answer for fences and field values
 
 FIELD = "linked_decisions"
 DECISION_DIR = "docs/decisions"
@@ -44,50 +51,39 @@ NOT_A_CAPSULE = ("decision-index.md", "decision-template.md")
 CARRIER_ROLES = ("unit_overview", "concern_leaf")
 SKIP_TREES = ("_deprecated", "_obsolete")
 
-_fence = chr(96) * 3
-_tilde_fence = "~" * 3
+# Structural patterns only. "What is a fence" and "what is a `- key:` value" are
+# not answered here: those live in shadow_doc_parse, so this tool and the validator
+# rule that consumes its --lint output cannot reach opposite verdicts on one line.
 _field_inline_re = re.compile(r"^\s*-\s*" + FIELD + r"\s*:\s*(\S.*?)\s*$")
 _field_header_re = re.compile(r"^(\s*)-\s*" + FIELD + r"\s*:\s*$")
-_bullet_re = re.compile(r"^(\s*)-\s+(\S.*?)\s*$")
-_doc_role_re = re.compile(r"^\s*-\s*doc_role\s*:\s*(\S.*?)\s*$")
-_status_re = re.compile(r"^\s*-\s*status\s*:\s*(\S.*?)\s*$")
+# `(.*?)`, not `(\S.*?)`: an empty `- ` member is still a member of the nested form.
+# Requiring non-space here made this loop stop binding where the navigation-link loop
+# (20-rules-shadow.sh) and shadow_nav_graph_report.py both kept binding -- the two
+# readers agreed on fences and disagreed on binding, which is the same defect one axis
+# over. The three bullet patterns are now identical; changing one without the others
+# reopens it.
+_bullet_re = re.compile(r"^(\s*)-\s+(.*?)\s*$")
 
 
 class DocReadError(Exception):
     """A corpus file could not be read; callers turn this into exit 2."""
 
 
-def content_lines(lines: list[str]):
-    """Yield lines outside fenced blocks (backtick or tilde), mirroring extract_shadow_field."""
-    in_fence = False
-    for line in lines:
-        stripped = line.lstrip()
-        if stripped.startswith(_fence) or stripped.startswith(_tilde_fence):
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            continue
-        yield line
-
-
-def first_field(lines: list[str], pattern: re.Pattern) -> str:
-    """First non-empty value outside fences. A second occurrence is ignored by design."""
-    for line in content_lines(lines):
-        match = pattern.match(line)
-        if match:
-            return match.group(1).strip()
-    return ""
-
-
 def has_nested_form(lines: list[str]) -> bool:
     """True when a bare `linked_decisions:` header is followed by a deeper bullet.
 
-    Only the bullets that actually follow the header count, and fenced examples are
-    invisible: an unrelated indented bullet further down the doc must not be read
-    as a member (the same binding rule the navigation-link scanner uses).
+    Only the bullets that actually follow the header count, and a fence boundary
+    breaks the binding: an indented bullet after a fenced example must not be read
+    as a member of a header before the fence. That is the binding rule the
+    navigation-link scanner uses, and it is the same rule here because both walk
+    shadow_doc_parse.scan() -- content_lines() alone hides the boundary, which would
+    leave this reader agreeing with the validator on fences and disagreeing on binding.
     """
     pending_indent = -1
-    for line in content_lines(lines):
+    for kind, line in shadow_doc_parse.scan(lines):
+        if kind == "boundary":
+            pending_indent = -1
+            continue
         if _field_inline_re.match(line):
             pending_indent = -1
             continue
@@ -154,14 +150,14 @@ def scan(project_root: Path, shadow_dir: Path):
     for doc in shadow_docs(shadow_dir):
         lines = read_lines(doc)
         doc_label = label_for(doc, project_root)
-        raw = first_field(lines, _field_inline_re)
+        raw = shadow_doc_parse.field_value(lines, FIELD)
 
         if not raw:
             if has_nested_form(lines):
                 findings.append(("nested", doc_label, ""))
             continue
 
-        role = first_field(lines, _doc_role_re)
+        role = shadow_doc_parse.field_value(lines, "doc_role")
         if role not in CARRIER_ROLES:
             findings.append(("role", doc_label, role or "none"))
             continue
@@ -191,7 +187,7 @@ def scan(project_root: Path, shadow_dir: Path):
                 findings.append(("dangling", doc_label, entry))
                 continue
 
-            status = first_field(read_lines(target), _status_re)
+            status = shadow_doc_parse.field_value(read_lines(target), "status")
             if status == "accepted":
                 pass
             elif status == "superseded":
@@ -258,7 +254,7 @@ def main(argv: list[str]) -> int:
         uncited = sorted(
             label_for(capsule, project_root)
             for capsule in capsules
-            if first_field(read_lines(capsule), _status_re) == "accepted"
+            if shadow_doc_parse.field_value(read_lines(capsule), "status") == "accepted"
             and label_for(capsule, project_root) not in cited_by
         )
     except DocReadError as exc:

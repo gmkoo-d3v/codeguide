@@ -4733,6 +4733,43 @@ EOF
   refute_contains "$output" "shadow linked_decisions"
 }
 
+@test "the nav-link and linked_decisions rules agree on a tilde marker inside a backtick block" {
+  # One document, two rules, one fence grammar. Both a navigation reference and a
+  # rationale edge sit inside the SAME block, whose closing backtick line follows a
+  # `~~~` line. A reader that closes on any marker sees the block end early (leaking
+  # the examples) and then reopens at the real closing fence (swallowing the fields
+  # below), so the two rules would disagree about every line in this file.
+  _rationale_capsule rationale-agree-01 accepted
+  mkdir -p "$DOCS_ROOT/shadow/apps/app-a"
+  cat > "$DOCS_ROOT/shadow/apps/app-a/overview.md" <<'EOF'
+# Shadow Unit Overview
+
+- doc_role: unit_overview
+- home_bucket: apps
+
+```
+- next_docs: nowhere-nav-example.md
+- linked_decisions: docs/decisions/decision-nowhere-example-01.md
+~~~
+```
+
+- next_docs: apps/app-a/really-missing.md
+- linked_decisions: docs/decisions/decision-rationale-agree-01.md
+- last_updated: 2026-08-01T00:00:00Z
+EOF
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  # Neither rule reports anything it read inside the block ...
+  refute_contains "$output" "nowhere-nav-example.md"
+  refute_contains "$output" "decision-nowhere-example-01.md"
+  # ... and BOTH read past it. One positive assertion per rule, so a rule that has
+  # stopped reporting altogether fails this test instead of passing it: the nav-link
+  # half is the dangling reference below the fence, the rationale half is the PASS
+  # line, which only prints when the parser counted a real declaration.
+  assert_contains "$output" "really-missing.md"
+  assert_contains "$output" "shadow linked_decisions resolve to operative decision capsules"
+}
+
 @test "validate_docs strict mode skips the linked_decisions check entirely" {
   _rationale_overview "docs/decisions/decision-nowhere-01.md"
   run "$VALIDATE" "$TEST_PROJECT" --mode strict

@@ -71,7 +71,6 @@ runtime_envelope_v1_matrix = {
     ("binary", "none", None, "whole_artifact"),
     ("binary", "custom-declared", "binary", "whole_artifact"),
 }
-bt = chr(96)
 issues = []
 open_id = None
 fields = {}
@@ -755,7 +754,6 @@ bullet_re = re.compile(r"^(\s*)-\s+(.*?)\s*$")
 # stops the greedy match at Markdown link punctuation, so [label](auth.md) and
 # <auth.md> both yield the bare path auth.md rather than a garbled token.
 token_re = re.compile(r"[A-Za-z0-9._/-]+\.md\b")
-fence = chr(96) * 3
 
 
 def resolves(ref_file: Path, token: str) -> bool:
@@ -1069,7 +1067,6 @@ MAX_LEN = 250
 # A floor, not proof of usefulness: it only rules out degenerate values that cannot
 # discriminate anything. No check can prove a sentence actually distinguishes a unit.
 MIN_LEN = 12
-fence = chr(96) * 3
 
 unit_re = re.compile(r"^-\s+([A-Za-z0-9._-]+)\s*:\s*$")
 child_re = re.compile(r"^\s+-\s*([a-z_]+)\s*:\s*(.*?)\s*$")
