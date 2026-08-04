@@ -36,7 +36,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from codeguide_paths import _git_toplevel, source_root_for  # DRY: shared source-repo resolution policy
-from shadow_source_digest import read_source_paths  # DRY: same parser as the digest tool
+from shadow_source_digest import source_paths_for_doc  # DRY: same parser AND the same line rule as the digest tool
 
 
 def project_root_from(raw: str) -> Path:
@@ -167,10 +167,9 @@ def main(argv: list[str]) -> int:
         if rel_parts and rel_parts[0] in ("_deprecated", "_obsolete"):
             continue
         try:
-            lines = doc.read_text(encoding="utf-8", errors="replace").splitlines()
+            declared = source_paths_for_doc(doc)
         except OSError:
             continue
-        declared = read_source_paths(lines)
         if not declared:
             continue
         any_declared_paths = True

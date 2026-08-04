@@ -166,6 +166,14 @@ check_issue_tracker_integrity() {
   local issue_file
   local issue_base
   local issue_id
+  # The two index probes are `issue_index_row_present` (10-parse.sh), beside the task-index
+  # and decision-index row helpers and with the same contract: it takes a LITERAL id, does
+  # its own ERE escaping, and reads the fence-stripped copy. Both halves were live defects
+  # here -- `ISSUE-2026.01.01-x` matched the row `ISSUE-2026x01x01-x` (escaping axis, closed
+  # last round at this call site), and a row that existed only inside a quoted example
+  # silenced "missing index row" entirely (fence axis, the task r01
+  # finding 4). Escaping at the call site and greping the raw file was how one got closed
+  # and the other did not; the helper is what keeps them together.
   local issue_status
   local resolved_at
   local resolution_doc_field
@@ -190,7 +198,7 @@ check_issue_tracker_integrity() {
         fail "issue ${issue_base} is status: resolved but still lives in docs/issues/current/ (move it to docs/issues/resolved/ with a paired RESOLUTION doc)"
       fi
 
-      if [[ -f "$ISSUE_TRACKER_CURRENT_DIR/README.md" ]] && ! grep -qE "\|[[:space:]]*${issue_id}(\.md)?[[:space:]]*\|" "$ISSUE_TRACKER_CURRENT_DIR/README.md" 2>/dev/null; then
+      if [[ -f "$ISSUE_TRACKER_CURRENT_DIR/README.md" ]] && ! issue_index_row_present "$ISSUE_TRACKER_CURRENT_DIR/README.md" "$issue_id"; then
         fail "docs/issues/current/README.md missing index row for ${issue_base}"
       fi
     done < <(find "$ISSUE_TRACKER_CURRENT_DIR" -maxdepth 1 -type f -name 'ISSUE-*.md' | sort)
@@ -221,7 +229,7 @@ check_issue_tracker_integrity() {
         fail "resolved issue ${issue_base} has no paired resolution doc: expected ${resolution_file}"
       fi
 
-      if [[ -f "$ISSUE_TRACKER_RESOLVED_DIR/README.md" ]] && ! grep -qE "\|[[:space:]]*${issue_id}(\.md)?[[:space:]]*\|" "$ISSUE_TRACKER_RESOLVED_DIR/README.md" 2>/dev/null; then
+      if [[ -f "$ISSUE_TRACKER_RESOLVED_DIR/README.md" ]] && ! issue_index_row_present "$ISSUE_TRACKER_RESOLVED_DIR/README.md" "$issue_id"; then
         fail "docs/issues/resolved/README.md missing index row for ${issue_base}"
       fi
     done < <(find "$ISSUE_TRACKER_RESOLVED_DIR" -maxdepth 1 -type f -name 'ISSUE-*.md' | sort)

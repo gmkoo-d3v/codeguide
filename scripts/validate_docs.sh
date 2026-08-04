@@ -225,7 +225,7 @@ docs_dir = Path(sys.argv[1])
 cache = Path(sys.argv[2])
 for doc in docs_dir.rglob("*.md"):
     try:
-        lines = doc.read_text(encoding="utf-8", errors="replace").splitlines()
+        lines = shadow_doc_parse.read_lines(doc)
     except OSError:
         continue
     # Key on the path AS WALKED, never doc.resolve(): the shell side looks the file
@@ -601,7 +601,6 @@ fi
 if [[ -d "$DECISIONS_DIR" ]]; then
   while IFS= read -r decision_file; do
     decision_base="$(basename "$decision_file")"
-    decision_base_escaped="$(escape_ere_literal "$decision_base")"
     decision_scope_type="$(extract_field_value "$decision_file" "scope_type")"
     decision_status="$(extract_field_value "$decision_file" "status")"
     decision_risk_level="$(normalize_risk_level_value "$(extract_field_value "$decision_file" "risk_level")")"
@@ -635,7 +634,7 @@ if [[ -d "$DECISIONS_DIR" ]]; then
 
     # Decision-index consistency (supports both section-based and legacy table format)
     if [[ -f "$DECISIONS_DIR/decision-index.md" ]]; then
-      if ! decision_index_row_present "$DECISIONS_DIR/decision-index.md" "$decision_base_escaped"; then
+      if ! decision_index_row_present "$DECISIONS_DIR/decision-index.md" "$decision_base"; then
         fail "decision index missing row for ${decision_base}"
       fi
     fi

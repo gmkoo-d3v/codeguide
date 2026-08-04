@@ -23,6 +23,25 @@ AUDIT() {
   # behavior tests in validate_docs.bats and shadow_core.bats, not here.
   assert_contains "$output" "scripts/validate_docs.d/10-parse.sh: direct"
   assert_contains "$output" "scripts/shadow_effect_writer.py: direct"
+  # The two WRITERS of the same capsules. doc_garden.sh sat in EXCLUSIONS on "not on shadow
+  # fields", the reason the task rejected for the reader, while it
+  # rewrote a fenced example as if it were the real field; run_external_plan_reviews.sh sat
+  # there on a polarity conflict that was a reason to SPLIT its one helper, not to leave the
+  # ORCH.md writer fence-blind. Both now reach the shared
+  # reader through the ONE sourced shell adapter, so both are `transitive` -- and asserting
+  # that is what makes the audit understand a `source` edge instead of losing a reader every
+  # time a duplicated helper is de-duplicated into a shared file.
+  assert_contains "$output" "scripts/doc_garden.sh: transitive"
+  assert_contains "$output" "scripts/run_external_plan_reviews.sh: transitive"
+  assert_contains "$output" "scripts/codeguide_doc_lines.sh: direct"
+  # The shared module itself, which became a candidate when it grew read_lines(). A module
+  # cannot import itself, so this classification is by identity, not by naming.
+  assert_contains "$output" "scripts/shadow_doc_parse.py: direct"
+  # Discovery must not depend on a comment: deleting the duplicated fence state machine
+  # from this file removed its last ``` literal -- which lived in the deleted docstring --
+  # and dropped a live delegating reader out of the candidate set until the candidate rule
+  # was widened to "names the shared reader".
+  assert_contains "$output" "scripts/shadow_source_digest.py: direct"
 }
 
 @test "shadow reader audit reports an exclusion that is already compliant" {
@@ -107,4 +126,54 @@ print('impact: %s' % rows['scripts/shadow_impact_report.py'])
   [ "$status" -eq 0 ]
   assert_contains "$output" "coverage: transitive"
   assert_contains "$output" "impact: transitive"
+}
+
+@test "shadow reader audit does not certify a shell reader on a COMMENT mention" {
+  # DISCOVERY may use a comment -- naming the shared reader anywhere puts a file in the set
+  # that must be classified, and widening a candidate set only adds work. CLASSIFICATION is
+  # the opposite: `direct` means the file would still reach the reader if every `source`
+  # edge were cut, and a sentence of prose does not. The two were the same substring test,
+  # so adding a comment to `run_external_plan_reviews.sh` about what happens "with
+  # shadow_doc_parse.py absent" silently promoted it from `transitive` to `direct` on the
+  # strength of the explanation. Asserted on a FIXTURE
+  # rather than on that comment, so rewording it cannot quietly unbind this.
+  local fake_skill="$TEST_WORKSPACE/comment-skill"
+  cp -R "$SCRIPTS_DIR/.." "$fake_skill"
+  local reader="$fake_skill/scripts/comment_only_reader.sh"
+  # Reads a shadow document (so it is a candidate), names the shared reader ONLY in a
+  # comment, and reaches it through nothing.
+  cat > "$reader" <<'SH'
+# A reader that mentions shadow_doc_parse only in prose, never in code.
+# doc_role: read from docs/shadow via grep, no shared reader involved.
+comment_only_field() {
+  grep -E "^- doc_role:" "$1" | head -n 1
+}
+SH
+
+  run python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPTS_DIR')
+import shadow_reader_audit as A
+sys.exit(A.main(['--skill-root', '$fake_skill']))
+"
+  # It must NOT come back certified. UNCLASSIFIED is the loud answer and the right one:
+  # the file really does read a shadow document and really does not reach the shared reader.
+  refute_contains "$output" "scripts/comment_only_reader.sh: direct"
+  assert_contains "$output" "scripts/comment_only_reader.sh: UNCLASSIFIED"
+  [ "$status" -ne 0 ]
+
+  # Positive half: the same file naming the reader in CODE is certified, so this is about
+  # comments and not about the file being a fixture.
+  cat > "$reader" <<'SH'
+comment_only_field() {
+  python3 -c "import shadow_doc_parse" && grep -E "^- doc_role:" "$1" | head -n 1
+}
+SH
+  run python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPTS_DIR')
+import shadow_reader_audit as A
+sys.exit(A.main(['--skill-root', '$fake_skill']))
+"
+  assert_contains "$output" "scripts/comment_only_reader.sh: direct"
 }

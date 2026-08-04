@@ -435,6 +435,337 @@ EOF
   refute_contains "$output" "gitignored tmp/ path"
 }
 
+@test "validate_docs and the tmp-scan awk agree that a form feed is not a line ending" {
+  # The LINE-BOUNDARY axis, created by the round that made every `- key:` reader share a
+  # fence rule and not a LINE rule: `str.splitlines()` breaks on VT, FF, FS, GS, RS, NEL,
+  # U+2028 and U+2029 while grep, awk, sed and wc -l break on `\n` alone
+  # CommonMark settles it -- a form feed
+  # is not a line ending -- so the shared reader splits on `\n` and the two halves of this
+  # document must now answer identically about whether a fence is open.
+  printf '%s\n' \
+    '# PLAN-ffawk-01-v1.0' \
+    '' \
+    '- task_id: ffawk-01' \
+    '- plan_version: v1.0' \
+    '- objective: a form feed before a fence marker opens no fence' \
+    '- scope: fixture' \
+    '- owner: test' > "$DOCS_ROOT/plan/PLAN-ffawk-01-v1.0.md"
+  printf 'prefix\014%s\n' '```' >> "$DOCS_ROOT/plan/PLAN-ffawk-01-v1.0.md"
+  printf '%s\n' \
+    'scratch lives at /tmp/ffawk-scratch/run.log' \
+    '- last_updated: 2026-01-01T00:00:00Z' >> "$DOCS_ROOT/plan/PLAN-ffawk-01-v1.0.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  # The awk half: no fence is open, so the gitignored path is a real reference.
+  assert_contains "$output" "docs reference a gitignored tmp/ path (${DOCS_ROOT}/plan/PLAN-ffawk-01-v1.0.md:"
+  # The shared-reader half, on the same line of the same document: no fence is open, so
+  # the field BELOW is still visible. A splitlines-based reader treats the marker as its
+  # own line, opens a block, and swallows the rest of the document.
+  refute_contains "$output" "last_updated is missing in plan: ${DOCS_ROOT}/plan/PLAN-ffawk-01-v1.0.md"
+
+  # Positive half, both readers in the other direction: with a real newline in place of
+  # the form feed the fence DOES open, so the path becomes fence content and the field
+  # below becomes invisible. Neither half is asserting a constant.
+  perl -pi -e 's{^prefix\x0c}{prefix\n}' "$DOCS_ROOT/plan/PLAN-ffawk-01-v1.0.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  refute_contains "$output" "docs reference a gitignored tmp/ path (${DOCS_ROOT}/plan/PLAN-ffawk-01-v1.0.md:"
+  assert_contains "$output" "last_updated is missing in plan: ${DOCS_ROOT}/plan/PLAN-ffawk-01-v1.0.md"
+}
+
+@test "validate_docs does not read a form feed as the start of a new field line" {
+  # r03's arrangement. `prefix<FF>- status: <value>` is ONE line to a markdown reader and
+  # to grep, and it is not a list item at all -- so the field below it is the document's
+  # status. A splitlines-derived copy makes the fragment its own line and answers with a
+  # value no reader of the rendered document could see.
+  {
+    printf '%s\n' \
+      '# TASK-ffline-01' \
+      '' \
+      '- title: Form feed field fixture' \
+      '- objective: a form feed does not start a field line' \
+      '- acceptance_criteria: the value below the fragment wins' \
+      '- non_goals: none' \
+      '- affected_modules: docs' \
+      '- interfaces_changed: none' \
+      '- data_migrations: none' \
+      '- test_scope: validate_docs' \
+      '- risks: none' \
+      '- risk_level: low' \
+      '- consumes_plan_ref:'
+    printf 'prefix\014- status: ff_only_status\n'
+    printf '%s\n' \
+      '- status: planned' \
+      '- owner: test' \
+      '- due_date:' \
+      '- axis_why: fixture' \
+      '- axis_where: fixture' \
+      '- axis_verify: bats' \
+      '- last_updated: 2020-01-01T00:00:00Z'
+  } > "$DOCS_ROOT/task/TASK-ffline-01.md"
+  _probe_task_index_row "## Planned" "- TASK-ffline-01 planned"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  refute_contains "$output" "invalid task.status value in $DOCS_ROOT/task/TASK-ffline-01.md: ff_only_status"
+  # ...and the value that DID win is the one every other rule sees.
+  refute_contains "$output" "task-index section mismatch for TASK-ffline-01"
+
+  # Positive half: with a real newline in place of the form feed the fragment becomes a
+  # column-0 field line, wins as the first occurrence, and is rejected by the enum.
+  perl -pi -e 's{^prefix\x0c}{}' "$DOCS_ROOT/task/TASK-ffline-01.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "invalid task.status value in $DOCS_ROOT/task/TASK-ffline-01.md: ff_only_status"
+}
+
+@test "validate_docs reads a field value to the end of the physical line" {
+  # The supervisor's arrangement, which points the OTHER way: with the control character
+  # INSIDE a matching line, `- status: planned<FF>trailing` is a single list item whose
+  # text runs to the end of the physical line, so the value is not `planned` and the enum
+  # must say so. A splitlines-derived copy truncates at the control character and silently
+  # accepts a value the document does not contain. Establishing both arrangements is what
+  # decided the direction: `\n` is the CommonMark answer in each.
+  {
+    printf '%s\n' \
+      '# TASK-ffvalue-01' \
+      '' \
+      '- title: Form feed value fixture' \
+      '- objective: a value runs to the end of the physical line' \
+      '- acceptance_criteria: the enum sees the whole line' \
+      '- non_goals: none' \
+      '- affected_modules: docs' \
+      '- interfaces_changed: none' \
+      '- data_migrations: none' \
+      '- test_scope: validate_docs' \
+      '- risks: none' \
+      '- risk_level: low' \
+      '- consumes_plan_ref:'
+    printf -- '- status: planned\014trailing\n'
+    printf '%s\n' \
+      '- owner: test' \
+      '- due_date:' \
+      '- axis_why: fixture' \
+      '- axis_where: fixture' \
+      '- axis_verify: bats' \
+      '- last_updated: 2020-01-01T00:00:00Z'
+  } > "$DOCS_ROOT/task/TASK-ffvalue-01.md"
+  _probe_task_index_row "## Planned" "- TASK-ffvalue-01 planned"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "invalid task.status value in $DOCS_ROOT/task/TASK-ffvalue-01.md:"
+
+  # Positive half: drop the tail and the same line is a clean, accepted value, so the
+  # finding above comes from the tail rather than from the fixture being broken.
+  perl -pi -e 's{^- status: planned\x0ctrailing$}{- status: planned}' "$DOCS_ROOT/task/TASK-ffvalue-01.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  refute_contains "$output" "invalid task.status value in $DOCS_ROOT/task/TASK-ffvalue-01.md:"
+}
+
+@test "validate_docs and the tmp-scan awk agree that a carriage return is not a line ending" {
+  # The SAME fixture as the form-feed case above with one byte changed, and it is the byte
+  # that matters: 0 of the 870 markdown files in this repo carry any of the eight extra
+  # `splitlines` break characters and 12 carry a CR (all CRLF, all under
+  # codeguide/references/, none under docs/). The shared reader promised in its own
+  # docstring that a `\r` is KEPT, and `read_lines` threw it away one line later because
+  # `Path.read_text` opens in universal-newline mode -- so the axis the round declared
+  # closed was open on the only character this repo actually contains
+  #
+  printf '%s\n' \
+    '# PLAN-crawk-01-v1.0' \
+    '' \
+    '- task_id: crawk-01' \
+    '- plan_version: v1.0' \
+    '- objective: a carriage return before a fence marker opens no fence' \
+    '- scope: fixture' \
+    '- owner: test' > "$DOCS_ROOT/plan/PLAN-crawk-01-v1.0.md"
+  printf 'prefix\015%s\n' '```' >> "$DOCS_ROOT/plan/PLAN-crawk-01-v1.0.md"
+  printf '%s\n' \
+    'scratch lives at /tmp/crawk-scratch/run.log' \
+    '- last_updated: 2026-01-01T00:00:00Z' >> "$DOCS_ROOT/plan/PLAN-crawk-01-v1.0.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  # The awk half: no fence is open, so the gitignored path is a real reference.
+  assert_contains "$output" "docs reference a gitignored tmp/ path (${DOCS_ROOT}/plan/PLAN-crawk-01-v1.0.md:"
+  # The shared-reader half, on the same line of the same document.
+  refute_contains "$output" "last_updated is missing in plan: ${DOCS_ROOT}/plan/PLAN-crawk-01-v1.0.md"
+
+  # Positive half: a real newline in place of the CR opens the fence for BOTH readers.
+  perl -pi -e 's{^prefix\x0d}{prefix\n}' "$DOCS_ROOT/plan/PLAN-crawk-01-v1.0.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  refute_contains "$output" "docs reference a gitignored tmp/ path (${DOCS_ROOT}/plan/PLAN-crawk-01-v1.0.md:"
+  assert_contains "$output" "last_updated is missing in plan: ${DOCS_ROOT}/plan/PLAN-crawk-01-v1.0.md"
+}
+
+@test "validate_docs does not read a carriage return as the start of a new field line" {
+  # r03's arrangement in the CR spelling. `prefix<CR>- status: <value>` is ONE line to grep
+  # and to sed, so the field below it is the document's status. Reproduced against the
+  # shipped code before this fix: strict printed `invalid task.status value ...:
+  # cr_only_status` plus a task-index section mismatch.
+  {
+    printf '%s\n' \
+      '# TASK-crline-01' \
+      '' \
+      '- title: Carriage return field fixture' \
+      '- objective: a carriage return does not start a field line' \
+      '- acceptance_criteria: the value below the fragment wins' \
+      '- non_goals: none' \
+      '- affected_modules: docs' \
+      '- interfaces_changed: none' \
+      '- data_migrations: none' \
+      '- test_scope: validate_docs' \
+      '- risks: none' \
+      '- risk_level: low' \
+      '- consumes_plan_ref:'
+    printf 'prefix\015- status: cr_only_status\n'
+    printf '%s\n' \
+      '- status: planned' \
+      '- owner: test' \
+      '- due_date:' \
+      '- axis_why: fixture' \
+      '- axis_where: fixture' \
+      '- axis_verify: bats' \
+      '- last_updated: 2020-01-01T00:00:00Z'
+  } > "$DOCS_ROOT/task/TASK-crline-01.md"
+  _probe_task_index_row "## Planned" "- TASK-crline-01 planned"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  refute_contains "$output" "invalid task.status value in $DOCS_ROOT/task/TASK-crline-01.md: cr_only_status"
+  refute_contains "$output" "task-index section mismatch for TASK-crline-01"
+
+  # Positive half: with the fragment removed the value becomes a column-0 field line, wins
+  # as the first occurrence, and is rejected by the enum.
+  perl -pi -e 's{^prefix\x0d}{}' "$DOCS_ROOT/task/TASK-crline-01.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "invalid task.status value in $DOCS_ROOT/task/TASK-crline-01.md: cr_only_status"
+}
+
+@test "validate_docs reads a field value to the end of a line carrying a carriage return" {
+  # The other arrangement in the CR spelling: `- status: planned<CR>trailing` is one list
+  # item whose text runs to the end of the physical line, so the value is not `planned` and
+  # the enum must say so. A universal-newline read truncates at the control character and
+  # silently accepts a value the document does not contain.
+  {
+    printf '%s\n' \
+      '# TASK-crvalue-01' \
+      '' \
+      '- title: Carriage return value fixture' \
+      '- objective: a value runs to the end of the physical line' \
+      '- acceptance_criteria: the enum sees the whole line' \
+      '- non_goals: none' \
+      '- affected_modules: docs' \
+      '- interfaces_changed: none' \
+      '- data_migrations: none' \
+      '- test_scope: validate_docs' \
+      '- risks: none' \
+      '- risk_level: low' \
+      '- consumes_plan_ref:'
+    printf -- '- status: planned\015trailing\n'
+    printf '%s\n' \
+      '- owner: test' \
+      '- due_date:' \
+      '- axis_why: fixture' \
+      '- axis_where: fixture' \
+      '- axis_verify: bats' \
+      '- last_updated: 2020-01-01T00:00:00Z'
+  } > "$DOCS_ROOT/task/TASK-crvalue-01.md"
+  _probe_task_index_row "## Planned" "- TASK-crvalue-01 planned"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "invalid task.status value in $DOCS_ROOT/task/TASK-crvalue-01.md:"
+
+  # Positive half: drop the tail and the same line is a clean, accepted value.
+  perl -pi -e 's{^- status: planned\x0dtrailing$}{- status: planned}' "$DOCS_ROOT/task/TASK-crvalue-01.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  refute_contains "$output" "invalid task.status value in $DOCS_ROOT/task/TASK-crvalue-01.md:"
+}
+
+@test "validate_docs closes a shared-reader fence only on a marker at least as long as the opener" {
+  # CommonMark: a block opened with four backticks is not closed by three. The rule lived
+  # in the shared reader with nothing behind it -- r03 measured it for the tmp-scan awk
+  # only, and dropping the length comparison from `_fence_walk` left the whole suite green
+  # Without it the inner 3-backtick line
+  # closes the block, the quoted `- status: EXAMPLE` becomes the FIRST unfenced status, and
+  # the enum rejects it.
+  {
+    printf '%s\n' \
+      '# TASK-fencelen-01' \
+      '' \
+      '- title: Fence length fixture' \
+      '- objective: a shorter marker inside a longer fence is content' \
+      '- acceptance_criteria: the real status wins' \
+      '- non_goals: none' \
+      '- affected_modules: docs' \
+      '- interfaces_changed: none' \
+      '- data_migrations: none' \
+      '- test_scope: validate_docs' \
+      '- risks: none' \
+      '- risk_level: low' \
+      '- consumes_plan_ref:' \
+      '````' \
+      '```' \
+      '- status: EXAMPLE' \
+      '````' \
+      '- status: planned' \
+      '- owner: test' \
+      '- due_date:' \
+      '- axis_why: fixture' \
+      '- axis_where: fixture' \
+      '- axis_verify: bats' \
+      '- last_updated: 2020-01-01T00:00:00Z'
+  } > "$DOCS_ROOT/task/TASK-fencelen-01.md"
+  _probe_task_index_row "## Planned" "- TASK-fencelen-01 planned"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  refute_contains "$output" "invalid task.status value in $DOCS_ROOT/task/TASK-fencelen-01.md: EXAMPLE"
+
+  # Positive half: shorten the opener to three backticks and the inner marker really does
+  # close the block, so the quoted value becomes visible and IS rejected. The assertion
+  # above is therefore about the opener length and not about the fixture being inert.
+  perl -pi -e 's{^````$}{```}' "$DOCS_ROOT/task/TASK-fencelen-01.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "invalid task.status value in $DOCS_ROOT/task/TASK-fencelen-01.md: EXAMPLE"
+}
+
+@test "validate_docs reads an issue-tracker index row quoted inside a fence as no row at all" {
+  # The two issue-index probes were ESCAPED last round and left fence-BLIND on the same two
+  # lines, while the task-index and decision-index row probes beside them read the stripped
+  # copy. Reproduced: a row that exists only inside a quoted "Row format" example produced
+  # NO finding at all. Both halves now live
+  # in one helper with one contract: a literal id, escaped internally, against the stripped
+  # copy.
+  mkdir -p "$DOCS_ROOT/issues/current"
+  cat > "$DOCS_ROOT/issues/current/ISSUE-20260804-fencedrow.md" <<'EOF'
+# ISSUE-20260804-fencedrow
+
+- status: open
+- summary: fixture
+EOF
+  cat > "$DOCS_ROOT/issues/current/README.md" <<'EOF'
+# Current issues
+
+Row format (quoted example)
+
+```
+| ISSUE-20260804-fencedrow.md | open | fixture |
+```
+
+| id | status | summary |
+| --- | --- | --- |
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  assert_contains "$output" "docs/issues/current/README.md missing index row for ISSUE-20260804-fencedrow.md"
+
+  # Positive half: a REAL row outside the fence silences it, so the finding above is about
+  # the fence and not about the probe never matching.
+  printf '| ISSUE-20260804-fencedrow.md | open | fixture |\n' >> "$DOCS_ROOT/issues/current/README.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  refute_contains "$output" "docs/issues/current/README.md missing index row for ISSUE-20260804-fencedrow.md"
+}
+
 @test "validate_docs closes a tmp-scan fence only on a same-character marker" {
   # The third private fence grammar in the tree, and it carried the toggle-on-any-marker
   # bug that the recorded decision exists to end: a `~~~` inside a ``` example
@@ -3037,6 +3368,52 @@ PY
   assert_contains "$output" "task-index missing row for TASK-idx-bare-01-extra"
 }
 
+@test "validate_docs does not read a longer task-index ref as the row for a shorter one" {
+  # The ROW BOUNDARY, in the direction nothing tested. 10-parse.sh names this exact case
+  # in a comment -- "a ref ends at whitespace or end of line, so `- TASK-foo-2 planned` is
+  # not a row for TASK-foo" -- and r03 deleted the `([[:space:]]|$)` group behind it and
+  # watched all 627 tests stay green (mutant M2). Without the boundary the probe answers
+  # "row present" from a row the WALK attributes to a different task, which is the
+  # one-document-two-readers contradiction this line of work exists to end.
+  _probe_task_file "bnd-01" "planned" "none"
+  _probe_task_index_row "## Planned" "- TASK-bnd-01-extra planned"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "task-index missing row for TASK-bnd-01"
+  # The walk's side of the same row, so the disagreement is visible rather than implied.
+  assert_contains "$output" "task-index row for TASK-bnd-01-extra has no matching task file"
+
+  # Positive half: the row for the ref ITSELF is found, so the boundary is a boundary and
+  # not a blanket refusal.
+  perl -pi -e 's{^- TASK-bnd-01-extra planned$}{- TASK-bnd-01 planned}' "$DOCS_ROOT/task/task-index.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  refute_contains "$output" "task-index missing row for TASK-bnd-01"
+}
+
+@test "validate_docs does not accept a task-index row that differs from the ref only where an unescaped dot would match" {
+  # The ESCAPING axis, absent from the axis table until now. `task_index_row_present`
+  # interpolated the ref into an ERE RAW while its sibling `decision_index_row_present`
+  # eight lines below took pre-escaped input, so a probe for `TASK-esc.dot-01` matched the
+  # row `- TASK-escxdot-01`: "task-index missing row" silenced, while the walk -- whose
+  # charset `[A-Za-z0-9._-]` explicitly permits the dot -- captured a DIFFERENT ref
+  # No rule forbids a dotted task
+  # filename. Both helpers take a literal and escape internally now.
+  _probe_task_file "esc.dot-01" "planned" "none"
+  _probe_task_index_row "## Planned" "- TASK-escxdot-01 planned"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "task-index missing row for TASK-esc.dot-01"
+  assert_contains "$output" "task-index row for TASK-escxdot-01 has no matching task file"
+
+  # Positive half: the REAL row, dot and all, is still found -- escaping must not turn the
+  # probe into something that never matches.
+  perl -pi -e 's{^- TASK-escxdot-01 planned$}{- TASK-esc.dot-01 planned}' "$DOCS_ROOT/task/task-index.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  refute_contains "$output" "task-index missing row for TASK-esc.dot-01"
+}
+
 # ========== Issue tracker current/resolved consistency ==========
 
 @test "validate_docs strict fails when a current issue is marked resolved" {
@@ -3086,6 +3463,39 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   [ "$status" -ne 0 ]
   assert_contains "$output" "docs/issues/current/README.md missing index row for ISSUE-20260101-no-row.md"
+}
+
+@test "validate_docs does not accept an issue index row that differs from the id only where an unescaped dot would match" {
+  # The escaping axis has a SECOND site, which r03 did not name: the issue-tracker index
+  # probes interpolate a FILENAME-derived id into an ERE with no escaping, exactly like the
+  # task-ref probe did. Found by re-deriving the axis rather than working the reported list.
+  cat > "$DOCS_ROOT/issues/current/ISSUE-2026.01.01-dot.md" <<'EOF'
+# ISSUE-2026.01.01-dot
+
+- title: Dotted id fixture
+- status: open
+- severity: low
+- area: docs
+- owner: test
+- created_at: 2026-01-01
+- last_seen_at: 2026-01-01
+- detected_by: test
+- related_files:
+- related_endpoints:
+- security_note:
+- resolved_at:
+- resolution_doc:
+EOF
+  printf '| ISSUE-2026x01x01-dot.md | open | low | docs | test |\n' >> "$DOCS_ROOT/issues/current/README.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "docs/issues/current/README.md missing index row for ISSUE-2026.01.01-dot.md"
+
+  # Positive half: the row for the real id, dots included, is found.
+  printf '| ISSUE-2026.01.01-dot.md | open | low | docs | test |\n' >> "$DOCS_ROOT/issues/current/README.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  refute_contains "$output" "docs/issues/current/README.md missing index row for ISSUE-2026.01.01-dot.md"
 }
 
 @test "validate_docs strict fails when a resolved issue has no paired resolution doc" {
@@ -4294,6 +4704,77 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode strict
   refute_contains "$output" "axis_why is missing in task file: $DOCS_ROOT/task/TASK-indent-field-probe-01.md"
   refute_contains "$output" "axis_why is present but empty in task file: $DOCS_ROOT/task/TASK-indent-field-probe-01.md"
+}
+
+@test "validate_docs answers a field VALUE with the same column-0 anchor the presence probe uses" {
+  # The MIRROR of the test above, and the half nothing covered. That test asserts an
+  # indented-only field reports "missing", which the still-narrow PROBE delivers on its
+  # own -- so widening extract_field_value alone left all 627 tests green (r03 mutant M21)
+  # while 10-parse.sh:251-254 claimed "the bats case ... fails otherwise". This half asks
+  # the VALUE reader directly: on an indented-only `- status:` it must return nothing, so
+  # the enum check has nothing to reject. A widened value reader returns the indented
+  # value and the run gains a finding about a line the probe says is not there.
+  cat > "$DOCS_ROOT/task/TASK-indent-value-probe-01.md" <<'EOF'
+# TASK-indent-value-probe-01
+
+- title: Indentation value fixture
+- objective: the value reader anchors where the probe anchors
+- acceptance_criteria: an indented-only status yields no value
+- non_goals: none
+- affected_modules: docs
+- interfaces_changed: none
+- data_migrations: none
+- test_scope: validate_docs
+- risks: none
+- risk_level: low
+- consumes_plan_ref:
+  - status: not_a_status
+- owner: test
+- due_date:
+- axis_why: fixture
+- axis_where: fixture
+- axis_verify: bats
+- last_updated: 2020-01-01T00:00:00Z
+EOF
+  _probe_task_index_row "## Planned" "- TASK-indent-value-probe-01 planned"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  # The probe's answer, which must also be the value reader's answer.
+  assert_contains "$output" "status is missing in task file: $DOCS_ROOT/task/TASK-indent-value-probe-01.md"
+  # The value reader's answer: nothing was read, so nothing can be rejected as invalid.
+  refute_contains "$output" "invalid task.status value in $DOCS_ROOT/task/TASK-indent-value-probe-01.md:"
+
+  # Positive half: at column 0 the same line IS read and the same bogus value IS rejected,
+  # so the anchor is what decides, not the value being unreadable for some other reason.
+  perl -pi -e 's{^  - status: not_a_status$}{- status: not_a_status}' \
+    "$DOCS_ROOT/task/TASK-indent-value-probe-01.md"
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  refute_contains "$output" "status is missing in task file: $DOCS_ROOT/task/TASK-indent-value-probe-01.md"
+  assert_contains "$output" "invalid task.status value in $DOCS_ROOT/task/TASK-indent-value-probe-01.md: not_a_status"
+}
+
+@test "validate_docs trims trailing whitespace off a field value before any rule compares it" {
+  # The axis table calls trailing whitespace "not a divergence", and it was right about the
+  # INTENT and wrong about the binding: r03 dropped the trim from extract_field_value and
+  # all 627 tests stayed green (mutant M23). Every enum, equality and reference comparison
+  # in the validator is a literal string compare against the value this reader returns, so
+  # an untrimmed value fails them all on a document a markdown reader finds unremarkable.
+  _probe_task_file "trim-01" "planned   " "none"
+  _probe_task_index_row "## Planned" "- TASK-trim-01 planned"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  refute_contains "$output" "invalid task.status value in $DOCS_ROOT/task/TASK-trim-01.md:"
+  # The trimmed value must also be the one the index-section rule compares.
+  refute_contains "$output" "task-index section mismatch for TASK-trim-01"
+
+  # Positive half: a value that is genuinely not in the enum is still rejected, so the
+  # trim is a trim and not a suppression.
+  _probe_task_file "trim-01" "planned_x" "none"
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "invalid task.status value in $DOCS_ROOT/task/TASK-trim-01.md: planned_x"
 }
 
 # --- The pre-strip cache ---

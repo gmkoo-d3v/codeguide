@@ -676,6 +676,13 @@ fi
 
 THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$THIS_DIR/codeguide_paths.sh"
+CODEGUIDE_DOC_LINES_SCRIPT_DIR="$THIS_DIR"
+source "$THIS_DIR/codeguide_doc_lines.sh"
+# Main shell, before anything is read or written. Every other refusal in the adapter is
+# observable only one command substitution deep, because bash 3.2.57 does not inherit
+# `set -e` into a substitution subshell; this one is checked where `set -e` is in force, so
+# it holds no matter how deeply a future caller nests the read.
+require_shared_reader
 
 PROJECT_ROOT_ABS="$(codeguide_resolve_project_root "$PROJECT_ROOT")"
 SOURCE_ROOT_ABS="$(codeguide_source_root "$PROJECT_ROOT" || true)"
@@ -750,44 +757,31 @@ escape_pipe_field() {
   printf "%s" "$1" | sed 's/|/\\\\|/g'
 }
 
+# The `- key:` line lookup, the value read and the line-addressed write all live in the ONE
+# shell adapter over the shared document reader (codeguide_doc_lines.sh, sourced above),
+# because `run_external_plan_reviews.sh` writes the same ORCH.md capsules and a second
+# private copy of this adapter is how the first divergence got here.
+
 upsert_field() {
   local file_path="$1"
   local key="$2"
   local value="$3"
   local normalized
   local escaped
+  local target_line
 
   normalized="$(normalize "$value")"
+  target_line="$(require_unfenced_field_line "$file_path" "$key")"
 
   # Prevent empty values from overwriting existing non-empty values
   if [[ -z "$normalized" && "$ALLOW_EMPTY_OVERWRITE" != "true" ]]; then
-    if grep -qE "^- ${key}:" "$file_path"; then
+    if [[ -n "$target_line" ]]; then
       return 0
     fi
   fi
 
   escaped="$(escape_sed "$normalized")"
-
-  if grep -qE "^- ${key}:" "$file_path"; then
-    sed -i.bak "s|^- ${key}:.*|- ${key}: ${escaped}|" "$file_path"
-    rm -f "${file_path}.bak"
-  else
-    printf -- "- %s: %s\n" "$key" "$normalized" >> "$file_path"
-  fi
-}
-
-upsert_field_if_blank() {
-  local file_path="$1"
-  local key="$2"
-  local value="$3"
-  local current_value
-
-  current_value="$(grep -E "^- ${key}:" "$file_path" 2>/dev/null | head -n 1 | sed "s/^- ${key}:[[:space:]]*//" || true)"
-  current_value="$(trim_value "$current_value")"
-  if [[ -n "$current_value" && "$current_value" != *" | "* ]]; then
-    return 0
-  fi
-  upsert_field "$file_path" "$key" "$value"
+  write_unfenced_field "$file_path" "$key" "$normalized" "$escaped" "$target_line"
 }
 
 is_git_repo() {
@@ -907,7 +901,7 @@ run_resume_checkpoint() {
     changed_files_value="none"
   fi
 
-  prev_revision="$(grep -E "^- resume_state_revision:" "$task_file" 2>/dev/null | head -n 1 | sed "s/^- resume_state_revision:[[:space:]]*//" || true)"
+  prev_revision="$(unfenced_field_value "$task_file" "resume_state_revision")"
   prev_revision="$(trim_value "$prev_revision")"
   if [[ "$prev_revision" =~ ^[0-9]+$ ]]; then
     next_revision=$((prev_revision + 1))
@@ -1081,37 +1075,47 @@ status_to_section() {
   esac
 }
 
-update_task_index() {
-  local task_ref="$1"
-  local title="$2"
-  local safe_title
-  local row
+# Delete the lines whose 1-based numbers are in $2 (one per line) from the file in $1.
+# The numbers are addresses in the ORIGINAL file, which is what `sed` addresses mean, so a
+# single pass is correct regardless of their order.
+delete_lines_by_number() {
+  local file_path="$1"
+  local line_numbers="$2"
+  local expr=""
+  local line_no
+
+  [[ -n "$line_numbers" ]] || return 0
+  while IFS= read -r line_no; do
+    [[ -n "$line_no" ]] || continue
+    expr="${expr}${line_no}d;"
+  done <<< "$line_numbers"
+  [[ -n "$expr" ]] || return 0
+  sed -i.bak "$expr" "$file_path"
+  rm -f "${file_path}.bak"
+}
+
+# Insert $3 after line $2 of $1, keeping the blank-line shape the old awk produced. With
+# an empty $2 (no such section) the row is APPENDED, which is what the old END rule did --
+# and that branch is the one the unterminated-fence guard was missing. It is the same
+# operation `write_unfenced_field` refuses for a field, on the same documents, so it takes
+# the same shared refusal (require_appendable); the difference is only that a row can grow a
+# document without bound, because the fence-aware delete on the next run cannot see the row
+# a fence-blind append wrote (r02 finding 1).
+insert_row_after_line() {
+  local file_path="$1"
+  local target_line="$2"
+  local row="$3"
   local tmp_file
-  local target_section
 
-  safe_title="$(printf "%s" "$title" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ *//; s/ *$//; s/|/\\\\|/g')"
-  row="- ${task_ref} | ${TASK_STATUS} | ${safe_title}"
-  target_section="$(status_to_section "$TASK_STATUS")"
-  acquire_lock "$TASK_INDEX"
+  [[ -n "$target_line" ]] || require_appendable "$file_path" "an index row"
 
-  if [[ ! -f "$TASK_INDEX" ]]; then
-    printf "# Task Index\n\n## Planned\n\n## In Progress\n\n## Blocked\n\n## Done\n" > "$TASK_INDEX"
-  fi
-
-  # Remove any existing row for this task (prevents duplicates)
   tmp_file="$(mktemp)"
   register_tmp_file "$tmp_file"
-  grep -vF -- "- ${task_ref} |" "$TASK_INDEX" > "$tmp_file" || true
-  mv "$tmp_file" "$TASK_INDEX"
-
-  # Insert the row under the correct status section
-  tmp_file="$(mktemp)"
-  register_tmp_file "$tmp_file"
-  awk -v section="$target_section" -v row="$row" '
+  awk -v target="$target_line" -v row="$row" '
     BEGIN { inserted = 0 }
     {
       print
-      if (!inserted && $0 == section) {
+      if (!inserted && target != "" && NR == target) {
         # Print the row after a blank line following the section header
         # Check if next line is blank or another section
         inserted = 1
@@ -1130,8 +1134,49 @@ update_task_index() {
       }
     }
     END { if (!inserted) print row }
-  ' "$TASK_INDEX" > "$tmp_file"
-  mv "$tmp_file" "$TASK_INDEX"
+  ' "$file_path" > "$tmp_file"
+  mv "$tmp_file" "$file_path"
+}
+
+# ROWS, not fields, and the axis is the same one. Both halves of this function were
+# fence-blind while `task_index_row_present` (10-parse.sh) reads the fence-stripped copy,
+# so on an index carrying a quoted "Row format" example this writer put the LIVE row inside
+# the fenced block, exited 0, and the validator then reported "task-index missing row" for
+# the task it had just written plus an orphaned-capsule finding -- one document, writer and
+# reader, opposite answers (the task r01 finding 3, reproduced end
+# to end). The field writer above was moved onto the shared fence rule one round earlier;
+# this is the row writer sitting 300 lines below it.
+#
+# The MATCH rules are deliberately unchanged: the delete is still the `grep -F` substring
+# test and the insert is still whole-line equality against the section header. Only fenced
+# lines stop counting, so this closes the fence axis without moving the row grammar.
+update_task_index() {
+  local task_ref="$1"
+  local title="$2"
+  local safe_title
+  local row
+  local target_section
+  local stale_rows
+  local section_line
+
+  safe_title="$(printf "%s" "$title" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ *//; s/ *$//; s/|/\\\\|/g')"
+  row="- ${task_ref} | ${TASK_STATUS} | ${safe_title}"
+  target_section="$(status_to_section "$TASK_STATUS")"
+  acquire_lock "$TASK_INDEX"
+
+  if [[ ! -f "$TASK_INDEX" ]]; then
+    printf "# Task Index\n\n## Planned\n\n## In Progress\n\n## Blocked\n\n## Done\n" > "$TASK_INDEX"
+  fi
+
+  # Remove any existing UNFENCED row for this task (prevents duplicates); a row inside a
+  # quoted example is documentation and stays exactly as written.
+  stale_rows="$(require_unfenced_lines "$TASK_INDEX" substring "- ${task_ref} |")"
+  delete_lines_by_number "$TASK_INDEX" "$stale_rows"
+
+  # Insert the row under the correct status section, skipping any `## ` heading that only
+  # exists inside a fenced example.
+  section_line="$(require_first_unfenced_line "$TASK_INDEX" exact "$target_section")"
+  insert_row_after_line "$TASK_INDEX" "$section_line" "$row"
 }
 
 decision_status_to_section() {
@@ -1145,6 +1190,7 @@ decision_status_to_section() {
 
 ensure_decision_index_sections() {
   local tmp_file
+  local section_present
   if [[ ! -f "$DECISION_INDEX" ]]; then
     printf "# Decision Index\n\n## Proposed\n\n## Accepted\n\n## Superseded\n" > "$DECISION_INDEX"
     return
@@ -1154,8 +1200,21 @@ ensure_decision_index_sections() {
   register_tmp_file "$tmp_file"
   cp "$DECISION_INDEX" "$tmp_file"
 
+  # Fence-aware for the same reason as update_task_index: a decision-index that QUOTES its
+  # own section layout inside a ``` block would otherwise satisfy this probe, so the real
+  # `## Accepted` heading is never created and every later row is appended at end of file
+  # instead of under a section.
   for sec in "## Proposed" "## Accepted" "## Superseded"; do
-    if ! grep -qF "$sec" "$tmp_file"; then
+    # Assigned first: a `[[ -z "$( ... )" ]]` condition swallows a reader failure and would
+    # append a duplicate section heading on every run instead of refusing.
+    section_present="$(require_unfenced_lines "$tmp_file" substring "$sec")"
+    if [[ -z "$section_present" ]]; then
+      # This appender is the WORST of the three, and it was the one with no guard: on an
+      # index whose headings sit inside an unterminated fence it cannot see them, appends a
+      # new heading INTO that same fence, and then cannot see the one it just wrote either,
+      # so every run adds a full Proposed/Accepted/Superseded block plus a row. Measured at
+      # three runs: 10 lines to 31, `^## Accepted` 1 to 4 (r02 finding 1).
+      require_appendable "$tmp_file" "the ${sec#\#\# } section heading" "$DECISION_INDEX"
       printf "\n%s\n" "$sec" >> "$tmp_file"
     fi
   done
@@ -1166,48 +1225,26 @@ ensure_decision_index_sections() {
 insert_index_row_under_section() {
   local section="$1"
   local row="$2"
-  local tmp_file
+  local section_line
 
-  tmp_file="$(mktemp)"
-  register_tmp_file "$tmp_file"
-  awk -v section="$section" -v row="$row" '
-    BEGIN { inserted = 0 }
-    {
-      print
-      if (!inserted && $0 == section) {
-        inserted = 1
-        getline nextline
-        if (nextline ~ /^$/) {
-          print row
-          print ""
-        } else if (nextline ~ /^##/) {
-          print row
-          print ""
-          print nextline
-        } else {
-          print row
-          print nextline
-        }
-      }
-    }
-    END { if (!inserted) print row }
-  ' "$DECISION_INDEX" > "$tmp_file"
-  mv "$tmp_file" "$DECISION_INDEX"
+  section_line="$(require_first_unfenced_line "$DECISION_INDEX" exact "$section")"
+  insert_row_after_line "$DECISION_INDEX" "$section_line" "$row"
 }
 
 apply_decision_index_row() {
   local file_name="$1"
   local row="$2"
   local status="$3"
-  local tmp_file
   local target_section
+  local stale_rows
 
   target_section="$(decision_status_to_section "$status")"
 
-  tmp_file="$(mktemp)"
-  register_tmp_file "$tmp_file"
-  grep -vF -- "- ${file_name} |" "$DECISION_INDEX" > "$tmp_file" || true
-  mv "$tmp_file" "$DECISION_INDEX"
+  # Same axis as update_task_index: `decision_index_row_present` (10-parse.sh) reads the
+  # fence-stripped copy, so a fence-blind delete/insert here writes the live row into a
+  # quoted example and the validator then reports the row missing.
+  stale_rows="$(require_unfenced_lines "$DECISION_INDEX" substring "- ${file_name} |")"
+  delete_lines_by_number "$DECISION_INDEX" "$stale_rows"
 
   insert_index_row_under_section "$target_section" "$row"
 }
@@ -1287,6 +1324,7 @@ update_decision_index() {
   local task_ref="$2"
   local safe_summary
   local row
+  local legacy_header_line
 
   safe_summary="$(escape_pipe_field "$(normalize "${SELECTED_OPTION:-}")")"
   row="- $(escape_pipe_field "$file_name") | $(escape_pipe_field "$DECISION_ID") | $(escape_pipe_field "$SCOPE_TYPE") | $(escape_pipe_field "$TODAY") | $(escape_pipe_field "$DECISION_STATUS") | $(escape_pipe_field "$task_ref") | ${safe_summary}"
@@ -1294,8 +1332,13 @@ update_decision_index() {
 
   ensure_decision_index_sections
 
-  # Migrate legacy table format: if file still has table header, convert it
-  if grep -qE "^\| file \|" "$DECISION_INDEX" 2>/dev/null; then
+  # Migrate legacy table format: if file still has table header, convert it. The TRIGGER is
+  # fence-aware so a document that merely QUOTES the legacy table cannot start a whole-file
+  # rewrite -- the migration body itself is deliberately left fence-blind (it strips every
+  # `^|` line), because it runs only on a genuine legacy index and rewriting that document
+  # is exactly its job; a quoted legacy table can no longer reach it.
+  legacy_header_line="$(require_first_unfenced_line "$DECISION_INDEX" prefix "| file |")"
+  if [[ -n "$legacy_header_line" ]]; then
     migrate_legacy_decision_index
   fi
 
@@ -1327,9 +1370,9 @@ refresh_shadow_router() {
   fi
   normalized_note="$(normalize "$change_note")"
 
-  current_task="$(grep -E "^- updated_by_task:" "$file_path" 2>/dev/null | head -n 1 | sed "s/^- updated_by_task:[[:space:]]*//" || true)"
+  current_task="$(unfenced_field_value "$file_path" "updated_by_task")"
   current_task="$(trim_value "$current_task")"
-  current_note="$(grep -E "^- latest_change_note:" "$file_path" 2>/dev/null | head -n 1 | sed "s/^- latest_change_note:[[:space:]]*//" || true)"
+  current_note="$(unfenced_field_value "$file_path" "latest_change_note")"
   current_note="$(trim_value "$current_note")"
 
   if [[ -n "$new_task" && "$new_task" != "$current_task" ]]; then

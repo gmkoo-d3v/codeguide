@@ -104,7 +104,7 @@ def has_nested_form(lines: list[str]) -> bool:
 
 def read_lines(path: Path) -> list[str]:
     try:
-        return path.read_text(encoding="utf-8", errors="replace").splitlines()
+        return shadow_doc_parse.read_lines(path)
     except OSError as exc:
         raise DocReadError(f"{path}: {exc}") from None
 

@@ -2762,3 +2762,455 @@ EOF
   assert_contains "$output" "implemented_primary_v1 id must be implemented by shadow_evidence_probe.py"
 }
 
+
+@test "the shared document read keeps the bytes on disk, so python and sed count the same lines" {
+  # `split_lines` was `\n`-only and kept the CR, and `read_lines` threw the CR away one line
+  # later because `Path.read_text` opens in UNIVERSAL-NEWLINE mode -- so the contract was
+  # asserted at the one place it could not be violated while every path that reads a FILE
+  # violated it. This asserts the read, not
+  # the splitter, and it compares against grep/sed rather than against another python call,
+  # because agreeing with the shell tools is the whole property.
+  local fixture="$TEST_WORKSPACE/crbytes.md"
+  printf 'prefix\015- status: cr_only\n- status: planned\n' > "$fixture"
+  local crlf="$TEST_WORKSPACE/crlfbytes.md"
+  printf -- '- doc_role: unit_overview\015\n- last_updated: 2026-01-01\015\n' > "$crlf"
+
+  # The shell side, stated as data rather than assumed: grep sees ONE status line here.
+  run grep -c '^- status:' "$fixture"
+  assert_equal "$output" "1"
+
+  run python3 - "$SCRIPTS_DIR" "$fixture" "$crlf" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+sys.dont_write_bytecode = True
+import shadow_doc_parse
+
+failures = []
+
+lines = shadow_doc_parse.read_lines(sys.argv[2])
+if lines != ["prefix\r- status: cr_only", "- status: planned"]:
+    failures.append("lone CR split: " + repr(lines))
+# ...and therefore the value every rule compares is the one grep returns.
+if shadow_doc_parse.field_value(lines, "status") != "planned":
+    failures.append("field_value: " + repr(shadow_doc_parse.field_value(lines, "status")))
+
+crlf = shadow_doc_parse.read_lines(sys.argv[3])
+if crlf != ["- doc_role: unit_overview\r", "- last_updated: 2026-01-01\r"]:
+    failures.append("CRLF split: " + repr(crlf))
+# A CRLF document still yields a usable value: the trailing CR is whitespace to the field
+# pattern, exactly as it is to the validator trim.
+if shadow_doc_parse.field_value(crlf, "doc_role") != "unit_overview":
+    failures.append("CRLF field_value: " + repr(shadow_doc_parse.field_value(crlf, "doc_role")))
+
+# A line NUMBER is the thing that cannot tolerate two definitions of a line: this index is
+# what doc_garden hands to `sed`, and sed counts `\n` only.
+numbered = list(shadow_doc_parse.numbered_content_lines(lines))
+if numbered[0][0] != 0 or numbered[1][0] != 1 or len(numbered) != 2:
+    failures.append("numbered: " + repr(numbered))
+
+if failures:
+    print("FAILURES: " + "; ".join(failures))
+    raise SystemExit(1)
+print("ok")
+PY
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "ok"
+
+  # Positive control on the SAME reader: strip the control characters and the answers are
+  # unchanged, so the assertions above are about the bytes and not about a broken reader.
+  printf -- '- status: planned\n' > "$fixture"
+  run python3 -c "
+import sys
+sys.path.insert(0, sys.argv[1])
+sys.dont_write_bytecode = True
+import shadow_doc_parse
+print(shadow_doc_parse.field_value(shadow_doc_parse.read_lines(sys.argv[2]), 'status'))
+" "$SCRIPTS_DIR" "$fixture"
+  [ "$status" -eq 0 ]
+  assert_equal "$output" "planned"
+}
+
+@test "a source digest write round-trips the document byte-exactly" {
+  # shadow_source_digest.upsert_digest_field rewrites the WHOLE document from the split
+  # lines, so a splitlines-based split silently CONVERTS every form feed in the file into a
+  # newline, and a universal-newline read does the same to every CR. The previous round
+  # asserted this on `split_lines` and called the writer proven; reverting the WRITER to
+  # `str.splitlines()` left all 638 tests green (the task r01
+  # finding 6). This exercises the writer.
+  mkdir -p "$TEST_PROJECT/src" "$DOCS_ROOT/shadow/apps/app-a"
+  printf 'a=1\n' > "$TEST_PROJECT/src/a.py"
+  local doc="$DOCS_ROOT/shadow/apps/app-a/overview.md"
+  {
+    printf '%s\n' '# Shadow Unit Overview' '' '- doc_role: unit_overview'
+    printf 'prose with a form feed\014and a carriage return\015here\n'
+    printf '%s\n' '- source_of_truth_paths: src/a.py' '- source_of_truth_digest:' \
+      '- last_updated: 2026-01-01T00:00:00Z'
+  } > "$doc"
+  local before="$TEST_WORKSPACE/before.md"
+  cp "$doc" "$before"
+
+  run python3 "$SCRIPTS_DIR/shadow_source_digest.py" "$doc" --project-root "$TEST_PROJECT" --write
+  [ "$status" -eq 0 ]
+
+  # Exactly one line differs -- the digest field -- and every other byte, control
+  # characters included, is unchanged.
+  run diff "$before" "$doc"
+  [ "$status" -ne 0 ]
+  run python3 - "$before" "$doc" <<'PY'
+import sys
+before = open(sys.argv[1], "rb").read()
+after = open(sys.argv[2], "rb").read()
+b = before.split(b"\n")
+a = after.split(b"\n")
+if len(a) != len(b):
+    print("FAIL line count %d -> %d" % (len(b), len(a)))
+    raise SystemExit(1)
+differing = [i for i, (x, y) in enumerate(zip(b, a)) if x != y]
+if differing != [len(b) - 3]:
+    print("FAIL differing lines: %r" % differing)
+    raise SystemExit(1)
+if not a[differing[0]].startswith(b"- source_of_truth_digest: sha256:"):
+    print("FAIL not the digest line: %r" % a[differing[0]])
+    raise SystemExit(1)
+if before.count(b"\x0c") != 1 or after.count(b"\x0c") != 1:
+    print("FAIL form feed count %d -> %d" % (before.count(b"\x0c"), after.count(b"\x0c")))
+    raise SystemExit(1)
+if before.count(b"\r") != 1 or after.count(b"\r") != 1:
+    print("FAIL CR count %d -> %d" % (before.count(b"\r"), after.count(b"\r")))
+    raise SystemExit(1)
+print("ok")
+PY
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "ok"
+
+  # Positive half: the write really did happen and the document still parses.
+  run python3 "$SCRIPTS_DIR/shadow_source_digest.py" "$doc" --project-root "$TEST_PROJECT" --check
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "status: ok"
+}
+
+@test "source_paths_for_doc reads declared paths with the shared line rule" {
+  # The helper exists so the two report tools stop doing the read and the `str.splitlines()`
+  # themselves -- they shared the FENCE rule with shadow_source_digest and not the LINE
+  # rule. Reverting it to `splitlines` left every test green, which is a claim with nothing
+  # behind it.
+  mkdir -p "$TEST_PROJECT/src" "$DOCS_ROOT/shadow/apps/app-b"
+  printf 'a=1\n' > "$TEST_PROJECT/src/a.py"
+  printf 'b=1\n' > "$TEST_PROJECT/src/b.py"
+  local doc="$DOCS_ROOT/shadow/apps/app-b/overview.md"
+  {
+    printf '%s\n' '# Shadow Unit Overview' '' '- doc_role: unit_overview'
+    printf 'prose\014- source_of_truth_paths: src/b.py\n'
+    printf '%s\n' '- source_of_truth_paths: src/a.py' '- last_updated: 2026-01-01T00:00:00Z'
+  } > "$doc"
+
+  run python3 - "$SCRIPTS_DIR" "$doc" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+sys.dont_write_bytecode = True
+from shadow_source_digest import source_paths_for_doc
+
+got = source_paths_for_doc(sys.argv[2])
+# A form feed is not a line ending, so the fragment is prose and declares nothing.
+if got != ["src/a.py"]:
+    print("FAIL %r" % (got,))
+    raise SystemExit(1)
+print("ok")
+PY
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "ok"
+
+  # Positive half: a real newline in place of the form feed makes it a declaration, so the
+  # assertion above is about the control character and not about the helper never seeing it.
+  perl -pi -e 's{^prose\x0c}{}' "$doc"
+  run python3 - "$SCRIPTS_DIR" "$doc" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+sys.dont_write_bytecode = True
+from shadow_source_digest import source_paths_for_doc
+
+got = source_paths_for_doc(sys.argv[2])
+if got != ["src/b.py", "src/a.py"]:
+    print("FAIL %r" % (got,))
+    raise SystemExit(1)
+print("ok")
+PY
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "ok"
+}
+
+@test "the effect-map lifecycle write gate counts lines the way every other reader does" {
+  # `existing_record_lifecycle_blockers` reads `- lifecycle:` out of an effect-map MARKDOWN
+  # block to GATE A WRITE, and it was the one line-splitting site in this file left on
+  # `str.splitlines()` after the shared line rule landed -- flagged as unenumerated by
+  # The task r01 finding 7. The effect-map GRAMMAR stays outside the
+  # shared reader; the LINE rule does not, and this file already shares it one function
+  # above. Called directly because the surrounding write path needs a decision payload, a
+  # target hash and a probe rerun, none of which this property depends on.
+  run python3 - "$SCRIPTS_DIR" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+sys.dont_write_bytecode = True
+import shadow_effect_writer as W
+
+failures = []
+begin = W.marker("rec-1", "begin")
+end = W.marker("rec-1", "end")
+
+# A form feed is not a line ending, so `prefix<FF>- lifecycle: stale` is prose on one line
+# and the block declares exactly ONE lifecycle: the real one below it.
+doc = begin + "\nprefix\x0c- lifecycle: stale\n- lifecycle: confirmed\n" + end + "\n"
+value, blockers = W.existing_record_lifecycle_blockers(doc, "rec-1")
+if value != "confirmed" or blockers:
+    failures.append("form feed: %r %r" % (value, blockers))
+
+# Positive half: a REAL newline in the same place makes it two lifecycle lines, which is
+# malformed and must block the write. Without this the case above asserts a constant.
+doc = begin + "\n- lifecycle: stale\n- lifecycle: confirmed\n" + end + "\n"
+value, blockers = W.existing_record_lifecycle_blockers(doc, "rec-1")
+if value is not None or not blockers:
+    failures.append("two lines: %r %r" % (value, blockers))
+
+# ...and the ordinary single-lifecycle block still reads cleanly.
+doc = begin + "\n- lifecycle: stale\n" + end + "\n"
+value, blockers = W.existing_record_lifecycle_blockers(doc, "rec-1")
+if value != "stale" or blockers:
+    failures.append("plain: %r %r" % (value, blockers))
+
+if failures:
+    print("FAILURES: " + "; ".join(failures))
+    raise SystemExit(1)
+print("ok")
+PY
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "ok"
+}
+
+@test "the shared scan emits a fence boundary at the closing marker as well as the opening one" {
+  # scan()'s contract is that a reader tracking state ACROSS lines learns a block happened.
+  # Dropping the CLOSING boundary left all 638 tests green (the task
+  # r01 finding 6), and it stayed green because both current consumers reset on ANY boundary
+  # and the OPEN already reset them -- so the close boundary is currently unobservable
+  # THROUGH a consumer and can only be bound at the module. That is stated rather than
+  # papered over: a consumer that needs "we are outside again", or that counts blocks, gets
+  # a wrong answer from the mutant, and nothing else in the tree would notice.
+  run python3 - "$SCRIPTS_DIR" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+sys.dont_write_bytecode = True
+import shadow_doc_parse
+
+failures = []
+
+closed = ["a", "```", "inside", "```", "b"]
+kinds = [kind for kind, _ in shadow_doc_parse.scan(closed)]
+if kinds != ["content", "boundary", "boundary", "content"]:
+    failures.append("closed block: " + repr(kinds))
+
+# Positive half, same reader: an UNTERMINATED fence yields exactly one boundary, because
+# there is no closing marker to report. If both cases gave the same answer this would be
+# asserting a constant.
+unterminated = ["a", "```", "inside", "b"]
+kinds = [kind for kind, _ in shadow_doc_parse.scan(unterminated)]
+if kinds != ["content", "boundary"]:
+    failures.append("unterminated block: " + repr(kinds))
+
+# And the same state machine answers the writer question the append guard asks.
+if shadow_doc_parse.ends_inside_fence(closed):
+    failures.append("closed block reported as ending inside a fence")
+if not shadow_doc_parse.ends_inside_fence(unterminated):
+    failures.append("unterminated block reported as closed")
+
+if failures:
+    print("FAILURES: " + "; ".join(failures))
+    raise SystemExit(1)
+print("ok")
+PY
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "ok"
+}
+
+@test "the shared line rule splits on newlines only and round-trips a document exactly" {
+  # `str.splitlines()` breaks on VT, FF, FS, GS, RS, NEL, U+2028 and U+2029; grep, awk,
+  # sed, wc -l and while-read break on `\n` alone, so a shared FENCE rule with a private
+  # LINE rule still lets two readers of one document disagree
+  # CommonMark settles the direction:
+  # a line ends at a line feed or a carriage return and at nothing else.
+  #
+  # The round trip is the half that matters for WRITERS. shadow_source_digest rewrites the
+  # whole document from these lines, so a splitlines-based split silently CONVERTS every
+  # form feed in the file into a newline on each digest write.
+  run python3 - "$SCRIPTS_DIR" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+sys.dont_write_bytecode = True
+import shadow_doc_parse
+
+failures = []
+
+# Only \n is a line ending. Each of these is ONE line here and eight lines to splitlines.
+for name, char in [("VT", "\x0b"), ("FF", "\x0c"), ("FS", "\x1c"), ("GS", "\x1d"),
+                   ("RS", "\x1e"), ("NEL", "\x85"), ("LS", " "), ("PS", " ")]:
+    got = shadow_doc_parse.split_lines("a" + char + "b\n")
+    if got != ["a" + char + "b"]:
+        failures.append(f"{name}: {got!r}")
+
+# CR is kept, because grep keeps it.
+if shadow_doc_parse.split_lines("a\r\nb\n") != ["a\r", "b"]:
+    failures.append("CRLF: " + repr(shadow_doc_parse.split_lines("a\r\nb\n")))
+
+# Round trip is byte-exact, which is what a whole-document rewrite depends on.
+for text in ["", "\n", "a\n", "a\nb\n", "a\n\nb\n", "no trailing newline",
+             "intro\x0cmore\n- k: v\n", "a\r\nb\r\n"]:
+    lines = shadow_doc_parse.split_lines(text)
+    rebuilt = ("\n".join(lines) + "\n") if lines else ""
+    expected = text if text.endswith("\n") or not text else text + "\n"
+    if rebuilt != expected:
+        failures.append(f"round trip {text!r}: {rebuilt!r} != {expected!r}")
+
+# Positive control: on a document with none of those characters the two agree exactly, so
+# the assertions above are about the control characters and not about a broken splitter.
+plain = "# Title\n\n- doc_role: unit_overview\n- last_updated: 2026-01-01\n"
+if shadow_doc_parse.split_lines(plain) != plain.splitlines():
+    failures.append("plain text disagrees with splitlines")
+
+if failures:
+    print("FAILURES: " + "; ".join(failures))
+    raise SystemExit(1)
+print("ok")
+PY
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "ok"
+}
+
+@test "a source digest write refuses a document that is not valid UTF-8" {
+  # The DECODE column: what a byte that is not valid UTF-8 becomes. It is the sixth rule of
+  # the reader/writer matrix and the one no axis table had, and this round shipped opposite
+  # answers to it in two files -- `shadow_effect_writer` was moved to `errors="strict"`
+  # because a whole-document rewriter must return the bytes it was given, while
+  # `upsert_digest_field`, the OTHER whole-document rewriter named in the same PLAN
+  # sentence, stayed at the tolerant default. Reproduced: a shadow doc carrying the Latin-1
+  # byte 0xE9 came out of one `--write` with EF BF BD in its place, exit 0, no diagnostic
+  #
+  mkdir -p "$TEST_PROJECT/src" "$DOCS_ROOT/shadow/apps/app-dec"
+  printf 'a=1\n' > "$TEST_PROJECT/src/a.py"
+  local doc="$DOCS_ROOT/shadow/apps/app-dec/overview.md"
+  {
+    printf '%s\n' '# Shadow Unit Overview' '' '- doc_role: unit_overview'
+    printf 'prose with a latin-1 byte: caf\351 here\n'
+    printf '%s\n' '- source_of_truth_paths: src/a.py' '- source_of_truth_digest:' \
+      '- last_updated: 2026-01-01T00:00:00Z'
+  } > "$doc"
+  local before="$TEST_WORKSPACE/before-decode.md"
+  cp "$doc" "$before"
+
+  run python3 "$SCRIPTS_DIR/shadow_source_digest.py" "$doc" --project-root "$TEST_PROJECT" --write
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "not valid UTF-8"
+
+  # The document is byte-identical: refusing is the point, and a partial rewrite would be
+  # the corruption this replaces.
+  run cmp -s "$before" "$doc"
+  [ "$status" -eq 0 ]
+  run python3 - "$doc" <<'PY'
+import sys
+data = open(sys.argv[1], "rb").read()
+print("FFFD" if b"\xef\xbf\xbd" in data else "no-replacement-char")
+print("raw-byte-kept" if b"\xe9" in data else "raw-byte-lost")
+PY
+  assert_contains "$output" "no-replacement-char"
+  assert_contains "$output" "raw-byte-kept"
+
+  # Positive half: the same document in valid UTF-8, same non-ASCII character, writes.
+  local ok_doc="$DOCS_ROOT/shadow/apps/app-dec/ok.md"
+  {
+    printf '%s\n' '# Shadow Unit Overview' '' '- doc_role: unit_overview' 'prose with café here'
+    printf '%s\n' '- source_of_truth_paths: src/a.py' '- source_of_truth_digest:' \
+      '- last_updated: 2026-01-01T00:00:00Z'
+  } > "$ok_doc"
+  run python3 "$SCRIPTS_DIR/shadow_source_digest.py" "$ok_doc" --project-root "$TEST_PROJECT" --write
+  [ "$status" -eq 0 ]
+  run grep -c '^- source_of_truth_digest: sha256:' "$ok_doc"
+  assert_equal "$output" "1"
+}
+
+@test "an effect write round-trips the existing effect map byte-exactly" {
+  # `shadow_effect_writer` reads its target and writes the WHOLE document back, so a
+  # universal-newline read silently converted a CRLF effect map to `\n`-only on every write.
+  # The read was moved to `read_document_text` for that reason -- and reverting it to
+  # `read_text` survives 234 tests (r02 residual_risk), because every existing fixture ends
+  # its lines with a bare `\n`, where the two reads agree. This is the fixture where they do
+  # not, and it exercises the WRITER rather than the splitter.
+  local candidate_file="$TEST_WORKSPACE/crlf-candidate.json"
+  local decision_file="$TEST_WORKSPACE/crlf-decision.json"
+  local record_file="$TEST_WORKSPACE/crlf-record.json"
+  local draft_file="$TEST_WORKSPACE/crlf-draft.md"
+  local target_file="$DOCS_ROOT/shadow/packages/codeguide/effects.md"
+
+  mkdir -p "$(dirname "$target_file")"
+  # A pre-existing effect map whose lines end CRLF, plus one lone CR inside a line. The
+  # `- doc_role:` line carries the CRLF too, so the gate that reads it has to tolerate the
+  # CR the byte-faithful read now delivers -- under the old universal-newline read that CR
+  # never reached any rule in this file.
+  printf '# Effects\r\n\r\n- doc_role: effect_map\r\n\r\nExisting prose line.\r\nA line with a lone \rcarriage return.\r\n' > "$target_file"
+  local before="$TEST_WORKSPACE/crlf-before.md"
+  cp "$target_file" "$before"
+
+  printf 'Draft for CRLF round trip\n' > "$draft_file"
+  python3 "$SHADOW_LLM_CANDIDATE" \
+    --input "$draft_file" \
+    --output "$candidate_file" \
+    --task-id "shadow-effect-map-01" \
+    --model-id "test-model" \
+    --tool-id "codex" \
+    --source-ref "src/UserService.java:42" \
+    --timestamp "2026-05-02T00:00:00Z"
+
+  local candidate_id
+  candidate_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate_id"])' "$candidate_file")"
+  local statement_hash
+  statement_hash="$(sha256_text_ref "CRLF round trip must not rewrite the document.")"
+  cat > "$decision_file" <<EOF
+{"user_decision":{"id":"UD-crlf","decision_type":"final_shadow_apply","answer":"yes","decided_by":"gm","decided_at":"2026-05-02","expires_at":"2026-05-09","applies_to":["$candidate_id",{"record_id":"SE-crlf-001","lifecycle":"unknown","effect_type":"cache_evict","statement_hash":"$statement_hash","target_shadow_file":"packages/codeguide/effects.md","anchor_file":"src/UserService.java","anchor_symbol":"UserService.updateUser"}],"rationale":"Approve writing this exact record.","source_refs":["TASK-shadow-effect-map-01"]}}
+EOF
+  cat > "$record_file" <<EOF
+{"record_id":"SE-crlf-001","record_type":"effect_map_entry","candidate_id":"$candidate_id","lifecycle":"unknown","effect_type":"cache_evict","statement":"CRLF round trip must not rewrite the document.","reason":"No parser-backed cache evidence found.","anchor":{"file":"src/UserService.java","symbol":"UserService.updateUser"},"source_refs":["src/UserService.java:42"]}
+EOF
+
+  local current_hash
+  current_hash="$(sha256_file_ref "$target_file")"
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --expected-target-hash "$current_hash" \
+    --mode write \
+    --today "2026-05-02"
+  [ "$status" -eq 0 ]
+  assert_contains "$output" '"writes_shadow_docs":true'
+
+  # The record really was appended, and every byte that was there before is still there:
+  # the new content is a SUFFIX of the file, so no existing line ending was rewritten.
+  run grep -c "shadow-effect-record:SE-crlf-001 begin" "$target_file"
+  assert_equal "$output" "1"
+  run python3 - "$before" "$target_file" <<'PY'
+import sys
+before = open(sys.argv[1], "rb").read()
+after = open(sys.argv[2], "rb").read()
+if not after.startswith(before):
+    print("FAIL existing bytes were rewritten")
+    common = 0
+    while common < min(len(before), len(after)) and before[common] == after[common]:
+        common += 1
+    print("first divergence at byte %d: %r vs %r" % (common, before[common:common + 12], after[common:common + 12]))
+    raise SystemExit(1)
+if before.count(b"\r") == 0 or before.count(b"\r") != after.count(b"\r"):
+    print("FAIL CR count %d -> %d" % (before.count(b"\r"), after.count(b"\r")))
+    raise SystemExit(1)
+print("ok")
+PY
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "ok"
+}

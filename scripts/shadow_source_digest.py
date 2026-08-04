@@ -49,26 +49,29 @@ _bullet_re = re.compile(r"^(\s*)-\s+(.*?)\s*$")
 def content_lines(lines: list[str]):
     """Yield (index, line) for lines outside fenced code blocks.
 
-    Fence state is computed with the shared marker rule so this reader cannot
-    disagree with the validator about what a fence is, and so a `~~~` marker inside
-    a ``` block does not flip the state (the recorded decision).
+    This delegated the marker RULE and kept its own copy of the fence STATE machine,
+    which is the half that actually drifts -- the shared module's own docstring says
+    anything tracking fence state must go through it. It now delegates both
+    (the recorded decision); the local name stays because callers here read
+    indices and the shared module offers exactly that.
     """
-    open_char = None
-    open_len = 0
-    for index, line in enumerate(lines):
-        marker = shadow_doc_parse.fence_marker(line)
-        if open_char is None:
-            if marker is not None:
-                open_char, open_len = marker
-                continue
-            yield index, line
-            continue
-        if marker is not None and marker[0] == open_char and marker[1] >= open_len:
-            open_char, open_len = None, 0
+    return shadow_doc_parse.numbered_content_lines(lines)
 
 
 def _split_values(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def source_paths_for_doc(doc) -> list[str]:
+    """read_source_paths for a document on disk, split with the one shared line rule.
+
+    The two report tools that reuse this parser used to do the read and the
+    `str.splitlines()` themselves, which meant they shared the FENCE rule with this file
+    and not the LINE rule -- and `splitlines` breaks on eight characters `grep` and `awk`
+    do not (the task r03 finding 1). Handing them the whole
+    question removes the duplicated half rather than duplicating the fix.
+    """
+    return read_source_paths(shadow_doc_parse.read_lines(doc))
 
 
 def read_source_paths(lines: list[str]) -> list[str]:
@@ -158,7 +161,7 @@ def classify(rel: str, project_root: Path) -> tuple[str, str | None]:
 
 def compute(doc: Path, project_root: Path) -> tuple[str | None, list[str], list[str], list[str]]:
     """Return (digest, declared, missing, escaped). digest is None if nothing is declared."""
-    lines = doc.read_text(encoding="utf-8", errors="replace").splitlines()
+    lines = shadow_doc_parse.read_lines(doc)
     declared = read_source_paths(lines)
     if not declared:
         return None, [], [], []
@@ -181,7 +184,27 @@ def compute(doc: Path, project_root: Path) -> tuple[str | None, list[str], list[
 
 
 def upsert_digest_field(doc: Path, digest: str) -> None:
-    lines = doc.read_text(encoding="utf-8", errors="replace").splitlines()
+    """Write the digest field back, rewriting the WHOLE document from what was read.
+
+    That round trip is why the read here is strict rather than the module default. The
+    DECODE rule -- what a byte that is not valid UTF-8 becomes -- is the sixth column of the
+    reader/writer matrix and the one no axis table had: `errors="replace"` turns such a byte
+    into U+FFFD in memory, and a whole-document writer then puts EF BF BD on disk where the
+    file had one byte. Reproduced before this changed: a shadow doc carrying the Latin-1
+    byte 0xE9 came out of one `--write` with EF BF BD in its place, exit 0, no diagnostic
+    (the task r02 finding 3).
+
+    `shadow_effect_writer` -- the other whole-document rewriter, named in the same PLAN
+    sentence -- was already given `errors="strict"` for exactly this reason, so the two now
+    answer the DECODE column the same way: fail loudly, because a reader that substitutes
+    bytes is not byte-faithful and a writer that does it corrupts. `compute()` above keeps
+    the tolerant default deliberately: it only READS declared paths out of the document and
+    writes nothing, so degrading a mangled line to "missing" misreports where refusing to
+    hash the tree at all would stop the gate.
+    """
+    lines = shadow_doc_parse.split_lines(
+        shadow_doc_parse.read_document_text(doc, errors="strict")
+    )
     new_line = f"- {DIGEST_FIELD}: {digest}"
     for index, line in content_lines(lines):
         if _digest_field_re.match(line):
@@ -240,14 +263,27 @@ def main(argv: list[str]) -> int:
                 file=sys.stderr,
             )
             return 2
-        upsert_digest_field(doc, digest)
+        # A loud refusal rather than a traceback, and rather than the silent byte
+        # substitution this replaces: --write rewrites the whole document, so a doc that is
+        # not valid UTF-8 cannot be round-tripped without changing bytes the caller never
+        # asked to change.
+        try:
+            upsert_digest_field(doc, digest)
+        except UnicodeDecodeError as exc:
+            print(
+                f"error: refusing to write digest; {doc} is not valid UTF-8 "
+                f"(byte {exc.object[exc.start]:#04x} at offset {exc.start}) and --write "
+                f"rewrites the whole document",
+                file=sys.stderr,
+            )
+            return 2
         print(digest)
         return 0
 
     if args.verify_paths:
         # Emit parser-backed field detection so the validator can decide whether a doc
         # has real (non-fenced, non-empty) paths/digest without a raw grep.
-        lines = doc.read_text(encoding="utf-8", errors="replace").splitlines()
+        lines = shadow_doc_parse.read_lines(doc)
         has_digest = read_recorded_digest(lines) is not None
         print(f"has_paths: {'true' if digest is not None else 'false'}")
         print(f"has_digest: {'true' if has_digest else 'false'}")
@@ -262,7 +298,7 @@ def main(argv: list[str]) -> int:
         return 0
 
     # --check
-    lines = doc.read_text(encoding="utf-8", errors="replace").splitlines()
+    lines = shadow_doc_parse.read_lines(doc)
     recorded = read_recorded_digest(lines)
     if recorded is None:
         print("status: no_digest")

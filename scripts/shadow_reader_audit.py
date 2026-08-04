@@ -14,7 +14,11 @@ case the -02 sweep could not see.
 
 Classification, in order:
   direct      -- names shadow_doc_parse
-  transitive  -- its python import closure reaches a direct consumer
+  transitive  -- its dependency closure reaches a direct consumer: python `import` for
+                 .py files, shell `source` for .sh files. A `source` is textual inclusion,
+                 so the sourced functions ARE the sourcing script's functions -- stronger
+                 evidence than an import, not weaker, and it is executable code rather than
+                 a comment, which is the criterion this audit refuses to trust.
   excluded    -- listed in EXCLUSIONS below WITH a reason
   unclassified-> failure. A new reader is a finding until someone decides which it is.
 
@@ -68,10 +72,16 @@ EXCLUSIONS = {
     "scripts/init_docs_scaffold.sh": (
         "Writes template documents; the fence markers in it are emitted content, not a reader."
     ),
-    "scripts/doc_garden.sh": (
-        "Operates on task/plan/orchestration capsules and resume checkpoints, not on shadow "
-        "fields. Its markdown reads never resolve a shadow reference."
-    ),
+    # scripts/doc_garden.sh was excluded here on the reason "Operates on task/plan/
+    # orchestration capsules ... not on shadow fields" -- verbatim the reason
+    # The task rejected for extract_field_value when it corrected
+    # the blast radius. It was never true of what the file DOES: it answers the `- key:`
+    # question in order to EDIT the answer, fence-blind, with an unaddressed `sed` that
+    # rewrote a quoted template example as if it were the real field (r03 finding 2). It
+    # now resolves the line through shadow_doc_parse.numbered_content_lines -- via the one
+    # sourced adapter codeguide_doc_lines.sh, so it classifies as `transitive` rather than
+    # `direct` -- and the entry is gone rather than reworded.
+    #
     # scripts/validate_docs.d/10-parse.sh, scripts/validate_docs.sh and
     # scripts/shadow_effect_writer.py were listed here as KNOWN LIVE DIVERGENCES tracked by
     # The task. That task rewired extract_field_value and
@@ -91,9 +101,18 @@ EXCLUSIONS = {
         "not shadow documents."
     ),
     "scripts/run_codeguide.sh": "Front CLI dispatcher; reads no document fields itself.",
-    "scripts/run_external_plan_reviews.sh": (
-        "Writes and parses external-review handoff files under docs/orchestration; reads no shadow field."
-    ),
+    # scripts/run_external_plan_reviews.sh was excluded here on a polarity conflict: ONE
+    # fence-blind `extract_field_value` served both the PLAN/TASK/DECISION capsules and the
+    # EXTERNAL MODEL RESPONSES, and a fence-aware read would turn a model that wraps its
+    # answer in a ``` block from parsed into empty. The conflict was real and the conclusion
+    # was too wide -- it was a reason to SPLIT the helper, not to leave the capsule half and
+    # the ORCH.md WRITER fence-blind. The capsule reads
+    # are now `capsule_field_value` (shared reader) and the write is line-addressed through
+    # the same adapter doc_garden.sh uses, so the file classifies as `transitive`. What
+    # remains deliberately fence-BLIND is `response_field_value`, named as such in the code
+    # and recorded beside `check_file_contains_pattern` in the PLAN residual list -- the two
+    # places in this tree where fence-blindness is load-bearing. Neither is an exclusion:
+    # an exclusion says "this file does not answer the shared question", and both files do.
     # Rewriting this file's private `^- key:` probes as field_key_present calls briefly
     # dropped it out of the candidate set entirely -- no shadow path named, no DOC_GRAMMAR
     # match left -- and the audit then printed it as a STALE exclusion where HEAD printed
@@ -107,7 +126,11 @@ EXCLUSIONS = {
         "task-index ROW grammar, `^- (TASK-...)`, which is not the `- key:` field grammar "
         "and is not a shadow document -- it walks the fence-stripped copy so it agrees "
         "with task_index_row_present, and the binding for that is behavioral, in "
-        "'validate_docs reads a task-index row quoted inside a fence as no row at all'."
+        "'validate_docs reads a task-index row quoted inside a fence as no row at all'. "
+        "The issue-README row probes it used to own inline -- escaped at the call site and "
+        "greping the RAW file -- moved to issue_index_row_present in 10-parse.sh, beside "
+        "the two sibling row helpers and with their contract "
+        "(the task r01 finding 4)."
     ),
     "scripts/validate_docs.d/40-rules-orchestration.sh": (
         "Orchestration capsule rules over task/plan/orchestration docs, not shadow documents. "
@@ -134,13 +157,48 @@ def candidates(scripts_dir: Path) -> list[Path]:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
             raise SystemExit(f"error: cannot read {path}: {exc}")
-        if (SHADOW_REF.search(text) or DOC_GRAMMAR.search(text)) and DOC_READ.search(text):
+        # A file that NAMES the shared reader is in the boundary by construction, and
+        # discovering it that way cannot depend on a comment. Without this, deleting a
+        # duplicated fence state machine from shadow_source_digest.py removed the file's
+        # last ``` literal -- which sat in the docstring of the code being deleted -- and
+        # dropped a live delegating reader out of the candidate set entirely, the same
+        # coverage-shrinks-as-a-side-effect-of-a-fix failure r02 caught on
+        # 30-rules-task.sh. Widening DISCOVERY is safe
+        # in a way that widening the CLASSIFICATION criterion is not: it can only add
+        # files to the set that must be classified.
+        names_shared = SHARED in text
+        if (names_shared or SHADOW_REF.search(text) or DOC_GRAMMAR.search(text)) and DOC_READ.search(text):
             found.append(path)
     return found
 
 
+# `source "$THIS_DIR/x.sh"` / `. "${SCRIPT_DIR}/dir/x.sh"`. Only a literal filename counts:
+# a sourced path built from a loop variable is not a dependency this audit can prove, and
+# guessing one would be the same false certification as reading a comment.
+_SHELL_SOURCE_RE = re.compile(
+    r"^[ \t]*(?:source|\.)[ \t]+\"?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/([A-Za-z0-9_./-]+\.sh)\"?",
+    re.M,
+)
+
+
 def local_imports(path: Path, known: set[str]) -> set[str]:
-    """Sibling modules this python file imports. Non-python files import nothing."""
+    """Sibling modules this file depends on, by the mechanism its language actually uses.
+
+    Python: `import`/`from ... import`, keyed by module stem.
+    Shell: `source`/`.` of a sibling script, keyed by file NAME (`x.sh`), so a .py stem and
+    a .sh name can never collide in the one dependency graph below.
+
+    The shell half exists because the `- key:` line lookup that both writers use now lives
+    in ONE sourced adapter (codeguide_doc_lines.sh) instead of a private copy per tool. If
+    the audit only understood python imports, moving the duplicate into a shared file would
+    have dropped doc_garden.sh from `direct` to UNCLASSIFIED -- coverage shrinking as a side
+    effect of a de-duplication, which is the exact failure mode r02 caught on 30-rules-task.sh
+    and r03 caught on shadow_source_digest.py (the task).
+    """
+    if path.suffix == ".sh":
+        return {Path(m).name for m in _SHELL_SOURCE_RE.findall(
+            path.read_text(encoding="utf-8", errors="replace")
+        )} & known
     if path.suffix != ".py":
         return set()
     try:
@@ -156,13 +214,53 @@ def local_imports(path: Path, known: set[str]) -> set[str]:
     return names & known
 
 
+def module_key(path: Path) -> str:
+    return path.stem if path.suffix == ".py" else path.name
+
+
+def classification_text(path: Path, text: str) -> str:
+    """The text CLASSIFICATION may look at: comment-only mentions do not certify.
+
+    DISCOVERY may use a comment -- naming the shared reader anywhere puts a file in the set
+    that must be classified, and widening a candidate set can only add work. CLASSIFICATION
+    is the opposite: calling a file `direct` on the strength of a comment is a FALSE
+    certification, because `direct` means the file would still reach the reader if every
+    `source` edge were cut, and a sentence of prose does not.
+
+    That is not hypothetical. A comment added to `run_external_plan_reviews.sh` explaining
+    what happens "with shadow_doc_parse.py absent" flipped it from `transitive` to `direct`
+    on the strength of the explanation alone -- caught only because the round that de-duped
+    the adapter had PINNED it as `transitive` (the task). Documenting
+    a dependency is not having one, and the audit already records that this criterion cannot
+    tell the two apart; this narrows it where the distinction is unambiguous.
+
+    Shell only, deliberately. A `#` at the start of a stripped line is a comment in shell
+    with no exceptions worth modelling here, whereas in python the same test would have to
+    tell a docstring from `SHARED = "shadow_doc_parse"` -- a string LITERAL that is code --
+    and getting that wrong would silently SHRINK coverage, which is the failure this audit
+    exists to catch. Measured before narrowing: of the five shell files naming the reader,
+    four name it in code and exactly one, `run_external_plan_reviews.sh`, names it only in a
+    comment. The residual (a `#` line inside a shell heredoc carrying python) is an
+    over-strip, and over-stripping can only move a file toward UNCLASSIFIED, which fails
+    loudly rather than certifying quietly.
+    """
+    if path.suffix != ".sh":
+        return text
+    return "\n".join(
+        line for line in text.split("\n") if not line.lstrip().startswith("#")
+    )
+
+
 def classify(scripts_dir: Path):
-    modules = {p.stem: p for p in scripts_dir.glob("*.py")}
+    modules = {module_key(p): p for p in scripts_dir.glob("*.py")}
+    modules.update({module_key(p): p for p in scripts_dir.rglob("*.sh")})
     known = set(modules)
     direct = {
         name
         for name, path in modules.items()
-        if SHARED in path.read_text(encoding="utf-8", errors="replace")
+        if SHARED in classification_text(
+            path, path.read_text(encoding="utf-8", errors="replace")
+        )
     }
 
     def reaches_shared(name: str, seen: set[str]) -> bool:
@@ -177,9 +275,17 @@ def classify(scripts_dir: Path):
     for path in candidates(scripts_dir):
         rel = f"scripts/{path.relative_to(scripts_dir)}"
         text = path.read_text(encoding="utf-8", errors="replace")
-        if SHARED in text:
+        if rel == f"scripts/{SHARED}.py":
+            # The shared reader itself. It became a CANDIDATE the moment it grew a
+            # `read_lines(path)` helper, and the naming
+            # criterion cannot classify it: a module does not import itself, so the only
+            # way for it to "name the shared reader" is a comment -- the exact false
+            # certification the capsule already records this criterion cannot tell apart.
+            # It is the definition, so it is compliant by construction.
             verdict = "direct"
-        elif path.suffix == ".py" and reaches_shared(path.stem, set()):
+        elif SHARED in classification_text(path, text):
+            verdict = "direct"
+        elif reaches_shared(module_key(path), set()):
             verdict = "transitive"
         elif rel in EXCLUSIONS:
             verdict = "excluded"

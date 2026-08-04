@@ -806,7 +806,7 @@ for md in sorted(shadow_dir.rglob("*.md")):
     if rel_parts and rel_parts[0] in ("_deprecated", "_obsolete"):
         continue
     try:
-        lines = md.read_text(encoding="utf-8", errors="replace").splitlines()
+        lines = shadow_doc_parse.read_lines(md)
     except OSError:
         continue
     pending_field = None
@@ -1012,7 +1012,7 @@ sys.path.insert(0, sys.argv[3])
 import shadow_doc_parse
 
 try:
-    lines = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace").splitlines()
+    lines = shadow_doc_parse.read_lines(sys.argv[1])
 except OSError:
     sys.exit(0)
 value = shadow_doc_parse.field_value(lines, sys.argv[2])
@@ -1097,7 +1097,7 @@ summary_re = re.compile(r"^\s*-\s*unit_summary\s*:\s*(\S.*?)\s*$")
 
 def content_lines(path):
     try:
-        raw = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        raw = shadow_doc_parse.read_lines(path)
     except OSError:
         return []
     return list(shadow_doc_parse.content_lines(raw))
@@ -1245,7 +1245,7 @@ for doc in sorted(shadow_dir.rglob("*.md")):
     if parts and parts[0] in ("_deprecated", "_obsolete"):
         continue
     try:
-        lines = doc.read_text(encoding="utf-8", errors="replace").splitlines()
+        lines = shadow_doc_parse.read_lines(doc)
     except OSError:
         continue
     for line in shadow_doc_parse.content_lines(lines):

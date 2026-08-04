@@ -412,6 +412,106 @@ exit 99'
   [ "$status" -eq 0 ]
 }
 
+@test "run_external_plan_reviews writes ORCH.md fields outside a quoted template example" {
+  # The SECOND writer of ORCH.md. doc_garden.sh was moved onto the shared fence rule and
+  # line-addressed `sed`; this script kept a fence-blind probe and an UNADDRESSED `sed` on
+  # the same capsule class, so it rewrote every column-0 match including one inside a quoted
+  # template -- and its blank-fill read answered from that same quoted template
+  # The polarity conflict that justified deferring it
+  # is real for the RESPONSE reader and not for the capsule reads or the write, so the
+  # helper was split rather than left whole.
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-fenced-01-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-fenced-01-v1.0
+
+- task_id: ext-fenced-01
+- plan_version: v1.0
+- objective: a fenced ORCH template example is not the real field
+- scope: external review runner writer
+- assumptions: none
+- risks: none
+- acceptance_signals: the quoted example is byte-identical
+- stop_conditions: report is written
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  # The ORCH capsule exists BEFORE the run and quotes its own template inside a fence.
+  mkdir -p "$DOCS_ROOT/orchestration/ext-fenced-01"
+  local orch_file="$DOCS_ROOT/orchestration/ext-fenced-01/ORCH.md"
+  cat > "$orch_file" <<'EOF'
+# ORCH-ext-fenced-01
+
+Template (quoted example)
+
+```
+- approval_ref: EXAMPLE-REF
+- planner_agents: EXAMPLE-PLANNER
+```
+
+- task_id:
+- execution_mode:
+- primary_author_tool:
+- review_mode:
+- external_review_status:
+- external_review_round:
+- supervisor_agent:
+- planner_agents:
+- reviewer_agents:
+- implementation_agents:
+- validation_agents:
+- owned_scopes:
+- delegation_status:
+- risk_preflight_status:
+- risk_preflight_recorded_by:
+- risk_preflight_summary:
+- approval_required:
+- approval_ref:
+- approved_next_step:
+- last_updated:
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin-fenced"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+cat <<EOF
+- verdict: accept
+- summary: The quoted template block must survive the orchestration write untouched.
+- strengths: The capsule reads and the capsule write now share one fence rule.
+- risks: The response parser stays fence-blind on purpose and that is recorded.
+- requested_changes: None.
+EOF'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-fenced-01" \
+    --plan-version "v1.0" \
+    --primary-tool "codex" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-fenced-01" \
+    --approved-next-step "run external review ext-fenced-01 v1.0 r01" \
+    --reviewer "claude"
+  [ "$status" -eq 0 ]
+
+  # The quoted example is byte-identical, both the field the run sets explicitly...
+  run grep -c '^- approval_ref: EXAMPLE-REF$' "$orch_file"
+  assert_equal "$output" "1"
+  # ...and the field it only fills WHEN BLANK, which is the read half of the same writer.
+  run grep -c '^- planner_agents: EXAMPLE-PLANNER$' "$orch_file"
+  assert_equal "$output" "1"
+
+  # The real fields carry the live values.
+  run grep -c '^- approval_ref: user-approval-ext-fenced-01$' "$orch_file"
+  assert_equal "$output" "1"
+  run grep -c '^- planner_agents: codex-primary-author$' "$orch_file"
+  assert_equal "$output" "1"
+
+  # And the validator, which reads the same document through the fence-stripped copy,
+  # agrees that the capsule is filled in.
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  refute_contains "$output" "approval_ref is missing"
+}
+
 @test "run_external_plan_reviews can target a selected reviewer only" {
   local plan_file="$DOCS_ROOT/plan/PLAN-ext-review-07-v1.0.md"
   cat > "$plan_file" <<'EOF'
@@ -2897,4 +2997,229 @@ echo "- verdict: accept"'
   [ "$status" -ne 0 ]
   run bash -c 'grep -rl "Codex sandbox detected" "$1"/docs/orchestration/runner-claude2-sandbox' _ "$TEST_PROJECT"
   [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews refuses to run when the shared fence reader is unavailable" {
+  # The read-side twin of the doc_garden "refuses to edit ... reader unavailable" test, and
+  # the reason it is a SCRIPT-level assertion rather than a helper-level one: on bash 3.2.57
+  # a command substitution does not inherit `set -e` (`$-` is `hBc` inside `$( )` where the
+  # parent's is `ehBc`), so the adapter's `exit` is observable only ONE substitution below
+  # the main shell. `high_risk_source_for_task` runs its four capsule reads inside
+  # `HIGH_RISK_SOURCE="$(high_risk_source_for_task || true)"`, which is two -- so with
+  # shadow_doc_parse.py absent the refusal printed and the script CONTINUED with risk_level
+  # empty where the capsule said `critical`, silently dropping the adversarial-review
+  # requirement. Flattening
+  # `capsule_field_value` does NOT close that -- measured against a flattened build, the
+  # gate was still waived -- so the binding assertion is the main-shell preflight.
+  local plan_file="$DOCS_ROOT/plan/PLAN-noreader-01-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-noreader-01-v1.0
+
+- task_id: noreader-01
+- plan_version: v1.0
+- objective: the shared reader must be present before any capsule is read
+- scope: external review runner read path
+- assumptions: none
+- risks: none
+- acceptance_signals: the run refuses
+- stop_conditions: refusal
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  cat > "$DOCS_ROOT/task/TASK-noreader-01.md" <<'EOF'
+# TASK-noreader-01
+
+- title: Reader unavailable
+- risk_level: critical
+- status: in_progress
+EOF
+
+  # A copy of the whole skill tree with the shared reader REMOVED. The adapter is present
+  # and the RULE it adapts is not, which is the failure this asserts; removing the adapter
+  # too would only prove that bash cannot source a missing file.
+  local fake_skill="$TEST_WORKSPACE/fake-skill"
+  cp -R "$(dirname "$SCRIPTS_DIR")" "$fake_skill"
+  rm -f "$fake_skill/scripts/shadow_doc_parse.py"
+
+  # `cd /` is belt-and-braces, not the mechanism. The adapter now strips cwd from the import
+  # path precisely so this does not depend on where the caller stood; running the suite from
+  # `scripts/` used to make this fixture pass for the wrong reason, because cwd supplied the
+  # module the fixture had deliberately removed.
+  run bash -c 'cd / && "$1" "$2" --task-id noreader-01 --plan-version v1.0 --primary-tool claude \
+    --review-round r01 --risk-preflight-status approved \
+    --approval-ref "user-approval-noreader-01" \
+    --approved-next-step "run external review noreader-01 v1.0 r01" \
+    --manual-handoff-only' _ "$fake_skill/scripts/run_external_plan_reviews.sh" "$TEST_PROJECT"
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "refusing to edit any of them"
+
+  # The binding half. A non-zero exit alone does NOT bind the preflight: without it the run
+  # still dies, at `ensure_plan_field`, but it dies MISREPORTING the cause as an empty plan
+  # field on a plan whose `- task_id:` is right there in the file. Measured -- the first
+  # version of this test asserted only status and the adapter's per-file message, and it
+  # stayed green with the preflight removed AND `capsule_field_value` reverted to the
+  # layered form, i.e. against the exact defect it was written for.
+  refute_contains "$output" "must be non-empty before external review"
+
+  # Positive half: the SAME invocation through the real scripts directory reaches the
+  # handoff, so the refusal is about the missing reader and not about the arguments.
+  run bash -c 'cd / && "$1" "$2" --task-id noreader-01 --plan-version v1.0 --primary-tool claude \
+    --review-round r01 --risk-preflight-status approved \
+    --approval-ref "user-approval-noreader-01" \
+    --approved-next-step "run external review noreader-01 v1.0 r01" \
+    --manual-handoff-only' _ "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "with the shared fence reader; refusing to edit"
+
+  # And the read the refusal protects really does answer `critical` when the reader is
+  # there, which is what makes an empty answer a silent waiver rather than a no-op.
+  run grep -c '^- risk_level: critical$' "$DOCS_ROOT/task/TASK-noreader-01.md"
+  assert_equal "$output" "1"
+}
+
+@test "run_external_plan_reviews refuses rather than silently waiving adversarial review" {
+  # The REACHABLE form of the swallowed-refusal defect, and the one neither the preflight
+  # nor a flattened `capsule_field_value` closes. `high_risk_source_for_task` decides whether
+  # this task requires an adversarial evaluator by reading `- risk_level:` out of the task
+  # capsule and every linked decision capsule. It used to be invoked as
+  # `HIGH_RISK_SOURCE="$(high_risk_source_for_task || true)"` -- so on bash 3.2.57, where a
+  # command substitution does not inherit `set -e`, a read that REFUSED came back as an
+  # empty string, `risk_level_requires_adversarial` is a bare equality against
+  # `high`/`critical`, and the requirement was dropped with no finding at any tier.
+  # The preflight cannot cover it (it is a per-RUN check and this is a per-FILE failure) and
+  # flattening cannot cover it (the depth comes from the CALLER). Reproduced against a build
+  # carrying both: one unreadable decision capsule, no adversarial evaluator, exit 0.
+  local plan_file="$DOCS_ROOT/plan/PLAN-riskgate-01-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-riskgate-01-v1.0
+
+- task_id: riskgate-01
+- plan_version: v1.0
+- objective: a capsule the risk gate cannot read must stop the run
+- scope: external review runner risk gate
+- assumptions: none
+- risks: none
+- acceptance_signals: the run refuses
+- stop_conditions: refusal
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  # The TASK is low risk, so the requirement can only come from the decision capsule -- which
+  # is what makes an unreadable decision capsule a silent waiver rather than a visible one.
+  cat > "$DOCS_ROOT/task/TASK-riskgate-01.md" <<'EOF'
+# TASK-riskgate-01
+
+- title: Risk gate
+- risk_level: low
+- status: in_progress
+EOF
+  local decision_file="$DOCS_ROOT/decisions/decision-riskgate.md"
+  cat > "$decision_file" <<'EOF'
+# decision-riskgate
+
+- decision_id: riskgate
+- linked_task: TASK-riskgate-01
+- status: accepted
+- risk_level: critical
+EOF
+
+  # Control first: the capsule is readable, so the gate fires and names its source.
+  run bash -c 'cd / && "$1" "$2" --task-id riskgate-01 --plan-version v1.0 --primary-tool claude \
+    --review-round r01 --risk-preflight-status approved \
+    --approval-ref "user-approval-riskgate-01" \
+    --approved-next-step "run external review riskgate-01 v1.0 r01" \
+    --manual-handoff-only' _ "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "High-risk task detected (decision-riskgate.md risk_level=critical)"
+
+  # Now the same run with that one capsule unreadable. It must REFUSE, not proceed without
+  # an adversarial evaluator.
+  chmod 000 "$decision_file"
+  run bash -c 'cd / && "$1" "$2" --task-id riskgate-01 --plan-version v1.0 --primary-tool claude \
+    --review-round r02 --risk-preflight-status approved \
+    --approval-ref "user-approval-riskgate-01" \
+    --approved-next-step "run external review riskgate-01 v1.0 r02" \
+    --manual-handoff-only' _ "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT"
+  local gate_status="$status"
+  local gate_output="$output"
+  # Restore before asserting, so a failure here cannot leave the workspace undeletable.
+  chmod 644 "$decision_file"
+
+  [ "$gate_status" -ne 0 ]
+  assert_contains "$gate_output" "with the shared fence reader; refusing to edit"
+  # The half that binds the defect rather than the symptom: it must not have gone on to
+  # select reviewers as if the task were low risk.
+  refute_contains "$gate_output" "High-risk task detected"
+  refute_contains "$gate_output" "Semi-automated stop reached"
+}
+
+@test "the risk gate walks every linked decision and falls through cleanly" {
+  # Moving `high_risk_source_for_task` out of `$(...)` and into the main shell is what makes
+  # a failed capsule read reach `set -e` -- and it also puts the function's own body under
+  # `set -e` for the first time, because a command substitution subshell on bash 3.2.57 does
+  # not inherit it. The `[[ "$decision_status" == "superseded" ]] && continue` line returns 1
+  # on every decision that is NOT superseded, which is the common case, so if that aborted
+  # the run then external review would break for essentially every low-risk task that has
+  # decisions. Nothing else in this suite walks the loop to the end: the gate test above
+  # returns early on the first critical capsule, and no other fixture has a decision at all.
+  local plan_file="$DOCS_ROOT/plan/PLAN-lowrisk-01-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-lowrisk-01-v1.0
+
+- task_id: lowrisk-01
+- plan_version: v1.0
+- objective: the risk gate must fall through without an adversarial evaluator
+- scope: external review runner risk gate
+- assumptions: none
+- risks: none
+- acceptance_signals: the run completes
+- stop_conditions: handoff written
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  cat > "$DOCS_ROOT/task/TASK-lowrisk-01.md" <<'EOF'
+# TASK-lowrisk-01
+
+- title: Low risk
+- risk_level: low
+- status: in_progress
+EOF
+  # One of each branch the loop must walk PAST: not linked to this task; linked but
+  # superseded (the `&& continue` line); linked, live, and not high risk.
+  cat > "$DOCS_ROOT/decisions/decision-unlinked.md" <<'EOF'
+# decision-unlinked
+
+- decision_id: unlinked
+- linked_task: TASK-some-other-99
+- status: accepted
+- risk_level: critical
+EOF
+  cat > "$DOCS_ROOT/decisions/decision-superseded.md" <<'EOF'
+# decision-superseded
+
+- decision_id: superseded
+- linked_task: TASK-lowrisk-01
+- status: superseded
+- risk_level: critical
+EOF
+  cat > "$DOCS_ROOT/decisions/decision-livelow.md" <<'EOF'
+# decision-livelow
+
+- decision_id: livelow
+- linked_task: TASK-lowrisk-01
+- status: accepted
+- risk_level: low
+EOF
+
+  run bash -c 'cd / && "$1" "$2" --task-id lowrisk-01 --plan-version v1.0 --primary-tool claude \
+    --review-round r01 --risk-preflight-status approved \
+    --approval-ref "user-approval-lowrisk-01" \
+    --approved-next-step "run external review lowrisk-01 v1.0 r01" \
+    --manual-handoff-only' _ "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT"
+  [ "$status" -eq 0 ]
+  # It reached the end of the run rather than dying somewhere in the loop...
+  assert_contains "$output" "manual_handoff_only=true"
+  # ...and it correctly found no high-risk source, so the superseded critical capsule was
+  # skipped rather than answered with.
+  refute_contains "$output" "High-risk task detected"
 }

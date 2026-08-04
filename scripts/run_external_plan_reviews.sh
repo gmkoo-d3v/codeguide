@@ -732,6 +732,8 @@ if [[ "$MANUAL_HANDOFF_ONLY" == "true" && "$INGEST_MANUAL_RESPONSES" == "true" ]
 fi
 
 source "$THIS_DIR/codeguide_paths.sh"
+CODEGUIDE_DOC_LINES_SCRIPT_DIR="$THIS_DIR"
+source "$THIS_DIR/codeguide_doc_lines.sh"
 
 PROJECT_ROOT_ABS="$(codeguide_resolve_project_root "$PROJECT_ROOT")"
 CONTEXT_ROOT="$(codeguide_context_root "$PROJECT_ROOT_ABS")"
@@ -821,7 +823,45 @@ escape_sed() {
   printf "%s" "$1" | sed 's/[\\&|]/\\&/g'
 }
 
-extract_field_value() {
+# TWO readers, on purpose, because this script reads two document kinds with OPPOSITE
+# fence polarities -- which is why one fence-blind helper served both and why closing it
+# with a single edit was never possible.
+#
+# capsule_field_value: PLAN, TASK, DECISION and ORCH capsules, the same documents the
+# validator constrains. Fence-AWARE through the shared reader, so a value quoted inside a
+# template example can no longer answer for the real field, and so this script and
+# validate_docs give one answer per document.
+#
+# It calls `unfenced_lines` DIRECTLY rather than wrapping `unfenced_field_value`, and the
+# normalization happens on an already-assigned variable rather than on a substitution passed
+# as an argument. Both halves matter: the first cut was
+# `normalize_one_line "$(unfenced_field_value ...)"`, which put the adapter's `exit` two
+# substitutions below the main shell AND in argument position, so with shadow_doc_parse.py
+# absent the refusal printed and this script CONTINUED with risk_level empty where the file
+# said `critical` (r02 finding 2, reproduced). See `require_shared_reader` above the first
+# read below: flattening this function is necessary and NOT sufficient, because
+# `high_risk_source_for_task` is itself invoked inside a substitution -- measured against a
+# flattened build, the adversarial gate was still silently waived.
+capsule_field_value() {
+  local file_path="$1"
+  local key="$2"
+  local line_no
+  local raw
+
+  line_no="$(unfenced_lines "$file_path" prefix "- ${key}:")" || codeguide_doc_lines_fail "$file_path"
+  line_no="${line_no%%$'\n'*}"
+  [[ -n "$line_no" ]] || return 0
+  raw="$(sed -n "${line_no}p" "$file_path" | sed "s/^- ${key}:[[:space:]]*//")"
+  normalize_one_line "$raw"
+}
+
+# response_field_value: EXTERNAL MODEL RESPONSES. Deliberately fence-BLIND and deliberately
+# NOT the shared reader. A model that wraps its whole answer capsule in a ``` block --
+# routine LLM behaviour -- would go from parsed to empty under a fence-aware read, turning
+# a delivered review into an unparseable one. This is the one place in the tree, beside
+# check_file_contains_pattern, where fence-blindness is load-bearing; it is named rather
+# than shared so the next sweep cannot "finish" this file by accident.
+response_field_value() {
   local file_path="$1"
   local key="$2"
   local raw
@@ -832,20 +872,29 @@ extract_field_value() {
 ensure_plan_field() {
   local key="$1"
   local value
-  value="$(extract_field_value "$PLAN_FILE" "$key")"
+  value="$(capsule_field_value "$PLAN_FILE" "$key")"
   if [[ -z "$value" ]]; then
     echo "[ERROR] Plan field '${key}' must be non-empty before external review: $PLAN_FILE" >&2
     exit 1
   fi
 }
 
+# Main shell, before the first capsule read. This is the half that holds regardless of
+# nesting: `high_risk_source_for_task` runs its capsule reads inside
+# `HIGH_RISK_SOURCE="$(high_risk_source_for_task || true)"`, so on bash 3.2.57 -- where a
+# command substitution does not inherit `set -e` -- no amount of care at those four call
+# sites can make the adapter's refusal reach this shell. Asserting the reader loads once,
+# here, is what stops a missing shadow_doc_parse.py from silently waiving the
+# adversarial-review requirement (r02 finding 2).
+require_shared_reader
+
 ensure_plan_field "task_id"
 ensure_plan_field "plan_version"
 ensure_plan_field "objective"
 ensure_plan_field "scope"
 
-PLAN_TASK_ID="$(extract_field_value "$PLAN_FILE" "task_id")"
-PLAN_DOC_VERSION="$(extract_field_value "$PLAN_FILE" "plan_version")"
+PLAN_TASK_ID="$(capsule_field_value "$PLAN_FILE" "task_id")"
+PLAN_DOC_VERSION="$(capsule_field_value "$PLAN_FILE" "plan_version")"
 if [[ "$PLAN_TASK_ID" != "$TASK_ID" ]]; then
   echo "[ERROR] task_id mismatch between file and option: ${PLAN_TASK_ID} != ${TASK_ID}" >&2
   exit 1
@@ -909,22 +958,25 @@ Allowed external_review_required_for values: plan_acceptance | implementation_st
 EOF
 }
 
+# The SECOND writer of ORCH.md, beside doc_garden.sh, and it had the same defect on the
+# same capsule class: a fence-blind probe plus a `sed` with NO line address rewrote every
+# column-0 match, including one inside a quoted template example, on a line the validator
+# cannot see (the task r03 finding 2 / -residuals-01 r01). Every
+# call here targets $ORCHESTRATION_FILE and never a model response, so the WRITE half has
+# none of the polarity conflict the RESPONSE reader above has, and it takes the shared
+# adapter unchanged.
 upsert_field() {
   local file_path="$1"
   local key="$2"
   local value="$3"
   local normalized
   local escaped
+  local target_line
 
   normalized="$(normalize_one_line "$value")"
   escaped="$(escape_sed "$normalized")"
-
-  if grep -qE "^- ${key}:" "$file_path" 2>/dev/null; then
-    sed -i.bak "s|^- ${key}:.*|- ${key}: ${escaped}|" "$file_path"
-    rm -f "${file_path}.bak"
-  else
-    printf -- "- %s: %s\n" "$key" "$normalized" >> "$file_path"
-  fi
+  target_line="$(require_unfenced_field_line "$file_path" "$key")"
+  write_unfenced_field "$file_path" "$key" "$normalized" "$escaped" "$target_line"
 }
 
 upsert_field_if_blank() {
@@ -933,7 +985,7 @@ upsert_field_if_blank() {
   local value="$3"
   local current_value
 
-  current_value="$(extract_field_value "$file_path" "$key")"
+  current_value="$(capsule_field_value "$file_path" "$key")"
   if [[ -n "$current_value" ]]; then
     return
   fi
@@ -949,6 +1001,25 @@ risk_level_requires_adversarial() {
   [[ "$risk_level" == "high" || "$risk_level" == "critical" ]]
 }
 
+# Sets HIGH_RISK_SOURCE. It does NOT print its answer, and the difference is the whole
+# point rather than a style choice.
+#
+# It used to be called as `HIGH_RISK_SOURCE="$(high_risk_source_for_task || true)"`, which
+# put every capsule read below TWO command substitutions deep -- and on bash 3.2.57 a
+# substitution subshell does not inherit `set -e`, so a read that refused was unrecoverable
+# from here no matter how those four call sites were written. Flattening
+# `capsule_field_value` does not reach it and neither does the preflight, because the
+# preflight is a per-RUN check and this is a per-FILE failure. Reproduced against a build
+# carrying both of those fixes: with one linked decision capsule unreadable (`chmod 000`,
+# `risk_level: critical`), the reader printed a PermissionError, this function returned
+# empty, no adversarial evaluator was auto-selected, and the run exited 0 -- the
+# adversarial-review requirement silently waived, which is the consequence r02 finding 2
+# named. (r02 reached it through a missing `shadow_doc_parse.py`; end to end that condition
+# is caught earlier by `ensure_plan_field`, so the per-file failure is the reachable form.)
+#
+# Running in the MAIN shell puts each `capsule_field_value` exactly one substitution below
+# `set -e`, which is the only depth at which the adapter's refusal is observable at all.
+# Assign to the global; never wrap this call in `$( )` or `|| true`.
 high_risk_source_for_task() {
   local task_file="$TASK_DIR/TASK-${TASK_ID}.md"
   local task_risk_level=""
@@ -957,31 +1028,42 @@ high_risk_source_for_task() {
   local decision_status
   local decision_risk_level
 
+  HIGH_RISK_SOURCE=""
+
+  # Assign, then normalize. `normalize_risk_level_value "$(capsule_field_value ...)"` put
+  # the read in ARGUMENT position, where a failing substitution becomes a successful command
+  # -- the status is gone before `set -e` could ever see it, at any depth.
   if [[ -f "$task_file" ]]; then
-    task_risk_level="$(normalize_risk_level_value "$(extract_field_value "$task_file" "risk_level")")"
+    task_risk_level="$(capsule_field_value "$task_file" "risk_level")"
+    task_risk_level="$(normalize_risk_level_value "$task_risk_level")"
     if risk_level_requires_adversarial "$task_risk_level"; then
-      printf "task risk_level=%s" "$task_risk_level"
-      return
+      HIGH_RISK_SOURCE="task risk_level=${task_risk_level}"
+      return 0
     fi
   fi
 
   if [[ ! -d "$DECISIONS_DIR" ]]; then
-    return
+    return 0
   fi
 
+  # `< <(find ...)` rather than a pipe: a pipeline would run this loop in a subshell and put
+  # the reads back below a level `set -e` cannot cross, as well as discarding the assignment.
   while IFS= read -r decision_file; do
-    linked_task="$(extract_field_value "$decision_file" "linked_task")"
+    linked_task="$(capsule_field_value "$decision_file" "linked_task")"
     [[ "$linked_task" == "TASK-${TASK_ID}" ]] || continue
 
-    decision_status="$(extract_field_value "$decision_file" "status")"
+    decision_status="$(capsule_field_value "$decision_file" "status")"
     [[ "$decision_status" == "superseded" ]] && continue
 
-    decision_risk_level="$(normalize_risk_level_value "$(extract_field_value "$decision_file" "risk_level")")"
+    decision_risk_level="$(capsule_field_value "$decision_file" "risk_level")"
+    decision_risk_level="$(normalize_risk_level_value "$decision_risk_level")"
     if risk_level_requires_adversarial "$decision_risk_level"; then
-      printf "%s risk_level=%s" "$(basename "$decision_file")" "$decision_risk_level"
-      return
+      HIGH_RISK_SOURCE="$(basename "$decision_file") risk_level=${decision_risk_level}"
+      return 0
     fi
   done < <(find "$DECISIONS_DIR" -maxdepth 1 -type f -name 'decision-*.md' ! -name 'decision-template.md' ! -name 'decision-index.md' | sort)
+
+  return 0
 }
 
 ORCHESTRATION_FILE="$(codeguide_orchestration_file "$PROJECT_ROOT_ABS" "$TASK_ID")"
@@ -1081,7 +1163,11 @@ upsert_field_if_blank "$ORCHESTRATION_FILE" "validation_agents" "pending-validat
 upsert_field_if_blank "$ORCHESTRATION_FILE" "owned_scopes" "planner: docs/plan; reviewers: docs/report; implementation: pending; validation: pending"
 upsert_field_if_blank "$ORCHESTRATION_FILE" "delegation_status" "active"
 
-HIGH_RISK_SOURCE="$(high_risk_source_for_task || true)"
+# Plain call in the main shell, assigning a global -- see the function. A `$( )` here would
+# put every capsule read it makes below a depth `set -e` cannot cross on bash 3.2.57, and a
+# `|| true` would discard the refusal even at depth zero.
+HIGH_RISK_SOURCE=""
+high_risk_source_for_task
 if [[ -n "$HIGH_RISK_SOURCE" && "$ADVERSARIAL_ALL" != "true" ]] && (( ${#ADVERSARIAL_EVALUATORS[@]} == 0 )); then
   ADVERSARIAL_EVALUATORS=("${REVIEWERS[0]}")
   echo "[INFO] High-risk task detected (${HIGH_RISK_SOURCE}); auto-selecting adversarial evaluator=${REVIEWERS[0]}"
@@ -1596,15 +1682,15 @@ parse_review_response() {
   local response_file="$1"
   local review_style="$2"
 
-  PARSED_VERDICT="$(extract_field_value "$response_file" "verdict" | tr '[:upper:]' '[:lower:]')"
-  PARSED_SUMMARY="$(extract_field_value "$response_file" "summary")"
-  PARSED_STRENGTHS="$(extract_field_value "$response_file" "strengths")"
-  PARSED_RISKS="$(extract_field_value "$response_file" "risks")"
-  PARSED_REQUESTED_CHANGES="$(extract_field_value "$response_file" "requested_changes")"
-  PARSED_OBJECTION="$(extract_field_value "$response_file" "objection")"
-  PARSED_COUNTERPROPOSAL="$(extract_field_value "$response_file" "counterproposal")"
-  PARSED_REBUTTAL="$(extract_field_value "$response_file" "rebuttal")"
-  PARSED_RESIDUAL_RISK="$(extract_field_value "$response_file" "residual_risk")"
+  PARSED_VERDICT="$(response_field_value "$response_file" "verdict" | tr '[:upper:]' '[:lower:]')"
+  PARSED_SUMMARY="$(response_field_value "$response_file" "summary")"
+  PARSED_STRENGTHS="$(response_field_value "$response_file" "strengths")"
+  PARSED_RISKS="$(response_field_value "$response_file" "risks")"
+  PARSED_REQUESTED_CHANGES="$(response_field_value "$response_file" "requested_changes")"
+  PARSED_OBJECTION="$(response_field_value "$response_file" "objection")"
+  PARSED_COUNTERPROPOSAL="$(response_field_value "$response_file" "counterproposal")"
+  PARSED_REBUTTAL="$(response_field_value "$response_file" "rebuttal")"
+  PARSED_RESIDUAL_RISK="$(response_field_value "$response_file" "residual_risk")"
 
   if [[ ! "$PARSED_VERDICT" =~ ^(accept|revise|blocked)$ ]]; then
     return 1

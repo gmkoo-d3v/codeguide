@@ -175,13 +175,12 @@ fence_strip_into() {
 
   python3 - "$src" "$script_dir" > "$out" 2>/dev/null <<'STRIPPY'
 import sys
-from pathlib import Path
 
 sys.path.insert(0, sys.argv[2])
 sys.dont_write_bytecode = True
 import shadow_doc_parse
 
-lines = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace").splitlines()
+lines = shadow_doc_parse.read_lines(sys.argv[1])
 sys.stdout.write("\n".join(shadow_doc_parse.content_lines(lines)) + "\n")
 STRIPPY
 }
@@ -250,8 +249,19 @@ fence_stripped_file() {
 #
 # The anchor is duplicated by hand rather than shared through a variable because a shared
 # ERE fragment reads as configurable; it is not. If you change one of these two anchors,
-# change the other in the same edit -- the bats case "validate_docs answers key presence
-# with the same column-0 anchor the value read uses" fails otherwise.
+# change the other in the same edit. Both directions are pinned: widening the PROBE fails
+# "validate_docs answers key presence with the same column-0 anchor the value read uses",
+# and widening the VALUE reader fails "validate_docs answers a field VALUE with the same
+# column-0 anchor the presence probe uses". Only the first existed before, so widening the
+# value reader alone left all 627 tests green while this comment claimed otherwise (r03
+# mutant M21) -- the anchor test asserts an indented-only field reports "missing", which
+# the still-narrow probe delivers on its own.
+#
+# What the anchor difference IS, stated once: the shared reader matches
+# `^\s*-\s*key\s*:`, so it also tolerates leading indentation, several spaces after the
+# dash and a space before the colon. This reader tolerates none of those. That is a
+# grammar difference rather than a fence difference; widening it is owed its own
+# before/after evidence and stays deliberately unbuilt.
 field_key_present() {
   local file_path="$1"
   local key="$2"
@@ -276,17 +286,30 @@ field_key_present() {
 #
 # The trailing group matches the walk's `^- (TASK-[A-Za-z0-9._-]+)` boundary exactly: a
 # ref ends at whitespace or end of line, so `- TASK-foo-2 planned` is not a row for TASK-foo.
+# That sentence used to have nothing behind it: r03 deleted the group and all 627 tests
+# stayed green (mutant M2). It is now pinned by "validate_docs does not read a longer
+# task-index ref as the row for a shorter one".
+#
+# $2 is a LITERAL ref and is escaped HERE. Both row helpers take a literal and escape
+# internally; the previous split -- this one interpolating raw while its sibling below took
+# pre-escaped input from its caller -- is the escaping AXIS, and two helpers with opposite
+# argument contracts is the same trap one level up. The walk's charset `[A-Za-z0-9._-]`
+# permits a dot and no rule forbids a dotted task filename, so unescaped a probe for
+# `TASK-foo.bar-01` matched the row `- TASK-fooxbar-01`: "task-index missing row" silenced
+# while the walk captured a different ref.
 task_index_row_present() {
   local index_file="$1"
-  local task_ref="$2"
+  local task_ref_escaped
+  task_ref_escaped="$(escape_ere_literal "$2")"
 
   fence_stripped_file "$index_file"
-  grep -qE "^- ${task_ref}"'([[:space:]]|$)' "$FENCE_STRIPPED_PATH" 2>/dev/null
+  grep -qE "^- ${task_ref_escaped}"'([[:space:]]|$)' "$FENCE_STRIPPED_PATH" 2>/dev/null
 }
 
 # The decision-index ROW grammar, in both the section form and the legacy table form.
-# $2 is already ERE-escaped by the caller (escape_ere_literal), because a decision file
-# name carries dots.
+# $2 is a LITERAL base name, escaped HERE -- see the note on the sibling above. A decision
+# file name carries dots, so this one was never safe raw; the caller used to escape it,
+# which is why only the task-index probe was ever wrong.
 #
 # Its own named helper for the same reason as the two above: the alternative would be a
 # generic "does this regex match outside fences" helper, and a caller-supplied pattern is
@@ -297,10 +320,32 @@ task_index_row_present() {
 # Found by the task's own axis enumeration, not by a review.
 decision_index_row_present() {
   local index_file="$1"
-  local decision_base_escaped="$2"
+  local decision_base_escaped
+  decision_base_escaped="$(escape_ere_literal "$2")"
 
   fence_stripped_file "$index_file"
   grep -qE "(^- ${decision_base_escaped} \||^\| ${decision_base_escaped} \|)" \
+    "$FENCE_STRIPPED_PATH" 2>/dev/null
+}
+
+# The issue-tracker README ROW grammar -- a markdown TABLE cell rather than a `- ` bullet,
+# so it gets its own name for the same reason the two above do.
+#
+# It lived inline in check_issue_tracker_integrity at two call sites and carried BOTH open
+# axes at once: the id was interpolated raw (so `ISSUE-2026.01.01-x` matched the row
+# `ISSUE-2026x01x01-x`) and the grep read the RAW README (so a row that exists only inside
+# a quoted "Row format" example silenced "missing index row" entirely, reproduced with its
+# control). The escaping half was closed in place last round and the fence half was not --
+# on the two lines that round edited. Making it a helper with the SAME contract as its two
+# siblings, a literal escaped internally against the fence-stripped copy, is what stops the
+# next site from picking one of the two.
+issue_index_row_present() {
+  local index_file="$1"
+  local issue_id_escaped
+  issue_id_escaped="$(escape_ere_literal "$2")"
+
+  fence_stripped_file "$index_file"
+  grep -qE "\|[[:space:]]*${issue_id_escaped}(\.md)?[[:space:]]*\|" \
     "$FENCE_STRIPPED_PATH" 2>/dev/null
 }
 
@@ -316,10 +361,23 @@ extract_field_value() {
   #
   # Stripping is cached per FILE, not per field read: a python spawn per read measured
   # 4x the old grep, and a capsule is read 9-25 times. The `^- key:` column-0 anchoring
-  # and the grep that uses it are unchanged, so this adds fence awareness and nothing else.
+  # and the grep that uses it are unchanged.
+  #
+  # This comment used to end "so this adds fence awareness and nothing else", which was
+  # FALSE when it was written and is true now. Delegating the strip also changed what a
+  # LINE is: the strip consumed `str.splitlines()`, which breaks on VT, FF, FS, GS, RS,
+  # NEL, U+2028 and U+2029, while the grep below and every other raw reader break on `\n`
+  # alone -- so on a document containing no fence at all this reader could return a value
+  # HEAD's grep did not. The line rule is
+  # now shared too, in shadow_doc_parse.split_lines, and it is `\n`-only because that is
+  # what CommonMark, grep, awk, sed and wc -l all mean by a line. Pinned by the three
+  # form-feed cases in validate_docs.bats, not by this sentence.
   fence_stripped_file "$file_path"
   raw="$(grep -E "^- ${key}:" "$FENCE_STRIPPED_PATH" 2>/dev/null | head -n 1 | sed "s/^- ${key}:[[:space:]]*//" || true)"
-  # Trim whitespace
+  # Trim whitespace. Every enum, equality and reference rule in the validator is a literal
+  # string compare against this value, so an untrimmed one fails them all; r03 deleted this
+  # line and all 627 tests stayed green (mutant M23), which is now caught by
+  # "validate_docs trims trailing whitespace off a field value before any rule compares it".
   printf "%s" "$raw" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
 }
 
@@ -552,6 +610,24 @@ is_placeholder_approval_value() {
   esac
 }
 
+# DELIBERATELY FENCE-BLIND, and the only place in the tree where that is load-bearing.
+#
+# It takes a caller-supplied ERE and greps the RAW file, which is the exact shape this line
+# of work deleted `field_pattern_present` for -- so the difference needs writing down
+# rather than leaving for the next sweep to "finish". Its 18 invocations all come from
+# `check_shadow_policy_files`, and the payload they probe is 100% FENCED on purpose: the
+# policy registries carry their declarations inside fenced blocks, and the awk collectors
+# that consume those declarations read them raw and agree. Measured on this corpus
+# in docs/policy/shadow-regex-patterns.md
+# the keys allowed_paths, excluded_paths, validates, cannot_validate and max_promotion_risk
+# each appear 8 times and ZERO times outside a fence; shadow-rule-registry.md has `rules:`
+# once and zero outside; shadow-validator-catalog.md has `validates:` 18 times and zero
+# outside. Making this helper fence-aware turns roughly eighteen strict PASS lines into
+# FAILs on the live corpus.
+#
+# So the boundary is: the `- key:` CAPSULE grammar is fence-aware everywhere; the policy
+# REGISTRY grammar is fence-blind everywhere, by the recorded decision, which
+# already puts the registry payload outside the shared reader. Do not unify this one.
 check_file_contains_pattern() {
   local file_path="$1"
   local pattern="$2"

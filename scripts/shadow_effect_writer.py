@@ -1608,6 +1608,25 @@ def default_doc_header(target_ref: str) -> str:
     )
 
 
+def _drop_trailing_blank_lines(text: str) -> str:
+    r"""Collapse trailing blank LINES without touching the last content line's bytes.
+
+    `str.rstrip()` was doing this job and it strips every trailing whitespace character,
+    `\r` included -- so an effect map whose lines end CRLF came out of an append with its
+    LAST line ending converted to a bare `\n` while all the others survived. The read above
+    was made byte-faithful for exactly this round trip; a writer that then eats one CR is
+    the same defect at the other end of it, one character wide instead of every character
+    (the task, found by binding r02's surviving byte-faithful
+    mutant). Splitting with the shared line rule and dropping whole blank lines keeps the
+    intent -- exactly one blank line before the appended block -- and returns a prefix of
+    the input rather than a reflowed copy of it.
+    """
+    lines = shadow_doc_parse.split_lines(text)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines)
+
+
 def upsert_record(existing: str, target_ref: str, rendered: str, record_id: str) -> tuple[str, str]:
     begin = marker(record_id, "begin")
     end = marker(record_id, "end")
@@ -1618,12 +1637,18 @@ def upsert_record(existing: str, target_ref: str, rendered: str, record_id: str)
     end_index = existing.find(end)
     if begin_index >= 0 and end_index >= begin_index:
         end_index += len(end)
-        updated = existing[:begin_index].rstrip() + "\n\n" + rendered + "\n" + existing[end_index:].lstrip("\n")
+        updated = (
+            _drop_trailing_blank_lines(existing[:begin_index])
+            + "\n\n"
+            + rendered
+            + "\n"
+            + existing[end_index:].lstrip("\n")
+        )
         if not updated.endswith("\n"):
             updated += "\n"
         return updated, "update"
 
-    return existing.rstrip() + "\n\n" + rendered + "\n", "append"
+    return _drop_trailing_blank_lines(existing) + "\n\n" + rendered + "\n", "append"
 
 
 def leading_metadata_value(existing: str, field_name: str) -> str:
@@ -1643,7 +1668,7 @@ def leading_metadata_value(existing: str, field_name: str) -> str:
     a second private one (the recorded decision). A `## ` inside a fence no
     longer ends the scan, which is the same correction in the other direction.
     """
-    for line in shadow_doc_parse.content_lines(existing.splitlines()[:80]):
+    for line in shadow_doc_parse.content_lines(shadow_doc_parse.split_lines(existing)[:80]):
         stripped = line.strip()
         if stripped.startswith("## "):
             break
@@ -1678,7 +1703,15 @@ def existing_record_lifecycle_blockers(existing: str, record_id: str) -> tuple[s
         return None, []
 
     lifecycles: list[str] = []
-    for line in block.splitlines():
+    # `split_lines`, not `str.splitlines()`: this reads `- lifecycle:` out of an effect-map
+    # MARKDOWN block in order to GATE A WRITE, and `splitlines` breaks on eight characters
+    # no other reader of this document breaks on -- so one form feed inside a record block
+    # could manufacture a second `- lifecycle:` and turn a legal transition into "lifecycle
+    # metadata is missing or malformed", or hide one. The effect-map GRAMMAR stays outside
+    # the shared reader; the LINE rule does not, and this
+    # file already shares it at leading_metadata_value (the task r01
+    # finding 7, which flagged this site as unenumerated).
+    for line in shadow_doc_parse.split_lines(block):
         stripped = line.strip()
         if stripped.startswith("- lifecycle:"):
             lifecycles.append(stripped.split(":", 1)[1].strip())
@@ -1829,7 +1862,13 @@ def main(argv: list[str]) -> int:
     if args.expected_target_hash and args.expected_target_hash != before_hash:
         blockers.append("target hash mismatch")
 
-    existing = target_path.read_text(encoding="utf-8") if target_path.exists() else ""
+    # Byte-faithful read: this text is split with shadow_doc_parse.split_lines (:1646) AND
+    # written back whole by atomic_write_text below, so a universal-newline read made every
+    # effect write silently rewrite a CRLF or lone-CR document as `\n`-only -- the same
+    # whole-document round-trip corruption shadow_source_digest.upsert_digest_field has
+    # errors is left strict: a non-UTF-8
+    # effect map must still fail loudly rather than be rewritten with replacement chars.
+    existing = shadow_doc_parse.read_document_text(target_path, errors="strict") if target_path.exists() else ""
     record_id = str(record.get("record_id", ""))
     blockers.extend(reserved_target_blockers(target_ref, existing))
     blockers.extend(target_role_blockers(existing))

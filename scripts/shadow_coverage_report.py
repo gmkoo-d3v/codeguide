@@ -28,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from codeguide_paths import source_root_for  # DRY: shared source-repo resolution policy
-from shadow_source_digest import read_source_paths  # DRY: same parser as the digest tool
+from shadow_source_digest import source_paths_for_doc  # DRY: same parser AND the same line rule as the digest tool
 from shadow_impact_report import (  # DRY: same change-set derivation as the impact report
     changed_abs_paths,
     project_root_from,
@@ -44,10 +44,10 @@ def declared_source_paths(shadow_dir: Path, project_root: Path) -> set[Path]:
         if rel_parts and rel_parts[0] in ("_deprecated", "_obsolete"):
             continue
         try:
-            lines = doc.read_text(encoding="utf-8", errors="replace").splitlines()
+            declared_paths = source_paths_for_doc(doc)
         except OSError:
             continue
-        for rel in read_source_paths(lines):
+        for rel in declared_paths:
             candidate = Path(rel)
             target = candidate if candidate.is_absolute() else (project_root / candidate)
             try:

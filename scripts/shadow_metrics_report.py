@@ -73,7 +73,7 @@ def classify_lines(text: str) -> tuple[int, int, int]:
     routing = prose = code = 0
     fence_char: str | None = None
     fence_len = 0
-    for line in text.splitlines():
+    for line in shadow_doc_parse.split_lines(text):
         marker = _fence_marker(line)
         if fence_char is not None:
             if marker is not None and marker[0] == fence_char and marker[1] >= fence_len:
@@ -144,7 +144,12 @@ def main(argv: list[str]) -> int:
 
     for doc in iter_shadow_docs(shadow_dir):
         try:
-            text = doc.read_text(encoding="utf-8", errors="replace")
+            # Byte-faithful: `Path.read_text` translates CRLF and a lone CR to `\n` before
+            # any splitter sees them, which silently undid the shared line rule
+            # `text.count("\n")` below is
+            # what `wc -l` counts either way; what changes is that classify_lines now
+            # answers on the same lines `grep` and `awk` do.
+            text = shadow_doc_parse.read_document_text(doc)
         except OSError:
             skipped += 1
             continue

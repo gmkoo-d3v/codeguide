@@ -131,7 +131,7 @@ def main(argv: list[str]) -> int:
         if rel_parts and rel_parts[0] in ("_deprecated", "_obsolete"):
             continue
         try:
-            lines = doc.read_text(encoding="utf-8", errors="replace").splitlines()
+            lines = shadow_doc_parse.read_lines(doc)
         except OSError:
             continue
         nodes[doc.resolve(strict=False)] = (doc_role_of(lines), lines)
