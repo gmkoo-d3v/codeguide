@@ -1254,11 +1254,6 @@ EOF
 
 
 @test "shadow_effect_writer hints the runtime_scenario_fit decision command" {
-  # The writer BLOCKS this record correctly; what is missing is the remediation
-  # hint, because next_action_hints() excludes deterministic_runtime. The
-  # assertions below are right and the product is wrong:
-  # the project docs
-  skip "ISSUE-n19c07: writer emits no runtime_scenario_fit hint"
   _writer_metadata_fixtures
 
   run python3 "$SHADOW_EFFECT_WRITER" \
@@ -1282,6 +1277,29 @@ EOF
   assert_contains "$output" "--expiry-or-invalidation-rule binding_change"
   refute_contains "$output" "choose_supported_fact_decision_type"
 }
+
+@test "shadow_effect_writer names runtime_scenario_fit for a generic missing evidence decision blocker" {
+  _writer_metadata_fixtures
+
+  run python3 "$SHADOW_EFFECT_WRITER" \
+    --project-root "$TEST_PROJECT" \
+    --record "$good_runtime_record_file" \
+    --candidate "$candidate_file" \
+    --user-decision "$decision_file" \
+    --probe-result "$runtime_probe_file" \
+    --target-shadow-file "packages/codeguide/effects.md" \
+    --mode dry-run \
+    --today "2026-05-02"
+
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "fact evidence requires --evidence-decision"
+  assert_contains "$output" '"next_actions"'
+  assert_contains "$output" "--decision-type runtime_scenario_fit"
+  assert_contains "$output" "--trace-ref logs/runtime.trace:2"
+  assert_contains "$output" "--scenario-ref scenario:user-update-cache"
+  refute_contains "$output" "choose_supported_fact_decision_type"
+}
+
 @test "shadow_effect_writer accepts Java parser-backed deterministic code evidence" {
   local candidate_file="$TEST_WORKSPACE/candidate.json"
   local decision_file="$TEST_WORKSPACE/decision.json"

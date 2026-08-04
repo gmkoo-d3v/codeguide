@@ -828,9 +828,12 @@ def next_action_hints(
                 }
             )
 
-    if evidence_type == "deterministic_runtime" and any(
-        "runtime_scenario_fit" in blocker or "runtime scenario fit" in blocker or "scenario fit" in blocker
-        for blocker in blockers
+    if evidence_type == "deterministic_runtime" and (
+        any(
+            "runtime_scenario_fit" in blocker or "runtime scenario fit" in blocker or "scenario fit" in blocker
+            for blocker in blockers
+        )
+        or any("fact evidence requires --evidence-decision" in blocker for blocker in blockers)
     ):
         trace_ref = evidence.get("trace_ref")
         scenario_ref = evidence.get("scenario_ref")
