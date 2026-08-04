@@ -851,12 +851,6 @@ EOF
 }
 
 @test "shadow_v2_review_packet_generator carries plural source_refs into the packet" {
-  # bounded_refs_from_value only reads SINGULAR ref keys, so a "source_refs" list -- the
-  # form shadow_llm_candidate_wrapper.py and shadow_apply_gate.py actually emit -- is
-  # silently dropped. The assertion is right and the product is wrong:
-  # the project docs
-  skip "ISSUE-n68d8d: packet drops plural source_refs"
-
   local writer_result="$TEST_WORKSPACE/review-writer-result.json"
   cat > "$writer_result" <<'JSONEOF'
 {"status":"blocked","writes_shadow_docs":false,"auto_promotes_facts":false,"source_refs":["src/UserService.java:6"]}
@@ -870,6 +864,40 @@ JSONEOF
 
   [ "$status" -eq 0 ]
   assert_contains "$output" "src/UserService.java:6"
+}
+
+@test "shadow_v2_review_packet_generator combines singular and plural refs within the limit" {
+  local writer_result="$DOCS_ROOT/report/review-mixed-refs.json"
+  cat > "$writer_result" <<'JSONEOF'
+{"status":"blocked","source_ref":"src/Singular.java:1","source_refs":["src/Plural00.java:1","src/Plural01.java:1","src/Plural02.java:1","src/Plural03.java:1","src/Plural04.java:1","src/Plural05.java:1","src/Plural06.java:1","src/Plural07.java:1","src/Plural08.java:1","src/Plural09.java:1","src/Plural10.java:1","src/Plural11.java:1","src/Plural12.java:1","src/Plural13.java:1","src/Plural14.java:1","src/Plural15.java:1","src/Plural16.java:1","src/Plural17.java:1","src/Plural18.java:1","src/Plural19.java:1"]}
+JSONEOF
+
+  run python3 "$SHADOW_V2_REVIEW_PACKET" \
+    --project-root "$TEST_PROJECT" \
+    --task-id "shadow-effect-map-01" \
+    --writer-result "$writer_result" \
+    --format json
+
+  [ "$status" -eq 0 ]
+  run python3 -c 'import json, sys; refs = json.loads(sys.argv[1])["source_refs"]; assert refs == ["src/Singular.java:1"] + [f"src/Plural{i:02}.java:1" for i in range(19)]; assert len(refs) == 20' "$output"
+  [ "$status" -eq 0 ]
+}
+
+@test "shadow_v2_review_packet_generator bounds plural refs with deduped input order" {
+  local writer_result="$DOCS_ROOT/report/review-plural-refs.json"
+  local refs_json
+  refs_json="$(python3 -c 'import json; refs = [f"src/Ref{i:02}.java:1" for i in range(24)]; refs.insert(2, refs[1]); print(json.dumps(refs))')"
+  printf '{"status":"blocked","source_refs":%s}\n' "$refs_json" > "$writer_result"
+
+  run python3 "$SHADOW_V2_REVIEW_PACKET" \
+    --project-root "$TEST_PROJECT" \
+    --task-id "shadow-effect-map-01" \
+    --writer-result "$writer_result" \
+    --format json
+
+  [ "$status" -eq 0 ]
+  run python3 -c 'import json, sys; refs = json.loads(sys.argv[1])["source_refs"]; assert refs == [f"src/Ref{i:02}.java:1" for i in range(20)]; assert len(refs) == len(set(refs)) == 20' "$output"
+  [ "$status" -eq 0 ]
 }
 
 @test "shadow_v2_review_packet_generator refuses artifact inputs outside project root" {

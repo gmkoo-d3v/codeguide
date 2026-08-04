@@ -105,6 +105,13 @@ def ensure_output_allowed(project_root: Path, output: Path) -> None:
 def bounded_refs_from_value(value: Any, limit: int = 20) -> list[str]:
     refs: list[str] = []
 
+    def append_ref(candidate: Any) -> None:
+        if len(refs) >= limit or not has_text(candidate):
+            return
+        text = str(candidate).strip()
+        if text not in refs:
+            refs.append(text)
+
     def visit(item: Any) -> None:
         if len(refs) >= limit:
             return
@@ -118,10 +125,11 @@ def bounded_refs_from_value(value: Any, limit: int = 20) -> list[str]:
                     "anchor_file",
                     "probe_result_ref",
                     "output",
-                } and has_text(child):
-                    text = str(child).strip()
-                    if text not in refs:
-                        refs.append(text)
+                }:
+                    append_ref(child)
+                elif key == "source_refs" and isinstance(child, list):
+                    for source_ref in child:
+                        append_ref(source_ref)
                 else:
                     visit(child)
         elif isinstance(item, list):
