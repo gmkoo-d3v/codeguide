@@ -12,6 +12,7 @@ import argparse
 import datetime as dt
 import json
 import re
+import select
 import shlex
 import sys
 from pathlib import Path
@@ -113,6 +114,23 @@ def has_text(value: Any) -> bool:
 
 def single_line(value: Any) -> str:
     return str(value).replace("\n", " ").replace("\r", " ").strip()
+
+
+def stdin_has_data() -> bool:
+    """True if a read from stdin would return immediately (data or EOF).
+
+    Replaces a plain ``not sys.stdin.isatty()`` check: "not a terminal" does
+    not imply "has data ready". A non-tty stdin can be an open pipe with no
+    writer ready yet -- a background job, CI runner, or an agent harness pipe
+    that never reaches EOF -- and blindly reading it would block forever. A
+    zero-timeout ``select`` tells us whether ``read()`` would return without
+    blocking, without itself ever blocking.
+    """
+    try:
+        ready, _, _ = select.select([sys.stdin], [], [], 0)
+    except (OSError, ValueError):
+        return False
+    return bool(ready)
 
 
 def load_json_file(path: str, label: str) -> Any:
@@ -549,7 +567,7 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]]:
     if args.enable_hints:
         blockers.extend(scope_blockers)
 
-    records = read_records(args.input) if args.input or not sys.stdin.isatty() else []
+    records = read_records(args.input) if args.input or stdin_has_data() else []
     record_questions, stats = questions_from_records(records, args.max_questions, args.ask_confirmed)
 
     writer_raw = [load_json_file(path, "--writer-result") for path in args.writer_results or []]

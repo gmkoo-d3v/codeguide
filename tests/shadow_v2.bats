@@ -505,6 +505,53 @@ EOF
   assert_contains "$output" '"trigger": "project_scope_verified"'
 }
 
+@test "shadow_v2_user_decision_assistant does not hang when stdin is an open pipe with no data" {
+  # Regression for a `not sys.stdin.isatty()` heuristic: "not a terminal" was
+  # read as "has piped data", but a non-tty stdin can be an open pipe with no
+  # writer ready yet -- exactly what a background job, CI runner, or an agent
+  # harness pipe looks like -- and the old code blocked on read() forever.
+  # `timeout` is not installed on this machine, so termination is verified
+  # with a background PID plus a bounded poll loop instead.
+  local fifo="$TEST_WORKSPACE/no-data.fifo"
+  mkfifo "$fifo"
+
+  # Opening a fifo read-write on one fd never blocks (unlike plain `<` or `>`
+  # on a fifo) and, because the same fd holds both ends open, the reader
+  # never sees EOF either. That reproduces "not a tty, no data, no EOF"
+  # without a second process and without ever hanging the test harness.
+  exec 9<>"$fifo"
+
+  python3 "$SHADOW_V2_USER_DECISION" --project-root "$TEST_PROJECT" --enable-hints --format json \
+    <&9 > "$TEST_WORKSPACE/stdin-hang.out" 2>&1 &
+  local pid=$!
+
+  local waited=0
+  while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 50 ]; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+
+  local hung="false"
+  if kill -0 "$pid" 2>/dev/null; then
+    hung="true"
+    kill -9 "$pid" 2>/dev/null
+  fi
+
+  exec 9>&-
+  exec 9<&-
+
+  assert_equal "$hung" "false"
+
+  local exit_status=0
+  wait "$pid" || exit_status=$?
+  local output
+  output="$(cat "$TEST_WORKSPACE/stdin-hang.out")"
+
+  assert_equal "$exit_status" "0"
+  assert_contains "$output" '"status": "ok"'
+  assert_contains "$output" '"question_count": 0'
+}
+
 @test "shadow_v2_user_decision_assistant surfaces writer user-decision command hints" {
   local writer_result="$TEST_WORKSPACE/writer-result.json"
   cat > "$writer_result" <<EOF
