@@ -80,11 +80,12 @@ write_if_missing "${PROJECT_ROOT_ABS}/AGENTS.md" '# Agent Router
 
 - Treat `docs/` as the system of record.
 - For non-trivial tasks, start from `docs/shadow/project-shadow.md`.
-- Use `docs/task/task-index.md` for task state.
-- Use `docs/plan/`, `docs/report/`, `docs/decisions/`, and `docs/orchestration/` for durable plans, reviews, decisions, and handoffs.
+- Use `docs/task/task-index.md` for task state. To resume an in_progress task (or re-ground after context compaction), follow the recovery read order in `references/session-resume-contract.md` — the task'"'"'s `resume_*` capsule, not any conversation summary, is the state of record.
+- Use `docs/plan/`, `docs/report/`, `docs/decisions/`, `docs/orchestration/`, and `docs/issues/` for durable plans, reviews, decisions, handoffs, and issue records.
 - Use Serena for semantic code navigation before broad file reads.
 - Keep Mem0 disabled for now; later use it only for hints, preferences, and recent-work pointers.
 - Verify tool or memory hints against direct source reads, tests, command output, or runtime evidence.
+- If you are operating as Codex or ChatGPT, run Anthropic (`claude`) CLI calls non-sandboxed (user-approved escalated execution) from the first attempt: Codex sandboxes block the Anthropic API and OS credential store. See `references/external-cli-handoff.md`.
 - Keep paths as code spans like `docs/...`; do not use import syntax for documentation paths.
 - Do not store long plans, architecture dumps, secrets, or chat transcripts here.
 
@@ -101,11 +102,12 @@ write_if_missing "${PROJECT_ROOT_ABS}/CLAUDE.md" '# Claude Router
 
 - Treat `docs/` as the system of record.
 - For non-trivial tasks, start from `docs/shadow/project-shadow.md`.
-- Use `docs/task/task-index.md` for task state.
-- Use `docs/plan/`, `docs/report/`, `docs/decisions/`, and `docs/orchestration/` for durable plans, reviews, decisions, and handoffs.
+- Use `docs/task/task-index.md` for task state. To resume an in_progress task (or re-ground after context compaction), follow the recovery read order in `references/session-resume-contract.md` — the task'"'"'s `resume_*` capsule, not any conversation summary, is the state of record.
+- Use `docs/plan/`, `docs/report/`, `docs/decisions/`, `docs/orchestration/`, and `docs/issues/` for durable plans, reviews, decisions, handoffs, and issue records.
 - Use Serena for semantic code navigation before broad file reads.
 - Keep Mem0 disabled for now; later use it only for hints, preferences, and recent-work pointers.
 - Verify tool or memory hints against direct source reads, tests, command output, or runtime evidence.
+- If you are operating as Codex or ChatGPT, run Anthropic (`claude`) CLI calls non-sandboxed (user-approved escalated execution) from the first attempt: Codex sandboxes block the Anthropic API and OS credential store. See `references/external-cli-handoff.md`.
 - Keep paths as code spans like `docs/...`; do not use `@docs/...` import syntax.
 - Do not store long plans, architecture dumps, secrets, or chat transcripts here.
 
@@ -513,7 +515,9 @@ write_if_missing "${TASK_DIR}/task-template.md" '# TASK-<id>
 - test_scope:
 - risks:
 - risk_level:
-- status: planned | in_progress | blocked | done
+- consumes_plan_ref:
+- status: planned | in_progress | blocked | done | superseded | cancelled
+- disposition: # required for superseded/cancelled: why the task closed without completing
 - owner:
 - claimed_at:
 - due_date:
@@ -891,7 +895,7 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 - Create `_deprecated/` and `_obsolete/` under `docs/shadow/` for archived bodies and obsolete material.
 - Preserve this default read path:
   - `project-shadow.md -> <bucket>/_index.md -> <bucket>/<unit>/overview.md -> concern leaf`
-- Give every bucket-index unit row a `selection_summary`: one line, at most 250 characters, saying what distinguishes that unit from its siblings, and required to be a byte-prefix of the referenced overview'"'"'s `unit_summary`. It is the hop-2 field an agent reads to decide which overview is worth opening; the prefix relation is what makes the row checkable instead of decorative. There is no tag field — language and tooling facts are derivable from the code and answered by `rg`/Serena. Advisory validation checks presence, single-line form, the cap, and the prefix.
+- Give every bucket-index unit row a `selection_summary`: one line, 12 to 250 characters, saying what distinguishes that unit from its siblings. It must be a prefix of the referenced overview `unit_summary`, compared after trimming surrounding whitespace. It is the hop-2 field an agent reads to decide which overview is worth opening; the prefix relation is what makes the row checkable instead of decorative. There is no tag field — language and tooling facts are derivable from the code and answered by `rg`/Serena. Advisory validation checks `overview_doc` presence, `selection_summary` presence, single-line form, both length bounds, and the prefix.
 - Declare rationale with the optional `linked_decisions` field on `unit_overview` and `concern_leaf` docs only: an inline comma list of repo-relative `docs/decisions/decision-<id>.md` capsules that currently govern the unit or concern. It is the "why" hop of the read path, taken only when the question is why; an absent or empty field is silent. Curate it (about five entries), do not accumulate history — `decision-index.md` is the full record. Advisory validation resolves each entry and warns on superseded targets; `scripts/shadow_rationale_report.py` derives the reverse direction on demand instead of storing backlinks. Field grammar and semantics live in the skill'"'"'s `references/shadow-system-contract.md`.
 
 ## Shadow freshness
@@ -914,6 +918,13 @@ write_if_missing "${DOCS_DIR}/DOC-GOVERNANCE.md" '# Docs Governance
 - Treat `서브에이전트`, `서브 에이전트`, `subagent`, `subagents`, `sub-agent`, and `sub-agents` as the same sub-agent trigger.
 - If `execution_mode: solo` is used, `delegation_note` must explain why sub-agent delegation was not practical.
 - In strict mode, supervising-lead-architect/sub-agent ownership fields must be populated for `supervisor_subagents`.
+
+## Native sub-agent review tier
+
+- `review_mode: claude_subagents` runs review and analysis natively inside the current coding-agent session, without `config/ai_model_registry.json` or external runner scripts.
+- Select the model tier from `risk_level`: `high`/`critical` use deep (`model: sonnet`); `low`/`medium`/unset use fast (`model: haiku`); an explicit user request for deep or fast analysis overrides that default.
+- Native sub-agent spawning selects only a model (`sonnet` | `opus` | `haiku` | `fable`), not a separate reasoning-effort dial. Independent scopes may run in parallel; record the tier in `reviewer_agents`/`implementation_agents`.
+- A project role-routing policy may supersede this default inside a full role-split pipeline. Record the applied policy and role assignment in `ORCH.md` `delegation_note`; keep this default for review legs outside that pipeline.
 
 ## Validation policy
 

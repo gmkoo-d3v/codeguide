@@ -41,7 +41,16 @@ Use one file per task: `docs/task/TASK-<id>.md`
 - axis_why: # principles applied (SOLID/DRY/KISS/YAGNI/LoD/SoC/CQS/POLA)
 - axis_where: # structure and boundary choice
 - axis_verify: # test strategy (TDD/pyramid/FIRST)
+- resume_source_head:      # source-repo HEAD sha + short dirty summary
+- resume_changed_files:    # source-repo-relative changed paths, sorted and capped
+- resume_checkpointed_at:  # UTC ISO timestamp
+- resume_state_revision:   # monotonic integer, incremented per checkpoint
+- resume_next_action:      # exact next step, concrete enough to execute cold
+- resume_last_verified:    # last state proven true and how
+- resume_blockers:         # blocker, or `none`
 ```
+
+The `resume_*` capsule is maintained under `references/session-resume-contract.md`; use that contract for field ownership, checkpointing, and recovery read order.
 
 `<project-root>/docs/task/task-index.md` should list task ids organized by status section (Planned/In Progress/Blocked/Done/Superseded/Cancelled). Rows are automatically moved between sections when task status changes.
 

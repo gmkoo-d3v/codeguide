@@ -34,6 +34,7 @@ Outcome-first governance skill for architecture, code quality, documentation lif
 |---|---|
 | Operating model, response style, evidence lookup, reasoning-budget behavior | `references/operating-model.md` |
 | Session resume capsule, checkpoint cadence, recovery read order | `references/session-resume-contract.md` |
+| Runtime issue-tracker roles, lifecycle, and statuses | `references/issue-tracker-contract.md` |
 | Workflow, scope modes, micro-design, edge scans, docs/runtime validation, goal loops | `references/workflow.md`, `references/goal-loop-contract.md` |
 | Documentation language policy | `references/doc-language-policy.md` |
 | Docs system-of-record hub: cross-cutting defaults, directory tree, script entry points, secret rules | `references/docs-system-of-record.md` |

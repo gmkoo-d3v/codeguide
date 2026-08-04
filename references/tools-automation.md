@@ -52,6 +52,10 @@ Use this reference when planning or evaluating local quality checks, CI gates, a
 
 Use `<skill-dir>` for the directory containing this skill package and `SKILL.md`.
 
+- `<skill-dir>/scripts/codeguide doctor|check|validate|docs-sync|scaffold|review <args...>`
+  - `doctor` runs `check_env.sh`; `check` runs `check_all.sh`; the other subcommands route to their named skill automation.
+- `<skill-dir>/scripts/check_env.sh` (environment contract)
+- `<skill-dir>/scripts/check_all.sh` (full quality gate)
 - `<skill-dir>/scripts/run_codeguide.sh <project-root> --mode auto`
 - `<skill-dir>/scripts/run_codeguide.sh <project-root> --mode auto --task-status in_progress`
 - `<skill-dir>/scripts/run_codeguide.sh <project-root> --mode auto --task-status in_progress --shadow-note "search and navigation updated"`
@@ -68,7 +72,12 @@ Use `<skill-dir>` for the directory containing this skill package and `SKILL.md`
 - `<skill-dir>/scripts/validate_docs.sh <project-root> --mode advisory`
 - `<skill-dir>/scripts/validate_docs.sh <project-root> --mode strict`
 - `<skill-dir>/scripts/check_english_docs.sh <skill-dir>`
-- `bats <skill-dir>/tests/` (runs the full feature-split bats suite)
+- `<skill-dir>/scripts/codeguide shadow-impact <project-root>` (`shadow_impact_report.py`)
+- `<skill-dir>/scripts/codeguide shadow-coverage <project-root>` (`shadow_coverage_report.py`)
+- `<skill-dir>/scripts/codeguide shadow-metrics <project-root>` (`shadow_metrics_report.py`)
+- `<skill-dir>/scripts/codeguide shadow-digest <project-root> <shadow-doc>` (`shadow_source_digest.py`)
+- `python3 <skill-dir>/scripts/shadow_rationale_report.py <project-root>`
+- `<skill-dir>/scripts/codeguide check <project-root>` (runs the full feature-split Bats suite plus the complete quality gate)
   - Capture the pass/fail baseline from the current HEAD at review time; do not rely on a stored count. Some pre-existing failures may exist in a given environment, so the gate is "no NEW failures versus the freshly captured baseline," not "zero failures."
 
 ## No-RAG baseline

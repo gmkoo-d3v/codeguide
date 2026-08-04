@@ -67,6 +67,12 @@ load codeguide_helper
   [ "$status" -eq 0 ]
   run grep '^- Use `docs/task/task-index.md` for task state\.' "$TEST_PROJECT/AGENTS.md"
   [ "$status" -eq 0 ]
+  run grep '`references/session-resume-contract.md`' "$TEST_PROJECT/AGENTS.md"
+  [ "$status" -eq 0 ]
+  run grep 'run Anthropic (`claude`) CLI calls non-sandboxed' "$TEST_PROJECT/AGENTS.md"
+  [ "$status" -eq 0 ]
+  run grep '`docs/issues/`' "$TEST_PROJECT/AGENTS.md"
+  [ "$status" -eq 0 ]
   run grep "^- Use Serena for semantic code navigation before broad file reads\\." "$TEST_PROJECT/AGENTS.md"
   [ "$status" -eq 0 ]
   run grep "^- Keep Mem0 disabled for now; later use it only for hints, preferences, and recent-work pointers\\." "$TEST_PROJECT/AGENTS.md"
@@ -81,6 +87,12 @@ load codeguide_helper
   run grep '^- For non-trivial tasks, start from `docs/shadow/project-shadow.md`\.' "$TEST_PROJECT/CLAUDE.md"
   [ "$status" -eq 0 ]
   run grep '^- Use `docs/task/task-index.md` for task state\.' "$TEST_PROJECT/CLAUDE.md"
+  [ "$status" -eq 0 ]
+  run grep '`references/session-resume-contract.md`' "$TEST_PROJECT/CLAUDE.md"
+  [ "$status" -eq 0 ]
+  run grep 'run Anthropic (`claude`) CLI calls non-sandboxed' "$TEST_PROJECT/CLAUDE.md"
+  [ "$status" -eq 0 ]
+  run grep '`docs/issues/`' "$TEST_PROJECT/CLAUDE.md"
   [ "$status" -eq 0 ]
   run grep "^- Use Serena for semantic code navigation before broad file reads\\." "$TEST_PROJECT/CLAUDE.md"
   [ "$status" -eq 0 ]
@@ -356,7 +368,19 @@ EOF
   [ "$status" -eq 0 ]
   run grep 'active task omits `risk_level`' "$docs_root/DOC-GOVERNANCE.md"
   [ "$status" -eq 0 ]
+  run grep 'Native sub-agent review tier' "$docs_root/DOC-GOVERNANCE.md"
+  [ "$status" -eq 0 ]
+  run grep '12 to 250 characters' "$docs_root/DOC-GOVERNANCE.md"
+  [ "$status" -eq 0 ]
+  run grep 'compared after trimming' "$docs_root/DOC-GOVERNANCE.md"
+  [ "$status" -eq 0 ]
   run grep "^- risk_level:$" "$docs_root/task/task-template.md"
+  [ "$status" -eq 0 ]
+  run grep '^- consumes_plan_ref:$' "$docs_root/task/task-template.md"
+  [ "$status" -eq 0 ]
+  run grep '^- status: planned | in_progress | blocked | done | superseded | cancelled$' "$docs_root/task/task-template.md"
+  [ "$status" -eq 0 ]
+  run grep '^- disposition: # required for superseded/cancelled:' "$docs_root/task/task-template.md"
   [ "$status" -eq 0 ]
   run grep "^- risk_level:$" "$docs_root/decisions/decision-template.md"
   [ "$status" -eq 0 ]
