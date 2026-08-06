@@ -31,6 +31,11 @@ Use this reference when MCP tools may affect context discovery, source authority
 - Prefer bounded top-k or page-limited retrieval when a tool supports it; report whether the retrieved set is sampled or exhaustive when it materially affects confidence.
 - If the target file or symbol is already obvious, skip auxiliary MCP lookup and inspect the direct source.
 
+## Serena server and MCP/client response limits
+- `max_answer_chars` is a Serena server-side limit on the string returned by a tool. CodeGuide's Docker Serena deployment overrides the global default to `200000`; this is distinct from Serena source's built-in `150000` fallback, used only without a deployment override. `max_answer_chars=-1` selects the effective server default, while a positive value is a per-call server override.
+- The server limit is independent from upper-layer MCP transport, adapter, and Codex-client limits. An MCP/Codex layer can reject, truncate, summarize, or omit a response before it reaches the user or model, so a `200000`-character server allowance does not guarantee a complete client-visible response.
+- Do not infer an upper-layer limit from the Serena configuration or tool schema. Confirm a claimed end-to-end capacity only with a current-runtime call; otherwise narrow the request and use the overflow procedure in `serena-workflow.md`.
+
 ## Evidence report shape
 Use this shape when MCP evidence materially affects a task:
 

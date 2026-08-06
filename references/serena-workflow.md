@@ -36,6 +36,15 @@ Use this reference when symbolic code navigation can reduce risk, context size, 
 - Prefer Serena before broad manual file reading when symbolic scope is unclear; for shadow-related work, keep it available even when the first target file is obvious because follow-on anchors and references are often the real risk.
 - Do not persist raw Serena observations into mem0, Neo4j, or project docs; record only verified source-backed facts or concise pointers.
 
+## Result limits and invocation strategy
+- The CodeGuide Docker Serena deployment overrides global `default_max_tool_answer_chars` to `200000` characters. Serena source has a separate built-in fallback of `150000`, which applies only when deployment configuration does not override it. The deployed `200000` value is a server default, not a promise that an MCP bridge or a Codex client can accept, retain, or display all `200000` characters; see `mcp-context-integration.md` for that boundary.
+- `max_answer_chars=-1` uses Serena's global default. A positive per-call `max_answer_chars` overrides that default for the call; zero and other negative values are invalid.
+- When a full result exceeds the effective limit, Serena does not return a truncated full body. It returns an "answer is too long" message; tools with a built-in shortening strategy can instead attach the first shorter summary that fits. Treat either response as a refinement signal, not as complete evidence.
+- The first `find_symbol` search call must narrow scope: set `relative_path`, use `depth=0`, set `include_body=false`, and set `max_matches` when the expected match set is not already bounded. Example: `find_symbol(name_path_pattern="Target", relative_path="scripts", depth=0, include_body=false, max_matches=20, max_answer_chars=-1)`.
+- Retrieve source bodies only in a separate call for the required symbols after the narrowed search identifies them. Do not request bodies in the initial search.
+- For `read_file`, split reads into 50–150-line ranges with explicit zero-based, inclusive `start_line` and `end_line` values instead of requesting an entire large file.
+- On an overflow response, proceed in this order: (1) make the query more specific; (2) restrict `relative_path`; (3) reduce `depth` or keep `include_body=false`; (4) limit `max_matches`; (5) split by file, symbol, or line range; (6) increase `max_answer_chars` only as a last resort. Do not retry the same broad query indefinitely.
+
 ## Workflow
 1. Discover Serena tools through the current runtime's approved discovery path.
 2. Activate or select the correct project if required and supported.
