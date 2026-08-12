@@ -51,6 +51,7 @@ unfenced_lines() {
   script_dir="$(codeguide_doc_lines_script_dir)"
   python3 - "$file_path" "$mode" "$literal" "$script_dir" <<'FIELDLINE'
 import sys
+import os
 
 # Drop the CALLER'S WORKING DIRECTORY from the import path before adding the script dir.
 # `python3 -` puts "" (cwd) at sys.path[0], so which `shadow_doc_parse` this writer obeys
@@ -61,10 +62,24 @@ import sys
 # shadow_doc_parse.py would silently edit by that copy's fence rule. Reproduced by running
 # check_all.sh from `scripts/`, where the "reader unavailable" fixture stopped failing
 # because cwd supplied the module the fixture had deliberately removed.
+#
+# F12: the parser is required BESIDE the adapter, and the imported module must BE that
+# exact file. A partial deployment (local parser missing) or a PYTHONPATH-substituted
+# foreign/stale parser must fail loudly instead of reading by the wrong fence grammar.
+local_parser = os.path.join(sys.argv[4], "shadow_doc_parse.py")
+if not os.path.isfile(local_parser):
+    sys.stderr.write("[ERROR] Shared fence reader requires the local parser beside the adapter: " + local_parser + "\n")
+    raise SystemExit(2)
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 sys.path.insert(0, sys.argv[4])
 sys.dont_write_bytecode = True
 import shadow_doc_parse
+
+if os.path.realpath(os.path.abspath(shadow_doc_parse.__file__)) != os.path.realpath(local_parser):
+    sys.stderr.write("[ERROR] Shared fence reader imported a foreign shadow_doc_parse from "
+                     + os.path.realpath(os.path.abspath(shadow_doc_parse.__file__))
+                     + "; required local parser: " + os.path.realpath(local_parser) + "\n")
+    raise SystemExit(2)
 
 path, mode, literal = sys.argv[1], sys.argv[2], sys.argv[3]
 lines = shadow_doc_parse.read_lines(path)
@@ -140,19 +155,34 @@ require_shared_reader() {
   script_dir="$(codeguide_doc_lines_script_dir)"
   python3 - "$script_dir" <<'READERPROBE' 2>/dev/null && return 0
 import sys
+import os
 
 # Same import path as unfenced_lines, cwd dropped for the same reason -- see there. A
 # preflight that resolved the module differently from the reads it stands in for would be
 # worse than no preflight: it would certify a reader the actual reads never use.
+#
+# F12 (same rule as unfenced_lines): the parser must exist beside the adapter and the
+# imported module must BE that exact file, so a missing local parser or a
+# PYTHONPATH-substituted foreign/stale parser fails this preflight loudly.
+local_parser = os.path.join(sys.argv[1], "shadow_doc_parse.py")
+if not os.path.isfile(local_parser):
+    sys.stderr.write("[ERROR] Shared fence reader requires the local parser beside the adapter: " + local_parser + "\n")
+    raise SystemExit(2)
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 sys.path.insert(0, sys.argv[1])
 sys.dont_write_bytecode = True
 import shadow_doc_parse
 
+if os.path.realpath(os.path.abspath(shadow_doc_parse.__file__)) != os.path.realpath(local_parser):
+    sys.stderr.write("[ERROR] Shared fence reader imported a foreign shadow_doc_parse from "
+                     + os.path.realpath(os.path.abspath(shadow_doc_parse.__file__))
+                     + "; required local parser: " + os.path.realpath(local_parser) + "\n")
+    raise SystemExit(2)
+
 for name in ("read_lines", "numbered_content_lines", "ends_inside_fence"):
     getattr(shadow_doc_parse, name)
 READERPROBE
-  echo "[ERROR] Could not read documents with the shared fence reader; refusing to edit any of them (shadow_doc_parse.py not loadable from ${script_dir})" >&2
+  echo "[ERROR] Could not read documents with the shared fence reader; refusing to edit any of them (shadow_doc_parse.py not loadable from ${script_dir}, or a foreign copy was substituted)" >&2
   exit 1
 }
 
