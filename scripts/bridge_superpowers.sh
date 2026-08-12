@@ -160,8 +160,19 @@ if [[ ! -f "$DOC_GARDEN" ]]; then
   exit 1
 fi
 
-# All preconditions hold (draft exists, target is clear, doc_garden present);
-# only now is it safe to create the SoR directories.
+# Shared reader preflight (F11): the fence-aware reader used by the
+# post-condition must be guaranteed available BEFORE any state change — a
+# partial deployment (codeguide_doc_lines.sh or shadow_doc_parse.py missing)
+# fails cleanly here, before mkdir and before the symlink, so the
+# reader-missing case never needs a rollback. require_shared_reader is a
+# plain command (never if-wrapped, never $( )): its exit 1 aborts the script
+# with nothing written.
+CODEGUIDE_DOC_LINES_SCRIPT_DIR="$SCRIPT_DIR"
+source "$SCRIPT_DIR/codeguide_doc_lines.sh"
+require_shared_reader
+
+# All preconditions hold (draft exists, target is clear, doc_garden present,
+# reader preflighted); only now is it safe to create the SoR directories.
 mkdir -p "$PLAN_DIR" "$TASK_DIR" "$ORCH_DIR"
 
 echo "Promoting Superpowers draft to Codeguide SSOT via Symbolic Link..."
@@ -211,15 +222,14 @@ fi
 
 # Post-condition (F2b + F8 + F10): doc_garden exited 0, but an exit 0 without
 # registration must never be accepted. Verify with the SAME fence-aware
-# grammar doc_garden's writer uses: a live (unfenced) ledger row whose row
-# PREFIX is exactly `- TASK-<id> | in_progress |` — PREFIX mode anchors the
-# status field with the following `|`, so a status merely PREFIXED with
-# in_progress (e.g. in_progress_stale) cannot satisfy it — plus the task
-# capsule and ORCH scaffold. The `if ! ASSIGNMENT` form propagates a reader
-# failure into the rollback branch (a substitution failure makes the
-# assignment fail, `!` flips it, rollback runs). Same SYMLINK_CREATED gate.
-CODEGUIDE_DOC_LINES_SCRIPT_DIR="$SCRIPT_DIR"
-source "$SCRIPT_DIR/codeguide_doc_lines.sh"
+# grammar doc_garden's writer uses (the adapter was sourced and preflighted
+# before any write, see above): a live (unfenced) ledger row whose row PREFIX
+# is exactly `- TASK-<id> | in_progress |` — PREFIX mode anchors the status
+# field with the following `|`, so a status merely PREFIXED with in_progress
+# (e.g. in_progress_stale) cannot satisfy it — plus the task capsule and ORCH
+# scaffold. The `if ! ASSIGNMENT` form propagates a reader failure into the
+# rollback branch (a substitution failure makes the assignment fail, `!`
+# flips it, rollback runs). Same SYMLINK_CREATED gate.
 LEDGER_INDEX="${TASK_DIR}/task-index.md"
 if ! LIVE_ROWS="$(require_unfenced_lines "$LEDGER_INDEX" prefix "- ${FULL_TASK_ID} | in_progress |")" \
    || [[ -z "$LIVE_ROWS" ]] \
