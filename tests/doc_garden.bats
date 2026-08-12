@@ -1181,3 +1181,119 @@ EOF
   run grep -c '^- TASK-keepme-01 |' "$index"
   assert_equal "$output" "1"
 }
+
+@test "doc_garden refuses to overwrite a decision linked to a different task" {
+  local decision_file="$DOCS_ROOT/decisions/decision-auto-main.md"
+  local before_copy="$TEST_WORKSPACE/decision-auto-main.before.md"
+
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --decision-id "auto-main" \
+    --task-id "task-old" \
+    --task-title "Old task" \
+    --selected-option "Old option" \
+    --context "Old context" \
+    --no-init
+
+  run grep "^- linked_task: TASK-task-old" "$decision_file"
+  [ "$status" -eq 0 ]
+  cp "$decision_file" "$before_copy"
+
+  run "$DOC_GARDEN" "$TEST_PROJECT" \
+    --decision-id "auto-main" \
+    --task-id "task-new" \
+    --task-title "New task" \
+    --selected-option "New option" \
+    --context "New context" \
+    --no-init
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "TASK-task-old"
+  assert_contains "$output" "TASK-task-new"
+
+  run cmp "$decision_file" "$before_copy"
+  [ "$status" -eq 0 ]
+}
+
+@test "doc_garden refuses a task-less --decision-id reuse that would clobber a task-owned decision" {
+  local decision_file="$DOCS_ROOT/decisions/decision-auto-main.md"
+  local before_copy="$TEST_WORKSPACE/decision-auto-main.before.md"
+
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --decision-id "auto-main" \
+    --task-id "task-X" \
+    --task-title "Task X" \
+    --selected-option "Opt X" \
+    --context "Ctx X" \
+    --no-init
+
+  run grep "^- linked_task: TASK-task-X" "$decision_file"
+  [ "$status" -eq 0 ]
+  cp "$decision_file" "$before_copy"
+
+  run "$DOC_GARDEN" "$TEST_PROJECT" \
+    --decision-id "auto-main" \
+    --selected-option "Opt Y" \
+    --context "Ctx Y" \
+    --no-init
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "already linked to TASK-task-X"
+  assert_contains "$output" "distinct --decision-id"
+
+  run cmp "$decision_file" "$before_copy"
+  [ "$status" -eq 0 ]
+}
+
+@test "doc_garden trims a trailing-space linked task before the ownership comparison" {
+  local decision_file="$DOCS_ROOT/decisions/decision-auto-main.md"
+
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --decision-id "auto-main" \
+    --task-id "task-trim" \
+    --task-title "Trim task" \
+    --selected-option "First option" \
+    --context "First context" \
+    --no-init
+
+  run "$DOC_GARDEN" "$TEST_PROJECT" \
+    --decision-id "auto-main" \
+    --linked-task "TASK-task-trim " \
+    --selected-option "Second option" \
+    --context "Second context" \
+    --no-init
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "refusing to overwrite"
+
+  run grep "^- selected_option: Second option" "$decision_file"
+  [ "$status" -eq 0 ]
+}
+
+@test "doc_garden updates a decision linked to the same task without error" {
+  local decision_file="$DOCS_ROOT/decisions/decision-auto-main.md"
+
+  "$DOC_GARDEN" "$TEST_PROJECT" \
+    --decision-id "auto-main" \
+    --task-id "task-same" \
+    --task-title "Same task" \
+    --selected-option "First option" \
+    --context "First context" \
+    --no-init
+
+  run grep "^- linked_task: TASK-task-same" "$decision_file"
+  [ "$status" -eq 0 ]
+
+  run "$DOC_GARDEN" "$TEST_PROJECT" \
+    --decision-id "auto-main" \
+    --task-id "task-same" \
+    --task-title "Same task" \
+    --selected-option "Second option" \
+    --context "Second context" \
+    --no-init
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "refusing to overwrite"
+
+  run grep "^- linked_task: TASK-task-same" "$decision_file"
+  [ "$status" -eq 0 ]
+  run grep "^- selected_option: Second option" "$decision_file"
+  [ "$status" -eq 0 ]
+  run grep "^- context: Second context" "$decision_file"
+  [ "$status" -eq 0 ]
+}

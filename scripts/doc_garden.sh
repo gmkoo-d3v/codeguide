@@ -875,7 +875,7 @@ run_resume_checkpoint() {
     # A fresh source repo with no commits has no HEAD to resolve; record the
     # unborn state explicitly instead of dying under set -e.
     head_sha="$(git -C "$SOURCE_ROOT_ABS" rev-parse --verify --quiet HEAD 2>/dev/null || printf "unborn")"
-    changed_list="$(resume_source_changed_paths "$SOURCE_ROOT_ABS" | sed '/^$/d' | sort -u)"
+    changed_list="$(resume_source_changed_paths "$SOURCE_ROOT_ABS" | sed '/^$/d' | LC_ALL=C sort -u)"
 
     if [[ -z "$changed_list" ]]; then
       changed_files_value="none"
@@ -1011,6 +1011,34 @@ ensure_decision_file() {
 - axis_verify:
 EOF
     fi
+  fi
+}
+
+# A decision capsule is a per-task record. Never silently rewrite an existing
+# decision for a DIFFERENT task, or for NO task when the existing capsule is
+# already claimed: refuse loudly so the author picks a distinct --decision-id
+# instead of mixing fresh metadata (or nothing at all) into an old capsule.
+guard_decision_task_ownership() {
+  local decision_file="$1"
+  local incoming_task="$2"
+  local existing_linked_task
+
+  [[ -f "$decision_file" ]] || return 0
+
+  existing_linked_task="$(unfenced_field_value "$decision_file" "linked_task")"
+  existing_linked_task="$(trim_value "$existing_linked_task")"
+  incoming_task="$(trim_value "$incoming_task")"
+
+  [[ -n "$existing_linked_task" ]] || return 0
+
+  if [[ -z "$incoming_task" ]]; then
+    echo "[ERROR] Decision ${decision_file} is already linked to ${existing_linked_task}; reusing --decision-id without --task-id/--linked-task cannot take it over (pass the matching --task-id/--linked-task or use a distinct --decision-id)" >&2
+    exit 1
+  fi
+
+  if [[ "$existing_linked_task" != "$incoming_task" ]]; then
+    echo "[ERROR] Decision ${decision_file} is already linked to ${existing_linked_task}; refusing to overwrite it with fields for ${incoming_task} (use a distinct --decision-id for the new task)" >&2
+    exit 1
   fi
 }
 
@@ -1464,6 +1492,8 @@ if [[ -n "$DECISION_ID" ]]; then
   if [[ -z "$LINKED_TASK" && -n "$TASK_ID" ]]; then
     LINKED_TASK="TASK-${TASK_ID}"
   fi
+
+  guard_decision_task_ownership "$DECISION_FILE" "$LINKED_TASK"
 
   upsert_field "$DECISION_FILE" "decision_id" "$DECISION_ID"
   upsert_field "$DECISION_FILE" "title" "${DECISION_TITLE:-Decision ${DECISION_ID}}"
