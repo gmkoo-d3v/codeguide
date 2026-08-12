@@ -27,6 +27,7 @@ Outcome-first governance skill for architecture, code quality, documentation lif
 - Human-facing report format: when the deliverable is a report for the user to read (status report, analysis write-up, review summary), build it as an interactive HTML page via the Artifact tool, written in Korean by default (change only on explicit request, per the report-language rule above), rather than static markdown/text, unless the user asks for plain text/markdown or the artifact is a `docs/report/` system-of-record file (those stay markdown/English per `references/doc-language-policy.md`). → `references/operating-model.md`
 - Defect-seeking review: Reviewer and evaluator roles should both assume defects are likely until checked, especially for code-related work where API contracts, team conventions, integration boundaries, validation rules, and regression exposure are commonly missed. For code review, prefer surfacing contract violations, convention drift, missing validation, integration risk, and weak verification before style-level praise. → `references/review-checklist.md`
 - Docs = system of record: material work uses project docs as the system of record; keep code and docs synchronized. → `references/docs-system-of-record.md`
+- Superpowers bridge: preserve Superpowers files in-place; promote via symlinks to `docs/plan/` & `docs/task/task-index.md`; enforce durable handoffs and dual co-inspection. → `references/superpowers-bridge-contract.md`
 - File-first LLM handoff: when delegating non-trivial instructions to an external LLM CLI or a sub-agent, write the full request into a durable Markdown handoff file first, then pass only a short instruction plus the absolute file path; never inline long prompts as shell arguments. If a runner's safe mode cannot read files, stream the already-written file on stdin and keep the file as the durable record. Output capture requires a command-level path (stdout redirection or a runner output flag); a path mentioned only inside the prompt is not a contract. → `references/external-cli-handoff.md`
 
 ## Navigation
@@ -34,6 +35,7 @@ Outcome-first governance skill for architecture, code quality, documentation lif
 |---|---|
 | Operating model, response style, evidence lookup, reasoning-budget behavior | `references/operating-model.md` |
 | Session resume capsule, checkpoint cadence, recovery read order | `references/session-resume-contract.md` |
+| Superpowers integration, non-destructive symlink sync, 3-tier topology | `references/superpowers-bridge-contract.md` |
 | Runtime issue-tracker roles, lifecycle, and statuses | `references/issue-tracker-contract.md` |
 | Workflow, scope modes, micro-design, edge scans, docs/runtime validation, goal loops | `references/workflow.md`, `references/goal-loop-contract.md` |
 | Documentation language policy | `references/doc-language-policy.md` |
