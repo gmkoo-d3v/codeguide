@@ -537,6 +537,62 @@ MOCKEOF
   return $rc
 }
 
+# 12. Foreign parser PRE-IMPORTED via PYTHONPATH sitecustomize refused: bin/
+#     bridge copy + adapter copy + LOCAL shadow_doc_parse.py PRESENT, plus a
+#     foreign/ dir with a compatible-looking shadow_doc_parse.py and a
+#     sitecustomize.py that pre-imports it at interpreter startup (so the
+#     foreign module lands in sys.modules before the adapter's import runs).
+#     The F12 existence check passes (local parser present), so ONLY the
+#     realpath-origin verification can refuse: exit non-zero, no success
+#     claim, no docs/ directory, refusal message on stderr.
+scn12_preimported_foreign_parser_refused() {
+  local rc=0
+  local root draft target
+
+  root="$(new_fixture "12-preimported-foreign-parser")" || return 1
+  assert_fixture_isolated "$root" || return 1
+  mkdir -p "$root/bin" "$root/foreign"
+  cp "$BRIDGE_SCRIPT" "$root/bin/bridge_superpowers.sh"
+  chmod +x "$root/bin/bridge_superpowers.sh"
+  cp "$BRIDGE_SCRIPT_DIR/codeguide_doc_lines.sh" "$root/bin/"
+  cp "$BRIDGE_SCRIPT_DIR/shadow_doc_parse.py" "$root/bin/"
+  cat > "$root/foreign/shadow_doc_parse.py" <<'FOREIGNEOF'
+# Foreign parser: compatible-looking (same three function names) but an
+# intentionally different, fence-blind grammar. Must never be used.
+def read_lines(path):
+    with open(path, "r") as f:
+        return f.read().splitlines()
+
+def numbered_content_lines(lines):
+    return [(i + 1, line) for i, line in enumerate(lines)]
+
+def ends_inside_fence(lines):
+    return False
+FOREIGNEOF
+  cat > "$root/foreign/sitecustomize.py" <<'SITEEOF'
+# Pre-import the foreign parser at interpreter startup so it lands in
+# sys.modules before the shared adapter's own import runs.
+import shadow_doc_parse
+SITEEOF
+  cat > "$root/bin/doc_garden.sh" <<'MOCKEOF'
+#!/usr/bin/env bash
+echo "mock doc_garden.sh exiting 0 (never reached: reader preflight fails first)"
+exit 0
+MOCKEOF
+  chmod +x "$root/bin/doc_garden.sh"
+  draft="$(make_draft "$root" "PLAN-bridge-preimport-01")" || return 1
+
+  run_promote "$root/bin/bridge_superpowers.sh" "$root" "bridge-preimport-01" "$draft" "run1" "PYTHONPATH=$root/foreign"
+  if [[ "$RC_LAST" -eq 0 ]]; then echo "  expected non-zero exit, got 0" >&2; rc=1; fi
+
+  refute_contains "$(cat "$root/run1.stdout")" "Successfully promoted" || rc=1
+  target="$root/docs/plan/PLAN-bridge-preimport-01-v1.0.md"
+  if [[ -L "$target" || -e "$target" ]]; then echo "  no target symlink expected at '$target'" >&2; rc=1; fi
+  if [[ -e "$root/docs" ]]; then echo "  no docs artifacts expected in fixture (nothing written)" >&2; rc=1; fi
+  assert_contains "$(cat "$root/run1.stderr")" "with the shared fence reader; refusing to edit" || rc=1
+  return $rc
+}
+
 # ------------------------------------------------------------------ main ---
 
 run_scenario "01 happy-path promote" scn1_happy_path
@@ -550,6 +606,7 @@ run_scenario "08 draft symlink to a directory refused" scn8_draft_symlink_to_dir
 run_scenario "09 malformed-status live row refused" scn9_malformed_status_live_row
 run_scenario "10 missing shared reader refused before any write" scn10_missing_shared_reader
 run_scenario "11 foreign parser via PYTHONPATH refused" scn11_foreign_parser_refused
+run_scenario "12 pre-imported foreign parser refused" scn12_preimported_foreign_parser_refused
 
 echo
 echo "summary: $PASS_COUNT passed, $FAIL_COUNT failed"
