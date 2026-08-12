@@ -5,7 +5,7 @@ This contract governs the harmonization between `/using-superpowers` (Agile UI a
 ## 1. Non-Destructive Symlink & Reference Registration Protocol
 
 - **Superpowers In-Place Preservation**: Plan files and artifacts generated via Superpowers (`.superpowers/plans/`, AGY artifacts `implementation_plan.md`) must **NEVER be deleted, renamed, or moved** out of their original paths to ensure Superpowers skills continue to function without error.
-- **Automated Script Execution (기계적 자동화)**:
+- **Automated Script Execution**:
   - Symlink creation and task index registration are **executed mechanically via scripts** (e.g. `codeguide/scripts/doc_garden.sh` or automation scripts), not manual LLM text edits.
   - The script automatically:
     1. Creates relative Symbolic Link `docs/plan/PLAN-<task_id>-v1.0.md` pointing to the Superpowers draft path.
