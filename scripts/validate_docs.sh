@@ -836,7 +836,7 @@ trap 'rm -f "$TMP_SECRET_REPORT" ${VALIDATE_JSON_RECORD_FILE:+"$VALIDATE_JSON_RE
 
 redact_secret_report() {
   perl -pe '
-    s/sk-[A-Za-z0-9_-]{20,}/[REDACTED_SECRET]/g;
+    s/sk-(proj-)?[A-Za-z0-9]{20,}/[REDACTED_SECRET]/g;
     s/ghp_[A-Za-z0-9]{20,}/[REDACTED_SECRET]/g;
     s/AKIA[0-9A-Z]{16}/[REDACTED_AWS_ACCESS_KEY]/g;
     s/AIza[0-9A-Za-z_-]{35}/[REDACTED_SECRET]/g;
@@ -875,7 +875,7 @@ if ! command -v rg >/dev/null 2>&1; then
   fail "ripgrep (rg) is required for secret scanning but was not found in PATH"
 else
   scan_secret_pattern \
-    "sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|-----BEGIN (RSA|EC|OPENSSH|PRIVATE) KEY-----" \
+    "sk-(proj-)?[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|-----BEGIN (RSA|EC|OPENSSH|PRIVATE) KEY-----" \
     "potential secret values detected in docs (known key formats)" \
     "no known key-format secret patterns found"
 
@@ -887,7 +887,7 @@ else
 
   # Matches key-name suffixes inside provider-specific env vars, e.g. FOO_API_KEY=known-format-value.
   scan_secret_pattern \
-    "(api[_-]?key|token|password|secret|private[_-]?key)\\s*[:=]\\s*(sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35})" \
+    "(api[_-]?key|token|password|secret|private[_-]?key)\\s*[:=]\\s*(sk-(proj-)?[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35})" \
     "potential yaml/env-style secret assignments detected in docs" \
     "no yaml/env-style secret assignment patterns found" \
     "true"

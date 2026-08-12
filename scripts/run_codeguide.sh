@@ -522,7 +522,7 @@ infer_decision_id() {
   fi
 
   raw="$(slugify "$branch")"
-  if [[ -z "$raw" || "$raw" == "head" ]]; then
+  if [[ -z "$raw" || "$raw" == "head" || "$raw" == "main" ]]; then
     raw="task-${task_id}"
   fi
   printf "auto-%s" "$raw"

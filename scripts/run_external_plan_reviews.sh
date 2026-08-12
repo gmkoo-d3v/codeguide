@@ -772,7 +772,7 @@ redact_secrets_to_file() {
   local target_file="$2"
 
   perl -0pe '
-    s/sk-[A-Za-z0-9_-]{20,}/[REDACTED_SECRET]/g;
+    s/sk-(proj-)?[A-Za-z0-9]{20,}/[REDACTED_SECRET]/g;
     s/ghp_[A-Za-z0-9]{20,}/[REDACTED_SECRET]/g;
     s/AKIA[0-9A-Z]{16}/[REDACTED_AWS_ACCESS_KEY]/g;
     s/-----BEGIN (?:RSA|EC|OPENSSH|PRIVATE) KEY-----.*?-----END (?:RSA|EC|OPENSSH|PRIVATE) KEY-----/[REDACTED_PRIVATE_KEY]/gs;

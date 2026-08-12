@@ -668,3 +668,31 @@ EOF
 
   rm -rf "$workspace"
 }
+
+@test "run_codeguide on a main trunk branch writes a per-task decision file" {
+  local workspace
+  local proj
+  local skill_dir
+
+  workspace="$(mktemp -d)"
+  proj="$workspace/skills-project"
+  skill_dir="$proj/codeguide"
+  mkdir -p "$proj/docs" "$skill_dir/scripts"
+  git -C "$skill_dir" init --quiet
+  git -C "$skill_dir" checkout -q -b main
+  cat > "$skill_dir/SKILL.md" <<'EOF'
+---
+name: sample-skill
+description: Test skill package.
+---
+EOF
+
+  run "$RUN_CODEGUIDE" "$proj" --task-id "task-777" --mode advisory
+  [ "$status" -eq 0 ]
+  run test -f "$proj/docs/decisions/decision-auto-task-task-777.md"
+  [ "$status" -eq 0 ]
+  run test ! -f "$proj/docs/decisions/decision-auto-main.md"
+  [ "$status" -eq 0 ]
+
+  rm -rf "$workspace"
+}

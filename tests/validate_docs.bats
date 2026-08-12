@@ -6505,3 +6505,41 @@ EOF
   [ "$status" -eq 0 ]
   assert_contains "$output" "shadow navigation reference does not resolve: next_docs -> apps/app-a/after-the-block.md"
 }
+
+@test "validate_docs secret scan ignores hyphenated field names (sk- substring false positive)" {
+  # The sk- key pattern must not match hyphenated words such as the ORCH field
+  # name `risk_preflight_recorded_by`: `--risk-preflight-recorded-by` contains
+  # the substring `sk-preflight-recorded-by`, which the pre-fix pattern
+  # `sk-[A-Za-z0-9_-]{20,}` matched as a key (external CLI stdout evidence
+  # echoes the ORCH schema, the task 2026-08-12).
+  # The tightened pattern `sk-(proj-)?[A-Za-z0-9]{20,}` keeps real sk-<alnum40>
+  # and sk-proj-<alnum40> keys matched.
+  cat > "$DOCS_ROOT/orchestration/fixture-secret-scan.md" <<'EOF'
+# Secret scan fixture
+
+- note: the --risk-preflight-recorded-by flag takes a name (schema echo in external CLI stdout logs)
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  assert_contains "$output" "no known key-format secret patterns found"
+
+  # Control: a real sk-proj- key must still trip the scanner.
+  cat > "$DOCS_ROOT/orchestration/fixture-secret-scan.md" <<'EOF'
+# Secret scan fixture
+
+- note: sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijklmnop
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  assert_contains "$output" "potential secret values detected in docs"
+
+  # Control: a plain sk-<alnum40> key must still trip the scanner.
+  cat > "$DOCS_ROOT/orchestration/fixture-secret-scan.md" <<'EOF'
+# Secret scan fixture
+
+- note: sk-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijklmnop
+EOF
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  assert_contains "$output" "potential secret values detected in docs"
+}
