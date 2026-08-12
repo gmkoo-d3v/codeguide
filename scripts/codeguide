@@ -12,25 +12,27 @@
 # --help handler because --help is just another passed-through argument.
 #
 # Subcommands:
-#   doctor           Environment toolchain doctor (check_env.sh)
-#   check            Single quality gate: env + bats + pytest + strict docs +
-#                    English policy (check_all.sh)
-#   validate         Docs consistency/freshness/secret-scan validation
-#                    (validate_docs.sh)
-#   docs-sync        Create/update task, decision, orchestration, and shadow
-#                    docs (doc_garden.sh)
-#   scaffold         Initialize the project docs/ scaffold
-#                    (init_docs_scaffold.sh)
-#   review           Ping-pong external plan review round
-#                    (run_external_plan_reviews.sh)
-#   shadow-impact    Changed source files whose shadow doc was not refreshed
-#                    (shadow_impact_report.py)
-#   shadow-coverage  Changed source files that no shadow doc documents
-#                    (shadow_coverage_report.py)
-#   shadow-metrics   Shadow doc token cost and size against caps
-#                    (shadow_metrics_report.py)
-#   shadow-digest    Compute/verify a shadow doc's source-of-truth content
-#                    digest (shadow_source_digest.py)
+#   doctor                Environment toolchain doctor (check_env.sh)
+#   check                 Single quality gate: env + bats + pytest + strict docs +
+#                         English policy (check_all.sh)
+#   validate              Docs consistency/freshness/secret-scan validation
+#                         (validate_docs.sh)
+#   docs-sync             Create/update task, decision, orchestration, and shadow
+#                         docs (doc_garden.sh)
+#   scaffold              Initialize the project docs/ scaffold
+#                         (init_docs_scaffold.sh)
+#   review                Ping-pong external plan review round
+#                         (run_external_plan_reviews.sh)
+#   shadow-impact         Changed source files whose shadow doc was not refreshed
+#                         (shadow_impact_report.py)
+#   shadow-effect-impact  Changed effect-map anchors in the change set / missing anchor files (read-only)
+#                         (shadow_effect_impact_report.py)
+#   shadow-coverage       Changed source files that no shadow doc documents
+#                         (shadow_coverage_report.py)
+#   shadow-metrics        Shadow doc token cost and size against caps
+#                         (shadow_metrics_report.py)
+#   shadow-digest         Compute/verify a shadow doc's source-of-truth content
+#                         digest (shadow_source_digest.py)
 #
 # Exit codes: whatever the dispatched tool exits with; 2 with usage on
 # stderr for an unknown subcommand; 0 for bare/-h/--help/help.
@@ -50,16 +52,17 @@ after the subcommand are passed through verbatim to the underlying tool;
 `codeguide <subcommand> --help` shows that tool's own usage.
 
 Subcommands:
-  doctor           Environment toolchain doctor
-  check            Single quality gate (env + bats + pytest + strict docs + English policy)
-  validate         Docs consistency/freshness/secret-scan validation
-  docs-sync        Create/update task, decision, orchestration, shadow docs
-  scaffold         Initialize the project docs/ scaffold
-  review           Ping-pong external plan review round
-  shadow-impact    Changed source files whose shadow doc was not refreshed
-  shadow-coverage  Changed source files that no shadow doc documents
-  shadow-metrics   Shadow doc token cost and size against caps
-  shadow-digest    Compute/verify a shadow doc's source-of-truth content digest
+  doctor                Environment toolchain doctor
+  check                 Single quality gate (env + bats + pytest + strict docs + English policy)
+  validate              Docs consistency/freshness/secret-scan validation
+  docs-sync             Create/update task, decision, orchestration, shadow docs
+  scaffold              Initialize the project docs/ scaffold
+  review                Ping-pong external plan review round
+  shadow-impact         Changed source files whose shadow doc was not refreshed
+  shadow-effect-impact  Changed effect-map anchors in the change set / missing anchor files (read-only)
+  shadow-coverage       Changed source files that no shadow doc documents
+  shadow-metrics        Shadow doc token cost and size against caps
+  shadow-digest         Compute/verify a shadow doc's source-of-truth content digest
 EOF
 }
 
@@ -72,16 +75,17 @@ SUBCOMMAND="$1"
 shift
 
 case "$SUBCOMMAND" in
-  doctor)          exec bash "$SCRIPT_DIR/check_env.sh" "$@" ;;
-  check)           exec bash "$SCRIPT_DIR/check_all.sh" "$@" ;;
-  validate)        exec bash "$SCRIPT_DIR/validate_docs.sh" "$@" ;;
-  docs-sync)       exec bash "$SCRIPT_DIR/doc_garden.sh" "$@" ;;
-  scaffold)        exec bash "$SCRIPT_DIR/init_docs_scaffold.sh" "$@" ;;
-  review)          exec bash "$SCRIPT_DIR/run_external_plan_reviews.sh" "$@" ;;
-  shadow-impact)   exec python3 "$SCRIPT_DIR/shadow_impact_report.py" "$@" ;;
-  shadow-coverage) exec python3 "$SCRIPT_DIR/shadow_coverage_report.py" "$@" ;;
-  shadow-metrics)  exec python3 "$SCRIPT_DIR/shadow_metrics_report.py" "$@" ;;
-  shadow-digest)   exec python3 "$SCRIPT_DIR/shadow_source_digest.py" "$@" ;;
+  doctor)                 exec bash "$SCRIPT_DIR/check_env.sh" "$@" ;;
+  check)                  exec bash "$SCRIPT_DIR/check_all.sh" "$@" ;;
+  validate)               exec bash "$SCRIPT_DIR/validate_docs.sh" "$@" ;;
+  docs-sync)              exec bash "$SCRIPT_DIR/doc_garden.sh" "$@" ;;
+  scaffold)               exec bash "$SCRIPT_DIR/init_docs_scaffold.sh" "$@" ;;
+  review)                 exec bash "$SCRIPT_DIR/run_external_plan_reviews.sh" "$@" ;;
+  shadow-impact)          exec python3 "$SCRIPT_DIR/shadow_impact_report.py" "$@" ;;
+  shadow-effect-impact)   exec python3 "$SCRIPT_DIR/shadow_effect_impact_report.py" "$@" ;;
+  shadow-coverage)        exec python3 "$SCRIPT_DIR/shadow_coverage_report.py" "$@" ;;
+  shadow-metrics)         exec python3 "$SCRIPT_DIR/shadow_metrics_report.py" "$@" ;;
+  shadow-digest)          exec python3 "$SCRIPT_DIR/shadow_source_digest.py" "$@" ;;
   *)
     echo "[ERROR] Unknown subcommand: $SUBCOMMAND" >&2
     usage >&2

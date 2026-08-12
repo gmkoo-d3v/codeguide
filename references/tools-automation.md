@@ -73,6 +73,7 @@ Use `<skill-dir>` for the directory containing this skill package and `SKILL.md`
 - `<skill-dir>/scripts/validate_docs.sh <project-root> --mode strict`
 - `<skill-dir>/scripts/check_english_docs.sh <skill-dir>`
 - `<skill-dir>/scripts/codeguide shadow-impact <project-root>` (`shadow_impact_report.py`)
+- `<skill-dir>/scripts/codeguide shadow-effect-impact <project-root>` (`shadow_effect_impact_report.py`)
 - `<skill-dir>/scripts/codeguide shadow-coverage <project-root>` (`shadow_coverage_report.py`)
 - `<skill-dir>/scripts/codeguide shadow-metrics <project-root>` (`shadow_metrics_report.py`)
 - `<skill-dir>/scripts/codeguide shadow-digest <project-root> <shadow-doc>` (`shadow_source_digest.py`)

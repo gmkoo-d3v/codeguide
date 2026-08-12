@@ -37,9 +37,11 @@ Options:
                                     shadow_coverage_report.bats,
                                     shadow_evidence_probe.bats,
                                     shadow_impact_report.bats,
+                                    shadow_effect_impact_report.bats,
                                     shadow_metrics_report.bats,
                                     shadow_nav_graph_report.bats,
-                                    shadow_rationale_report.bats
+                                    shadow_rationale_report.bats,
+                                    shadow_reader_audit.bats
                          full     - the tests/ directory (default; identical
                                     to the plain, no-flag invocation)
                        Suite membership is validated to exist at startup; a
@@ -119,8 +121,9 @@ set_suite_files() {
     shadow)
       SUITE_FILES=(shadow_core.bats shadow_v2.bats shadow_coverage_report.bats
         shadow_evidence_probe.bats shadow_impact_report.bats
-        shadow_metrics_report.bats shadow_nav_graph_report.bats
-        shadow_rationale_report.bats shadow_reader_audit.bats)
+        shadow_effect_impact_report.bats shadow_metrics_report.bats
+        shadow_nav_graph_report.bats shadow_rationale_report.bats
+        shadow_reader_audit.bats)
       ;;
     full)
       SUITE_FILES=()
