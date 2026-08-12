@@ -18,7 +18,7 @@ Options:
 EOF
 }
 
-PROJECT_ROOT="."
+PROJECT_ROOT=""
 if [[ $# -gt 0 && "${1:-}" != -* ]]; then
   PROJECT_ROOT="${1%/}"
   shift
@@ -68,6 +68,23 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# The usage contract documents <project-root> as required (F3 follow-up,
+# The task): the root-omitted invocation
+# consumes 'promote' as the root, so the old error misled operators. Name the
+# actual cause; the checks run AFTER the option loop so -h/--help stays
+# usable without a root.
+if [[ -z "$PROJECT_ROOT" ]]; then
+  echo "Error: project root required as the first argument." >&2
+  usage
+  exit 1
+fi
+
+if [[ -z "$COMMAND" && "$PROJECT_ROOT" == "promote" ]]; then
+  echo "Error: project root required — the first non-option argument is parsed as <project-root>, so 'promote' was consumed as the root. Re-run as: bridge_superpowers.sh <project-root> promote --draft <draft-path> --task-id <TASK-id>" >&2
+  usage
+  exit 1
+fi
 
 if [[ "$COMMAND" != "promote" ]]; then
   echo "Error: Command must be 'promote'" >&2
