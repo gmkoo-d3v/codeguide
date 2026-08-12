@@ -36,6 +36,10 @@ if ! bash -n "$BRIDGE_SCRIPT"; then
   exit 1
 fi
 
+# Directory beside the bridge script under test; used to give fixture bin/
+# copies the shared fence-aware reader adapter (F8 post-condition).
+BRIDGE_SCRIPT_DIR="$(cd "$(dirname "$BRIDGE_SCRIPT")" && pwd)"
+
 echo "bridge script under test: $BRIDGE_SCRIPT"
 
 # ---------------------------------------------------------------- helpers ---
@@ -311,6 +315,15 @@ scn6_doc_garden_exits0_no_register() {
   mkdir -p "$root/bin"
   cp "$BRIDGE_SCRIPT" "$root/bin/bridge_superpowers.sh"
   chmod +x "$root/bin/bridge_superpowers.sh"
+  # The bridge copy sources the shared fence-aware reader for the F8
+  # post-condition; give the fixture the same adapter files so the check runs
+  # real reader logic against the (absent) ledger instead of failing to source.
+  if [[ ! -f "$BRIDGE_SCRIPT_DIR/codeguide_doc_lines.sh" || ! -f "$BRIDGE_SCRIPT_DIR/shadow_doc_parse.py" ]]; then
+    echo "  scenario 06 needs codeguide_doc_lines.sh and shadow_doc_parse.py beside the bridge script" >&2
+    return 1
+  fi
+  cp "$BRIDGE_SCRIPT_DIR/codeguide_doc_lines.sh" "$root/bin/"
+  cp "$BRIDGE_SCRIPT_DIR/shadow_doc_parse.py" "$root/bin/"
   cat > "$root/bin/doc_garden.sh" <<'MOCKEOF'
 #!/usr/bin/env bash
 echo "mock doc_garden.sh exiting 0 without registering anything"
@@ -357,6 +370,29 @@ scn7_guard_refuses_foreign_symlink() {
   return $rc
 }
 
+# 8. Draft is a symlink to a directory: F7 requires a REGULAR draft file, so
+#    the promotion is refused (exit non-zero) before any write — no target
+#    symlink, no ledger row, no success claim on stdout.
+scn8_draft_symlink_to_directory() {
+  local rc=0
+  local root draft_link target
+
+  root="$(new_fixture "08-draft-symlink-to-dir")" || return 1
+  assert_fixture_isolated "$root" || return 1
+  mkdir -p "$root/.superpowers/plans"
+  draft_link="$root/.superpowers/draft-link"
+  ln -s "$root/.superpowers/plans" "$draft_link"
+
+  run_promote "$BRIDGE_SCRIPT" "$root" "bridge-dirdraft-01" "$draft_link" "run1"
+  if [[ "$RC_LAST" -eq 0 ]]; then echo "  expected non-zero exit, got 0" >&2; rc=1; fi
+
+  target="$root/docs/plan/PLAN-bridge-dirdraft-01-v1.0.md"
+  if [[ -L "$target" || -e "$target" ]]; then echo "  no target symlink expected at '$target'" >&2; rc=1; fi
+  assert_no_ledger_row "$root" "bridge-dirdraft-01" || rc=1
+  refute_contains "$(cat "$root/run1.stdout")" "Successfully promoted" || rc=1
+  return $rc
+}
+
 # ------------------------------------------------------------------ main ---
 
 run_scenario "01 happy-path promote" scn1_happy_path
@@ -366,6 +402,7 @@ run_scenario "04 doc_garden failing after symlink" scn4_doc_garden_fails
 run_scenario "05 idempotent re-promotion" scn5_idempotent
 run_scenario "06 doc_garden exits 0 without registering" scn6_doc_garden_exits0_no_register
 run_scenario "07 guard refuses symlink pointing elsewhere" scn7_guard_refuses_foreign_symlink
+run_scenario "08 draft symlink to a directory refused" scn8_draft_symlink_to_directory
 
 echo
 echo "summary: $PASS_COUNT passed, $FAIL_COUNT failed"

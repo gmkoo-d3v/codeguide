@@ -112,9 +112,11 @@ PLAN_DIR="${DOCS_DIR}/plan"
 TASK_DIR="${DOCS_DIR}/task"
 ORCH_DIR="${DOCS_DIR}/orchestration/${TASK_ID}"
 
-# Draft existence check runs BEFORE any directory creation: an invalid
-# invocation must leave no directory artifacts behind.
-if [[ ! -f "$DRAFT_PATH" && ! -L "$DRAFT_PATH" ]]; then
+# Draft check (F7): a REGULAR file is required. -f follows symlinks, so a
+# symlink to a regular file still passes; a symlink to a directory, a
+# dangling symlink, or a missing file all fail here. Runs BEFORE any
+# directory creation: an invalid invocation leaves no directory artifacts.
+if [[ ! -f "$DRAFT_PATH" ]]; then
   echo "Error: Draft file at '$DRAFT_PATH' does not exist." >&2
   exit 1
 fi
@@ -207,17 +209,25 @@ if ! bash "$DOC_GARDEN" "$ABS_PROJECT_ROOT" \
   exit 1
 fi
 
-# Post-condition (F2b): doc_garden exited 0, but an exit 0 without ledger
-# registration must never be accepted — the ledger row must actually exist.
-# Covers a doc_garden that silently skips registration and mid-flight
-# partial-write cases detectable here. Same SYMLINK_CREATED rollback gate.
+# Post-condition (F2b + F8): doc_garden exited 0, but an exit 0 without
+# registration must never be accepted. Verify with the SAME fence-aware
+# grammar doc_garden's writer uses: a live (unfenced) ledger row carrying the
+# in_progress status, plus the task capsule and ORCH scaffold. The
+# `if ! ASSIGNMENT` form propagates a reader failure into the rollback branch
+# (a substitution failure makes the assignment fail, `!` flips it, rollback
+# runs). Same SYMLINK_CREATED rollback gate.
+CODEGUIDE_DOC_LINES_SCRIPT_DIR="$SCRIPT_DIR"
+source "$SCRIPT_DIR/codeguide_doc_lines.sh"
 LEDGER_INDEX="${TASK_DIR}/task-index.md"
-if [[ ! -f "$LEDGER_INDEX" ]] || ! grep -Fq -- "- ${FULL_TASK_ID} |" "$LEDGER_INDEX"; then
+if ! LIVE_ROWS="$(require_unfenced_lines "$LEDGER_INDEX" substring "- ${FULL_TASK_ID} | in_progress")" \
+   || [[ -z "$LIVE_ROWS" ]] \
+   || [[ ! -f "$TASK_DIR/TASK-${TASK_ID}.md" ]] \
+   || [[ ! -f "$ORCH_DIR/ORCH.md" ]]; then
   if [[ "$SYMLINK_CREATED" == "true" ]]; then
     rm -f "$TARGET_PLAN_PATH"
-    echo "Error: doc_garden.sh exited 0 but the ledger row '- ${FULL_TASK_ID} |' is missing from '$LEDGER_INDEX'; promotion aborted and the created symlink '$TARGET_PLAN_PATH' was removed." >&2
+    echo "Error: doc_garden.sh exited 0 but the live ledger row '- ${FULL_TASK_ID} | in_progress' or a scaffold file (task capsule / ORCH) is missing; promotion aborted and the created symlink '$TARGET_PLAN_PATH' was removed." >&2
   else
-    echo "Error: doc_garden.sh exited 0 but the ledger row '- ${FULL_TASK_ID} |' is missing from '$LEDGER_INDEX'; promotion aborted (pre-existing symlink left untouched)." >&2
+    echo "Error: doc_garden.sh exited 0 but the live ledger row '- ${FULL_TASK_ID} | in_progress' or a scaffold file (task capsule / ORCH) is missing; promotion aborted (pre-existing symlink left untouched)." >&2
   fi
   exit 1
 fi
