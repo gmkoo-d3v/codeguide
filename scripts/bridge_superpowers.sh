@@ -38,18 +38,22 @@ RISK_LEVEL="low"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --draft)
+      [[ $# -lt 2 ]] && { echo "Error: --draft requires a path argument" >&2; exit 1; }
       DRAFT_PATH="$2"
       shift 2
       ;;
     --task-id)
+      [[ $# -lt 2 ]] && { echo "Error: --task-id requires an ID argument" >&2; exit 1; }
       TASK_ID="$2"
       shift 2
       ;;
     --task-title)
+      [[ $# -lt 2 ]] && { echo "Error: --task-title requires a title argument" >&2; exit 1; }
       TASK_TITLE="$2"
       shift 2
       ;;
     --risk-level)
+      [[ $# -lt 2 ]] && { echo "Error: --risk-level requires a level argument" >&2; exit 1; }
       RISK_LEVEL="$2"
       shift 2
       ;;
@@ -81,6 +85,14 @@ if [[ -z "$TASK_ID" ]]; then
   exit 1
 fi
 
+case "$RISK_LEVEL" in
+  low|medium|high|critical) ;;
+  *)
+    echo "Error: Invalid --risk-level '$RISK_LEVEL'. Allowed: low|medium|high|critical" >&2
+    exit 1
+    ;;
+esac
+
 # Clean TASK_ID prefix
 TASK_ID="${TASK_ID#TASK-}"
 FULL_TASK_ID="TASK-${TASK_ID}"
@@ -102,8 +114,14 @@ fi
 ABS_DRAFT="$(cd "$(dirname "$DRAFT_PATH")" && pwd)/$(basename "$DRAFT_PATH")"
 TARGET_PLAN_PATH="${PLAN_DIR}/${PLAN_FILE_NAME}"
 
-# Compute relative symlink target from docs/plan/ to draft
-RELATIVE_DRAFT="$(python3 -c "import os; print(os.path.relpath('$ABS_DRAFT', '$PLAN_DIR'))")"
+# Prevent overwriting if target equals draft
+if [[ "$ABS_DRAFT" == "$TARGET_PLAN_PATH" ]]; then
+  echo "Error: Draft file and target plan path are identical ($TARGET_PLAN_PATH)" >&2
+  exit 1
+fi
+
+# Compute relative symlink target from docs/plan/ to draft safely via sys.argv
+RELATIVE_DRAFT="$(python3 -c "import sys, os; print(os.path.relpath(sys.argv[1], sys.argv[2]))" "$ABS_DRAFT" "$PLAN_DIR")"
 
 echo "Promoting Superpowers draft to Codeguide SSOT via Symbolic Link..."
 echo "  Draft: $ABS_DRAFT"
@@ -114,17 +132,24 @@ echo "  Relative Target: $RELATIVE_DRAFT"
 rm -f "$TARGET_PLAN_PATH"
 ln -sf "$RELATIVE_DRAFT" "$TARGET_PLAN_PATH"
 
-# Run doc_garden.sh to register task & scaffold task/orchestration files
+# Verify symlink target resolves cleanly
+if [[ ! -e "$TARGET_PLAN_PATH" ]]; then
+  echo "Error: Created symlink '$TARGET_PLAN_PATH' is dangling or unresolved." >&2
+  rm -f "$TARGET_PLAN_PATH"
+  exit 1
+fi
+
+# Run doc_garden.sh to register task & scaffold task/orchestration files (fail-closed)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOC_GARDEN="${SCRIPT_DIR}/doc_garden.sh"
 
-if [[ -x "$DOC_GARDEN" || -f "$DOC_GARDEN" ]]; then
+if [[ -f "$DOC_GARDEN" ]]; then
   echo "Executing doc_garden.sh to register task index..."
   bash "$DOC_GARDEN" "$ABS_PROJECT_ROOT" \
     --task-id "$TASK_ID" \
     --task-title "${TASK_TITLE:-Promoted Superpowers Plan ${TASK_ID}}" \
     --task-status "in_progress" \
-    --risk-level "$RISK_LEVEL" || true
+    --risk-level "$RISK_LEVEL"
 fi
 
 echo "Successfully promoted Superpowers plan to Codeguide SSOT!"
