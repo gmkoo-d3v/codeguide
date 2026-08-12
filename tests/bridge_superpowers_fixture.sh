@@ -154,6 +154,19 @@ run_promote() {
   RC_LAST=$?
 }
 
+# Root-omitted variant: invoke WITHOUT the positional project root, from the
+# fixture root (CWD). Same tag/stdout/stderr capture contract as run_promote.
+run_promote_no_root() {
+  local script="$1"
+  local root="$2"
+  local task_id="$3"
+  local draft="$4"
+  local tag="${5:-run}"
+  (cd "$root" && bash "$script" promote --draft "$draft" --task-id "$task_id" --risk-level medium) \
+    > "$root/${tag}.stdout" 2> "$root/${tag}.stderr"
+  RC_LAST=$?
+}
+
 # A ledger row for the task must not exist anywhere in the fixture docs.
 assert_no_ledger_row() {
   local root="$1"
@@ -593,6 +606,29 @@ MOCKEOF
   return $rc
 }
 
+# 13. Root omitted:
+#     the first non-option argument is parsed as <project-root>, so a
+#     `promote ...` invocation with no root consumes 'promote' as the root.
+#     Must fail with a clear "project root required" error naming the actual
+#     cause — NOT the misleading "Command must be 'promote'" — and write
+#     nothing.
+scn13_root_omitted_clear_error() {
+  local rc=0
+  local root draft
+
+  root="$(new_fixture "13-root-omitted")" || return 1
+  assert_fixture_isolated "$root" || return 1
+  draft="$(make_draft "$root" "PLAN-bridge-noroot-01")" || return 1
+
+  run_promote_no_root "$BRIDGE_SCRIPT" "$root" "bridge-noroot-01" "$draft" "run1"
+  if [[ "$RC_LAST" -eq 0 ]]; then echo "  expected non-zero exit, got 0" >&2; rc=1; fi
+
+  assert_contains "$(cat "$root/run1.stderr")" "project root" || rc=1
+  refute_contains "$(cat "$root/run1.stderr")" "Command must be 'promote'" || rc=1
+  if [[ -e "$root/docs" ]]; then echo "  no docs artifacts expected (nothing written): '$root/docs'" >&2; rc=1; fi
+  return $rc
+}
+
 # ------------------------------------------------------------------ main ---
 
 run_scenario "01 happy-path promote" scn1_happy_path
@@ -607,6 +643,7 @@ run_scenario "09 malformed-status live row refused" scn9_malformed_status_live_r
 run_scenario "10 missing shared reader refused before any write" scn10_missing_shared_reader
 run_scenario "11 foreign parser via PYTHONPATH refused" scn11_foreign_parser_refused
 run_scenario "12 pre-imported foreign parser refused" scn12_preimported_foreign_parser_refused
+run_scenario "13 root omitted names project root" scn13_root_omitted_clear_error
 
 echo
 echo "summary: $PASS_COUNT passed, $FAIL_COUNT failed"
