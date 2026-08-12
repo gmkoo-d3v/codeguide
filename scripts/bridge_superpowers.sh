@@ -209,17 +209,19 @@ if ! bash "$DOC_GARDEN" "$ABS_PROJECT_ROOT" \
   exit 1
 fi
 
-# Post-condition (F2b + F8): doc_garden exited 0, but an exit 0 without
+# Post-condition (F2b + F8 + F10): doc_garden exited 0, but an exit 0 without
 # registration must never be accepted. Verify with the SAME fence-aware
-# grammar doc_garden's writer uses: a live (unfenced) ledger row carrying the
-# in_progress status, plus the task capsule and ORCH scaffold. The
-# `if ! ASSIGNMENT` form propagates a reader failure into the rollback branch
-# (a substitution failure makes the assignment fail, `!` flips it, rollback
-# runs). Same SYMLINK_CREATED rollback gate.
+# grammar doc_garden's writer uses: a live (unfenced) ledger row whose row
+# PREFIX is exactly `- TASK-<id> | in_progress |` — PREFIX mode anchors the
+# status field with the following `|`, so a status merely PREFIXED with
+# in_progress (e.g. in_progress_stale) cannot satisfy it — plus the task
+# capsule and ORCH scaffold. The `if ! ASSIGNMENT` form propagates a reader
+# failure into the rollback branch (a substitution failure makes the
+# assignment fail, `!` flips it, rollback runs). Same SYMLINK_CREATED gate.
 CODEGUIDE_DOC_LINES_SCRIPT_DIR="$SCRIPT_DIR"
 source "$SCRIPT_DIR/codeguide_doc_lines.sh"
 LEDGER_INDEX="${TASK_DIR}/task-index.md"
-if ! LIVE_ROWS="$(require_unfenced_lines "$LEDGER_INDEX" substring "- ${FULL_TASK_ID} | in_progress")" \
+if ! LIVE_ROWS="$(require_unfenced_lines "$LEDGER_INDEX" prefix "- ${FULL_TASK_ID} | in_progress |")" \
    || [[ -z "$LIVE_ROWS" ]] \
    || [[ ! -f "$TASK_DIR/TASK-${TASK_ID}.md" ]] \
    || [[ ! -f "$ORCH_DIR/ORCH.md" ]]; then

@@ -393,6 +393,50 @@ scn8_draft_symlink_to_directory() {
   return $rc
 }
 
+# 9. Live row with a malformed status: mock doc_garden exits 0 but writes a
+#    LIVE UNFENCED row `- TASK-<id> | in_progress_stale | ...` plus valid task
+#    capsule and ORCH scaffold — only the status field is wrong. F10 requires
+#    the exact row prefix `- TASK-<id> | in_progress |`, so the post-condition
+#    must refuse: exit non-zero, created symlink rolled back, no success claim.
+scn9_malformed_status_live_row() {
+  local rc=0
+  local root draft target
+
+  root="$(new_fixture "09-stale-status-live-row")" || return 1
+  assert_fixture_isolated "$root" || return 1
+  mkdir -p "$root/bin"
+  cp "$BRIDGE_SCRIPT" "$root/bin/bridge_superpowers.sh"
+  chmod +x "$root/bin/bridge_superpowers.sh"
+  # Same shared fence-aware reader adapter copies as scenario 06.
+  if [[ ! -f "$BRIDGE_SCRIPT_DIR/codeguide_doc_lines.sh" || ! -f "$BRIDGE_SCRIPT_DIR/shadow_doc_parse.py" ]]; then
+    echo "  scenario 09 needs codeguide_doc_lines.sh and shadow_doc_parse.py beside the bridge script" >&2
+    return 1
+  fi
+  cp "$BRIDGE_SCRIPT_DIR/codeguide_doc_lines.sh" "$root/bin/"
+  cp "$BRIDGE_SCRIPT_DIR/shadow_doc_parse.py" "$root/bin/"
+  cat > "$root/bin/doc_garden.sh" <<'MOCKEOF'
+#!/usr/bin/env bash
+# Mock: exits 0 and writes a LIVE (unfenced) ledger row whose status field is
+# only PREFIXED with in_progress, plus the task capsule and ORCH scaffold, so
+# the F10 post-condition is the only thing that can catch the bad status.
+echo "mock doc_garden.sh writing an in_progress_stale row"
+printf '# Task Index\n\n## In Progress\n\n- TASK-bridge-stale-01 | in_progress_stale | bad status\n' > "docs/task/task-index.md"
+printf '# TASK-bridge-stale-01\n\n- status: in_progress_stale\n' > "docs/task/TASK-bridge-stale-01.md"
+printf '# ORCH-bridge-stale-01\n\n- task_id: bridge-stale-01\n' > "docs/orchestration/bridge-stale-01/ORCH.md"
+exit 0
+MOCKEOF
+  chmod +x "$root/bin/doc_garden.sh"
+  draft="$(make_draft "$root" "PLAN-bridge-stale-01")" || return 1
+
+  run_promote "$root/bin/bridge_superpowers.sh" "$root" "bridge-stale-01" "$draft" "run1"
+  if [[ "$RC_LAST" -eq 0 ]]; then echo "  expected non-zero exit, got 0" >&2; rc=1; fi
+
+  target="$root/docs/plan/PLAN-bridge-stale-01-v1.0.md"
+  if [[ -L "$target" || -e "$target" ]]; then echo "  expected symlink rollback (target absent): '$target'" >&2; rc=1; fi
+  refute_contains "$(cat "$root/run1.stdout")" "Successfully promoted" || rc=1
+  return $rc
+}
+
 # ------------------------------------------------------------------ main ---
 
 run_scenario "01 happy-path promote" scn1_happy_path
@@ -403,6 +447,7 @@ run_scenario "05 idempotent re-promotion" scn5_idempotent
 run_scenario "06 doc_garden exits 0 without registering" scn6_doc_garden_exits0_no_register
 run_scenario "07 guard refuses symlink pointing elsewhere" scn7_guard_refuses_foreign_symlink
 run_scenario "08 draft symlink to a directory refused" scn8_draft_symlink_to_directory
+run_scenario "09 malformed-status live row refused" scn9_malformed_status_live_row
 
 echo
 echo "summary: $PASS_COUNT passed, $FAIL_COUNT failed"
