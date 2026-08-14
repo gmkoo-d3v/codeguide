@@ -785,17 +785,17 @@ EOF'
     --approval-ref "user-approval-ext-review-02" \
     --approved-next-step "run external review ext-review-02 v1.0 r02" \
     --allow-partial-review \
-    --adversarial-evaluator "codex"
+    --adversarial-evaluator "codex-gpt-5.6-terra-medium"
 
   [ "$status" -eq 0 ]
   assert_contains "$output" "[FAIL] evaluator=claude"
-  assert_contains "$output" "[OK] evaluator=codex requested_route=codex:current actual_route=codex:current quota_fallback=false style=adversarial"
+  assert_contains "$output" "[OK] evaluator=codex requested_route=codex:gpt-5.6-terra-medium actual_route=codex:gpt-5.6-terra-medium quota_fallback=false style=adversarial"
 
-  run test -f "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-current-r02.md"
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-gpt-5.6-terra-medium-r02.md"
   [ "$status" -eq 0 ]
-  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-current-r02.md"
+  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-gpt-5.6-terra-medium-r02.md"
   [ "$status" -eq 0 ]
-  run grep "^- objection:" "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-current-r02.md"
+  run grep "^- objection:" "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-gpt-5.6-terra-medium-r02.md"
   [ "$status" -eq 0 ]
   run grep -- "--sandbox" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
@@ -814,19 +814,19 @@ EOF'
   handoff_dir="$(external_handoff_dir "ext-review-02" "v1.0" "r02")"
   [ -n "$handoff_dir" ]
   [[ "$handoff_dir" =~ /ext-review-02/external-cli/v1\.0/r02$ ]] || false
-  run test -f "$handoff_dir/codex-current.request.md"
+  run test -f "$handoff_dir/codex-gpt-5.6-terra-medium.request.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/codex-current.response.md"
+  run test -f "$handoff_dir/codex-gpt-5.6-terra-medium.response.md"
   [ "$status" -eq 0 ]
   run test -f "$handoff_dir/claude-current.stderr.md"
   [ "$status" -eq 0 ]
-  run grep "# PLAN-ext-review-02-v1.0" "$handoff_dir/codex-current.request.md"
+  run grep "# PLAN-ext-review-02-v1.0" "$handoff_dir/codex-gpt-5.6-terra-medium.request.md"
   [ "$status" -eq 0 ]
-  run grep "$handoff_dir/codex-current.request.md" "$TEST_WORKSPACE/codex-args.log"
+  run grep "$handoff_dir/codex-gpt-5.6-terra-medium.request.md" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
-  run grep "$handoff_dir/codex-current.command-response.raw.md" "$TEST_WORKSPACE/codex-args.log"
+  run grep "$handoff_dir/codex-gpt-5.6-terra-medium.command-response.raw.md" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
-  run test ! -f "$handoff_dir/codex-current.command-response.raw.md"
+  run test ! -f "$handoff_dir/codex-gpt-5.6-terra-medium.command-response.raw.md"
   [ "$status" -eq 0 ]
   run grep -F "[REDACTED_SECRET]" "$handoff_dir/claude-current.stderr.md"
   [ "$status" -eq 0 ]
@@ -928,13 +928,13 @@ EOF'
   [ "$status" -eq 0 ]
   assert_contains "$output" "auto-selecting adversarial evaluator=agy:current"
   assert_contains "$output" "[OK] evaluator=agy requested_route=agy:current actual_route=agy:current quota_fallback=false style=adversarial"
-  assert_contains "$output" "[OK] evaluator=codex requested_route=codex:current actual_route=codex:current quota_fallback=false style=standard"
+  assert_contains "$output" "[OK] evaluator=codex requested_route=codex:gpt-5.6-terra-medium actual_route=codex:gpt-5.6-terra-medium quota_fallback=false style=standard"
 
   run test -f "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-agy-current-r04.md"
   [ "$status" -eq 0 ]
   run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-agy-current-r04.md"
   [ "$status" -eq 0 ]
-  run test -f "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-codex-current-r04.md"
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-codex-gpt-5.6-terra-medium-r04.md"
   [ "$status" -eq 0 ]
 
   local handoff_dir
@@ -945,13 +945,13 @@ EOF'
   [ "$status" -eq 0 ]
   run test -f "$handoff_dir/agy-current.response.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/codex-current.request.md"
+  run test -f "$handoff_dir/codex-gpt-5.6-terra-medium.request.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/codex-current.response.md"
+  run test -f "$handoff_dir/codex-gpt-5.6-terra-medium.response.md"
   [ "$status" -eq 0 ]
   run grep "$handoff_dir/agy-current.command-response.raw.md" "$TEST_WORKSPACE/gemini-args.log"
   [ "$status" -eq 0 ]
-  run grep "$handoff_dir/codex-current.command-response.raw.md" "$TEST_WORKSPACE/codex-args.log"
+  run grep "$handoff_dir/codex-gpt-5.6-terra-medium.command-response.raw.md" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
 }
 
@@ -1027,7 +1027,7 @@ exit 4'
   assert_contains "$output" "[FAIL] evaluator=codex"
   run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-03-v1.0-review-agy-current-r03.md"
   [ "$status" -eq 0 ]
-  run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-03-v1.0-review-codex-current-r03.md"
+  run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-03-v1.0-review-codex-gpt-5.6-terra-medium-r03.md"
   [ "$status" -eq 0 ]
   run find "$DOCS_ROOT/report" -maxdepth 1 -type f -name 'PLAN-ext-review-03-v1.0-review-agy-current-r03.md.stale-*'
   [ "$status" -eq 0 ]
@@ -1115,7 +1115,7 @@ EOF'
 
   [ "$status" -ne 0 ]
   assert_contains "$output" "Required adversarial review did not complete successfully"
-  run test -f "$DOCS_ROOT/report/PLAN-ext-review-05-v1.0-review-codex-current-r05.md"
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-05-v1.0-review-codex-gpt-5.6-terra-medium-r05.md"
   [ "$status" -eq 0 ]
 }
 
@@ -1174,15 +1174,15 @@ exit 0'
 
   [ "$status" -ne 0 ]
   assert_contains "$output" "[FAIL] evaluator=codex"
-  run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-06-v1.0-review-codex-current-r06.md"
+  run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-06-v1.0-review-codex-gpt-5.6-terra-medium-r06.md"
   [ "$status" -eq 0 ]
 
   local handoff_dir
   handoff_dir="$(external_handoff_dir "ext-review-06" "v1.0" "r06")"
   [ -n "$handoff_dir" ]
-  run grep "codex final message file was empty" "$handoff_dir/codex-current.stderr.md"
+  run grep "codex final message file was empty" "$handoff_dir/codex-gpt-5.6-terra-medium.stderr.md"
   [ "$status" -eq 0 ]
-  run grep "codex runtime log only" "$handoff_dir/codex-current.stderr.md"
+  run grep "codex runtime log only" "$handoff_dir/codex-gpt-5.6-terra-medium.stderr.md"
   [ "$status" -eq 0 ]
 }
 
@@ -1472,7 +1472,9 @@ EOF'
   [ "$status" -eq 0 ]
   run grep -- "gpt-5.6-sol" "$TEST_WORKSPACE/codex-model-args.log"
   [ "$status" -eq 0 ]
-  run grep "^- evaluator_model_selection: cli_flag" "$DOCS_ROOT/report/PLAN-ext-codex-model-v1.0-review-codex-gpt-5.6-sol-r01.md"
+  run grep -- "model_reasoning_effort=medium" "$TEST_WORKSPACE/codex-model-args.log"
+  [ "$status" -eq 0 ]
+  run grep "^- evaluator_model_selection: cli_flag" "$DOCS_ROOT/report/PLAN-ext-codex-model-v1.0-review-codex-gpt-5.6-sol-medium-r01.md"
   [ "$status" -eq 0 ]
 }
 
@@ -1586,6 +1588,60 @@ exit 1'
   assert_contains "$registry_output" $'model\tclaude:fable-5\tclaude\tclaude-fable-5'
   assert_contains "$registry_output" $'model\tclaude:sonnet-5\tclaude\tclaude-sonnet-5'
   assert_contains "$registry_output" $'model\tclaude:opus-4.8\tclaude\topus-4.8'
+}
+
+@test "bundled agy routes use catalog cli_model values" {
+  local registry_file="$SCRIPTS_DIR/../config/ai_model_registry.json"
+
+  run python3 - "$registry_file" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    registry = json.load(handle)
+
+models = registry["models"]
+expected = {
+    "agy:claude-sonnet-4.6-thinking": "claude-sonnet-4-6",
+    "agy:claude-opus-4.6-thinking": "claude-opus-4-6-thinking",
+    "agy:gpt-oss-120b-medium": "gpt-oss-120b-medium",
+    "agy:gemini-3.6-flash-low": "gemini-3.6-flash-low",
+    "agy:gemini-3.6-flash-medium": "gemini-3.6-flash-medium",
+    "agy:gemini-3.6-flash-high": "gemini-3.6-flash-high",
+    "agy:gemini-3.7-flash-low": "gemini-3.7-flash-low",
+    "agy:gemini-3.7-flash-medium": "gemini-3.7-flash-medium",
+    "agy:gemini-3.7-flash-high": "gemini-3.7-flash-high",
+    "agy:gemini-3.1-pro-low": "gemini-3.1-pro-low",
+    "agy:gemini-3.1-pro-high": "gemini-3.1-pro-high",
+}
+
+for route, cli_model in expected.items():
+    assert models[route]["cli_model"] == cli_model, (route, models[route]["cli_model"])
+PY
+  [ "$status" -eq 0 ]
+
+  if command -v agy >/dev/null 2>&1; then
+    run agy models
+    [ "$status" -eq 0 ]
+    local catalog="$output"
+    local cli_models
+    cli_models="$(python3 - "$registry_file" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    registry = json.load(handle)
+
+for route, model in registry["models"].items():
+    if model["runner"] == "agy" and model["cli_model"] != "preconfigured-runtime":
+        print(model["cli_model"])
+PY
+)"
+    local cli_model
+    while IFS= read -r cli_model; do
+      assert_contains "$catalog" "$cli_model"
+    done <<< "$cli_models"
+  fi
 }
 
 @test "run_external_plan_reviews loads runner routes from registry override and still stops on quota" {
@@ -1966,7 +2022,7 @@ EOF'
   assert_contains "$output" "agy --add-dir"
 }
 
-@test "external_review_runner executes agy with current CLI flags and preconfigured model selection" {
+@test "external_review_runner executes agy with current CLI flags and registry model selection" {
   local mock_bin="$TEST_WORKSPACE/mock-bin"
   mkdir -p "$mock_bin"
 
@@ -1990,11 +2046,15 @@ EOF'
   [ "$status" -eq 0 ]
   run grep -- "--add-dir" "$TEST_WORKSPACE/runner-agy-args.log"
   [ "$status" -eq 0 ]
+  run grep -- "--model" "$TEST_WORKSPACE/runner-agy-args.log"
+  [ "$status" -eq 0 ]
+  run grep -- "gemini-3.6-flash-high" "$TEST_WORKSPACE/runner-agy-args.log"
+  [ "$status" -eq 0 ]
   run grep -E -- '(^|[[:space:]])-m([[:space:]]|$)|--approval-mode|--output-format|--include-directories' "$TEST_WORKSPACE/runner-agy-args.log"
   [ "$status" -ne 0 ]
   run test -f "$DOCS_ROOT/orchestration/runner-agy-exec/current-task/responses/agy-gemini-3.6-flash-high.response.md"
   [ "$status" -eq 0 ]
-  run grep "^- model_selection: preconfigured_runtime" "$DOCS_ROOT/orchestration/runner-agy-exec/current-task/provenance/agy-gemini-3.6-flash-high.provenance.md"
+  run grep "^- model_selection: cli_flag" "$DOCS_ROOT/orchestration/runner-agy-exec/current-task/provenance/agy-gemini-3.6-flash-high.provenance.md"
   [ "$status" -eq 0 ]
 }
 
@@ -2478,13 +2538,13 @@ EOF'
     --adversarial-cross-check
 
   [ "$status" -eq 0 ]
-  assert_contains "$output" "auto-selected reviewers=claude:sonnet-5 agy:current codex:current"
+  assert_contains "$output" "auto-selected reviewers=claude:sonnet-5 agy:current codex:gpt-5.6-terra-medium"
   # One contiguous needle per evaluator: splitting these into "[OK] evaluator=X" plus a
   # bare "style=adversarial" would let ANY line supply the style and stop binding the
   # style to the evaluator that must carry it (review finding, 2026-08-02).
   assert_contains "$output" "[OK] evaluator=claude requested_route=claude:sonnet-5 actual_route=claude:sonnet-5 quota_fallback=false style=adversarial"
   assert_contains "$output" "[OK] evaluator=agy requested_route=agy:current actual_route=agy:current quota_fallback=false style=adversarial"
-  assert_contains "$output" "[OK] evaluator=codex requested_route=codex:current actual_route=codex:current quota_fallback=false style=adversarial"
+  assert_contains "$output" "[OK] evaluator=codex requested_route=codex:gpt-5.6-terra-medium actual_route=codex:gpt-5.6-terra-medium quota_fallback=false style=adversarial"
   refute_contains "$output" "style=standard"
 
   run grep -- "--model" "$TEST_WORKSPACE/claude-args.log"
@@ -2496,7 +2556,7 @@ EOF'
   [ "$status" -eq 0 ]
   run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-cross-check-v1.0-review-agy-current-r01.md"
   [ "$status" -eq 0 ]
-  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-cross-check-v1.0-review-codex-current-r01.md"
+  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-cross-check-v1.0-review-codex-gpt-5.6-terra-medium-r01.md"
   [ "$status" -eq 0 ]
 }
 

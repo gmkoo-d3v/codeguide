@@ -417,7 +417,7 @@ model_selection_for_model() {
   cli_model="$(model_cli_model_for "$route")" || return 1
   runner_id="$(model_runner_for "$route")" || return 1
   command_kind="$(runner_command_kind_for "$runner_id")" || return 1
-  if [[ "$command_kind" == "claude_code" || "$command_kind" == "codex_cli" ]]; then
+  if [[ "$command_kind" == "agy" || "$command_kind" == "claude_code" || "$command_kind" == "codex_cli" ]]; then
     if [[ "$cli_model" != "preconfigured-runtime" ]]; then
       printf "%s" "cli_flag"
       return
@@ -1142,12 +1142,18 @@ elif (( ${#SELECTED_REVIEWERS[@]} > 0 )); then
     fi
   done
 else
+  primary_vendor="$(model_vendor_for "$PRIMARY_RESOLVED" || true)"
   for alias in "${DEFAULT_REVIEWER_ALIASES[@]}"; do
     resolved="$(require_registered_model "default_reviewer" "$alias")"
-    if [[ "$resolved" != "$PRIMARY_RESOLVED" ]]; then
-      REVIEWERS+=("$resolved")
-      REVIEWER_COUNT=$((REVIEWER_COUNT + 1))
+    if [[ "$resolved" == "$PRIMARY_RESOLVED" ]]; then
+      continue
     fi
+    candidate_vendor="$(model_vendor_for "$resolved" || true)"
+    if [[ -n "$primary_vendor" && "$candidate_vendor" == "$primary_vendor" ]]; then
+      continue
+    fi
+    REVIEWERS+=("$resolved")
+    REVIEWER_COUNT=$((REVIEWER_COUNT + 1))
   done
 fi
 
@@ -1393,7 +1399,11 @@ build_tool_command() {
 
   case "$command_kind" in
     agy)
-      TOOL_COMMAND=("$binary" --add-dir "$CONTEXT_ROOT" -p "$prompt")
+      TOOL_COMMAND=("$binary" --add-dir "$CONTEXT_ROOT")
+      if [[ "$cli_model" != "preconfigured-runtime" ]]; then
+        TOOL_COMMAND+=(--model "$cli_model")
+      fi
+      TOOL_COMMAND+=(-p "$prompt")
       ;;
     claude_code)
       prompt="$(build_stdin_tool_prompt_for "$output_capture_file" "$durable_response_file")"
@@ -1423,7 +1433,7 @@ run_agy_tool_command() {
   local _model="$1"
   local output_capture_file="$2"
   local model_stderr_file="$3"
-  # agy has no documented per-call model flag; use the model already selected in Antigravity.
+  # agy CLI 1.1.12+ accepts --model for routes with a specific cli_model; preconfigured-runtime routes use the globally selected model.
   "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
 }
 

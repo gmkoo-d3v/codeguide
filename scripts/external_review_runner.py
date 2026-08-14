@@ -87,13 +87,15 @@ def command_for_route(registry: dict[str, Any], route: str, request_file: Path, 
         f"Command-level response path: {response_file}."
     )
     if runner["command_kind"] == "agy":
-        return [
+        command = [
             binary,
             "--add-dir",
             str(project_root),
-            "-p",
-            prompt,
         ]
+        if model["cli_model"] != "preconfigured-runtime":
+            command.extend(["--model", model["cli_model"]])
+        command.extend(["-p", prompt])
+        return command
     if runner["command_kind"] == "claude_code":
         command = [
             binary,
@@ -183,7 +185,7 @@ def run_command_for_route(registry: dict[str, Any], route: str, command: list[st
 def model_selection_for_route(registry: dict[str, Any], route: str) -> str:
     model = model_for_route(registry, route)
     runner = runner_for_route(registry, route)
-    if runner["command_kind"] in {"claude_code", "codex_cli"} and model["cli_model"] != "preconfigured-runtime":
+    if runner["command_kind"] in {"agy", "claude_code", "codex_cli"} and model["cli_model"] != "preconfigured-runtime":
         return "cli_flag"
     return "preconfigured_runtime"
 
