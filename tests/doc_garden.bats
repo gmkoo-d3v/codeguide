@@ -1171,7 +1171,9 @@ EOF
 
   run grep -c '^- TASK-dupe-01 |' "$index"
   assert_equal "$output" "1"
-  run grep -c '^- TASK-dupe-01 | done | Deduped$' "$index"
+  # The row summary derives from the STORED fields, not the CLI title: a done task
+  # projects to outcome (empty here), per the plan.
+  run grep -c '^- TASK-dupe-01 | done | $' "$index"
   assert_equal "$output" "1"
 
   # Positive half: a row for a DIFFERENT task is not collateral damage.

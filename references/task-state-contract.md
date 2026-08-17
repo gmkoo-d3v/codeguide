@@ -35,6 +35,7 @@ Use one file per task: `docs/task/TASK-<id>.md`
 - consumes_plan_ref:
 - status: planned | in_progress | blocked | done | superseded | cancelled
 - disposition: # required for superseded/cancelled: why the task closed without completing
+- outcome: # for done status; mutually exclusive with disposition (outcome for done, disposition for superseded/cancelled)
 - owner:
 - claimed_at:
 - due_date:
@@ -51,6 +52,53 @@ Use one file per task: `docs/task/TASK-<id>.md`
 ```
 
 The `resume_*` capsule is maintained under `references/session-resume-contract.md`; use that contract for field ownership, checkpointing, and recovery read order.
+
+## Metadata envelope
+
+Every envelope-aware rule, writer, and scan in this repo answers the boundary question with ONE shared implementation (`doc_lines_envelope` in `codeguide/scripts/codeguide_doc_lines.sh`): the metadata envelope is the fence-stripped lines of a document BEFORE the first unfenced `##` heading (blank lines and indentation preserved). Everything at or below that heading is narrative by contract and is never schema. Consequences:
+
+- A close field (`outcome`, `disposition`) below the first unfenced `##` heading is narrative and never satisfies the close-record gate; meaningful close-time text that lives only below the boundary must either be migrated into the metadata envelope or marked honestly with the legacy marker.
+- The unknown-key scan covers only envelope lines; fenced example keys and narrative-section keys (`verdict`, `pending`, `reason`) are never scanned.
+- The task-index row summary projects from envelope fields only.
+- A fenced `##` inside a quoted example is block content, not a boundary.
+
+## Close-record gate (terminal statuses)
+
+The terminal close-record matrix is a static invariant, not a transition rule: a task file that is ALREADY `done` with empty close fields fails without any transition being observed. Required fields, read from the metadata envelope only (`extract_field_block`):
+
+| status | required | optional (never required, never injected) |
+|--------|----------|------------------------------------------|
+| `done` | `objective` + `acceptance_criteria` + `outcome` | `disposition` is not applicable |
+| `superseded` / `cancelled` | `objective` + `disposition` | `outcome` |
+| `planned` / `in_progress` / `blocked` | none | none |
+
+- `outcome` is the close-time record for work that shipped (evidence: implementation commits/diffs, the migration audit, release-gate outputs). `disposition` explains a close without completing (successor task or reason). They are mutually exclusive: `outcome` for `done`, `disposition` for `superseded`/`cancelled`.
+- Close-field values that are an EXACT match of a placeholder token (`tbd`, `TBD`, `n/a`, `none`, `미정`) fail under strict. Prefix or partial matching is forbidden: `tbd later`, `none of the above` are real content. The one exemption is the legacy marker literal `legacy — no close-time record found`, which is a truthful statement that the standard search protocol found no close-time record and passes.
+- In Release A these checks are advisory-only (warnings); Release C promotes them to strict-mode failures by flipping `CLOSE_RECORD_STRICT_PROMOTED` in `validate_docs.d/30-rules-task.sh`.
+
+## Legacy-key classification (envelope-bounded, measured)
+
+Keys in the metadata envelope that predate this dictionary are classified as follows. Preserve-classified keys are registered dictionary members (no longer unknown; existing file content is left untouched as immutable evidence). Rename-classified keys move to the canonical key during migration (value normalized where noted) and are removed from the file afterward.
+
+| key | classification | handling |
+|-----|----------------|----------|
+| `last_updated` | preserve | tool-generated key; allowed, never unknown |
+| `plan_ref` | rename | → `consumes_plan_ref`, value normalized `docs/plan/PLAN-X-v1.0.md` → bare `PLAN-X-v1.0` |
+| `decision_ref` | preserve | allowed reference key |
+| `orchestration_ref` | preserve | allowed reference key |
+| `reviewers` | preserve | allowed key |
+| `close_out_note` | rename | → `outcome` (semantically equivalent close-time record) |
+| `verdict` / `pending` / `reason` | n/a | narrative content below the envelope; never scanned |
+
+## Standard search protocol
+
+When a close-time record is not found on the task file, the default is evidence discovery before any legacy marker is written. Search sources, in order:
+
+1. Same-`task_id` PLAN / REPORT / DECISION / ORCH documents (`docs/plan/PLAN-<task-id>-v*.md`, `docs/report/PLAN-<task-id>-*-review-*.md`, linked `docs/decisions/decision-*.md`, `docs/orchestration/<task-id>/ORCH.md`).
+2. Commits referenced by the task's artifacts (plan/report/orchestration fields, `resume_source_head`, ORCH handoff dirs).
+3. Commits returned by `git log` search for the `task_id`.
+
+Evidence discovery is the default; each individual use of the legacy marker literal `legacy — no close-time record found` requires separate reviewer approval (no aggregated approvals), and the aggregate marker count is recorded in the migration audit.
 
 `<project-root>/docs/task/task-index.md` should list task ids organized by status section (Planned/In Progress/Blocked/Done/Superseded/Cancelled). Rows are automatically moved between sections when task status changes.
 

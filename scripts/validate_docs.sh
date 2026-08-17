@@ -200,6 +200,23 @@ require_non_negative_integer "--max-task-age-days" "$MAX_TASK_AGE_DAYS"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/codeguide_paths.sh"
 
+# Shared fence-aware document adapter -- the same codeguide_doc_lines.sh the doc_garden
+# writer sources, so the validator and the writers answer "what is the metadata envelope"
+# with one implementation. Sourced BEFORE the rule modules: validate_docs.d/ functions
+# wrap it (extract_field_block) instead of re-sourcing or re-implementing it.
+if ! source "$SCRIPT_DIR/codeguide_doc_lines.sh"; then
+  echo "[ERROR] could not source shared document adapter ${SCRIPT_DIR}/codeguide_doc_lines.sh" >&2
+  exit 1
+fi
+
+# Preflight: refuse to run with a half-loaded envelope reader. A load failure here is a
+# deployment defect rather than a document defect, and it fails fast -- before the corpus
+# pre-strip below pays for a run in which every envelope read would be wrong.
+if ! type -t doc_lines_envelope >/dev/null 2>&1; then
+  echo "[ERROR] shared envelope reader doc_lines_envelope not loadable from ${SCRIPT_DIR}/codeguide_doc_lines.sh" >&2
+  exit 1
+fi
+
 PROJECT_ROOT_ABS="$(codeguide_resolve_project_root "$PROJECT_ROOT")"
 DOCS_DIR="$(codeguide_docs_root "$PROJECT_ROOT_ABS")"
 
@@ -531,13 +548,20 @@ if [[ -d "$TASK_DIR" ]]; then
     # Superseded/cancelled tasks closed without completing: the disposition
     # field must say why (successor task, staleness, overtaken by events) so
     # the ledger stays honest without fabricating done-style close-out evidence.
+    # Read with the shared BLOCK reader (check_close_field_block_non_empty), so a
+    # nested-bullet disposition is non-empty, not just an inline scalar -- same rule as
+    # the close-record gate's objective/acceptance_criteria. `fail` tiers by MODE, so the
+    # former strict/advisory helper split collapses to one call. Kept at the top-level
+    # task loop so the JSON-contract caller stays "main".
     if [[ "$task_status_primary" == "superseded" || "$task_status_primary" == "cancelled" ]]; then
-      if [[ "$MODE" == "strict" ]]; then
-        check_field_non_empty "$task_file" "disposition" "${task_status_primary} task" || true
-      else
-        check_field_exists "$task_file" "disposition" "${task_status_primary} task" || true
-      fi
+      check_close_field_block_non_empty "$task_file" "disposition" "${task_status_primary} task" || true
     fi
+
+    # Terminal close-record gate + envelope-bounded unknown-key rejection (Release A of
+    # The plan). Advisory-only in Release A; the strict
+    # promotion switch is CLOSE_RECORD_STRICT_PROMOTED in validate_docs.d/30-rules-task.sh.
+    check_terminal_close_record "$task_file" "$task_ref" "$task_status_primary"
+    check_unknown_task_keys "$task_file" "$task_ref"
 
     # Active tasks must have at least one versioned plan file. Gating keys on
     # the primary status token (parenthetical notes tolerated, same as the
@@ -570,6 +594,7 @@ if [[ -d "$TASK_DIR" ]]; then
 
   if [[ -f "$TASK_DIR/task-index.md" ]]; then
     check_task_index_integrity "$TASK_DIR/task-index.md"
+    check_task_index_projection
   fi
 
   # Orphaned/stale claim directories: unlike the recommended owner/claimed_at

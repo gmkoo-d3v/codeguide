@@ -1,7 +1,10 @@
 # codeguide_doc_lines.sh -- the ONE shell adapter over the shared document reader.
-# Sourced (never executed) by every shell tool that WRITES a docs capsule: doc_garden.sh
-# and run_external_plan_reviews.sh. Requires CODEGUIDE_DOC_LINES_SCRIPT_DIR, or falls back
-# to this file's own directory, to locate shadow_doc_parse.py.
+# Sourced (never executed) by every shell tool that TOUCHES a docs capsule: the writers
+# (doc_garden.sh, run_external_plan_reviews.sh) that edit fields by line number, and the
+# validator (validate_docs.sh) that sources this BEFORE its rule modules so the envelope
+# reader below is one implementation shared by writer and reader. Requires
+# CODEGUIDE_DOC_LINES_SCRIPT_DIR, or falls back to this file's own directory, to locate
+# shadow_doc_parse.py.
 #
 # Why a shared file rather than a copy per tool: two shell tools EDIT the same
 # task/plan/orchestration capsules the validator reads, and each answered "where is the
@@ -29,9 +32,18 @@
 #                before, one axis narrower: fenced lines no longer count.
 #   open-fence - prints 1 when the document ENDS inside an unterminated fence, else nothing.
 #
-# Unlike the validator's read path, a failure here is LOUD (require_unfenced_lines): the
-# read side degrades to the original document on purpose, which merely misreports, while a
-# write that guessed wrong would corrupt a capsule.
+# One asymmetry is load-bearing and stays: the WRITE side of this adapter is LOUD
+# (require_unfenced_lines) where the validator's read side degrades to the original
+# document on purpose. A misreported read costs a wrong warning, while a write that
+# guessed wrong would corrupt a capsule -- so the two keep their different failure modes.
+#
+# doc_lines_envelope adds the metadata-envelope question to the shared reader in pure
+# shell: the fence-stripped lines before the first unfenced `##` heading
+# (task-state-contract.md, "metadata envelope"). It is the boundary every envelope-aware
+# rule and every envelope-aware writer answer by, and it never spawns python -- a
+# validator that already paid for a fence-stripped cache copy hands that copy in and
+# reads envelopes for free, and a writer holding only the raw file gets the same answer
+# from the same walk.
 
 codeguide_doc_lines_script_dir() {
   if [[ -n "${CODEGUIDE_DOC_LINES_SCRIPT_DIR:-}" ]]; then
@@ -106,6 +118,242 @@ out = [str(index + 1) for index, line in shadow_doc_parse.numbered_content_lines
 if out:
     sys.stdout.write("\n".join(out))
 FIELDLINE
+}
+
+# The metadata envelope: the fence-stripped lines of a document BEFORE the first
+# unfenced `##` heading. Everything at or below that heading is narrative by contract
+# and is never schema (task-state-contract.md), so this is the boundary every
+# envelope-aware read -- close-field extraction, unknown-key scan, placeholder check --
+# and every envelope-aware write answers by, and it is exactly ONE implementation,
+# shared by the validator and the writers that source this file.
+#
+# Pure shell on purpose, and it never spawns python: the validator pre-strips the corpus
+# once (validate_docs.sh) and hands this function the fence-stripped cache copy, so the
+# walk below is a no-op there and a cached envelope read costs nothing; a writer holding
+# only the raw file gets the same boundary from the same walk instead of from a private
+# fence rule.
+#
+# The fence walk implements the ONE fence grammar (shadow_doc_parse, so the stripped copy
+# and a raw document cannot disagree): a line whose leading-whitespace-stripped form
+# starts with three backticks or three tildes opens a block, a block closes only on a
+# marker of the SAME character at least as long as the opener, and an unterminated block
+# runs to end of document. A fenced `##` is content of the block, never a boundary; fence
+# markers and fenced content are excluded from the output.
+#
+# Prints the envelope lines verbatim (blank lines included, indentation preserved), one
+# per line; prints nothing when the file is unreadable or the envelope is empty.
+doc_lines_envelope() {
+  local file_path="$1"
+  local line
+  local stripped
+  local run
+  local marker_char
+  local marker_len
+  local open_char=""
+  local open_len=0
+
+  [[ -f "$file_path" ]] || return 0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    stripped="${line#"${line%%[![:space:]]*}"}"
+
+    if [[ -z "$open_char" ]]; then
+      if [[ "$stripped" == \`\`\`* || "$stripped" == \~\~\~* ]]; then
+        marker_char="${stripped:0:1}"
+        if [[ "$marker_char" == "~" ]]; then
+          run="${stripped%%[!~]*}"
+        else
+          run="${stripped%%[!\`]*}"
+        fi
+        open_char="$marker_char"
+        open_len="${#run}"
+        continue
+      fi
+      # First unfenced heading of level 2+ ends the envelope.
+      if [[ "$stripped" == "##"* ]]; then
+        return 0
+      fi
+      printf '%s\n' "$line"
+      continue
+    fi
+
+    # Inside a fenced block: only a same-character marker at least as long as the opener
+    # closes it; everything else -- `##`, other marker flavours, content -- stays inside.
+    if [[ "$stripped" == \`\`\`* || "$stripped" == \~\~\~* ]]; then
+      marker_char="${stripped:0:1}"
+      if [[ "$marker_char" == "~" ]]; then
+        run="${stripped%%[!~]*}"
+      else
+        run="${stripped%%[!\`]*}"
+      fi
+      if [[ "$marker_char" == "$open_char" && "${#run}" -ge "$open_len" ]]; then
+        open_char=""
+        open_len=0
+      fi
+    fi
+  done < "$file_path"
+  return 0
+}
+
+# Envelope-bounded close-field BLOCK reader, pure shell, for the WRITE side and for
+# shared stored-field projection (task_index_projection_summary below). It is the
+# writer's counterpart to extract_field_block (validate_docs.d/10-parse.sh): same
+# envelope (doc_lines_envelope), same first-occurrence-wins anchor, same termination
+# rules, so a row summary derived here and a close-field read there answer the same
+# question. A second block walker exists only because the validator module is not
+# sourced by the writers; the boundary they share is the one implementation that
+# matters, and both walks are pinned by bats (task_envelope.bats for the validator
+# side, task_index_projection.bats for this one).
+#
+# Accepts an inline scalar (`- outcome: done`) and contiguous nested bullets as
+# filled; returns empty for fence-only/bare-dash/checkbox/whitespace/HTML-comment/
+# heading-only content; terminates at the next column-0 key (same key included),
+# heading, EOF, blank line, or unindented prose; first duplicate wins. A blank line
+# terminates even inside a run of nested bullets.
+doc_lines_block_value() {
+  local file_path="$1"
+  local key="$2"
+  local line
+  local stripped
+  local remainder
+  local content=""
+  local found=0
+  local in_block=0
+  local all_empty=1
+  local is_blank
+
+  [[ -f "$file_path" ]] || return 0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ -z "${line//[[:space:]]/}" ]]; then
+      is_blank=1
+    else
+      is_blank=0
+    fi
+
+    if (( ! in_block )); then
+      # Target key line: first column-0 occurrence wins.
+      if [[ "$line" == "- ${key}:"* ]]; then
+        remainder="${line#- ${key}:}"
+        remainder="${remainder#"${remainder%%[![:space:]]*}"}"
+        if [[ -n "$remainder" ]]; then
+          # Inline scalar: the whole value sits on the key line, trimmed the same
+          # way extract_field_value trims.
+          printf "%s" "$remainder" | sed 's/[[:space:]]*$//'
+          return 0
+        fi
+        found=1
+        in_block=1
+        content=""
+        all_empty=1
+        continue
+      fi
+      # Any other column-0 bullet is the next key once the target was found.
+      if [[ "$line" == "- "* ]]; then
+        (( found )) && break
+        continue
+      fi
+      # The envelope ends before any heading by construction; a heading seen here
+      # still stops the walk defensively.
+      stripped="${line#"${line%%[![:space:]]*}"}"
+      if [[ "$stripped" == "##"* ]]; then
+        break
+      fi
+      if (( is_blank )); then
+        (( found )) && break
+        continue
+      fi
+      # Unindented prose: terminates once the target was found.
+      (( found )) && break
+      continue
+    fi
+
+    # Inside the block: a blank line or any column-0 line terminates it.
+    if (( is_blank )); then
+      break
+    fi
+    if [[ "$line" != [[:space:]]* ]]; then
+      break
+    fi
+    # Indented content -- nested bullets (including `  - key:`), indented prose.
+    content+="$line"$'\n'
+    stripped="${line#"${line%%[![:space:]]*}"}"
+    stripped="${stripped%"${stripped##*[![:space:]]}"}"
+    case "$stripped" in
+      "-"|"- [ ]"|"<!--"*) ;;
+      *) all_empty=0 ;;
+    esac
+  done < <(doc_lines_envelope "$file_path")
+
+  if (( ! found || ! in_block || all_empty )); then
+    return 0
+  fi
+  printf '%s' "$content" | sed 's/[[:space:]]*$//'
+}
+
+# Canonical single-line task-index ROW summary (the plan,
+# r07): collapse meaningful lines -> whitespace normalization -> pipe escaping. Each
+# meaningful line contributes its bullet-marker-stripped content and lines are joined
+# with '; ' -- the bullet syntax is the join point, so no information is lost and the
+# first-line-only shortcut is forbidden. Blank lines and bare dashes are dropped. Pipes
+# are escaped as `\|`, the same escape the task-index row writer has always used, so a
+# row built from this value and the value itself are byte-identical.
+task_index_summary_canonical() {
+  local value="$1"
+  local line
+  local stripped
+  local joined=""
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Drop trailing whitespace; a blank line is not meaningful content.
+    stripped="${line%"${line##*[![:space:]]}"}"
+    [[ -n "$stripped" ]] || continue
+    # Strip leading whitespace, then the bullet marker (`- `) if present. A bare
+    # dash (`-` with nothing after it) is a marker with no content and is dropped.
+    stripped="${stripped#"${stripped%%[![:space:]]*}"}"
+    if [[ "$stripped" == "- "* ]]; then
+      stripped="${stripped#- }"
+    elif [[ "$stripped" == "-" ]]; then
+      stripped=""
+    fi
+    [[ -n "$stripped" ]] || continue
+    if [[ -n "$joined" ]]; then
+      joined+="; "
+    fi
+    joined+="$stripped"
+  done <<< "$value"
+
+  printf "%s" "$joined" | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/^ +//; s/ +$//' | sed 's/|/\\|/g'
+}
+
+# The task-index ROW summary derives from the TASK FILE's stored fields, never from
+# CLI-passed text. The map is
+# fixed: planned/in_progress/blocked -> title, done -> outcome, superseded/cancelled ->
+# disposition. Reusing is_active_task_status (which includes done) for this is FORBIDDEN:
+# done projects to outcome, not title. Every read is envelope-bounded (doc_lines_block_value),
+# so a close field written below the first unfenced `##` heading is narrative and never
+# becomes a row summary. This is the ONE implementation both the writer (doc_garden.sh
+# update_task_index / --rebuild-task-index) and the validator (check_task_index_projection
+# in validate_docs.d/30-rules-task.sh) call, so a row written by the garden and a row
+# checked by the validator cannot disagree.
+task_index_projection_summary() {
+  local task_file="$1"
+  local status="$2"
+  local value=""
+
+  case "$status" in
+    done)
+      value="$(doc_lines_block_value "$task_file" "outcome")"
+      ;;
+    superseded|cancelled)
+      value="$(doc_lines_block_value "$task_file" "disposition")"
+      ;;
+    *)
+      value="$(doc_lines_block_value "$task_file" "title")"
+      ;;
+  esac
+
+  task_index_summary_canonical "$value"
 }
 
 # The loud half. It is a plain function call, never a command substitution, so its `exit`

@@ -381,6 +381,119 @@ extract_field_value() {
   printf "%s" "$raw" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
 }
 
+# Envelope-bounded close-field BLOCK reader, wrapping the shared envelope reader
+# (doc_lines_envelope in codeguide_doc_lines.sh, which validate_docs.sh sources BEFORE
+# the rule modules -- this module wraps it and never re-sources it). It is a NEW
+# function for close fields only and does not change extract_field_value, which stays
+# byte-identical for every input it already had.
+#
+# Close fields (outcome, disposition) may carry their value inline (`- outcome: done`)
+# or as a nested-bullet block under a header line:
+#
+#   - outcome:
+#     - Evidence: commit abc123
+#     - Summary: all gates green
+#
+# The block starts on the line after the first column-0 `- key:` line (same anchor as
+# extract_field_value) and collects INDENTED content -- nested bullets, including
+# `  - key:` lines, are content and never fields -- until the first column-0 key (the
+# same key included), heading, EOF, blank line, or unindented prose, whichever comes
+# first. A blank line terminates even inside a run of nested bullets (whitespace-separated
+# nested bullets are documented as unsupported). A block whose only lines are blank, a
+# bare `  -`, `  - [ ]`, HTML comments, or a heading reads as EMPTY.
+#
+# The field must live in the metadata envelope: a `- outcome:` below the first unfenced
+# `##` heading is narrative by contract, is not in the envelope, and reads as empty here.
+# Duplicate target keys: the FIRST occurrence wins. Returns empty when the key is absent
+# or the block is empty.
+extract_field_block() {
+  local file_path="$1"
+  local key="$2"
+  local line
+  local stripped
+  local remainder
+  local content=""
+  local found=0
+  local in_block=0
+  local all_empty=1
+  local is_blank
+
+  if ! type -t doc_lines_envelope >/dev/null 2>&1; then
+    echo "[ERROR] extract_field_block requires the shared envelope reader doc_lines_envelope; source codeguide_doc_lines.sh before validate_docs.d/10-parse.sh" >&2
+    return 1
+  fi
+
+  fence_stripped_file "$file_path"
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ -z "${line//[[:space:]]/}" ]]; then
+      is_blank=1
+    else
+      is_blank=0
+    fi
+
+    if (( ! in_block )); then
+      # Target key line: first column-0 occurrence wins.
+      if [[ "$line" == "- ${key}:"* ]]; then
+        remainder="${line#- ${key}:}"
+        remainder="${remainder#"${remainder%%[![:space:]]*}"}"
+        if [[ -n "$remainder" ]]; then
+          # Inline scalar: the whole value sits on the key line, trimmed like
+          # extract_field_value trims.
+          printf "%s" "$remainder" | sed 's/[[:space:]]*$//'
+          return 0
+        fi
+        found=1
+        in_block=1
+        content=""
+        all_empty=1
+        continue
+      fi
+      # Any other column-0 bullet is the next key once the target was found.
+      if [[ "$line" == "- "* ]]; then
+        (( found )) && break
+        continue
+      fi
+      # The envelope ends before any heading by construction; a heading seen here still
+      # stops the walk defensively.
+      stripped="${line#"${line%%[![:space:]]*}"}"
+      if [[ "$stripped" == "##"* ]]; then
+        break
+      fi
+      # A blank line before the target is ordinary envelope whitespace; after it, the
+      # block has no content.
+      if (( is_blank )); then
+        (( found )) && break
+        continue
+      fi
+      # Unindented prose: terminates once the target was found.
+      (( found )) && break
+      continue
+    fi
+
+    # Inside the block: a blank line or any column-0 line terminates it.
+    if (( is_blank )); then
+      break
+    fi
+    if [[ "$line" != [[:space:]]* ]]; then
+      break
+    fi
+    # Indented content -- nested bullets (including `  - key:`), indented prose.
+    content+="$line"$'\n'
+    stripped="${line#"${line%%[![:space:]]*}"}"
+    stripped="${stripped%"${stripped##*[![:space:]]}"}"
+    case "$stripped" in
+      "-"|"- [ ]"|"<!--"*) ;;
+      *) all_empty=0 ;;
+    esac
+  done < <(doc_lines_envelope "$FENCE_STRIPPED_PATH")
+
+  if (( ! found || ! in_block || all_empty )); then
+    return 0
+  fi
+  printf '%s' "$content" | sed 's/[[:space:]]*$//'
+}
+
 # Check that a field exists AND has a non-empty value
 check_field_non_empty() {
   local file_path="$1"

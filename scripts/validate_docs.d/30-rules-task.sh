@@ -251,3 +251,232 @@ check_issue_tracker_integrity() {
 
   rm -f "$all_ids_file"
 }
+
+# ============================================================================
+# Release C of the plan: the terminal close-record
+# gate, the unknown-key rejection, and the index-projection rule are STRICT-mode
+# rules. Release A/B shipped them advisory-only behind CLOSE_RECORD_STRICT_PROMOTED;
+# Release C makes the switch default ON (the mandatory strict gate). The named
+# constant stays so the promotion can be audited: exporting CLOSE_RECORD_STRICT_PROMOTED
+# empty recreates the advisory-only pre-C behavior for comparison, and a strict run
+# never silently skips these rules again by default.
+# ============================================================================
+
+# Default ON since Release C. An empty value disables strict promotion (advisory-only,
+# the Release A/B posture); any non-empty value is the promoted strict gate.
+CLOSE_RECORD_STRICT_PROMOTED="${CLOSE_RECORD_STRICT_PROMOTED:-1}"
+
+# Under a plain strict run these rules now RUN (the switch defaults ON) and `fail`
+# emits [FAIL] exactly where Release A/B emitted [WARN]. The only way they are skipped
+# is an explicit CLOSE_RECORD_STRICT_PROMOTED= (empty) export -- the auditable
+# pre-C posture, retained for comparison, never the default.
+gate_skipped_under_strict() {
+  [[ "$MODE" == "strict" && -z "$CLOSE_RECORD_STRICT_PROMOTED" ]]
+}
+
+# Exact-match placeholder tokens for close-field values (PLAN v1.7): only a value that
+# is EXACTLY one of these (after the block reader's trim) is a placeholder -- prefix or
+# partial matching is forbidden, so "tbd later" and "none of the above" are real content.
+# The legacy marker literal is the one exempt value: it is a truthful statement that the
+# standard search protocol (references/task-state-contract.md) found no close-time record,
+# so it passes rather than failing as a placeholder.
+CLOSE_FIELD_PLACEHOLDERS=(tbd TBD n/a none 미정)
+LEGACY_CLOSE_MARKER="legacy — no close-time record found"
+
+is_close_field_placeholder() {
+  local value="$1"
+  local candidate
+  [[ "$value" == "$LEGACY_CLOSE_MARKER" ]] && return 1
+  for candidate in "${CLOSE_FIELD_PLACEHOLDERS[@]}"; do
+    [[ "$value" == "$candidate" ]] && return 0
+  done
+  return 1
+}
+
+# Envelope-bounded non-empty check for close fields, mirroring check_field_non_empty
+# (10-parse.sh:498) but reading the value with extract_field_block: the close-record
+# gate must accept BOTH inline scalars AND nested-bullet blocks as non-empty (PLAN
+# v1.7 [block-reader] signal: "close 필드 검사는 인라인 스칼라와 중첩 불릿 블록을 모두
+# 비어 있지 않은 것으로 인정한다"). check_field_non_empty reads only the key's own line
+# (extract_field_value), so a done task whose objective/acceptance_criteria is a
+# nested-bullet block was wrongly read as empty. The failure message format is
+# byte-identical to check_field_non_empty, so tests asserting on the messages are
+# unaffected; the emitter name (the JSON-contract id, FUNCNAME[1]) legitimately becomes
+# this helper's name. check_field_non_empty itself is untouched -- it keeps single-line
+# semantics for the axis_*/title/status/orchestration fields that are inline by contract.
+check_close_field_block_non_empty() {
+  local file_path="$1"
+  local key="$2"
+  local label="$3"
+  local value
+
+  if ! field_key_present "$file_path" "$key"; then
+    fail "${key} is missing in ${label}: $file_path"
+    return 1
+  fi
+
+  value="$(extract_field_block "$file_path" "$key")"
+  if [[ -z "$value" ]]; then
+    fail "${key} is present but empty in ${label}: $file_path"
+    return 1
+  fi
+  return 0
+}
+
+# The terminal close-record matrix (references/task-state-contract.md):
+#   done            -> objective + acceptance_criteria + outcome required
+#   superseded/cancelled -> objective + disposition required (outcome optional,
+#                           never required, never injected)
+#   planned/in_progress/blocked -> no close fields required
+# The gate is a static invariant, not a transition: a file that is ALREADY done with
+# empty close fields fails without any transition being observed. Every close-field
+# read is envelope-bounded (extract_field_block), so a `- outcome:` under a `## Close-out`
+# narrative heading is not in the envelope and never satisfies the gate.
+check_terminal_close_record() {
+  local task_file="$1"
+  local task_ref="$2"
+  local task_status_primary="$3"
+  local outcome_value=""
+  local disposition_value=""
+
+  gate_skipped_under_strict && return 0
+
+  case "$task_status_primary" in
+    done)
+      check_close_field_block_non_empty "$task_file" "objective" "done task" || true
+      check_close_field_block_non_empty "$task_file" "acceptance_criteria" "done task" || true
+      outcome_value="$(extract_field_block "$task_file" "outcome")"
+      if [[ -z "$outcome_value" ]]; then
+        fail "outcome is missing in done task ${task_ref}: the terminal close-record gate requires objective + acceptance_criteria + outcome (references/task-state-contract.md)"
+      elif is_close_field_placeholder "$outcome_value"; then
+        fail "outcome in done task ${task_ref} is the placeholder '${outcome_value}': record the actual close-time evidence (exact-match placeholders: ${CLOSE_FIELD_PLACEHOLDERS[*]}; the legacy marker '${LEGACY_CLOSE_MARKER}' is the only exemption)"
+      fi
+      ;;
+    superseded|cancelled)
+      check_close_field_block_non_empty "$task_file" "objective" "${task_status_primary} task" || true
+      # disposition presence/non-empty is enforced by the disposition block in
+      # validate_docs.sh with the same block reader (check_close_field_block_non_empty);
+      # this rule only adds the placeholder gate on the value when one is present.
+      # outcome is optional here and never checked, required, or injected.
+      disposition_value="$(extract_field_block "$task_file" "disposition")"
+      if [[ -n "$disposition_value" ]] && is_close_field_placeholder "$disposition_value"; then
+        fail "disposition in ${task_status_primary} task ${task_ref} is the placeholder '${disposition_value}': record the actual close-time evidence (exact-match placeholders: ${CLOSE_FIELD_PLACEHOLDERS[*]}; the legacy marker '${LEGACY_CLOSE_MARKER}' is the only exemption)"
+      fi
+      ;;
+  esac
+  return 0
+}
+
+# The complete task dictionary (references/task-state-contract.md "Task dictionary
+# template") plus the legacy-key classification table (PLAN v1.7 "Legacy-Key
+# Classification"): preserve-classified keys are registered dictionary members and are
+# never unknown. Rename-classified keys (plan_ref -> consumes_plan_ref, close_out_note ->
+# outcome) are NOT in the dictionary until Release B migrates them, so they warn.
+TASK_DICTIONARY_KEYS=(title objective acceptance_criteria outcome non_goals affected_modules interfaces_changed data_migrations test_scope risks risk_level consumes_plan_ref status disposition owner claimed_at due_date axis_why axis_where axis_verify resume_source_head resume_changed_files resume_checkpointed_at resume_state_revision resume_next_action resume_last_verified resume_blockers)
+TASK_LEGACY_ALLOWED_KEYS=(last_updated decision_ref orchestration_ref reviewers)
+
+# Envelope-bounded unknown-key rejection: only a complete-dictionary key that is NOT in
+# the dictionary or the legacy classification is flagged. The scan walks the SAME
+# envelope boundary every other rule uses (doc_lines_envelope on the fence-stripped
+# copy), so fenced example keys and narrative-section keys (`verdict`, `pending`,
+# `reason` below the first unfenced `##`) are never scanned. Nested `  - key:` lines
+# are block content, not column-0 keys, and are skipped by the column-0 anchor.
+check_unknown_task_keys() {
+  local task_file="$1"
+  local task_ref="$2"
+  local line
+  local key
+  local is_known=0
+  local candidate
+
+  gate_skipped_under_strict && return 0
+
+  fence_stripped_file "$task_file"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ ^-\ ([A-Za-z_][A-Za-z0-9_]*): ]]; then
+      key="${BASH_REMATCH[1]}"
+      is_known=0
+      for candidate in "${TASK_DICTIONARY_KEYS[@]}" "${TASK_LEGACY_ALLOWED_KEYS[@]}"; do
+        if [[ "$key" == "$candidate" ]]; then
+          is_known=1
+          break
+        fi
+      done
+      if (( ! is_known )); then
+        fail "unknown task-dictionary key '${key}' in envelope of ${task_ref}: not in the task dictionary or the legacy classification table (references/task-state-contract.md)"
+      fi
+    fi
+  done < <(doc_lines_envelope "$FENCE_STRIPPED_PATH")
+  return 0
+}
+
+# The task-index ROW summary column, extracted from a row like
+# `- TASK-x | done | summary`. The ref match carries a trailing space so a row for a
+# LONGER ref (`- TASK-x-extra | ...`) never answers for `TASK-x`. The summary is
+# everything after the SECOND UNESCAPED pipe: `\|` inside the summary is content, not a
+# separator. Returns empty when the row has no summary column (fewer than two pipes) or
+# no row at all -- an unreadable task-index (the permission-cascade corpus) yields no
+# rows and therefore no findings.
+task_index_row_summary() {
+  local index_file="$1"
+  local task_ref="$2"
+
+  # The permission-cascade corpus ships a task-index.md that exists but is unreadable
+  # (600 gm-owned); an unreadable index yields no rows and therefore no findings, and
+  # must not abort the run under errexit.
+  [[ -f "$index_file" && -r "$index_file" ]] || return 0
+  fence_stripped_file "$index_file"
+  awk -v ref="- ${task_ref} " '
+    index($0, ref) == 1 {
+      line = substr($0, length(ref) + 1)
+      seen = 0
+      len = length(line)
+      out = ""
+      for (i = 1; i <= len; i++) {
+        c = substr(line, i, 1)
+        prev = (i > 1) ? substr(line, i - 1, 1) : ""
+        if (c == "|" && prev != "\\") {
+          seen++
+          if (seen == 2) { out = substr(line, i + 1); break }
+        }
+      }
+      if (seen >= 2) { print out; exit }
+    }
+  ' "$FENCE_STRIPPED_PATH" 2>/dev/null || true
+}
+
+# Row summary vs stored-field projection (PLAN v1.7 "[index]" acceptance signal): a
+# task-index row whose summary does not match the envelope projection of the task file's
+# stored fields is flagged. Writer and validator both derive from the stored fields
+# through the ONE shared implementation (task_index_projection_summary in
+# codeguide_doc_lines.sh), so a row the garden just wrote can never disagree with this
+# check -- a row written from CLI-passed text (the pre-fix `TASK_TITLE` bug) is exactly
+# what this catches.
+check_task_index_projection() {
+  local task_file
+  local task_ref
+  local task_status
+  local row_summary
+  local projected
+
+  gate_skipped_under_strict && return 0
+  [[ -f "$TASK_DIR/task-index.md" ]] || return 0
+
+  while IFS= read -r task_file; do
+    task_ref="$(basename "$task_file")"
+    task_ref="${task_ref%.md}"
+    row_summary="$(task_index_row_summary "$TASK_DIR/task-index.md" "$task_ref")"
+    [[ -n "$row_summary" ]] || continue
+    # The row format carries a space after each `|` separator, so the extracted column
+    # is trimmed before the byte comparison; the projection is already trimmed by its
+    # canonicalizer, and a writer that escaped a pipe lands `\|` on both sides.
+    row_summary="$(printf "%s" "$row_summary" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    task_status="$(unfenced_field_value "$task_file" "status")"
+    task_status="${task_status%% *}"
+    projected="$(task_index_projection_summary "$task_file" "$task_status")"
+    if [[ "$row_summary" != "$projected" ]]; then
+      fail "task-index row summary for ${task_ref} does not match the stored-field projection: row has '${row_summary}' but the envelope projects '${projected}' (references/task-state-contract.md)"
+    fi
+  done < <(find "$TASK_DIR" -maxdepth 1 -type f -name 'TASK-*.md' | sort)
+  return 0
+}

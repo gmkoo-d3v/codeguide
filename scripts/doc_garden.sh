@@ -9,8 +9,15 @@ Usage:
 
 Options:
   --task-id <id>                  Task ID (creates/updates project docs/task/TASK-<id>.md)
-  --task-title "<title>"          Task title
-  --task-status <status>          planned|in_progress|blocked|done (default: in_progress)
+  --task-title "<title>"          Task title (persisted on create/update when given;
+                                  an existing title is never clobbered by the default)
+  --task-status <status>          planned|in_progress|blocked|done (default: in_progress;
+                                  applied at CREATION only -- on update the stored status
+                                  is preserved unless --task-status is given explicitly)
+  --rebuild-task-index            Rebuild docs/task/task-index.md rows from stored task
+                                  fields (atomic sibling-temp replace, lock held for the
+                                  whole build; rows sorted by task_ref; comments, fenced
+                                  examples and section headers preserved)
   --risk-level <level>            low|medium|high|critical (applies to task and/or decision docs)
   --decision-id <id>              Decision ID (creates/updates project docs/decisions/decision-<id>.md)
   --decision-title "<title>"      Decision title
@@ -84,6 +91,12 @@ shift
 TASK_ID=""
 TASK_TITLE=""
 TASK_STATUS="in_progress"
+# Whether --task-status was given on this command line. The in_progress default applies
+# only at CREATION; an update without --task-status must preserve the stored status
+# so the close flow keeps working by passing
+# --task-status done explicitly.
+TASK_STATUS_EXPLICIT="false"
+REBUILD_TASK_INDEX="false"
 RISK_LEVEL=""
 DECISION_ID=""
 DECISION_TITLE=""
@@ -303,7 +316,12 @@ while [[ $# -gt 0 ]]; do
     --task-status)
       require_option_value "$1" "$#"
       TASK_STATUS="${2:-}"
+      TASK_STATUS_EXPLICIT="true"
       shift 2
+      ;;
+    --rebuild-task-index)
+      REBUILD_TASK_INDEX="true"
+      shift
       ;;
     --risk-level)
       require_option_value "$1" "$#"
@@ -956,6 +974,7 @@ ensure_task_file() {
 - risks:
 - risk_level:
 - status: planned | in_progress | blocked | done
+- outcome:
 - owner:
 - claimed_at:
 - due_date:
@@ -1099,6 +1118,8 @@ status_to_section() {
     in_progress) printf "## In Progress" ;;
     blocked)     printf "## Blocked" ;;
     done)        printf "## Done" ;;
+    superseded)  printf "## Superseded" ;;
+    cancelled)   printf "## Cancelled" ;;
     *)           printf "## In Progress" ;;
   esac
 }
@@ -1129,6 +1150,12 @@ delete_lines_by_number() {
 # the same shared refusal (require_appendable); the difference is only that a row can grow a
 # document without bound, because the fence-aware delete on the next run cannot see the row
 # a fence-blind append wrote (r02 finding 1).
+#
+# The row reaches awk through the ENVIRON array, never through `-v`: awk's `-v` parses the
+# value as a string literal and interprets backslash escapes, so a row summary carrying an
+# escaped pipe (`\|`) lost the backslash in the file -- silently changing the bytes the
+# index-projection validator compares. ENVIRON values are not reinterpreted, so what the
+# caller built is exactly what lands in the file.
 insert_row_after_line() {
   local file_path="$1"
   local target_line="$2"
@@ -1139,8 +1166,8 @@ insert_row_after_line() {
 
   tmp_file="$(mktemp)"
   register_tmp_file "$tmp_file"
-  awk -v target="$target_line" -v row="$row" '
-    BEGIN { inserted = 0 }
+  INSERT_ROW_VAL="$row" awk -v target="$target_line" '
+    BEGIN { row = ENVIRON["INSERT_ROW_VAL"] }
     {
       print
       if (!inserted && target != "" && NR == target) {
@@ -1178,22 +1205,34 @@ insert_row_after_line() {
 # The MATCH rules are deliberately unchanged: the delete is still the `grep -F` substring
 # test and the insert is still whole-line equality against the section header. Only fenced
 # lines stop counting, so this closes the fence axis without moving the row grammar.
+#
+# Since the plan the row is derived from the TASK FILE's
+# stored fields, never from CLI-passed text: status comes from the file (the CLI default
+# in_progress must not rewrite a stored done row) and the summary is the envelope
+# projection of title/outcome/disposition via the ONE shared implementation
+# (task_index_projection_summary in codeguide_doc_lines.sh). The writer and the
+# validator's check_task_index_projection both call that function, so a row written here
+# and a row checked there cannot disagree.
 update_task_index() {
   local task_ref="$1"
-  local title="$2"
-  local safe_title
+  local task_file="$2"
   local row
   local target_section
   local stale_rows
   local section_line
+  local task_status
+  local task_status_primary
+  local summary
 
-  safe_title="$(printf "%s" "$title" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ *//; s/ *$//; s/|/\\\\|/g')"
-  row="- ${task_ref} | ${TASK_STATUS} | ${safe_title}"
-  target_section="$(status_to_section "$TASK_STATUS")"
+  task_status="$(unfenced_field_value "$task_file" "status")"
+  task_status_primary="${task_status%% *}"
+  summary="$(task_index_projection_summary "$task_file" "$task_status_primary")"
+  row="- ${task_ref} | ${task_status_primary} | ${summary}"
+  target_section="$(status_to_section "$task_status_primary")"
   acquire_lock "$TASK_INDEX"
 
   if [[ ! -f "$TASK_INDEX" ]]; then
-    printf "# Task Index\n\n## Planned\n\n## In Progress\n\n## Blocked\n\n## Done\n" > "$TASK_INDEX"
+    printf "# Task Index\n\n## Planned\n\n## In Progress\n\n## Blocked\n\n## Superseded\n\n## Cancelled\n\n## Done\n" > "$TASK_INDEX"
   fi
 
   # Remove any existing UNFENCED row for this task (prevents duplicates); a row inside a
@@ -1205,6 +1244,126 @@ update_task_index() {
   # exists inside a fenced example.
   section_line="$(require_first_unfenced_line "$TASK_INDEX" exact "$target_section")"
   insert_row_after_line "$TASK_INDEX" "$section_line" "$row"
+}
+
+# Atomic whole-index rebuild:
+# regenerate the ROWS region of task-index.md from the stored fields of every TASK-*.md
+# file, then replace the original via atomic rename of a SIBLING temp (same filesystem).
+# The task-index lock is held for the whole create->replace (re-acquired only if the
+# caller's own update_task_index has not already taken it). Rows are ordered by task_ref
+# lexicographically (LC_ALL=C) within each status section; sections run in canonical order;
+# comments, fenced examples and section headers are preserved -- only `- TASK-...` row
+# lines outside fences are removed. A brand-new index carries all six status sections,
+# including Superseded and Cancelled (which the pre-Release-A template lacked). Row
+# summaries use the same stored-field projection as update_task_index, so a rebuild and
+# a targeted update produce byte-identical rows, and two consecutive rebuilds are
+# byte-identical (idempotence: row deletion + deterministic re-insertion).
+rebuild_task_index() {
+  local working
+  local task_ref
+  local task_file
+  local task_status
+  local task_status_primary
+  local summary
+  local row
+  local sec
+  local section_present
+  local row_numbers
+  local planned_rows=""
+  local in_progress_rows=""
+  local blocked_rows=""
+  local done_rows=""
+  local superseded_rows=""
+  local cancelled_rows=""
+  local -a section_headers
+  local -a section_vars
+  local idx
+  local header
+  local var_name
+  local section_rows
+  local -a row_array
+  local ridx
+  local section_line
+  local lock_already_held=0
+  local held_lock
+
+  for held_lock in "${LOCK_DIRS[@]:-}"; do
+    if [[ "$held_lock" == "${TASK_INDEX}.lock.d" ]]; then
+      lock_already_held=1
+      break
+    fi
+  done
+  if (( ! lock_already_held )); then
+    acquire_lock "$TASK_INDEX"
+  fi
+
+  # Sibling temp so the final replace is an atomic rename on the same filesystem.
+  working="$(mktemp "${TASK_DIR}/.task-index.rebuild.XXXXXX")"
+  register_tmp_file "$working"
+
+  if [[ -f "$TASK_INDEX" ]]; then
+    cp "$TASK_INDEX" "$working"
+  else
+    printf "# Task Index\n\n## Planned\n\n## In Progress\n\n## Blocked\n\n## Superseded\n\n## Cancelled\n\n## Done\n" > "$working"
+  fi
+
+  # Collect rows per section, refs in LC_ALL=C lexicographic order so each section's rows
+  # come out sorted without a second pass.
+  while IFS= read -r task_ref; do
+    task_file="$TASK_DIR/${task_ref}.md"
+    [[ -f "$task_file" ]] || continue
+    task_status="$(unfenced_field_value "$task_file" "status")"
+    task_status_primary="${task_status%% *}"
+    summary="$(task_index_projection_summary "$task_file" "$task_status_primary")"
+    row="- ${task_ref} | ${task_status_primary} | ${summary}"
+    case "$task_status_primary" in
+      planned)     planned_rows+="$row"$'\n' ;;
+      blocked)     blocked_rows+="$row"$'\n' ;;
+      done)        done_rows+="$row"$'\n' ;;
+      superseded)  superseded_rows+="$row"$'\n' ;;
+      cancelled)   cancelled_rows+="$row"$'\n' ;;
+      *)           in_progress_rows+="$row"$'\n' ;;
+    esac
+  done < <(find "$TASK_DIR" -maxdepth 1 -type f -name 'TASK-*.md' -exec basename {} \; | sed 's/\.md$//' | LC_ALL=C sort)
+
+  # Delete every existing unfenced row line; comments, fenced examples and section
+  # headers survive. Row lines are `- TASK-...` at column 0 outside fences.
+  row_numbers="$(require_unfenced_lines "$working" prefix "- TASK-")"
+  delete_lines_by_number "$working" "$row_numbers"
+
+  # Ensure all six section headers exist (append missing ones at end of file). Same
+  # unterminated-fence guard as the field/row writers: appending into an open fence would
+  # hide the new heading from the next run.
+  for sec in "## Planned" "## In Progress" "## Blocked" "## Done" "## Superseded" "## Cancelled"; do
+    section_present="$(require_unfenced_lines "$working" substring "$sec")"
+    if [[ -z "$section_present" ]]; then
+      require_appendable "$working" "the ${sec#\#\# } section heading" "$TASK_INDEX"
+      printf "\n%s\n" "$sec" >> "$working"
+    fi
+  done
+
+  # Insert rows under each section. insert_row_after_line puts a row DIRECTLY after the
+  # header, so inserting in REVERSE order yields ascending task_ref order in the file.
+  section_headers=("## Planned" "## In Progress" "## Blocked" "## Done" "## Superseded" "## Cancelled")
+  section_vars=(planned_rows in_progress_rows blocked_rows done_rows superseded_rows cancelled_rows)
+  for (( idx = 0; idx < ${#section_headers[@]}; idx++ )); do
+    header="${section_headers[idx]}"
+    var_name="${section_vars[idx]}"
+    section_rows="${!var_name}"
+    [[ -n "$section_rows" ]] || continue
+    row_array=()
+    while IFS= read -r row; do
+      [[ -n "$row" ]] || continue
+      row_array+=("$row")
+    done <<< "$section_rows"
+    for (( ridx = ${#row_array[@]} - 1; ridx >= 0; ridx-- )); do
+      row="${row_array[ridx]}"
+      section_line="$(require_first_unfenced_line "$working" exact "$header")"
+      insert_row_after_line "$working" "$section_line" "$row"
+    done
+  done
+
+  mv "$working" "$TASK_INDEX"
 }
 
 decision_status_to_section() {
@@ -1445,10 +1604,27 @@ fi
 if [[ -n "$TASK_ID" ]]; then
   TASK_FILE="$TASK_DIR/TASK-${TASK_ID}.md"
   ORCHESTRATION_FILE="$(codeguide_orchestration_file "$PROJECT_ROOT_ABS" "$TASK_ID")"
+  task_file_existed=0
+  [[ -f "$TASK_FILE" ]] && task_file_existed=1
   ensure_task_file "$TASK_FILE"
   ensure_orchestration_file "$ORCHESTRATION_FILE"
-  upsert_field "$TASK_FILE" "title" "${TASK_TITLE:-Task ${TASK_ID}}"
-  upsert_field "$TASK_FILE" "status" "$TASK_STATUS"
+
+  # Title: persist an explicitly given title, the creation fallback, or fill a still-empty
+  # title field -- but NEVER clobber an existing title on update. The pre-fix
+  # `upsert_field title "${TASK_TITLE:-Task ${TASK_ID}}"` rewrote a stored title with the
+  # generic fallback on every title-less update.
+  if [[ -n "$TASK_TITLE" ]]; then
+    upsert_field "$TASK_FILE" "title" "$TASK_TITLE"
+  elif (( ! task_file_existed )) || [[ -z "$(unfenced_field_value "$TASK_FILE" "title")" ]]; then
+    upsert_field "$TASK_FILE" "title" "Task ${TASK_ID}"
+  fi
+
+  # Status: the in_progress default applies only at CREATION. An update without
+  # --task-status preserves the stored status; the close flow passes --task-status done
+  # explicitly and is unaffected (TASK_STATUS_EXPLICIT).
+  if (( ! task_file_existed )) || [[ "$TASK_STATUS_EXPLICIT" == "true" ]]; then
+    upsert_field "$TASK_FILE" "status" "$TASK_STATUS"
+  fi
   if [[ -n "$RISK_LEVEL" ]]; then
     upsert_field "$TASK_FILE" "risk_level" "$RISK_LEVEL"
   fi
@@ -1462,7 +1638,20 @@ if [[ -n "$TASK_ID" ]]; then
     upsert_field "$TASK_FILE" "axis_verify" "$AXIS_VERIFY"
   fi
   upsert_field "$TASK_FILE" "last_updated" "$NOW_UTC"
-  update_task_index "TASK-${TASK_ID}" "${TASK_TITLE:-Task ${TASK_ID}}"
+
+  # Close preflight (UX): closing as done requires the close-record fields
+  # (references/task-state-contract.md). A nudge, not a hard block -- the validator gate
+  # is advisory in Release A.
+  if [[ "$TASK_STATUS_EXPLICIT" == "true" && "$TASK_STATUS" == "done" ]]; then
+    for close_field_name in objective acceptance_criteria outcome; do
+      close_field_value="$(doc_lines_block_value "$TASK_FILE" "$close_field_name")"
+      if [[ -z "$close_field_value" ]]; then
+        echo "[WARN] closing TASK-${TASK_ID} as done but ${close_field_name} is empty; the terminal close-record gate requires objective + acceptance_criteria + outcome (references/task-state-contract.md)" >&2
+      fi
+    done
+  fi
+
+  update_task_index "TASK-${TASK_ID}" "$TASK_FILE"
 
   upsert_field "$ORCHESTRATION_FILE" "task_id" "$TASK_ID"
   upsert_field "$ORCHESTRATION_FILE" "execution_mode" "$EXECUTION_MODE"
@@ -1530,6 +1719,10 @@ if [[ -n "$DECISION_ID" ]]; then
   upsert_field "$DECISION_FILE" "last_updated" "$NOW_UTC"
 
   update_decision_index "decision-${DECISION_ID}.md" "$LINKED_TASK"
+fi
+
+if [[ "$REBUILD_TASK_INDEX" == "true" ]]; then
+  rebuild_task_index
 fi
 
 refresh_shadow_graph "$RESOLVED_SHADOW_CHANGE_NOTE"

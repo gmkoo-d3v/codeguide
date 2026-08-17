@@ -518,6 +518,8 @@ write_if_missing "${TASK_DIR}/task-template.md" '# TASK-<id>
 - consumes_plan_ref:
 - status: planned | in_progress | blocked | done | superseded | cancelled
 - disposition: # required for superseded/cancelled: why the task closed without completing
+# outcome: for done status; mutually exclusive with disposition (outcome for done, disposition for superseded/cancelled)
+- outcome:
 - owner:
 - claimed_at:
 - due_date:
