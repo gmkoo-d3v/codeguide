@@ -124,7 +124,7 @@ register_tmp_file() {
 cleanup_tmp_files() {
   local file_path
   for file_path in "${TMP_FILES[@]:-}"; do
-    rm -f "$file_path" 2>/dev/null || true
+    rm -rf "$file_path" 2>/dev/null || true
   done
 }
 
@@ -1447,7 +1447,11 @@ run_agy_tool_command() {
   local output_capture_file="$2"
   local model_stderr_file="$3"
   # agy CLI 1.1.12+ accepts --model for routes with a specific cli_model; preconfigured-runtime routes use the globally selected model.
-  run_with_deadline "$EXTERNAL_CLI_TIMEOUT" "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
+  # Explicit </dev/null: this route never consumes stdin, and run_with_deadline
+  # uses <&0, so without the redirect a terminal-invoked run would hand the tty
+  # to the CLI — a background process-group read that stops on SIGTTIN and burns
+  # the whole deadline as a false timeout.
+  run_with_deadline "$EXTERNAL_CLI_TIMEOUT" "${TOOL_COMMAND[@]}" </dev/null >"$output_capture_file" 2>"$model_stderr_file"
 }
 
 run_codex_tool_command() {
@@ -1460,7 +1464,7 @@ run_codex_tool_command() {
   runtime_stdout="$(mktemp)"
   register_tmp_file "$runtime_stdout"
 
-  run_with_deadline "$EXTERNAL_CLI_TIMEOUT" "${TOOL_COMMAND[@]}" >"$runtime_stdout" 2>"$model_stderr_file"
+  run_with_deadline "$EXTERNAL_CLI_TIMEOUT" "${TOOL_COMMAND[@]}" </dev/null >"$runtime_stdout" 2>"$model_stderr_file"
   status=$?
   if [[ -s "$runtime_stdout" ]]; then
     cat "$runtime_stdout" >> "$model_stderr_file"
@@ -1622,16 +1626,37 @@ run_with_deadline() {
   local cmd_pid
   local status=0
   local end_time
+  local had_monitor=0
+  local prev_int_trap
+  local prev_term_trap
 
   if [[ ! "$deadline_seconds" =~ ^[0-9]+$ ]] || (( deadline_seconds == 0 )); then
     "$@" || return $?
     return 0
   fi
 
+  # Per-call marker reset: a marker left by an earlier timed-out invocation in
+  # this scope must not misdiagnose a later CLI that exits 124 on its own.
+  if [[ -n "${EXTERNAL_CLI_TIMEOUT_MARKER:-}" ]]; then
+    rm -f "$EXTERNAL_CLI_TIMEOUT_MARKER"
+  fi
+
+  [[ $- == *m* ]] && had_monitor=1
   set -m                     # child gets its own process group
   "$@" <&0 &                 # explicit stdin redirect: keeps the pipe (H1)
   cmd_pid=$!
-  set +m
+  (( had_monitor )) || set +m
+
+  # With job control on, the child sits in its own process group, so a terminal
+  # Ctrl-C (SIGINT to the foreground group) no longer reaches it — without a
+  # re-route the CLI would be orphaned and keep burning tokens, the exact leak
+  # H2 exists to prevent. Kill the child's group on INT/TERM, then restore the
+  # traps that were in place before this function ran.
+  prev_int_trap="$(trap -p INT)"
+  prev_term_trap="$(trap -p TERM)"
+  trap 'kill -TERM -- "-$cmd_pid" 2>/dev/null || kill -TERM "$cmd_pid" 2>/dev/null || true; kill -KILL -- "-$cmd_pid" 2>/dev/null || kill -KILL "$cmd_pid" 2>/dev/null || true; exit 130' INT
+  trap 'kill -TERM -- "-$cmd_pid" 2>/dev/null || kill -TERM "$cmd_pid" 2>/dev/null || true; kill -KILL -- "-$cmd_pid" 2>/dev/null || kill -KILL "$cmd_pid" 2>/dev/null || true; exit 143' TERM
+
   end_time=$(( SECONDS + deadline_seconds ))
   while kill -0 "$cmd_pid" 2>/dev/null; do
     if (( SECONDS >= end_time )); then
@@ -1639,7 +1664,11 @@ run_with_deadline() {
       sleep 1
       kill -KILL -- "-$cmd_pid" 2>/dev/null || kill -KILL "$cmd_pid" 2>/dev/null || true
       wait "$cmd_pid" 2>/dev/null || true
-      [[ -n "${EXTERNAL_CLI_TIMEOUT_MARKER:-}" ]] && : > "$EXTERNAL_CLI_TIMEOUT_MARKER"
+      if [[ -n "${EXTERNAL_CLI_TIMEOUT_MARKER:-}" ]]; then
+        : > "$EXTERNAL_CLI_TIMEOUT_MARKER" || echo "[WARN] timeout marker write failed: ${EXTERNAL_CLI_TIMEOUT_MARKER}" >&2
+      fi
+      eval "$prev_int_trap" 2>/dev/null || trap - INT
+      eval "$prev_term_trap" 2>/dev/null || trap - TERM
       return 124
     fi
     sleep 1
@@ -1649,6 +1678,8 @@ run_with_deadline() {
   else
     status=$?
   fi
+  eval "$prev_int_trap" 2>/dev/null || trap - INT
+  eval "$prev_term_trap" 2>/dev/null || trap - TERM
   return "$status"
 }
 
@@ -1659,20 +1690,20 @@ run_tool_prompt() {
   local stderr_file="$4"
   local durable_response_file="${5:-$output_capture_file}"
   local run_status=0
-  local timeout_marker
+  local timeout_marker_dir
 
   ACTUAL_MODEL="$reviewer_model"
   QUOTA_FALLBACK_TRIGGERED="false"
 
   # Timeout marker: a file (not a variable) because the claude route runs
-  # run_with_deadline in a pipeline subshell whose variable writes never
-  # reach this scope. mktemp pre-creates the file, so unlink it first —
-  # only a real timeout recreates it via `: >`.
-  timeout_marker="$(mktemp)"
-  rm -f "$timeout_marker"
-  register_tmp_file "$timeout_marker"
-  EXTERNAL_CLI_TIMEOUT_MARKER="$timeout_marker"
-  export EXTERNAL_CLI_TIMEOUT_MARKER
+  # run_with_deadline in a pipeline subshell whose variable writes never reach
+  # this scope. mktemp -d gives the exclusive-creation guarantee for the
+  # directory; the marker file inside is created only by a real timeout. Not
+  # exported: subshells inherit plain shell variables too, and exporting would
+  # leak the path into the external CLI's environment.
+  timeout_marker_dir="$(mktemp -d)"
+  register_tmp_file "$timeout_marker_dir"
+  EXTERNAL_CLI_TIMEOUT_MARKER="$timeout_marker_dir/timeout.marker"
 
   _run_model_route() {
     local model="$1"
@@ -1706,7 +1737,7 @@ run_tool_prompt() {
         run_codex_tool_command "$model" "$output_capture_file" "$model_stderr_file"
         ;;
       *)
-        run_with_deadline "$EXTERNAL_CLI_TIMEOUT" "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
+        run_with_deadline "$EXTERNAL_CLI_TIMEOUT" "${TOOL_COMMAND[@]}" </dev/null >"$output_capture_file" 2>"$model_stderr_file"
         ;;
     esac
   }
@@ -1719,9 +1750,11 @@ run_tool_prompt() {
 
   # A wrapper-imposed timeout is authoritative: report it and skip the
   # blocked/auth classification, which greps the partial output and could
-  # mask the real cause. A bare 124 without the marker is the CLI's own
-  # exit code and must not be misdiagnosed as a timeout.
-  if [[ "$run_status" -eq 124 ]] && [[ -e "${EXTERNAL_CLI_TIMEOUT_MARKER:-}" ]]; then
+  # mask the real cause. The marker alone is the authority — run_with_deadline
+  # creates it only on a real timeout — so the diagnosis does not depend on
+  # status propagation (pipefail) through the invocation. A CLI that exits 124
+  # on its own leaves no marker and flows through the normal classification.
+  if [[ -n "${EXTERNAL_CLI_TIMEOUT_MARKER:-}" && -e "$EXTERNAL_CLI_TIMEOUT_MARKER" ]]; then
     echo "[ERROR] external CLI timed out after ${EXTERNAL_CLI_TIMEOUT}s (route '${reviewer_model}'). Raise --external-cli-timeout / CODEGUIDE_EXTERNAL_CLI_TIMEOUT and rerun." >> "$stderr_file"
     return 124
   fi

@@ -1470,6 +1470,156 @@ EOF'
   [ "$status" -eq 0 ]
 }
 
+@test "run_external_plan_reviews non-stdin routes do not inherit caller stdin" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-route-stdin-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-route-stdin-v1.0
+
+- task_id: ext-route-stdin
+- plan_version: v1.0
+- objective: verify non-stdin routes get /dev/null, not caller stdin
+- scope: external review
+- assumptions: agy receives no stdin payload
+- risks: a tty inherited by a background CLI stops on SIGTTIN and burns the deadline
+- acceptance_signals: agy sees empty stdin
+- stop_conditions: agy sees caller stdin
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Pipe caller stdin into the wrapper.
+2. Assert the agy mock captured nothing.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
+cat > "${TEST_WORKSPACE}/agy-stdin-capture.md"
+cat <<EOF
+- verdict: accept
+- summary: Mock agy accepts the review packet.
+- strengths: none in particular.
+- risks: none.
+- requested_changes: none.
+EOF'
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+cat > "${TEST_WORKSPACE}/claude-stdin-capture.md"
+cat <<EOF
+- verdict: accept
+- summary: Mock claude accepts the review packet.
+- strengths: none in particular.
+- risks: none.
+- requested_changes: none.
+EOF'
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+echo "codex should not be called for primary=codex" >&2
+exit 99'
+
+  printf 'CALLER-STDIN-SECRET\n' > "$TEST_WORKSPACE/caller-stdin.txt"
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-route-stdin" \
+    --plan-version "v1.0" \
+    --primary-tool "codex" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-route-stdin" \
+    --approved-next-step "run external review ext-route-stdin" < "$TEST_WORKSPACE/caller-stdin.txt"
+
+  [ "$status" -eq 0 ]
+  # The agy route must not see the caller's stdin: without the explicit
+  # </dev/null it would inherit the pipe (or a terminal) and a tty read would
+  # stop on SIGTTIN, burning the whole deadline as a false timeout.
+  run test ! -s "$TEST_WORKSPACE/agy-stdin-capture.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_external_plan_reviews does not misdiagnose a CLI's own exit 124 as a timeout" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-cli124-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-cli124-v1.0
+
+- task_id: ext-cli124
+- plan_version: v1.0
+- objective: verify a CLI exiting 124 on its own is not reported as a timeout
+- scope: external review
+- assumptions: the wrapper distinguishes wrapper-imposed timeouts from CLI exit codes
+- risks: a false timeout diagnosis misleads operators into raising the deadline
+- acceptance_signals: failure is recorded without the timeout message
+- stop_conditions: timeout message appears
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Run a reviewer whose CLI exits 124 immediately.
+2. Assert the wrapper fails without the timeout diagnosis.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
+exit 124'
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+cat <<EOF
+- verdict: accept
+- summary: Mock claude accepts the review packet.
+- strengths: none in particular.
+- risks: none.
+- requested_changes: none.
+EOF'
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+echo "codex should not be called for primary=codex" >&2
+exit 99'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-cli124" \
+    --plan-version "v1.0" \
+    --primary-tool "codex" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-cli124" \
+    --approved-next-step "run external review ext-cli124" \
+    --external-cli-timeout 30
+
+  [ "$status" -ne 0 ]
+  # The marker is the sole authority for a wrapper-imposed timeout; a bare 124
+  # from the CLI itself must not be reported as "timed out".
+  refute_contains "$output" "timed out"
+}
+
+@test "run_with_deadline resets the timeout marker per call so a later CLI-124 is not misdiagnosed" {
+  # Function-level probe: extract the real run_with_deadline from the script
+  # (the script's main flow is interleaved with its functions, so it cannot be
+  # sourced wholesale) and exercise the marker lifecycle across two calls.
+  local func_file="$TEST_WORKSPACE/rwd.sh"
+  sed -n '/^run_with_deadline() {/,/^}/p' "$SCRIPTS_DIR/run_external_plan_reviews.sh" > "$func_file"
+  local marker_dir="$TEST_WORKSPACE/marker-dir"
+  mkdir -p "$marker_dir"
+  local marker="$marker_dir/timeout.marker"
+
+  local probe="$TEST_WORKSPACE/rwd-probe.sh"
+  cat > "$probe" <<EOF
+#!/usr/bin/env bash
+source '$func_file'
+export EXTERNAL_CLI_TIMEOUT_MARKER='$marker'
+run_with_deadline 2 bash -c 'sleep 30' 2>/dev/null
+echo "timeout_status=\$? marker_after_timeout=\$([ -e '$marker' ] && echo yes || echo no)"
+run_with_deadline 5 bash -c 'exit 124' 2>/dev/null
+echo "cli124_status=\$? marker_after_cli124=\$([ -e '$marker' ] && echo yes || echo no)"
+EOF
+  run bash "$probe"
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "timeout_status=124 marker_after_timeout=yes"
+  # The second call's entry unlink must clear the stale marker, so the CLI's
+  # own 124 is not misdiagnosed as a timeout by the caller.
+  assert_contains "$output" "cli124_status=124 marker_after_cli124=no"
+}
+
 @test "run_external_plan_reviews passes explicit Codex registry model" {
   local plan_file="$DOCS_ROOT/plan/PLAN-ext-codex-model-v1.0.md"
   cat > "$plan_file" <<'EOF'
