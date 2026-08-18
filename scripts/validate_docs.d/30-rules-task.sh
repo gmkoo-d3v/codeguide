@@ -109,7 +109,7 @@ check_task_index_integrity() {
   local file_status_primary
   local dup_ref
 
-  all_refs_file="$(mktemp)"
+  all_refs_file="$(mktemp "${TMPDIR:-/tmp}/validate_docs_task_index_refs.XXXXXX")"
 
   # Walk the fence-stripped copy, the same bytes task_index_row_present probes. While this
   # walk was fence-blind it agreed with the two probes on a falsehood: a row inside a quoted
@@ -184,7 +184,7 @@ check_issue_tracker_integrity() {
   local all_ids_file
   local dup_id
 
-  all_ids_file="$(mktemp)"
+  all_ids_file="$(mktemp "${TMPDIR:-/tmp}/validate_docs_issue_ids.XXXXXX")"
 
   if [[ -d "$ISSUE_TRACKER_CURRENT_DIR" ]]; then
     while IFS= read -r issue_file; do

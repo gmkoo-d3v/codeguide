@@ -143,6 +143,18 @@ EXCLUSIONS = {
         "naming it. Naming it would flip this file to `direct` on a COMMENT, which is the "
         "audit criterion's known weakness, not evidence of agreement."
     ),
+    "scripts/validate_docs.d/20-rules-shadow.sh": (
+        "Shadow graph/schema/digest rules. Its `- key:` field reads go through 10-parse.sh "
+        "(extract_field_value / field_key_present / extract_shadow_field), which delegate the "
+        "fence rule to the shared reader, and through classified .py helpers it invokes as "
+        "subprocesses. The two raw greps it still owns (source_of_truth_digest prefilter at "
+        "check_shadow_source_digest, source_of_truth_paths prefilter at "
+        "check_shadow_source_paths_exist) are spawn-guard prefilters, not the reader: the "
+        "verdict is decided by shadow_source_digest.py (classified `direct`), the same "
+        "prefilter arrangement the task accepted for r02 finding 9. "
+        "It keeps one private grammar, the awk in bucket_index_has_units over the "
+        "fence-stripped cache, justified identically to 40-rules-orchestration.sh."
+    ),
 }
 
 
@@ -174,9 +186,11 @@ def candidates(scripts_dir: Path) -> list[Path]:
 
 # `source "$THIS_DIR/x.sh"` / `. "${SCRIPT_DIR}/dir/x.sh"`. Only a literal filename counts:
 # a sourced path built from a loop variable is not a dependency this audit can prove, and
-# guessing one would be the same false certification as reading a comment.
+# guessing one would be the same false certification as reading a comment. A conditional
+# `if ! source ...` guard is still a real source edge -- the file executes the source when
+# the condition holds -- so an `if`/`if !` prefix is accepted.
 _SHELL_SOURCE_RE = re.compile(
-    r"^[ \t]*(?:source|\.)[ \t]+\"?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/([A-Za-z0-9_./-]+\.sh)\"?",
+    r"^[ \t]*(?:if[ \t]+!?[ \t]+)?(?:source|\.)[ \t]+\"?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/([A-Za-z0-9_./-]+\.sh)\"?",
     re.M,
 )
 

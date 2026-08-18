@@ -23,523 +23,15 @@ check_effect_map_file() {
   local issue_output
 
   check_field_value_equals "$file_path" "doc_role" "effect_map" "shadow effect_map" || true
-  issue_output="$(python3 - "$file_path" "$POLICY_DIR" "$PROJECT_ROOT_ABS" "$SCRIPT_DIR" <<'PY'
-from __future__ import annotations
-
-import hashlib
-import json
-import re
-import sys
-from pathlib import Path
-
-path = sys.argv[1]
-policy_dir = Path(sys.argv[2])
-project_root = Path(sys.argv[3])
-script_dir = Path(sys.argv[4])
-sys.path.insert(0, str(script_dir))
-from shadow_policy_loader import load_policy_registry_from_dir
-marker = re.compile(r"^<!--\s*shadow-effect-record:([A-Za-z0-9_.:-]+)\s+(begin|end)\s*-->$")
-markerish = re.compile(r"shadow-effect-record:")
-allowed_lifecycles = {"confirmed", "unknown", "blocked", "stale"}
-human_effect_types = {
-    "business_intent",
-    "business_risk",
-    "bug_or_intended_design",
-    "domain_intent",
-    "effect_intent",
-    "human_fact",
-    "waiver_approval",
-}
-sha_re = re.compile(r"^sha256:[0-9a-f]{64}$")
-scenario_scope_re = re.compile(r"^[A-Za-z0-9_.:/-]{3,120}$")
-setter_symbol_path_re = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
-id_re = re.compile(r"^ {2,}([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+@v[0-9]+):\s*$")
-runtime_envelope_encodings = {"utf-8", "binary"}
-runtime_envelope_canonicalizations = {"none", "rfc8785", "custom-declared"}
-runtime_envelope_hash_input_scopes = {"whole_artifact", "selected_fields", "line_range"}
-runtime_envelope_canonical_output_types = {"text", "binary"}
-expiry_or_invalidation_rules = {"timestamp", "binding_change", "manual_revocation"}
-runtime_envelope_v1_matrix = {
-    ("utf-8", "rfc8785", None, "whole_artifact"),
-    ("utf-8", "rfc8785", None, "selected_fields"),
-    ("utf-8", "none", None, "whole_artifact"),
-    ("utf-8", "none", None, "line_range"),
-    ("utf-8", "custom-declared", "text", "whole_artifact"),
-    ("utf-8", "custom-declared", "text", "selected_fields"),
-    ("utf-8", "custom-declared", "text", "line_range"),
-    ("utf-8", "custom-declared", "binary", "whole_artifact"),
-    ("binary", "none", None, "whole_artifact"),
-    ("binary", "custom-declared", "binary", "whole_artifact"),
-}
-issues = []
-open_id = None
-fields = {}
-record_count = 0
-
-
-def parse_inline_list(value: str) -> set[str]:
-    value = value.strip()
-    if value.startswith("[") and value.endswith("]"):
-        value = value[1:-1]
-    return {item.strip().strip("\"'") for item in value.split(",") if item.strip()}
-
-
-policy_registry = load_policy_registry_from_dir(policy_dir)
-catalog_evidence_types = policy_registry.validators
-implemented_validators = policy_registry.implemented_primary
-parser_backed_validators = policy_registry.parser_backed_now
-rule_allowed_effects = policy_registry.rule_effect_types
-rule_compatible_refs = {
-    rule_id: {item for refs in evidence_refs.values() for item in refs}
-    for rule_id, evidence_refs in policy_registry.rule_primaries.items()
-}
-
-
-def sha256_file(value: Path) -> str:
-    digest = hashlib.sha256()
-    with value.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return "sha256:" + digest.hexdigest()
-
-
-def sha256_bytes(value: bytes) -> str:
-    return "sha256:" + hashlib.sha256(value).hexdigest()
-
-
-def source_path_from_ref(ref: str) -> str:
-    head, sep, tail = ref.rpartition(":")
-    if sep and tail.isdigit() and head and ("/" in head or "\\" in head or Path(head).suffix):
-        return head
-    return ref
-
-
-def line_from_ref(ref: str) -> str | None:
-    head, sep, tail = ref.rpartition(":")
-    if sep and tail.isdigit() and head and ("/" in head or "\\" in head or Path(head).suffix):
-        return tail
-    return None
-
-
-def is_json_media_type(value: str) -> bool:
-    media_type = value.split(";", 1)[0].strip().lower()
-    return media_type == "application/json" or media_type.endswith("+json")
-
-
-def parse_top_level_json_object_without_duplicates(text: str) -> dict:
-    def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict:
-        result = {}
-        for key, item in pairs:
-            if key in result:
-                raise ValueError("no duplicate top-level field names")
-            result[key] = item
-        return result
-
-    parsed = json.loads(text, object_pairs_hook=reject_duplicate_keys)
-    if not isinstance(parsed, dict):
-        raise ValueError("a JSON object")
-    return parsed
-
-
-def normalized_path(ref: str) -> Path:
-    raw = Path(source_path_from_ref(ref))
-    if not raw.is_absolute():
-        raw = project_root / raw
-    return raw.resolve(strict=False)
-
-
-def check_path_binding(record_id: str, prefix: str, anchor_file: str, ref: str, anchor_line: str | None = None) -> None:
-    if anchor_file and ref and normalized_path(anchor_file) != normalized_path(ref):
-        issues.append(f"record {record_id}: {prefix} anchor_file must match evidence ref path")
-    ref_line = line_from_ref(ref or "")
-    if anchor_line and ref_line and str(anchor_line).strip() != ref_line:
-        issues.append(f"record {record_id}: {prefix} anchor_line must match evidence ref line")
-
-
-def check_probe_artifact(record_id: str, probe_ref: str, probe_hash: str, label: str) -> None:
-    if not sha_re.match(probe_hash or ""):
-        return
-    if not probe_ref:
-        return
-    probe_path = Path(source_path_from_ref(probe_ref))
-    if not probe_path.is_absolute():
-        probe_path = project_root / probe_path
-    try:
-        resolved = probe_path.resolve(strict=True)
-    except OSError:
-        issues.append(f"record {record_id}: {label} probe artifact must exist")
-        return
-    if not resolved.is_file():
-        issues.append(f"record {record_id}: {label} probe artifact must be a file")
-        return
-    try:
-        if sha256_file(resolved) != probe_hash:
-            issues.append(f"record {record_id}: {label} probe artifact hash must match")
-    except OSError as exc:
-        issues.append(f"record {record_id}: {label} probe artifact hash could not be verified: {exc}")
-
-
-def check_rule(record_id: str, evidence_type: str, rule_id: str, effect_type: str, evidence_ref: str) -> None:
-    if not rule_id:
-        issues.append(f"record {record_id}: {evidence_type} evidence_rule_id is required")
-        return
-    if rule_id not in rule_allowed_effects:
-        issues.append(f"record {record_id}: {evidence_type} evidence_rule_id must be registered")
-        return
-    if effect_type not in rule_allowed_effects.get(rule_id, set()):
-        issues.append(f"record {record_id}: {evidence_type} evidence_rule_id is not compatible with effect_type")
-    if evidence_ref not in rule_compatible_refs.get(rule_id, set()):
-        issues.append(f"record {record_id}: {evidence_type} evidence_ref is not compatible with evidence_rule_id")
-
-
-def is_rendered_list(value: str) -> bool:
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return False
-    return isinstance(parsed, list)
-
-
-def parsed_json_field(record_id: str, key: str, expected_type: type):
-    raw = fields.get(key, "")
-    if not raw:
-        issues.append(f"record {record_id}: deterministic_runtime record requires {key}")
-        return None
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        issues.append(f"record {record_id}: deterministic_runtime {key} must be valid JSON")
-        return None
-    if not isinstance(parsed, expected_type):
-        issues.append(f"record {record_id}: deterministic_runtime {key} has the wrong JSON type")
-        return None
-    return parsed
-
-
-def runtime_trace_hash(record_id: str) -> str | None:
-    trace_ref = fields.get("evidence_trace_ref", "")
-    if not trace_ref:
-        return None
-    trace_path = Path(source_path_from_ref(trace_ref))
-    if not trace_path.is_absolute():
-        trace_path = project_root / trace_path
-    try:
-        raw_bytes = trace_path.resolve(strict=True).read_bytes()
-    except OSError as exc:
-        issues.append(f"record {record_id}: deterministic_runtime trace artifact could not be read: {exc}")
-        return None
-
-    hash_input_scope = fields.get("evidence_hash_input_scope", "")
-    if hash_input_scope == "whole_artifact":
-        return sha256_bytes(raw_bytes)
-
-    if hash_input_scope == "line_range":
-        line_range = parsed_json_field(record_id, "evidence_line_range", dict)
-        if line_range is None:
-            return None
-        start = line_range.get("start")
-        end = line_range.get("end")
-        if type(start) is not int or type(end) is not int or start < 1 or end < start:
-            issues.append(f"record {record_id}: deterministic_runtime evidence_line_range must satisfy integer start >= 1 and end >= start")
-            return None
-        matched_line = line_from_ref(trace_ref)
-        if matched_line is None:
-            issues.append(f"record {record_id}: deterministic_runtime evidence_trace_ref must be line-qualified for line_range scope")
-            return None
-        if not (start <= int(matched_line) <= end):
-            issues.append(f"record {record_id}: deterministic_runtime evidence_trace_ref line must be inside evidence_line_range")
-            return None
-        lines = raw_bytes.splitlines(keepends=True)
-        if end > len(lines):
-            issues.append(f"record {record_id}: deterministic_runtime evidence_line_range must be within trace artifact line count")
-            return None
-        return sha256_bytes(b"".join(lines[start - 1 : end]))
-
-    if hash_input_scope == "selected_fields":
-        selected_fields = parsed_json_field(record_id, "evidence_selected_fields", list)
-        if selected_fields is None:
-            return None
-        if not selected_fields or not all(isinstance(item, str) for item in selected_fields):
-            issues.append(f"record {record_id}: deterministic_runtime evidence_selected_fields must be a non-empty JSON list of strings")
-            return None
-        if len(set(selected_fields)) != len(selected_fields):
-            issues.append(f"record {record_id}: deterministic_runtime evidence_selected_fields must not contain duplicate field names")
-            return None
-        if any(not item or "." in item for item in selected_fields):
-            issues.append(f"record {record_id}: deterministic_runtime evidence_selected_fields supports only top-level field names")
-            return None
-        if line_from_ref(trace_ref) != "1":
-            issues.append(f"record {record_id}: deterministic_runtime evidence_trace_ref must point at the single JSON trace line for selected_fields scope")
-            return None
-        try:
-            text = raw_bytes.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            issues.append(f"record {record_id}: deterministic_runtime selected_fields trace artifact must be utf-8: {exc}")
-            return None
-        lines = text.splitlines()
-        if len(lines) != 1:
-            issues.append(f"record {record_id}: deterministic_runtime selected_fields trace artifact must be a single JSON line")
-            return None
-        try:
-            parsed = parse_top_level_json_object_without_duplicates(text)
-        except json.JSONDecodeError as exc:
-            issues.append(f"record {record_id}: deterministic_runtime selected_fields trace artifact must be valid JSON: {exc}")
-            return None
-        except ValueError as exc:
-            issues.append(f"record {record_id}: deterministic_runtime selected_fields trace artifact must be {exc}")
-            return None
-        if any(field not in parsed for field in selected_fields):
-            issues.append(f"record {record_id}: deterministic_runtime selected_fields must exist in trace artifact")
-            return None
-        selected = {field: parsed[field] for field in selected_fields}
-        return sha256_bytes(json.dumps(selected, sort_keys=True, separators=(",", ":")).encode("utf-8"))
-
-    return None
-
-
-def check_runtime_envelope(record_id: str) -> None:
-    for key in (
-        "evidence_artifact_media_type",
-        "evidence_encoding",
-        "evidence_canonicalization",
-        "evidence_hash_input_scope",
-        "evidence_ignored_nondeterministic_fields",
-    ):
-        if not fields.get(key):
-            issues.append(f"record {record_id}: deterministic_runtime record requires {key}")
-
-    encoding = fields.get("evidence_encoding", "")
-    canonicalization = fields.get("evidence_canonicalization", "")
-    hash_input_scope = fields.get("evidence_hash_input_scope", "")
-    ignored_fields = fields.get("evidence_ignored_nondeterministic_fields", "")
-    canonical_output_type = fields.get("evidence_canonical_output_type")
-
-    if encoding and encoding not in runtime_envelope_encodings:
-        issues.append(f"record {record_id}: deterministic_runtime evidence_encoding must be utf-8 or binary")
-    if canonicalization and canonicalization not in runtime_envelope_canonicalizations:
-        issues.append(
-            f"record {record_id}: deterministic_runtime evidence_canonicalization must be none, rfc8785, or custom-declared"
-        )
-    if hash_input_scope and hash_input_scope not in runtime_envelope_hash_input_scopes:
-        issues.append(
-            f"record {record_id}: deterministic_runtime evidence_hash_input_scope must be whole_artifact, selected_fields, or line_range"
-        )
-    if ignored_fields and not is_rendered_list(ignored_fields):
-        issues.append(f"record {record_id}: deterministic_runtime evidence_ignored_nondeterministic_fields must be a JSON list")
-
-    if canonicalization == "custom-declared":
-        if canonical_output_type not in runtime_envelope_canonical_output_types:
-            issues.append(
-                f"record {record_id}: deterministic_runtime evidence_canonical_output_type must be text or binary for custom-declared canonicalization"
-            )
-    elif canonical_output_type:
-        issues.append(
-            f"record {record_id}: deterministic_runtime evidence_canonical_output_type is only valid for custom-declared canonicalization"
-        )
-
-    if (
-        hash_input_scope == "whole_artifact"
-        and ignored_fields
-        and ignored_fields != "[]"
-        and canonicalization != "custom-declared"
-    ):
-        issues.append(
-            f"record {record_id}: deterministic_runtime evidence_ignored_nondeterministic_fields must be [] for whole_artifact unless canonicalization is custom-declared"
-        )
-
-    if hash_input_scope == "selected_fields":
-        selected_fields = fields.get("evidence_selected_fields", "")
-        if not selected_fields:
-            issues.append(f"record {record_id}: deterministic_runtime record requires evidence_selected_fields")
-        elif not is_rendered_list(selected_fields):
-            issues.append(f"record {record_id}: deterministic_runtime evidence_selected_fields must be a JSON list")
-        if (
-            fields.get("evidence_ref") == "any.runtime.trace@v1"
-            and (encoding != "utf-8" or canonicalization != "rfc8785" or not is_json_media_type(fields.get("evidence_artifact_media_type", "")))
-        ):
-            issues.append(
-                f"record {record_id}: deterministic_runtime any.runtime.trace@v1 selected_fields requires JSON artifact_media_type, encoding utf-8, and canonicalization rfc8785"
-            )
-
-    if hash_input_scope == "line_range":
-        if not fields.get("evidence_line_range", ""):
-            issues.append(f"record {record_id}: deterministic_runtime record requires evidence_line_range")
-        if fields.get("evidence_ref") == "any.runtime.trace@v1" and not line_from_ref(fields.get("evidence_trace_ref", "")):
-            issues.append(f"record {record_id}: deterministic_runtime evidence_trace_ref must be line-qualified for line_range scope")
-
-    canonical_output = canonical_output_type if canonicalization == "custom-declared" else None
-    if (
-        encoding in runtime_envelope_encodings
-        and canonicalization in runtime_envelope_canonicalizations
-        and hash_input_scope in runtime_envelope_hash_input_scopes
-        and (canonicalization != "custom-declared" or canonical_output_type in runtime_envelope_canonical_output_types)
-        and (encoding, canonicalization, canonical_output, hash_input_scope) not in runtime_envelope_v1_matrix
-    ):
-        issues.append(f"record {record_id}: deterministic_runtime evidence envelope is not supported by the v1 validity matrix")
-
-
-def check_runtime_scenario_fit_metadata(record_id: str) -> None:
-    for key in (
-        "evidence_scenario_scope",
-        "evidence_setter_symbol_path",
-        "evidence_setter_module_hash",
-        "evidence_expiry_or_invalidation_rule",
-    ):
-        if not fields.get(key):
-            issues.append(f"record {record_id}: deterministic_runtime record requires {key}")
-
-    scenario_scope = fields.get("evidence_scenario_scope", "")
-    setter_symbol_path = fields.get("evidence_setter_symbol_path", "")
-    setter_module_hash = fields.get("evidence_setter_module_hash", "")
-    expiry_or_invalidation_rule = fields.get("evidence_expiry_or_invalidation_rule", "")
-
-    if scenario_scope and not scenario_scope_re.match(scenario_scope):
-        issues.append(
-            f"record {record_id}: deterministic_runtime evidence_scenario_scope must match ^[A-Za-z0-9_.:/-]{{3,120}}$"
-        )
-    if setter_symbol_path and not setter_symbol_path_re.match(setter_symbol_path):
-        issues.append(
-            f"record {record_id}: deterministic_runtime evidence_setter_symbol_path must match ^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"
-        )
-    if setter_module_hash and not sha_re.match(setter_module_hash):
-        issues.append(f"record {record_id}: deterministic_runtime evidence_setter_module_hash must be sha256")
-    if expiry_or_invalidation_rule and expiry_or_invalidation_rule not in expiry_or_invalidation_rules:
-        issues.append(
-            f"record {record_id}: deterministic_runtime evidence_expiry_or_invalidation_rule must be timestamp, binding_change, or manual_revocation"
-        )
-
-
-def finish(line_no: int, end_id: str) -> None:
-    global open_id, fields, record_count
-    if open_id is None:
-        issues.append(f"line {line_no}: end marker without begin marker")
-        return
-    if end_id != open_id:
-        issues.append(f"line {line_no}: marker id mismatch for {open_id}")
-    record_count += 1
-    lifecycle = fields.get("lifecycle", "")
-    if lifecycle not in allowed_lifecycles:
-        issues.append(f"record {open_id}: lifecycle must be confirmed, unknown, blocked, or stale")
-    if not fields.get("record_id"):
-        issues.append(f"record {open_id}: record_id is required")
-    elif fields["record_id"] != open_id:
-        issues.append(f"record {open_id}: record_id must match marker id")
-    if fields.get("record_type") != "effect_map_entry":
-        issues.append(f"record {open_id}: record_type must be effect_map_entry")
-    if not fields.get("effect_type"):
-        issues.append(f"record {open_id}: effect_type is required")
-    if lifecycle == "confirmed":
-        for key in ("anchor_file", "anchor_symbol", "evidence_type", "evidence_ref"):
-            if not fields.get(key):
-                issues.append(f"record {open_id}: confirmed record requires {key}")
-        evidence_type = fields.get("evidence_type", "")
-        if evidence_type == "deterministic_code":
-            for key in (
-                "evidence_rule_id",
-                "evidence_validator_kind",
-                "evidence_parser_backed",
-                "evidence_parser_identity",
-                "evidence_parser_content_hash",
-                "evidence_validator_result",
-                "evidence_source_ref",
-                "evidence_source_hash",
-                "evidence_probe_result_ref",
-                "evidence_probe_result_hash",
-            ):
-                if not fields.get(key):
-                    issues.append(f"record {open_id}: deterministic_code record requires {key}")
-            if fields.get("evidence_parser_backed", "").lower() != "true":
-                issues.append(f"record {open_id}: deterministic_code evidence_parser_backed must be true")
-            if fields.get("evidence_parser_content_hash") and not sha_re.match(fields["evidence_parser_content_hash"]):
-                issues.append(f"record {open_id}: deterministic_code evidence_parser_content_hash must be sha256")
-            if fields.get("evidence_validator_result") != "matched":
-                issues.append(f"record {open_id}: deterministic_code evidence_validator_result must be matched")
-            if fields.get("evidence_source_hash") and not sha_re.match(fields["evidence_source_hash"]):
-                issues.append(f"record {open_id}: deterministic_code evidence_source_hash must be sha256")
-            if fields.get("evidence_probe_result_hash") and not sha_re.match(fields["evidence_probe_result_hash"]):
-                issues.append(f"record {open_id}: deterministic_code evidence_probe_result_hash must be sha256")
-            check_rule(open_id, "deterministic_code", fields.get("evidence_rule_id", ""), fields.get("effect_type", ""), fields.get("evidence_ref", ""))
-            if fields.get("evidence_ref") not in catalog_evidence_types:
-                issues.append(f"record {open_id}: deterministic_code evidence_ref must be registered in validator catalog")
-            elif catalog_evidence_types.get(fields.get("evidence_ref")) not in {"code_call", "annotation", "code_reference", "config_binding"}:
-                issues.append(f"record {open_id}: deterministic_code evidence_ref must reference source evidence")
-            if fields.get("evidence_ref") not in implemented_validators:
-                issues.append(f"record {open_id}: deterministic_code evidence_ref must be implemented")
-            if fields.get("evidence_ref") not in parser_backed_validators:
-                issues.append(f"record {open_id}: deterministic_code evidence_ref must be parser-backed")
-            check_path_binding(open_id, "deterministic_code", fields.get("anchor_file", ""), fields.get("evidence_source_ref", ""), fields.get("anchor_line"))
-            check_probe_artifact(open_id, fields.get("evidence_probe_result_ref", ""), fields.get("evidence_probe_result_hash", ""), "deterministic_code")
-        elif evidence_type == "deterministic_runtime":
-            for key in (
-                "evidence_rule_id",
-                "evidence_trace_ref",
-                "evidence_artifact_hash",
-                "evidence_scenario_ref",
-                "evidence_user_decision_ref",
-                "evidence_probe_result_ref",
-                "evidence_probe_result_hash",
-            ):
-                if not fields.get(key):
-                    issues.append(f"record {open_id}: deterministic_runtime record requires {key}")
-            check_runtime_envelope(open_id)
-            check_runtime_scenario_fit_metadata(open_id)
-            if fields.get("evidence_artifact_hash") and not sha_re.match(fields["evidence_artifact_hash"]):
-                issues.append(f"record {open_id}: deterministic_runtime evidence_artifact_hash must be sha256")
-            if fields.get("evidence_probe_result_hash") and not sha_re.match(fields["evidence_probe_result_hash"]):
-                issues.append(f"record {open_id}: deterministic_runtime evidence_probe_result_hash must be sha256")
-            check_rule(open_id, "deterministic_runtime", fields.get("evidence_rule_id", ""), fields.get("effect_type", ""), fields.get("evidence_ref", ""))
-            if catalog_evidence_types.get(fields.get("evidence_ref")) != "runtime_trace":
-                issues.append(f"record {open_id}: deterministic_runtime evidence_ref must reference runtime_trace")
-            if fields.get("evidence_ref") not in implemented_validators:
-                issues.append(f"record {open_id}: deterministic_runtime evidence_ref must be implemented")
-            if fields.get("evidence_ref") == "any.runtime.trace@v1" and sha_re.match(fields.get("evidence_artifact_hash", "")):
-                current_artifact_hash = runtime_trace_hash(open_id)
-                if current_artifact_hash and current_artifact_hash != fields["evidence_artifact_hash"]:
-                    issues.append(f"record {open_id}: deterministic_runtime evidence_artifact_hash must match scoped trace artifact")
-            check_path_binding(open_id, "deterministic_runtime", fields.get("anchor_file", ""), fields.get("evidence_trace_ref", ""), fields.get("anchor_line"))
-            check_probe_artifact(open_id, fields.get("evidence_probe_result_ref", ""), fields.get("evidence_probe_result_hash", ""), "deterministic_runtime")
-        elif evidence_type == "user_decision":
-            if fields.get("effect_type") not in human_effect_types:
-                issues.append(f"record {open_id}: user_decision evidence requires human-only effect_type")
-            if fields.get("evidence_ref") and fields.get("user_decision_ref") and fields["evidence_ref"] == fields["user_decision_ref"]:
-                issues.append(f"record {open_id}: user_decision evidence_ref must be separate from final apply user_decision_ref")
-        elif evidence_type:
-            issues.append(f"record {open_id}: unsupported evidence_type {evidence_type}")
-    elif lifecycle in {"unknown", "blocked", "stale"} and not fields.get("reason"):
-        issues.append(f"record {open_id}: non-confirmed record requires reason")
-    open_id = None
-    fields = {}
-
-with open(path, encoding="utf-8", errors="replace") as fh:
-    for line_no, raw in enumerate(fh, start=1):
-        line = raw.rstrip("\n")
-        match = marker.match(line)
-        if markerish.search(line) and not match:
-            issues.append(f"line {line_no}: malformed shadow-effect-record marker")
-        if match and match.group(2) == "begin":
-            if open_id is not None:
-                issues.append(f"line {line_no}: nested begin marker before closing {open_id}")
-            open_id = match.group(1)
-            fields = {}
-            continue
-        if match and match.group(2) == "end":
-            finish(line_no, match.group(1))
-            continue
-        if open_id is not None and line.startswith("- ") and ":" in line:
-            key, value = line[2:].split(":", 1)
-            fields[key.strip()] = value.strip()
-
-if open_id is not None:
-    issues.append(f"record {open_id}: missing end marker")
-
-for issue in issues:
-    print(issue)
-PY
+  # Script body lives in a real file, not a heredoc: bash materializes a here-document
+  # through its own temp-file mechanism, which ignores $TMPDIR and fails under a
+  # sandboxed TMPDIR. `python3 - ARGS < file` keeps argv[0]/sys.path[0] identical.
+  issue_output="$(python3 - "$file_path" "$POLICY_DIR" "$PROJECT_ROOT_ABS" "$SCRIPT_DIR" < "$SCRIPT_DIR/validate_docs_effect_map.py"
 )"
   if [[ -n "$issue_output" ]]; then
     while IFS= read -r issue; do
       [[ -n "$issue" ]] && fail "${issue} in shadow effect_map: $file_path"
-    done <<< "$issue_output"
+    done < <(printf '%s\n' "$issue_output")
   else
     pass "shadow effect_map records valid: $file_path"
   fi
@@ -557,71 +49,15 @@ check_review_queue_file() {
   check_field_value_equals "$file_path" "writes_shadow_docs" "false" "shadow review_queue" || true
   check_field_value_equals "$file_path" "auto_promotes_facts" "false" "shadow review_queue" || true
 
-  issue_output="$(python3 - "$file_path" <<'PY'
-import sys
-
-path = sys.argv[1]
-candidates = {}
-questions = []
-section = ""
-current = None
-current_kind = ""
-
-def flush():
-    global current
-    if not current:
-        return
-    if current_kind == "candidate":
-        candidates[current.get("id", "")] = dict(current)
-    elif current_kind == "question":
-        questions.append(dict(current))
-    current = None
-
-with open(path, encoding="utf-8", errors="replace") as fh:
-    for raw in fh:
-        line = raw.rstrip("\n")
-        if line == "## Evidence Candidates":
-            flush()
-            section = "candidates"
-            continue
-        if line == "## Review Questions":
-            flush()
-            section = "questions"
-            continue
-        if line.startswith("## "):
-            flush()
-            section = ""
-            continue
-        if line.startswith("- id: ") and section in {"candidates", "questions"}:
-            flush()
-            current_kind = "candidate" if section == "candidates" else "question"
-            current = {"id": line.split(":", 1)[1].strip()}
-            continue
-        if current is not None and line.startswith("  ") and ":" in line:
-            key, value = line.strip().split(":", 1)
-            current[key.strip()] = value.strip()
-flush()
-
-issues = []
-for candidate_id, candidate in candidates.items():
-    if candidate.get("source_ref") == "unknown" and candidate.get("question_state") != "deferred_missing_context":
-        issues.append(f"candidate {candidate_id}: unknown source_ref requires question_state deferred_missing_context")
-for question in questions:
-    ref = question.get("evidence_ref", "")
-    candidate = candidates.get(ref)
-    if not candidate:
-        issues.append(f"question {question.get('id', '<unknown>')}: evidence_ref does not resolve to candidate {ref}")
-        continue
-    if candidate.get("source_ref") == "unknown" or candidate.get("question_state") == "deferred_missing_context":
-        issues.append(f"question {question.get('id', '<unknown>')}: must not ask about deferred or unknown-source candidate {ref}")
-for issue in issues:
-    print(issue)
-PY
+  # Script body lives in a real file, not a heredoc: bash materializes a here-document
+  # through its own temp-file mechanism, which ignores $TMPDIR and fails under a
+  # sandboxed TMPDIR. `python3 - ARGS < file` keeps argv[0]/sys.path[0] identical.
+  issue_output="$(python3 - "$file_path" < "$SCRIPT_DIR/validate_docs_review_queue.py"
 )"
   if [[ -n "$issue_output" ]]; then
     while IFS= read -r issue; do
       [[ -n "$issue" ]] && fail "${issue} in shadow review_queue: $file_path"
-    done <<< "$issue_output"
+    done < <(printf '%s\n' "$issue_output")
   else
     pass "shadow review_queue source refs are bounded: $file_path"
   fi
@@ -742,111 +178,16 @@ shadow_tree_has_source_declarations() {
 check_shadow_navigation_links() {
   local issue_output
 
-  issue_output="$(python3 - "$SHADOW_DIR" "$PROJECT_ROOT_ABS" "$DOCS_DIR" "$SCRIPT_DIR" <<'PY'
-import re
-import sys
-from pathlib import Path
-
-sys.path.insert(0, sys.argv[4])
-import shadow_doc_parse  # one answer to "is this line inside a fence"
-
-shadow_dir = Path(sys.argv[1])
-project_root = Path(sys.argv[2])
-docs_dir = Path(sys.argv[3])
-
-path_fields = ("canonical_path", "overview_doc", "next_docs", "bucket_links", "global_doc")
-fields_alt = "|".join(path_fields)
-# A path field with an inline value on the same line.
-inline_re = re.compile(r"^\s*-\s*(" + fields_alt + r")\s*:\s*(\S.*?)\s*$")
-# A bare path-field header whose values are nested bullet lines beneath it.
-header_re = re.compile(r"^(\s*)-\s*(" + fields_alt + r")\s*:\s*$")
-bullet_re = re.compile(r"^(\s*)-\s+(.*?)\s*$")
-# A doc token is a run of path characters ending in .md. The restricted class
-# stops the greedy match at Markdown link punctuation, so [label](auth.md) and
-# <auth.md> both yield the bare path auth.md rather than a garbled token.
-token_re = re.compile(r"[A-Za-z0-9._/-]+\.md\b")
-
-
-def resolves(ref_file: Path, token: str) -> bool:
-    token = token.strip()
-    if not token:
-        return True
-    candidate = Path(token)
-    if candidate.is_absolute():
-        try:
-            return candidate.resolve(strict=False).is_file()
-        except OSError:
-            return False
-    # Precise bases: docs/-prefixed refs (redirect shims) are project-root
-    # relative; every other shadow ref resolves against the shadow root or the
-    # directory of the referencing doc. This avoids a whole-project search that
-    # would let an unrelated same-named file mask a genuinely dangling ref.
-    if token.startswith("docs/"):
-        bases = (project_root,)
-    else:
-        bases = (shadow_dir, ref_file.parent)
-    for base in bases:
-        try:
-            if (base / candidate).resolve(strict=False).is_file():
-                return True
-        except OSError:
-            continue
-    return False
-
-
-def scan_value(ref_file: Path, field: str, value: str, issues: list) -> None:
-    for token in token_re.findall(value):
-        if not resolves(ref_file, token):
-            issues.append((str(ref_file), field, token))
-
-
-issues = []
-for md in sorted(shadow_dir.rglob("*.md")):
-    rel_parts = md.relative_to(shadow_dir).parts
-    if rel_parts and rel_parts[0] in ("_deprecated", "_obsolete"):
-        continue
-    try:
-        lines = shadow_doc_parse.read_lines(md)
-    except OSError:
-        continue
-    pending_field = None
-    pending_indent = -1
-    for kind, line in shadow_doc_parse.scan(lines):
-        if kind == "boundary":
-            pending_field = None
-            continue
-        inline = inline_re.match(line)
-        if inline:
-            pending_field = None
-            scan_value(md, inline.group(1), inline.group(2), issues)
-            continue
-        header = header_re.match(line)
-        if header:
-            pending_field = header.group(2)
-            pending_indent = len(header.group(1))
-            continue
-        if pending_field is not None:
-            bullet = bullet_re.match(line)
-            if bullet and len(bullet.group(1)) > pending_indent:
-                scan_value(md, pending_field, bullet.group(2), issues)
-                continue
-            if line.strip():
-                pending_field = None
-
-seen = set()
-for ref_file, field, token in issues:
-    key = (ref_file, field, token)
-    if key in seen:
-        continue
-    seen.add(key)
-    print(f"{ref_file}\t{field}\t{token}")
-PY
+  # Script body lives in a real file, not a heredoc: bash materializes a here-document
+  # through its own temp-file mechanism, which ignores $TMPDIR and fails under a
+  # sandboxed TMPDIR. `python3 - ARGS < file` keeps argv[0]/sys.path[0] identical.
+  issue_output="$(python3 - "$SHADOW_DIR" "$PROJECT_ROOT_ABS" "$DOCS_DIR" "$SCRIPT_DIR" < "$SCRIPT_DIR/validate_docs_nav_links.py"
 )"
 
   if [[ -n "$issue_output" ]]; then
     while IFS=$'\t' read -r ref_file field token; do
       [[ -n "$ref_file" ]] && fail "shadow navigation reference does not resolve: ${field} -> ${token} (${ref_file}); fix the link or remove the stale reference"
-    done <<< "$issue_output"
+    done < <(printf '%s\n' "$issue_output")
   else
     pass "shadow navigation references resolve to real files"
   fi
@@ -896,7 +237,7 @@ check_shadow_source_digest() {
           problems=1
           ;;
       esac
-    done <<< "$result"
+    done < <(printf '%s\n' "$result")
     if [[ -z "$status_line" ]]; then
       fail "could not verify shadow source-of-truth digest (helper error): $shadow_doc"
       problems=1
@@ -962,7 +303,7 @@ check_shadow_source_paths_exist() {
         "has_paths: "*) has_paths="${line#has_paths: }" ;;
         "has_digest: "*) has_digest="${line#has_digest: }" ;;
       esac
-    done <<< "$result"
+    done < <(printf '%s\n' "$result")
     # Parser-backed gating: skip docs with no real declared paths, and docs that carry
     # a real digest (check_shadow_source_digest owns those). Deciding this from the
     # fence-aware parser rather than a raw grep closes the empty/fenced-field evasion
@@ -981,7 +322,7 @@ check_shadow_source_paths_exist() {
           problems=1
           ;;
       esac
-    done <<< "$result"
+    done < <(printf '%s\n' "$result")
   done < <(
     find "$SHADOW_DIR" -type f -name '*.md' \
       ! -path "$SHADOW_DIR/_deprecated/*" \
@@ -1004,21 +345,10 @@ extract_shadow_field() {
   # "is this line inside a fence" identically.
   # The awk it replaced toggled on any marker, so a ~~~ inside a ``` block flipped
   # the state; the shared reader closes only on a same-character marker.
-  python3 - "$file_path" "$key" "$SCRIPT_DIR" <<'FIELDPY' 2>/dev/null
-import sys
-from pathlib import Path
-
-sys.path.insert(0, sys.argv[3])
-import shadow_doc_parse
-
-try:
-    lines = shadow_doc_parse.read_lines(sys.argv[1])
-except OSError:
-    sys.exit(0)
-value = shadow_doc_parse.field_value(lines, sys.argv[2])
-if value:
-    print(value)
-FIELDPY
+  # Script body lives in a real file, not a heredoc: bash materializes a here-document
+  # through its own temp-file mechanism, which ignores $TMPDIR and fails under a
+  # sandboxed TMPDIR. `python3 - ARGS < file` keeps argv[0]/sys.path[0] identical.
+  python3 - "$file_path" "$key" "$SCRIPT_DIR" < "$SCRIPT_DIR/validate_docs_shadow_field.py" 2>/dev/null
 }
 
 # Advisory-only (recommended tier): the shadow value-carrier docs (unit_overview,
@@ -1076,115 +406,10 @@ check_shadow_unit_schema() {
 check_shadow_selection_summary() {
   local issue_output
 
-  issue_output="$(python3 - "$SHADOW_DIR" "$SCRIPT_DIR" <<'PY'
-import re
-import sys
-from pathlib import Path
-
-sys.path.insert(0, sys.argv[2])
-import shadow_doc_parse  # shared fence rule
-
-shadow_dir = Path(sys.argv[1])
-MAX_LEN = 250
-# A floor, not proof of usefulness: it only rules out degenerate values that cannot
-# discriminate anything. No check can prove a sentence actually distinguishes a unit.
-MIN_LEN = 12
-
-unit_re = re.compile(r"^-\s+([A-Za-z0-9._-]+)\s*:\s*$")
-child_re = re.compile(r"^\s+-\s*([a-z_]+)\s*:\s*(.*?)\s*$")
-summary_re = re.compile(r"^\s*-\s*unit_summary\s*:\s*(\S.*?)\s*$")
-
-
-def content_lines(path):
-    try:
-        raw = shadow_doc_parse.read_lines(path)
-    except OSError:
-        return []
-    return list(shadow_doc_parse.content_lines(raw))
-
-
-issues = []
-for index in sorted(shadow_dir.glob("*/_index.md")):
-    unit, fields, last_field = None, {}, None
-
-    def flush(unit, fields):
-        if unit is None:
-            return
-        overview = fields.get("overview_doc", "")
-        selection = fields.get("selection_summary", "")
-        if not overview:
-            # The navigation-link check only follows references that EXIST, so a row
-            # with no overview_doc at all is reported by nothing else.
-            issues.append((str(index), unit, "no_overview", ""))
-            return
-        if not selection:
-            issues.append((str(index), unit, "missing", ""))
-            return
-        if fields.get("selection_summary__multiline"):
-            issues.append((str(index), unit, "multiline", ""))
-            return
-        if len(selection) < MIN_LEN:
-            issues.append((str(index), unit, "too_short", str(len(selection))))
-            return
-        if len(selection) > MAX_LEN:
-            issues.append((str(index), unit, "too_long", str(len(selection))))
-            return
-        # overview_doc is written relative to the BUCKET directory ("unit/overview.md").
-        # The navigation-link check accepts EITHER base but tries the shadow root
-        # first; this check tries the bucket dir first because that is the base the
-        # template in the contract uses, so the two can only disagree for a name
-        # that resolves under both -- in which case nav-link reports nothing and this
-        # check reads the bucket-local file, which is the one the row meant.
-        target = index.parent / overview
-        if not target.is_file():
-            target = shadow_dir / overview
-        if not target.is_file():
-            return  # a dangling overview_doc belongs to the nav-link check
-        summary = ""
-        for line in content_lines(target):
-            match = summary_re.match(line)
-            if match:
-                summary = match.group(1).strip()
-                break
-        if not summary:
-            issues.append((str(index), unit, "no_summary", overview))
-        elif not summary.startswith(selection):
-            issues.append((str(index), unit, "not_prefix", overview))
-
-    in_units = False
-    for line in content_lines(index):
-        # Bound the scan to the "## Units" section. Without it, any column-0 bullet
-        # with an empty value parses as a unit row -- including `- bucket:` and
-        # `- last_updated:` straight from the Bucket Registry Template, which then
-        # report as rows with no overview_doc. Same section gate as
-        # bucket_index_has_units() further up this file.
-        if line.startswith("## "):
-            flush(unit, fields)
-            unit, fields, last_field = None, {}, None
-            in_units = line.strip() == "## Units"
-            continue
-        if not in_units:
-            continue
-        unit_match = unit_re.match(line)
-        if unit_match:
-            flush(unit, fields)
-            unit, fields, last_field = unit_match.group(1), {}, None
-            continue
-        child = child_re.match(line)
-        if child and unit is not None:
-            fields[child.group(1)] = child.group(2).strip()
-            last_field = child.group(1)
-            continue
-        # An indented non-bullet line continues the previous field. The contract says
-        # one line, so record it rather than silently reading only the first line.
-        if unit is not None and last_field and line.startswith(" ") and line.strip():
-            fields[last_field + "__multiline"] = "yes"
-            continue
-    flush(unit, fields)
-
-for item in issues:
-    print("\t".join(item))
-PY
+  # Script body lives in a real file, not a heredoc: bash materializes a here-document
+  # through its own temp-file mechanism, which ignores $TMPDIR and fails under a
+  # sandboxed TMPDIR. `python3 - ARGS < file` keeps argv[0]/sys.path[0] identical.
+  issue_output="$(python3 - "$SHADOW_DIR" "$SCRIPT_DIR" < "$SCRIPT_DIR/validate_docs_selection_summary.py"
 )"
 
   local index_file
@@ -1220,7 +445,7 @@ PY
           ;;
       esac
       problems=1
-    done <<< "$issue_output"
+    done < <(printf '%s\n' "$issue_output")
   fi
 
   # The replaced field must not creep back in: nothing reads it, and its three
@@ -1229,35 +454,15 @@ PY
   # fenced example is not a regression, and _deprecated/_obsolete bodies are frozen
   # history that must not be rewritten to satisfy a new field.
   local stale_tags
-  stale_tags="$(python3 - "$SHADOW_DIR" "$SCRIPT_DIR" <<'TAGPY'
-import re
-import sys
-from pathlib import Path
-
-sys.path.insert(0, sys.argv[2])
-import shadow_doc_parse  # shared fence rule
-
-shadow_dir = Path(sys.argv[1])
-field_re = re.compile(r"^\s*-\s*secondary_tags\s*:")
-
-for doc in sorted(shadow_dir.rglob("*.md")):
-    parts = doc.relative_to(shadow_dir).parts
-    if parts and parts[0] in ("_deprecated", "_obsolete"):
-        continue
-    try:
-        lines = shadow_doc_parse.read_lines(doc)
-    except OSError:
-        continue
-    for line in shadow_doc_parse.content_lines(lines):
-        if field_re.match(line):
-            print(doc)
-            break
-TAGPY
+  # Script body lives in a real file, not a heredoc: bash materializes a here-document
+  # through its own temp-file mechanism, which ignores $TMPDIR and fails under a
+  # sandboxed TMPDIR. `python3 - ARGS < file` keeps argv[0]/sys.path[0] identical.
+  stale_tags="$(python3 - "$SHADOW_DIR" "$SCRIPT_DIR" < "$SCRIPT_DIR/validate_docs_selection_stale_tags.py"
 )"
   if [[ -n "$stale_tags" ]]; then
     while IFS= read -r stale_file; do
       [[ -n "$stale_file" ]] && fail "shadow doc still declares the removed secondary_tags field; use selection_summary on the bucket row instead: $stale_file"
-    done <<< "$stale_tags"
+    done < <(printf '%s\n' "$stale_tags")
     problems=1
   fi
 
@@ -1343,7 +548,7 @@ check_shadow_linked_decisions() {
         problems=1
         ;;
     esac
-  done <<< "$lint_output"
+  done < <(printf '%s\n' "$lint_output")
 
   # A corpus with no rationale at all is not a finding; only report the clean
   # state when the field is actually in use (count comes from the same parser,
@@ -1408,7 +613,7 @@ check_policy_decision_links() {
   fi
 
   entries=()
-  IFS=',' read -r -a entries <<< "$concrete_values"
+  IFS=',' read -r -a entries < <(printf '%s\n' "$concrete_values")
   for entry in "${entries[@]}"; do
     entry="$(printf '%s' "$entry" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
     [[ -n "$entry" ]] || continue
@@ -1547,7 +752,7 @@ for item in errors:
 ' 2>/dev/null || printf "%s\n" "$loader_output")"
   while IFS= read -r issue; do
     [[ -n "$issue" ]] && fail "shadow policy loader strict contract failed: ${issue}"
-  done <<< "$issue_output"
+  done < <(printf '%s\n' "$issue_output")
 }
 
 check_catalog_probe_coverage() {
@@ -1596,7 +801,7 @@ check_catalog_probe_coverage() {
       fail "implemented_primary_v1 id must be implemented by shadow_evidence_probe.py: ${id} (${catalog_file})"
       mismatch_count=$((mismatch_count + 1))
     fi
-  done <<< "$implemented_ids"
+  done < <(printf '%s\n' "$implemented_ids")
 
   while IFS= read -r id; do
     [[ -n "$id" ]] || continue
@@ -1604,7 +809,7 @@ check_catalog_probe_coverage() {
       fail "shadow_evidence_probe.py primary validator missing from implemented_primary_v1: ${id} (${catalog_file})"
       mismatch_count=$((mismatch_count + 1))
     fi
-  done <<< "$probe_ids"
+  done < <(printf '%s\n' "$probe_ids")
 
   while IFS= read -r id; do
     [[ -n "$id" ]] || continue
@@ -1616,7 +821,7 @@ check_catalog_probe_coverage() {
       fail "parser_backed_now id must also be implemented_primary_v1: ${id} (${catalog_file})"
       mismatch_count=$((mismatch_count + 1))
     fi
-  done <<< "$parser_ids"
+  done < <(printf '%s\n' "$parser_ids")
 
   while IFS= read -r id; do
     [[ -n "$id" ]] || continue
@@ -1632,7 +837,7 @@ check_catalog_probe_coverage() {
       fail "source_probe_only id must not also be parser_backed_now: ${id} (${catalog_file})"
       mismatch_count=$((mismatch_count + 1))
     fi
-  done <<< "$source_probe_ids"
+  done < <(printf '%s\n' "$source_probe_ids")
 
   if (( mismatch_count == 0 )); then
     pass "shadow validator catalog probe coverage sets are internally consistent"
@@ -1805,7 +1010,7 @@ check_rule_registry_promotion_gates() {
     while IFS= read -r failure_line; do
       [[ -n "$failure_line" ]] || continue
       fail "${failure_line} (${rule_file})"
-    done <<< "$failures"
+    done < <(printf '%s\n' "$failures")
   else
     pass "shadow rule registry promotion gates are scoped and complete"
   fi
@@ -1819,8 +1024,8 @@ check_rule_registry_mapping_contracts() {
   local regex_map
   local failures
 
-  catalog_map="$(mktemp)"
-  regex_map="$(mktemp)"
+  catalog_map="$(mktemp "${TMPDIR:-/tmp}/validate_docs_catalog_map.XXXXXX")"
+  regex_map="$(mktemp "${TMPDIR:-/tmp}/validate_docs_regex_map.XXXXXX")"
   collect_validator_evidence_map "$catalog_file" > "$catalog_map"
   collect_regex_evidence_map "$regex_file" > "$regex_map"
 
@@ -1894,7 +1099,7 @@ check_rule_registry_mapping_contracts() {
     while IFS= read -r failure_line; do
       [[ -n "$failure_line" ]] || continue
       fail "${failure_line} (${rule_file})"
-    done <<< "$failures"
+    done < <(printf '%s\n' "$failures")
   else
     pass "shadow rule registry mapping contracts are structurally valid"
   fi
@@ -1970,7 +1175,7 @@ check_rule_registry_has_mappings() {
     while IFS= read -r failure_line; do
       [[ -n "$failure_line" ]] || continue
       fail "${failure_line} (${rule_file})"
-    done <<< "$effect_type_failures"
+    done < <(printf '%s\n' "$effect_type_failures")
   else
     pass "shadow rule registry allowed_effect_types values are structurally valid"
   fi

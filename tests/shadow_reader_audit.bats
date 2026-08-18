@@ -34,6 +34,12 @@ AUDIT() {
   assert_contains "$output" "scripts/doc_garden.sh: transitive"
   assert_contains "$output" "scripts/run_external_plan_reviews.sh: transitive"
   assert_contains "$output" "scripts/codeguide_doc_lines.sh: direct"
+  # The extraction moved the naming heredocs into real .py files, so validate_docs.sh now
+  # reaches the reader through its `if ! source` guard on codeguide_doc_lines.sh, and
+  # 20-rules-shadow.sh is excluded because its field reads route through 10-parse.sh and
+  # classified .py helpers (see EXCLUSIONS).
+  assert_contains "$output" "scripts/validate_docs.sh: transitive"
+  assert_contains "$output" "scripts/validate_docs.d/20-rules-shadow.sh: excluded"
   # The shared module itself, which became a candidate when it grew read_lines(). A module
   # cannot import itself, so this classification is by identity, not by naming.
   assert_contains "$output" "scripts/shadow_doc_parse.py: direct"

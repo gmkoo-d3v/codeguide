@@ -4839,7 +4839,7 @@ EOF
   run env PATH="$shim_dir:$PATH" "$VALIDATE" "$link" --mode advisory
   [ "$status" -eq 0 ]
   # Positive: the corpus pre-strip really ran, and it ran against the WALKED path.
-  assert_contains "$(cat "$log")" "- $link/docs "
+  assert_contains "$(cat "$log")" "validate_docs_prestrip.py $link/docs "
   # Positive: the cached bytes are the fence-stripped ones, so the read is fence-aware.
   assert_contains "$output" "invalid bucket in shadow bucket index (apps): expected apps, found not-apps"
   refute_contains "$output" "invalid doc_role in shadow bucket index (apps)"

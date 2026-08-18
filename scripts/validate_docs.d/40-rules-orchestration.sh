@@ -601,7 +601,7 @@ parse_required_review_routes_for_await_gate() {
     return 1
   fi
 
-  IFS=',' read -r -a AWAIT_GATE_RAW_ROUTES <<< "$raw_routes"
+  IFS=',' read -r -a AWAIT_GATE_RAW_ROUTES < <(printf '%s\n' "$raw_routes")
   for route in "${AWAIT_GATE_RAW_ROUTES[@]}"; do
     normalized="$(trim_value "$route")"
     if [[ -z "$normalized" ]]; then

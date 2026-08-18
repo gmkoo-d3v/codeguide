@@ -760,25 +760,10 @@ trim_value() {
 
 is_registry_colon_route() {
   local route="$1"
-  python3 - "$SCRIPT_DIR" "$route" <<'PY'
-from __future__ import annotations
-
-import sys
-from pathlib import Path
-
-script_dir = Path(sys.argv[1])
-route = sys.argv[2]
-sys.path.insert(0, str(script_dir))
-from ai_model_registry import RegistryError, load_registry
-
-try:
-    registry = load_registry(script_dir.parent / "config" / "ai_model_registry.json")
-except RegistryError:
-    raise SystemExit(1)
-
-if route not in registry["models"] or ":" not in route:
-    raise SystemExit(1)
-PY
+  # Script body lives in a real file, not a heredoc: bash materializes a here-document
+  # through its own temp-file mechanism, which ignores $TMPDIR and fails under a
+  # sandboxed TMPDIR. `python3 - ARGS < file` keeps argv[0]/sys.path[0] identical.
+  python3 - "$SCRIPT_DIR" "$route" < "$SCRIPT_DIR/validate_docs_registry_route.py"
 }
 
 route_slug_for_filename() {

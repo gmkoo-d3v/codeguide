@@ -220,7 +220,7 @@ fi
 PROJECT_ROOT_ABS="$(codeguide_resolve_project_root "$PROJECT_ROOT")"
 DOCS_DIR="$(codeguide_docs_root "$PROJECT_ROOT_ABS")"
 
-FENCE_STRIP_CACHE="$(mktemp -d)"
+FENCE_STRIP_CACHE="$(mktemp -d "${TMPDIR:-/tmp}/validate_docs_fence.XXXXXX")"
 export FENCE_STRIP_CACHE
 # The cache holds a full plaintext copy of the docs corpus, so it gets a trap the moment
 # it exists rather than only at the secret-scan trap 600 lines below: there is an explicit
@@ -230,39 +230,10 @@ trap 'rm -rf ${FENCE_STRIP_CACHE:+"$FENCE_STRIP_CACHE"}' EXIT
 # baseline validator run (31s -> 100s) because a field read happens hundreds of times
 # and every miss paid a process spawn; one pass up front makes every read a plain grep
 # against the cache, which is what the reads were before fence awareness.
-python3 - "$DOCS_DIR" "$FENCE_STRIP_CACHE" "$SCRIPT_DIR" <<'PRESTRIP' 2>/dev/null || true
-import sys
-from pathlib import Path
-
-sys.path.insert(0, sys.argv[3])
-sys.dont_write_bytecode = True
-import shadow_doc_parse
-
-docs_dir = Path(sys.argv[1])
-cache = Path(sys.argv[2])
-for doc in docs_dir.rglob("*.md"):
-    try:
-        lines = shadow_doc_parse.read_lines(doc)
-    except OSError:
-        continue
-    # Key on the path AS WALKED, never doc.resolve(): the shell side looks the file
-    # up by the path it holds, which is built from DOCS_DIR. On macOS a test workspace
-    # under /var/folders is a symlink to /private/var/folders, so a resolved key misses
-    # every single lookup and every field read silently falls back to a python spawn --
-    # correct output, 100-115s instead of 29s, which is the exact regression this cache
-    # exists to prevent.
-    dest = cache / str(doc).lstrip("/")
-    # Stage then rename: a partial write must never become a served cache entry. The
-    # shell side additionally refuses a zero-byte entry, but the two together are what
-    # make "the cache is either absent or complete" true rather than merely likely.
-    staged = dest.with_name(dest.name + ".part")
-    try:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        staged.write_text("\n".join(shadow_doc_parse.content_lines(lines)) + "\n", encoding="utf-8")
-        staged.replace(dest)
-    except OSError:
-        continue
-PRESTRIP
+# A heredoc here (as before) makes bash materialize the script body via its own
+# temp-file mechanism, which does not honor $TMPDIR the way explicit mktemp calls
+# do -- fails the same way under a sandboxed TMPDIR. A real file has no such step.
+python3 "$SCRIPT_DIR/validate_docs_prestrip.py" "$DOCS_DIR" "$FENCE_STRIP_CACHE" "$SCRIPT_DIR" 2>/dev/null || true
 TASK_DIR="$DOCS_DIR/task"
 TASK_CLAIMS_DIR="$TASK_DIR/.claims"
 SHADOW_DIR="$DOCS_DIR/shadow"
@@ -285,7 +256,7 @@ PASS_COUNT=0
 # trap below takes over cleanup of both temp files.
 VALIDATE_JSON_RECORD_FILE=""
 if [[ "$VALIDATE_FORMAT" == "json" ]]; then
-  VALIDATE_JSON_RECORD_FILE="$(mktemp)"
+  VALIDATE_JSON_RECORD_FILE="$(mktemp "${TMPDIR:-/tmp}/validate_docs_json.XXXXXX")"
   trap 'rm -f "$VALIDATE_JSON_RECORD_FILE"; rm -rf ${FENCE_STRIP_CACHE:+"$FENCE_STRIP_CACHE"}' EXIT
 fi
 
@@ -850,7 +821,7 @@ if [[ -d "$REPORT_DIR" ]]; then
 fi
 
 # --- Secret scanning ---
-TMP_SECRET_REPORT="$(mktemp)"
+TMP_SECRET_REPORT="$(mktemp "${TMPDIR:-/tmp}/validate_docs_secret.XXXXXX")"
 # FENCE_STRIP_CACHE is NOT created here -- it is created far above, right after DOCS_DIR,
 # because most field reads happen before this point and creating it here measured
 # 100-115s against a 29-30s baseline. It is only torn down here, together with the secret
