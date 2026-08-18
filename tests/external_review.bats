@@ -412,6 +412,62 @@ exit 99'
   [ "$status" -eq 0 ]
 }
 
+@test "run_external_plan_reviews external CLI timeout kills a hung runner and records failure" {
+  local plan_file="$DOCS_ROOT/plan/PLAN-ext-review-timeout-v1.0.md"
+  cat > "$plan_file" <<'EOF'
+# PLAN-ext-review-timeout-v1.0
+
+- task_id: ext-review-timeout
+- plan_version: v1.0
+- objective: validate hard deadline for external CLI invocations
+- scope: external review runner timeout
+- assumptions: a hung runner must be killed at the deadline
+- risks: a hung CLI could block the wrapper indefinitely
+- acceptance_signals: wrapper exits non-zero and records the timeout
+- stop_conditions: timeout is surfaced
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+
+## Steps
+1. Run the reviewers with a short deadline.
+2. Let the hung runner hit the deadline.
+3. Expect failure with a timeout message.
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+
+  write_mock_cli "$mock_bin/agy" '#!/usr/bin/env bash
+sleep 30'
+
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+cat <<EOF
+- verdict: accept
+- summary: Mock Claude accepts the review packet.
+- strengths: none in particular.
+- risks: none.
+- requested_changes: none.
+EOF'
+
+  write_mock_cli "$mock_bin/codex" '#!/usr/bin/env bash
+echo "codex should not be called for primary=codex" >&2
+exit 99'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "ext-review-timeout" \
+    --plan-version "v1.0" \
+    --primary-tool "codex" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-ext-review-timeout" \
+    --approved-next-step "run external review ext-review-timeout v1.0 r01" \
+    --external-cli-timeout 2
+
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "timed out"
+  assert_contains "$output" "external CLI timed out after 2s"
+}
+
 @test "run_external_plan_reviews writes ORCH.md fields outside a quoted template example" {
   # The SECOND writer of ORCH.md. doc_garden.sh was moved onto the shared fence rule and
   # line-addressed `sed`; this script kept a fence-blind probe and an UNADDRESSED `sed` on

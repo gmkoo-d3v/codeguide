@@ -30,6 +30,7 @@ Options:
   --allow-partial-review            Allow success when only one non-required reviewer succeeds
   --manual-handoff-only             Write request files and manual command files, then stop without invoking external CLIs
   --ingest-manual-responses         Parse existing manual raw/response files into reports and provenance without invoking external CLIs
+  --external-cli-timeout <seconds>  Hard deadline per external CLI invocation (default: 600; 0 disables)
   --primary-model <model>           Override the primary model alias used to exclude self-review
   --antigravity-model <model>       Backward-compatible alias for --primary-model
   --task-phase <phase>              Task phase: planning|review|code|implementation (registry default when unset)
@@ -43,6 +44,7 @@ Environment overrides:
   CODEGUIDE_ANTIGRAVITY_MODEL       Backward-compatible alias for CODEGUIDE_PRIMARY_MODEL
   CODEGUIDE_MODEL_REGISTRY          Model registry JSON path
   CODEGUIDE_TASK_PHASE              Default task phase (registry default when unset)
+  CODEGUIDE_EXTERNAL_CLI_TIMEOUT    Default external CLI timeout in seconds (default: 600; 0 disables)
 
 Model Registry:
   Runners, model routes, aliases, quota groups, default reviewers, quota patterns,
@@ -87,6 +89,7 @@ ALLOW_PARTIAL_REVIEW="false"
 MANUAL_HANDOFF_ONLY="false"
 INGEST_MANUAL_RESPONSES="false"
 SELECTED_REVIEWERS=()
+EXTERNAL_CLI_TIMEOUT="${CODEGUIDE_EXTERNAL_CLI_TIMEOUT:-600}"
 
 # Runner-aware model registry. Values are loaded from JSON below.
 DEFAULT_MODEL_ALIAS=""
@@ -649,6 +652,11 @@ while [[ $# -gt 0 ]]; do
       INGEST_MANUAL_RESPONSES="true"
       shift
       ;;
+    --external-cli-timeout)
+      require_option_value "$1" "$#"
+      EXTERNAL_CLI_TIMEOUT="${2:-}"
+      shift 2
+      ;;
     --primary-model|--antigravity-model)
       require_option_value "$1" "$#"
       PRIMARY_MODEL="${2:-}"
@@ -666,6 +674,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ ! "$EXTERNAL_CLI_TIMEOUT" =~ ^[0-9]+$ ]]; then
+  echo "[ERROR] Invalid --external-cli-timeout: ${EXTERNAL_CLI_TIMEOUT} (must be a non-negative integer number of seconds)" >&2
+  exit 1
+fi
 
 # Normalize task phase for provenance and future phase-aware route policy.
 TASK_PHASE_NORM="$(printf "%s" "${TASK_PHASE:-$DEFAULT_TASK_PHASE}" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
@@ -1434,7 +1447,7 @@ run_agy_tool_command() {
   local output_capture_file="$2"
   local model_stderr_file="$3"
   # agy CLI 1.1.12+ accepts --model for routes with a specific cli_model; preconfigured-runtime routes use the globally selected model.
-  "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
+  run_with_deadline "$EXTERNAL_CLI_TIMEOUT" "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
 }
 
 run_codex_tool_command() {
@@ -1447,7 +1460,7 @@ run_codex_tool_command() {
   runtime_stdout="$(mktemp)"
   register_tmp_file "$runtime_stdout"
 
-  "${TOOL_COMMAND[@]}" >"$runtime_stdout" 2>"$model_stderr_file"
+  run_with_deadline "$EXTERNAL_CLI_TIMEOUT" "${TOOL_COMMAND[@]}" >"$runtime_stdout" 2>"$model_stderr_file"
   status=$?
   if [[ -s "$runtime_stdout" ]]; then
     cat "$runtime_stdout" >> "$model_stderr_file"
@@ -1506,7 +1519,7 @@ run_claude_tool_command() {
   {
     printf "%s\n\n" "$prompt"
     cat "$request_file"
-  } | "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
+  } | run_with_deadline "$EXTERNAL_CLI_TIMEOUT" "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
 }
 
 is_model_unavailable_or_access_blocked() {
@@ -1590,6 +1603,55 @@ EOF
 ACTUAL_MODEL=""
 QUOTA_FALLBACK_TRIGGERED="false"
 
+# Run a command under a hard deadline. Portable across macOS/Linux: GNU
+# `timeout` is not guaranteed on macOS, so poll the background process and
+# TERM-then-KILL it (its whole process group) at the deadline. bash reaps
+# finished background jobs before executing external commands, so the
+# `kill -0` loop cannot spin on a zombie. Returns 124 (GNU timeout
+# convention) when the deadline expired, otherwise the command's own exit
+# status. A deadline of 0 or a non-numeric value disables the deadline.
+# On timeout, EXTERNAL_CLI_TIMEOUT_MARKER (a file path) is created so
+# callers can distinguish a wrapper-imposed timeout from a CLI that exits
+# 124 on its own. The marker must be a file, not a variable: the claude
+# route runs this function in a pipeline subshell whose variable writes do
+# not propagate to the parent.
+run_with_deadline() {
+  # NOTE: errexit-safe only when invoked in an `if`/`||` context.
+  local deadline_seconds="$1"
+  shift
+  local cmd_pid
+  local status=0
+  local end_time
+
+  if [[ ! "$deadline_seconds" =~ ^[0-9]+$ ]] || (( deadline_seconds == 0 )); then
+    "$@" || return $?
+    return 0
+  fi
+
+  set -m                     # child gets its own process group
+  "$@" <&0 &                 # explicit stdin redirect: keeps the pipe (H1)
+  cmd_pid=$!
+  set +m
+  end_time=$(( SECONDS + deadline_seconds ))
+  while kill -0 "$cmd_pid" 2>/dev/null; do
+    if (( SECONDS >= end_time )); then
+      kill -TERM -- "-$cmd_pid" 2>/dev/null || kill -TERM "$cmd_pid" 2>/dev/null || true
+      sleep 1
+      kill -KILL -- "-$cmd_pid" 2>/dev/null || kill -KILL "$cmd_pid" 2>/dev/null || true
+      wait "$cmd_pid" 2>/dev/null || true
+      [[ -n "${EXTERNAL_CLI_TIMEOUT_MARKER:-}" ]] && : > "$EXTERNAL_CLI_TIMEOUT_MARKER"
+      return 124
+    fi
+    sleep 1
+  done
+  if wait "$cmd_pid"; then
+    status=0
+  else
+    status=$?
+  fi
+  return "$status"
+}
+
 run_tool_prompt() {
   local reviewer_model="$1"
   local request_file="$2"
@@ -1597,9 +1659,20 @@ run_tool_prompt() {
   local stderr_file="$4"
   local durable_response_file="${5:-$output_capture_file}"
   local run_status=0
+  local timeout_marker
 
   ACTUAL_MODEL="$reviewer_model"
   QUOTA_FALLBACK_TRIGGERED="false"
+
+  # Timeout marker: a file (not a variable) because the claude route runs
+  # run_with_deadline in a pipeline subshell whose variable writes never
+  # reach this scope. mktemp pre-creates the file, so unlink it first —
+  # only a real timeout recreates it via `: >`.
+  timeout_marker="$(mktemp)"
+  rm -f "$timeout_marker"
+  register_tmp_file "$timeout_marker"
+  EXTERNAL_CLI_TIMEOUT_MARKER="$timeout_marker"
+  export EXTERNAL_CLI_TIMEOUT_MARKER
 
   _run_model_route() {
     local model="$1"
@@ -1633,15 +1706,25 @@ run_tool_prompt() {
         run_codex_tool_command "$model" "$output_capture_file" "$model_stderr_file"
         ;;
       *)
-        "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
+        run_with_deadline "$EXTERNAL_CLI_TIMEOUT" "${TOOL_COMMAND[@]}" >"$output_capture_file" 2>"$model_stderr_file"
         ;;
     esac
   }
 
   if _run_model_route "$reviewer_model" "$stderr_file"; then
     return 0
+  else
+    run_status=$?
   fi
-  run_status=$?
+
+  # A wrapper-imposed timeout is authoritative: report it and skip the
+  # blocked/auth classification, which greps the partial output and could
+  # mask the real cause. A bare 124 without the marker is the CLI's own
+  # exit code and must not be misdiagnosed as a timeout.
+  if [[ "$run_status" -eq 124 ]] && [[ -e "${EXTERNAL_CLI_TIMEOUT_MARKER:-}" ]]; then
+    echo "[ERROR] external CLI timed out after ${EXTERNAL_CLI_TIMEOUT}s (route '${reviewer_model}'). Raise --external-cli-timeout / CODEGUIDE_EXTERNAL_CLI_TIMEOUT and rerun." >> "$stderr_file"
+    return 124
+  fi
 
   # Check for quota exhaustion and stop for user-selected model switching.
   if is_quota_exhausted "$stderr_file"; then
