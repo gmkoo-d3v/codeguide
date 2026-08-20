@@ -134,6 +134,60 @@ print('impact: %s' % rows['scripts/shadow_impact_report.py'])
   assert_contains "$output" "impact: transitive"
 }
 
+@test "shadow reader audit shell source regex accepts every real source form" {
+  # The `source` edge is what makes a shell reader `transitive`. The guard-prefix regex
+  # used to demand whitespace AFTER the optional `!`, so the ordinary one-space
+  # `if source ...` form was missed even though `if  source ...` and `if ! source ...`
+  # matched -- a reader behind a one-space guard silently lost its only dependency edge
+  # and fell to UNCLASSIFIED. Regression: each real form resolves to the sibling's file
+  # NAME, and the glued `ifsource` is not a source edge.
+  local all_forms="$TEST_WORKSPACE/source_forms.sh"
+  cat > "$all_forms" <<'SH'
+source "$DIR/lib/target.sh"
+. "$DIR/lib/target.sh"
+if source "$DIR/lib/target.sh"; then :; fi
+if ! source "$DIR/lib/target.sh"; then :; fi
+SH
+  run python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPTS_DIR')
+import shadow_reader_audit as A
+print('all_forms:', sorted(A.local_imports(__import__('pathlib').Path('$all_forms'), {'target.sh'})))
+"
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "all_forms: ['target.sh']"
+
+  # The regression is the one-space guard in ISOLATION: with the old prefix
+  # `if[ \t]+!?[ \t]+` the single space was consumed by `if[ \t]+` and the mandatory
+  # `[ \t]+` after the absent `!` had nothing left to eat, so this form matched nothing.
+  local one_space="$TEST_WORKSPACE/one_space_guard.sh"
+  cat > "$one_space" <<'SH'
+if source "$DIR/lib/target.sh"; then :; fi
+SH
+  run python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPTS_DIR')
+import shadow_reader_audit as A
+print('one_space:', sorted(A.local_imports(__import__('pathlib').Path('$one_space'), {'target.sh'})))
+"
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "one_space: ['target.sh']"
+
+  # Negative: `ifsource` is not `if` + `source`, and must not resolve a dependency.
+  local glued="$TEST_WORKSPACE/glued_ifsource.sh"
+  cat > "$glued" <<'SH'
+ifsource "$DIR/lib/target.sh"
+SH
+  run python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPTS_DIR')
+import shadow_reader_audit as A
+print('glued:', sorted(A.local_imports(__import__('pathlib').Path('$glued'), {'target.sh'})))
+"
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "glued: []"
+}
+
 @test "shadow reader audit does not certify a shell reader on a COMMENT mention" {
   # DISCOVERY may use a comment -- naming the shared reader anywhere puts a file in the set
   # that must be classified, and widening a candidate set only adds work. CLASSIFICATION is

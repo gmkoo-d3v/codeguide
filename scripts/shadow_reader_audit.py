@@ -190,7 +190,7 @@ def candidates(scripts_dir: Path) -> list[Path]:
 # `if ! source ...` guard is still a real source edge -- the file executes the source when
 # the condition holds -- so an `if`/`if !` prefix is accepted.
 _SHELL_SOURCE_RE = re.compile(
-    r"^[ \t]*(?:if[ \t]+!?[ \t]+)?(?:source|\.)[ \t]+\"?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/([A-Za-z0-9_./-]+\.sh)\"?",
+    r"^[ \t]*(?:if[ \t]+(?:![ \t]+)?)?(?:source|\.)[ \t]+\"?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/([A-Za-z0-9_./-]+\.sh)\"?",
     re.M,
 )
 
