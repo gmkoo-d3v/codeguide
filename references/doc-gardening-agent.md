@@ -26,7 +26,7 @@ Recommended command flow:
   - branch prefix `hotfix/`, `release/`, `incident/`, `pr/`, `ops/` -> mapped scope
   - otherwise `task`
 - `task_id`:
-  - explicit `--task-id` wins
+  - explicit `--task-id` wins (accepts canonical `<id>` or display form `TASK-<id>`; one leading `TASK-` prefix is stripped before downstream use)
   - else branch pattern `ABC-123`
   - else branch numeric id, such as `feature/123-name`
   - else most recent `docs/task/TASK-*.md`

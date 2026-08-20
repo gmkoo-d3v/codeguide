@@ -9,7 +9,9 @@ Usage:
 
 Options:
   --mode <auto|advisory|strict>  Validation mode (default: auto)
-  --task-id <id>                 Optional task id override
+  --task-id <id>                 Optional task id override; accepts canonical <id> or
+                                 display form TASK-<id> (one leading TASK- prefix is
+                                 stripped; the canonical <id> is used downstream)
   --task-status <status>         Task status (planned|in_progress|blocked|done; default: in_progress)
   --risk-level <level>           Optional risk level (low|medium|high|critical)
   --decision-id <id>             Optional decision id override
@@ -303,6 +305,20 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# Normalize --task-id to the canonical <id> form. doc_garden.sh always prepends
+# TASK- when building docs/task/TASK-<id>.md, so a user-supplied TASK-<id>
+# display form must lose exactly one leading TASK- prefix before being passed
+# downstream. Canonical
+# <id> inputs pass through unchanged. Fail closed on anything that is not a
+# valid identifier after the strip (mirrors doc_garden validate_identifier).
+if [[ -n "$TASK_ID" ]]; then
+  TASK_ID="${TASK_ID#TASK-}"
+  if [[ ! "$TASK_ID" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo "[ERROR] Invalid --task-id value (after stripping one leading TASK- prefix): ${TASK_ID} (allowed: letters, digits, dot, underscore, hyphen)" >&2
+    exit 1
+  fi
+fi
 
 if [[ "$MODE" != "auto" && "$MODE" != "advisory" && "$MODE" != "strict" ]]; then
   echo "[ERROR] Invalid mode: $MODE (use auto, advisory, or strict)" >&2

@@ -111,6 +111,37 @@ load codeguide_helper
   assert_contains "$output" "task_id: BRANCH-42"
 }
 
+@test "run_codeguide strips one TASK- prefix without creating TASK-TASK-* artifacts" {
+  # TASK-<id> display form normalizes to canonical <id>
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "TASK-double-prefix-reg-01" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "task_id: double-prefix-reg-01"
+
+  # Canonical file is created/updated; no TASK-TASK-* duplicate exists
+  run test -f "$DOCS_ROOT/task/TASK-double-prefix-reg-01.md"
+  [ "$status" -eq 0 ]
+  run test ! -f "$DOCS_ROOT/task/TASK-TASK-double-prefix-reg-01.md"
+  [ "$status" -eq 0 ]
+
+  # task-index has exactly one canonical row and no TASK-TASK-* row
+  local index="$DOCS_ROOT/task/task-index.md"
+  local count
+  count=$(grep -c "^- TASK-double-prefix-reg-01 |" "$index")
+  [ "$count" -eq 1 ]
+  run grep "^- TASK-TASK-" "$index"
+  [ "$status" -ne 0 ]
+
+  # Re-running with the canonical <id> updates the same file, no duplicate row
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "double-prefix-reg-01" --mode advisory
+  [ "$status" -eq 0 ]
+  count=$(grep -c "^- TASK-double-prefix-reg-01 |" "$index")
+  [ "$count" -eq 1 ]
+  run grep "^- TASK-TASK-" "$index"
+  [ "$status" -ne 0 ]
+  run test ! -f "$DOCS_ROOT/task/TASK-TASK-double-prefix-reg-01.md"
+  [ "$status" -eq 0 ]
+}
+
 @test "skills package root can resolve to parent project docs root" {
   local workspace
   local proj

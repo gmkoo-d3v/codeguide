@@ -9,6 +9,8 @@ For repeatable setup, run:
 - `scripts/validate_docs.sh <project-root> --mode advisory`
 - `scripts/validate_docs.sh <project-root> --mode strict`
 
+`run_codeguide.sh --task-id` accepts the canonical `<id>` or the display form `TASK-<id>` (one leading `TASK-` prefix is stripped before `doc_garden.sh`, which always writes `docs/task/TASK-<id>.md`); `doc_garden.sh --task-id` takes the canonical `<id>` only.
+
 Default assumption:
 - Do not require RAG or embedding for baseline operation.
 - Use project docs files (`task`, `shadow`, `decisions`, `plan`, `report`, `orchestration`) as durable memory first.

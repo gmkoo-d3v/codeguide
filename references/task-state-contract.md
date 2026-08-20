@@ -6,6 +6,7 @@ Use this reference for task and decision lifecycle: the task and decision dictio
 - Empty values never overwrite existing non-empty fields during doc-gardening. Use `--allow-empty-overwrite` to explicitly clear a field.
 - Axis values (Why/What/How/Where/Verify) are only written when explicitly provided; no generic defaults are injected.
 - `task_id` inference priority: explicit `--task-id` > branch pattern (ABC-123 or numeric) > latest task file > timestamp fallback.
+- `run_codeguide.sh --task-id` accepts both the canonical `<id>` and the display form `TASK-<id>`; exactly one leading `TASK-` prefix is stripped so `doc_garden.sh` (which always writes `docs/task/TASK-<id>.md`) never receives a double-prefixed id. `doc_garden.sh --task-id` itself takes the canonical `<id>` only.
 - `task-index.md` rows are placed under the correct status section (Planned/In Progress/Blocked/Done/Superseded/Cancelled) and deduplicated.
 - `validate_docs.sh --mode strict` enforces non-empty values for required fields, not just key existence.
 - Freshness checks use `last_updated` field when available; fall back to file mtime only when the field is absent.
