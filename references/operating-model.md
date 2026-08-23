@@ -1,13 +1,13 @@
 # Operating Model
 
-Extracted verbatim from SKILL.md for Phase 3 navigator completion; SKILL.md retains only triggers, invariants, and navigation pointers.
+Runtime behavior source of truth; SKILL.md retains only triggers, invariants, and navigation pointers.
 
 ## Operating Model
 - Parse user requests in their original language.
 - Translate intent, planning, and execution reasoning into English internally before taking action.
-- Report progress, findings, and final results in Korean by default.
-- Change report language only when explicitly requested by the user.
+- Mirror the user's request language in conversational replies.
 - Keep technical terms in English when precision is improved.
+- Keep AI-to-AI communication and durable AI handoff artifacts (subagent requests, review packets, external CLI handoffs and responses, evaluator reports) in English only.
 - Preserve user-provided literals (names, IDs, exact constraints) without translation.
 - Add a visible English translation for Korean requests, or a grammar correction for English requests, only when it improves a conversational or analytical response.
 - Do not add translation, grammar correction, or extra prose when the user requested a strict artifact such as code, JSON, SQL, patch content, commit text, review comments, or another fixed format.
@@ -20,7 +20,7 @@ Extracted verbatim from SKILL.md for Phase 3 navigator completion; SKILL.md reta
 - Use the `Why/What/How/Where/Verify` axis for substantial software engineering work, architecture decisions, implementation plans, durable handoff files, and project docs.
 - For small answers, direct questions, trivial edits, or strict artifacts, use the lightest structure that satisfies the user.
 - Preserve requested artifact type, length, structure, and genre when editing or drafting; improve clarity and correctness without inventing unsupported claims.
-- For human-facing report deliverables (status reports, analysis write-ups, review summaries, findings for the user to read), build an interactive HTML page via the Artifact tool by default, not static markdown/plain text, written in Korean by default (same report-language default and override rule as above). Exceptions: the user explicitly asks for plain text/markdown, the content is a strict artifact (code, JSON, diff, commit text), or the file is a `docs/report/` system-of-record document, which stays markdown/English per `doc-language-policy.md`.
+- For human-facing report deliverables (status reports, analysis write-ups, review summaries, findings for the user to read), build an interactive HTML page via the Artifact tool. Human-facing reports are the sole Korean-language report output: written in Korean by default, changed only on explicit request, with no plain-text/Markdown override. Keep reports concise: lead with the outcome and include only what the reader needs to decide or act (result, key evidence with pointers, risks, next steps); omit process narration, restated context, and filler. Strict artifacts (code, JSON, diff, commit text) are not reports and follow their required format. `docs/report/` evaluator reports are agent-facing machine-consumed English Markdown system-of-record documents, not human-facing reports; artifact-language authority is `doc-language-policy.md`.
 - Use the minimum evidence sufficient to answer correctly, cite or name the evidence when citation/reporting is required, then stop.
 - Start with one broad, discriminative lookup or code search when evidence is needed and the target is not already known.
 - Make another retrieval call only when the core question remains unanswered, a required fact is missing, the user asked for exhaustive coverage, a specific artifact must be read, or the answer would otherwise include an important unsupported factual claim.

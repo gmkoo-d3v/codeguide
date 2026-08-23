@@ -17,7 +17,7 @@ Use this file to pick the smallest authoritative reference set for the active ta
 - Goal-oriented loop stop/continue contract: `goal-loop-contract.md`
 - Session resume capsule and recovery read order: `session-resume-contract.md`
 - Runtime issue-tracker roles, lifecycle, and statuses: `issue-tracker-contract.md`
-- Documentation language policy: `doc-language-policy.md`
+- Artifact language policy (English-only Markdown, English-only AI handoff artifacts, Korean-only human-facing HTML reports): `doc-language-policy.md`
 - Orchestration contract: `orchestration-contract.md`
 - External CLI file handoff contract: `external-cli-handoff.md`
 - Plan orchestration loop: `plan-orchestration-loop.md`
@@ -59,4 +59,4 @@ Use this file to pick the smallest authoritative reference set for the active ta
 7. Keep outputs concise and evidence-based.
 
 ## Exclusions
-- The public-facing `README.md` is outside the English-only documentation policy and may be Korean-first.
+- None. Curated markdown documents, including the public-facing `README.md`, follow the English-only policy in `doc-language-policy.md`; exact user-trigger aliases and path literals stay verbatim.

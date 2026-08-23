@@ -1,6 +1,6 @@
 interface:
   display_name: "Code Guide"
-  short_description: "Architecture, quality, and bilingual workflow guidance for code changes"
+  short_description: "Architecture, quality, and docs-governance guidance for code changes"
   default_prompt: >-
     Use $codeguide in outcome-first mode. Choose the smallest workflow that can
     produce a correct, grounded, and verifiable result. Use the docs lifecycle
@@ -26,4 +26,6 @@ interface:
     planner, reviewer, implementation, and validation tracks while the main
     thread supervises and integrates unless direct implementation is the fastest
     correct path. Translate planning and execution reasoning to English
-    internally, and report to the user in Korean unless requested otherwise.
+    internally. Keep AI-to-AI communication and durable handoff artifacts in
+    English only, and deliver human-facing reports as concise interactive HTML
+    pages in Korean by default, changed only on explicit request.
