@@ -1,0 +1,308 @@
+{
+  "default_model_alias": "agy-current",
+  "default_task_phase": "planning",
+  "runners": {
+    "agy": {
+      "binary": "agy",
+      "env_binary": "CODEGUIDE_ANTIGRAVITY_BIN",
+      "command_kind": "agy"
+    },
+    "claude": {
+      "binary": "claude",
+      "env_binary": "CODEGUIDE_CLAUDE_BIN",
+      "command_kind": "claude_code"
+    },
+    "codex": {
+      "binary": "codex",
+      "env_binary": "CODEGUIDE_CODEX_BIN",
+      "command_kind": "codex_cli"
+    }
+  },
+  "models": {
+    "agy:current": {
+      "runner": "agy",
+      "cli_model": "preconfigured-runtime",
+      "display_name": "Antigravity preconfigured runtime",
+      "quota_group": "agy-preconfigured-runtime",
+      "vendor": "google"
+    },
+    "agy:gemini-3.6-flash-medium": {
+      "runner": "agy",
+      "cli_model": "gemini-3.6-flash-medium",
+      "display_name": "Gemini 3.6 Flash (Medium)",
+      "quota_group": "agy-gemini-shared",
+      "vendor": "google"
+    },
+    "agy:gemini-3.6-flash-high": {
+      "runner": "agy",
+      "cli_model": "gemini-3.6-flash-high",
+      "display_name": "Gemini 3.6 Flash (High)",
+      "quota_group": "agy-gemini-shared",
+      "vendor": "google"
+    },
+    "agy:gemini-3.6-flash-low": {
+      "runner": "agy",
+      "cli_model": "gemini-3.6-flash-low",
+      "display_name": "Gemini 3.6 Flash (Low)",
+      "quota_group": "agy-gemini-shared",
+      "vendor": "google"
+    },
+    "agy:gemini-3.1-pro-low": {
+      "runner": "agy",
+      "cli_model": "gemini-3.1-pro-low",
+      "display_name": "Gemini 3.1 Pro (Low)",
+      "quota_group": "agy-gemini-shared",
+      "vendor": "google"
+    },
+    "agy:gemini-3.1-pro-high": {
+      "runner": "agy",
+      "cli_model": "gemini-3.1-pro-high",
+      "display_name": "Gemini 3.1 Pro (High)",
+      "quota_group": "agy-gemini-shared",
+      "vendor": "google"
+    },
+    "agy:claude-sonnet-4.6-thinking": {
+      "runner": "agy",
+      "cli_model": "claude-4.6-sonnet",
+      "display_name": "Claude Sonnet 4.6 (Thinking)",
+      "quota_group": "agy-third-party-shared",
+      "vendor": "anthropic"
+    },
+    "agy:claude-opus-4.6-thinking": {
+      "runner": "agy",
+      "cli_model": "claude-4.6-opus",
+      "display_name": "Claude Opus 4.6 (Thinking)",
+      "quota_group": "agy-third-party-shared",
+      "vendor": "anthropic"
+    },
+    "agy:gpt-oss-120b-medium": {
+      "runner": "agy",
+      "cli_model": "gpt-oss-120b",
+      "display_name": "GPT-OSS 120B (Medium)",
+      "quota_group": "agy-third-party-shared",
+      "vendor": "openai"
+    },
+    "claude:current": {
+      "runner": "claude",
+      "cli_model": "preconfigured-runtime",
+      "display_name": "Claude preconfigured runtime",
+      "quota_group": "claude-preconfigured-runtime",
+      "vendor": "anthropic"
+    },
+    "claude:sonnet-5": {
+      "runner": "claude",
+      "cli_model": "claude-sonnet-5",
+      "display_name": "Claude Sonnet 5",
+      "quota_group": "claude-direct-subscription",
+      "effort": "max",
+      "vendor": "anthropic",
+      "adversarial_peer": "claude:fable-5"
+    },
+    "claude:sonnet-xhigh": {
+      "runner": "claude",
+      "cli_model": "claude-sonnet-5",
+      "display_name": "Claude Sonnet 5 (xhigh effort)",
+      "quota_group": "claude-direct-subscription",
+      "effort": "xhigh",
+      "vendor": "anthropic"
+    },
+    "claude:fable-5": {
+      "runner": "claude",
+      "cli_model": "claude-fable-5",
+      "display_name": "Claude Fable 5",
+      "quota_group": "claude-direct-subscription",
+      "vendor": "anthropic",
+      "adversarial_peer": "claude:sonnet-5"
+    },
+    "claude:opus-4.8": {
+      "runner": "claude",
+      "cli_model": "opus-4.8",
+      "display_name": "Opus 4.8",
+      "quota_group": "claude-direct-subscription",
+      "effort": "max",
+      "vendor": "anthropic"
+    },
+    "claude:sonnet-4.6": {
+      "runner": "claude",
+      "cli_model": "sonnet-4.6",
+      "display_name": "Sonnet 4.6",
+      "quota_group": "claude-direct-subscription",
+      "effort": "max",
+      "vendor": "anthropic"
+    },
+    "claude:haiku-4.5": {
+      "runner": "claude",
+      "cli_model": "haiku-4.5",
+      "display_name": "Haiku 4.5",
+      "quota_group": "claude-direct-subscription",
+      "vendor": "anthropic"
+    },
+    "claude:opus-4.7-legacy": {
+      "runner": "claude",
+      "cli_model": "opus-4.7",
+      "display_name": "Opus 4.7 Legacy",
+      "quota_group": "claude-direct-subscription",
+      "vendor": "anthropic"
+    },
+    "claude:opus-4.6-legacy": {
+      "runner": "claude",
+      "cli_model": "opus-4.6",
+      "display_name": "Opus 4.6 Legacy",
+      "quota_group": "claude-direct-subscription",
+      "vendor": "anthropic"
+    },
+    "codex:current": {
+      "runner": "codex",
+      "cli_model": "preconfigured-runtime",
+      "display_name": "Codex preconfigured runtime",
+      "quota_group": "codex-preconfigured-runtime",
+      "vendor": "openai"
+    },
+    "codex:gpt-5.6-sol": {
+      "runner": "codex",
+      "cli_model": "gpt-5.6-sol",
+      "display_name": "GPT-5.6 Sol",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-5.6-sol-high": {
+      "runner": "codex",
+      "cli_model": "gpt-5.6-sol",
+      "cli_effort": "high",
+      "display_name": "GPT-5.6 Sol (High)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-5.6-sol-medium": {
+      "runner": "codex",
+      "cli_model": "gpt-5.6-sol",
+      "cli_effort": "medium",
+      "display_name": "GPT-5.6 Sol (Medium)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-5.6-sol-xhigh": {
+      "runner": "codex",
+      "cli_model": "gpt-5.6-sol",
+      "cli_effort": "xhigh",
+      "display_name": "GPT-5.6 Sol (xhigh)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-5.6-terra": {
+      "runner": "codex",
+      "cli_model": "gpt-5.6-terra",
+      "display_name": "GPT-5.6 Terra",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-5.6-terra-medium": {
+      "runner": "codex",
+      "cli_model": "gpt-5.6-terra",
+      "cli_effort": "medium",
+      "display_name": "GPT-5.6 Terra (Medium)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-5.6-terra-high": {
+      "runner": "codex",
+      "cli_model": "gpt-5.6-terra",
+      "cli_effort": "high",
+      "display_name": "GPT-5.6 Terra (High)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-5.6-luna": {
+      "runner": "codex",
+      "cli_model": "gpt-5.6-luna",
+      "display_name": "GPT-5.6 Luna",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-5.3-codex-spark": {
+      "runner": "codex",
+      "cli_model": "gpt-5.3-codex-spark",
+      "display_name": "GPT-5.3 Codex Spark",
+      "quota_group": "codex-preconfigured-runtime",
+      "vendor": "openai"
+    }
+  },
+  "aliases": {
+    "agy-current": "agy:current",
+    "agy": "agy:current",
+    "antigravity-current": "agy:current",
+    "antigravity": "agy:current",
+    "agy-gemini-3.6-flash-medium": "agy:gemini-3.6-flash-medium",
+    "agy-gemini-3.6-flash-high": "agy:gemini-3.6-flash-high",
+    "agy-gemini-3.6-flash-low": "agy:gemini-3.6-flash-low",
+    "agy-gemini-3.1-pro-low": "agy:gemini-3.1-pro-low",
+    "agy-gemini-3.1-pro-high": "agy:gemini-3.1-pro-high",
+    "agy-claude-sonnet-4.6-thinking": "agy:claude-sonnet-4.6-thinking",
+    "agy-sonnet-thinking": "agy:claude-sonnet-4.6-thinking",
+    "agy-claude-opus-4.6-thinking": "agy:claude-opus-4.6-thinking",
+    "agy-opus-thinking": "agy:claude-opus-4.6-thinking",
+    "agy-gpt-oss-120b-medium": "agy:gpt-oss-120b-medium",
+    "agy-gpt-oss-120b": "agy:gpt-oss-120b-medium",
+    "claude-current": "claude:current",
+    "claude": "claude:current",
+    "claude-sonnet-5": "claude:sonnet-5",
+    "claude-sonnet-latest": "claude:sonnet-5",
+    "claude-sonnet-xhigh": "claude:sonnet-xhigh",
+    "claude-fable-5": "claude:fable-5",
+    "claude-fable-direct": "claude:fable-5",
+    "claude-fable-latest": "claude:fable-5",
+    "claude-opus-4.8": "claude:opus-4.8",
+    "claude-opus-direct": "claude:opus-4.8",
+    "claude-opus-4.7": "claude:opus-4.7-legacy",
+    "claude-opus-4.7-legacy": "claude:opus-4.7-legacy",
+    "claude-sonnet-4.6": "claude:sonnet-4.6",
+    "claude-sonnet-direct": "claude:sonnet-5",
+    "claude-haiku-4.5": "claude:haiku-4.5",
+    "claude-haiku-direct": "claude:haiku-4.5",
+    "claude-opus-4.6-legacy": "claude:opus-4.6-legacy",
+    "claude-opus-legacy": "claude:opus-4.7-legacy",
+    "codex-current": "codex:current",
+    "codex": "codex:current",
+    "codex-gpt-5.6-sol": "codex:gpt-5.6-sol",
+    "codex-5.6-sol": "codex:gpt-5.6-sol",
+    "codex-gpt-5.6-terra": "codex:gpt-5.6-terra",
+    "codex-5.6-terra": "codex:gpt-5.6-terra",
+    "codex-gpt-5.6-luna": "codex:gpt-5.6-luna",
+    "codex-5.6-luna": "codex:gpt-5.6-luna",
+    "codex-gpt-5.3-codex-spark": "codex:gpt-5.3-codex-spark",
+    "codex-5.3-spark": "codex:gpt-5.3-codex-spark",
+    "codex-gpt-5.6-sol-high": "codex:gpt-5.6-sol-high",
+    "codex-5.6-sol-high": "codex:gpt-5.6-sol-high",
+    "codex-gpt-5.6-sol-medium": "codex:gpt-5.6-sol-medium",
+    "codex-5.6-sol-medium": "codex:gpt-5.6-sol-medium",
+    "codex-gpt-5.6-sol-xhigh": "codex:gpt-5.6-sol-xhigh",
+    "codex-5.6-sol-xhigh": "codex:gpt-5.6-sol-xhigh",
+    "codex-gpt-5.6-terra-medium": "codex:gpt-5.6-terra-medium",
+    "codex-5.6-terra-medium": "codex:gpt-5.6-terra-medium",
+    "codex-gpt-5.6-terra-high": "codex:gpt-5.6-terra-high",
+    "codex-5.6-terra-high": "codex:gpt-5.6-terra-high"
+  },
+  "default_reviewer_aliases": [
+    "agy-current",
+    "claude-current",
+    "codex-current"
+  ],
+  "vendor_default_reviewers": {
+    "google": "agy-current",
+    "anthropic": "claude-current",
+    "openai": "codex-current"
+  },
+  "fallback_policy": {
+    "on_quota_exhausted": [],
+    "fail_closed_for_unregistered_models": true
+  },
+  "quota_error_patterns": [
+    "quota",
+    "limit exceeded",
+    "exhausted",
+    "rate limit",
+    "429",
+    "resource_exhausted",
+    "RESOURCE_EXHAUSTED"
+  ]
+}
