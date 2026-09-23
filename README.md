@@ -32,6 +32,7 @@ LLM-driven development usually wobbles at these points:
 
 The core expectations are:
 
+- Adapt the ELI5 plain-language explanation style for Korean conversational replies, using simple words and familiar examples while preserving accuracy and requested depth. This guidance is based on the upstream [ELI5 skill](https://github.com/anthropics/claude-plugins-community/blob/main/eli5/skills/eli5/SKILL.md).
 - Document task purpose, constraints, and risks before significant implementation
 - Leave material choices as `decision-*` records explained through the five axes `Why/What/How/Where/Verify`
 - Make plan-worthy work reviewable through `PLAN-*` and review documents

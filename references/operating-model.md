@@ -6,6 +6,7 @@ Runtime behavior source of truth; SKILL.md retains only triggers, invariants, an
 - Parse user requests in their original language.
 - Translate intent, planning, and execution reasoning into English internally before taking action.
 - Mirror the user's request language in conversational replies.
+- For Korean conversational replies, explain ideas simply enough for a five-year-old to follow, using plain words and familiar examples. Preserve accuracy, explain necessary technical terms, and honor explicit requests for more depth.
 - Keep technical terms in English when precision is improved.
 - Keep AI-to-AI communication and durable AI handoff artifacts (subagent requests, review packets, external CLI handoffs and responses, evaluator reports) in English only.
 - Preserve user-provided literals (names, IDs, exact constraints) without translation.
