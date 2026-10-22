@@ -21,8 +21,10 @@ prose's bullet order):
      ``.pytest_cache/**``, ``.gemini/**``, ``tmp/**``.
   3. SHIP: the exact top-level files ``SKILL.md``, ``README.md``,
      ``requirements-dev.txt``, and the root-rooted directories
-     ``agents/**``, ``config/**``, ``references/**``, ``scripts/**``,
-     ``tests/**``.
+     ``agents/**``, ``case-studies/**``, ``config/**``, ``references/**``,
+     ``scripts/**``, ``tests/**``. (``case-studies/`` holds the reports the
+     shipped README links to, so a packaged README never carries dangling
+     links.)
   4. Everything else: UNKNOWN.
 
 Symlinks: classified at their OWN path, exactly like any other entry, and
@@ -68,7 +70,7 @@ sys.dont_write_bytecode = True  # keep the tool read-only: no .pyc writes into s
 # --- classification rules ---------------------------------------------------
 
 SHIP_EXACT_FILES = ("SKILL.md", "README.md", "requirements-dev.txt")
-SHIP_ROOT_DIRS = ("agents", "config", "references", "scripts", "tests")
+SHIP_ROOT_DIRS = ("agents", "case-studies", "config", "references", "scripts", "tests")
 
 DEV_ARTIFACT_ROOT_DIRS = (".git", ".serena", ".pytest_cache", ".gemini", "tmp")
 

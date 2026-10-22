@@ -121,6 +121,21 @@ From a clean checkout, `check_all.sh` alone reproduces the full quality gate (de
 
 `scripts/check_all.sh --metrics-out <file>` appends one JSONL line per run with per-stage result and duration in seconds, forming the basis for runtime/flake trend collection (observation-only — behavior and output are unchanged without the flag), and `scripts/packaging_smoke.py` classifies the entire skill tree as SHIP/DEV-ARTIFACT/UNKNOWN and fails read-only hygiene checks when the deploy manifest contains disallowed entries (UNKNOWN).
 
+## Validation & Reliability
+
+What the automation verifies about itself, and where that stops. The reports behind these statements are in [`case-studies/`](./case-studies/).
+
+- **Fail-closed approval gate.** `validate_docs.sh --gate external-review` (run by `run_codeguide.sh` before a task moves to `in_progress` or `done`) lets implementation start only when each required external review left a complete evidence set: the request, the sanitized response and a provenance manifest that agree on task, plan version, round and route, with the response bytes matching the recorded SHA-256. A bare `verdict: accept` file, an edited response, a missing manifest, or a waiver without a recorded user decision does not pass.
+- **One contract for adversarial reviews.** The wrapper parser (`run_external_plan_reviews.sh`), the evidence verifier (`validate_docs_review_evidence.py`) and the Shadow v2 close gate apply the same field rule: all four debate keys present, `residual_risk` non-empty, the other three may be empty only on `accept`. `tests/review_contract_integration.bats` fails if the wrapper and the verifier ever disagree on a response, and its mock runners sit behind a `PATH` tripwire that refuses and records any real `agy`, `claude` or `codex` call.
+- **Tests shown to be able to fail.** The contract tests were run against the previous code and fail there, and the suites were compared with an unmodified baseline rather than a remembered count. The default test run never executes the real `agy` (the live model-catalog comparison is opt-in: `CODEGUIDE_LIVE_AGY_CATALOG=1`), and `tests/pipe_safety.bats` keeps pipelines whose consumer exits early (`grep -q`, `head`) out of `scripts/`, because under `set -o pipefail` they turn a correct answer into a failure.
+- **Known limits.** Pinned as current behavior in the tests (`KL-*`) or tracked as follow-ups, not claimed as fixed: a plan edited after its review, or a request altered after it was sent, is not detected; work that skips the harness is not gated; the review requirement is a field the agent writes; a done task's approval history is not re-checked; the evidence is consistency evidence, not attestation, so a writable workspace can still forge a matching manifest.
+
+Case studies (Korean, point-in-time reports of the work as it happened):
+
+- [External review approval gate hardening](./case-studies/external-review-gate-hardening.html)
+- [Adversarial rule x approval gate integration](./case-studies/adversarial-gate-integration.html)
+- [Test reliability hardening](./case-studies/test-reliability-hardening.html): early-exit pipes under `pipefail` (14 sites, 3 reproduced), the default run no longer executes the real `agy`, plan and request hash binding for approved reviews (on its own branch, not yet merged), and the model registry update.
+
 ## Single Entry Point: scripts/codeguide
 
 Instead of memorizing individual script paths, `scripts/codeguide` exposes every automation entry point through one subcommand interface. Each subcommand forwards remaining arguments verbatim (quoted) to the target tool via `exec`, so `scripts/codeguide <subcommand> --help` shows the target tool's own usage.
@@ -179,6 +194,7 @@ codeguide/
 ├── README.md
 ├── SKILL.md
 ├── agents/
+├── case-studies/
 ├── references/
 ├── scripts/
 └── tests/
@@ -186,6 +202,7 @@ codeguide/
 
 - `SKILL.md`: operating contracts and workflow policy
 - `agents/`: skill-facing agent configuration
+- `case-studies/`: point-in-time reports (Korean HTML) of validation and reliability work; kept apart from the project-level `docs/` root on purpose
 - `references/`: governance, architecture, and review standard documents
 - `scripts/`: executable automation layer
 - `tests/`: shell tool regression tests
