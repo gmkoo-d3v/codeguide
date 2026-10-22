@@ -1002,7 +1002,9 @@ run_resume_checkpoint() {
       changed_files_value="none"
     else
       changed_count="$(printf "%s\n" "$changed_list" | wc -l | tr -d ' ')"
-      capped_list="$(printf "%s\n" "$changed_list" | head -n 10 | paste -sd ',' -)"
+      # sed drains its input; `head -n 10` exited after ten lines while printf was still writing,
+      # and under pipefail that SIGPIPE aborted this script once the list outgrew the pipe buffer.
+      capped_list="$(printf "%s\n" "$changed_list" | sed -n '1,10p' | paste -sd ',' -)"
       if (( changed_count > 10 )); then
         extra_count=$((changed_count - 10))
         changed_files_value="${capped_list} (+${extra_count} more)"

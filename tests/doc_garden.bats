@@ -541,6 +541,38 @@ make_resume_source_repo() {
   [ "$(printf "%s\n" "$entries" | tr ',' '\n')" = "$sorted_entries" ]
 }
 
+@test "doc_garden resume-checkpoint caps a changed-file list that outgrows the pipe buffer" {
+  # `printf | head -n 10 | paste` under pipefail died of SIGPIPE (and set -e aborted the
+  # script) once the list was longer than the pipe buffer: head exited after ten lines
+  # while printf was still writing. 1500 x ~160 bytes is well past 64 KiB.
+  local source_repo="$TEST_WORKSPACE/resume-source-bigcap"
+  make_resume_source_repo "$source_repo"
+  printf '%s' "$source_repo" > "$TEST_PROJECT/.codeguide-source-root"
+
+  local pad i
+  pad="$(printf 'x%.0s' $(seq 1 140))"
+  for i in $(seq 1 1500); do
+    : > "$source_repo/untracked-${pad}-$(printf '%04d' "$i").txt"
+  done
+
+  "$DOC_GARDEN" "$TEST_PROJECT" --task-id "resume-bigcap-01" --task-title "Big cap test" --task-status in_progress --no-init
+
+  run "$DOC_GARDEN" "$TEST_PROJECT" --task-id "resume-bigcap-01" --resume-checkpoint
+  [ "$status" -eq 0 ]
+
+  local task_file="$DOCS_ROOT/task/TASK-resume-bigcap-01.md"
+  run grep "^- resume_source_head:.*(dirty: 1500 files)$" "$task_file"
+  [ "$status" -eq 0 ]
+
+  local changed_line entries entry_count
+  changed_line="$(grep "^- resume_changed_files:" "$task_file")"
+  [[ "$changed_line" == *" (+1490 more)" ]] || false
+  entries="${changed_line#- resume_changed_files: }"
+  entries="${entries% (+1490 more)}"
+  entry_count="$(printf "%s\n" "$entries" | tr ',' '\n' | sed '/^$/d' | wc -l | tr -d ' ')"
+  [ "$entry_count" -eq 10 ]
+}
+
 @test "doc_garden resume-checkpoint writes no-source-repo when no source repo is reachable" {
   run "$DOC_GARDEN" "$TEST_PROJECT" --task-id "resume-nosource-01" --task-title "No source" --task-status in_progress --no-init
   [ "$status" -eq 0 ]

@@ -3,6 +3,29 @@
 # Sourced by validate_docs.sh after CLI/global setup; not executable alone.
 # Split from validate_docs.sh (behavior-preserving; function bodies verbatim).
 
+# list_has_line <newline-separated list> <exact line>: whole-line membership in pure bash.
+# `printf '%s\n' "$list" | grep -Fxq "$line"` lets grep exit on the first hit while printf is
+# still writing; under `set -o pipefail` the producer's SIGPIPE then fails the pipeline even
+# though the line IS in the list, so a registry id was reported missing at random. A
+# here-string would avoid the pipe, but bash 3.2 backs it with a temp file that ignores
+# $TMPDIR (see check_effect_map_file), so this stays pipe-free and temp-file-free.
+list_has_line() {
+  case $'\n'"$1"$'\n' in
+    *$'\n'"$2"$'\n'*) return 0 ;;
+  esac
+  return 1
+}
+
+# is_shadow_bucket <value>: exact membership in SHADOW_BUCKETS without piping the array anywhere.
+is_shadow_bucket() {
+  local bucket
+
+  for bucket in "${SHADOW_BUCKETS[@]}"; do
+    [[ "$bucket" == "$1" ]] && return 0
+  done
+  return 1
+}
+
 check_redirect_shim_file() {
   local file_path="$1"
   local label="$2"
@@ -78,6 +101,8 @@ check_shadow_empty_graph() {
   local bucket
   local bucket_file
   local any_units="false"
+  local has_source="false"
+  local tracked_path
 
   source_root="$(codeguide_source_root "$PROJECT_ROOT_ABS" 2>/dev/null || true)"
   [[ -n "$source_root" ]] || return 0
@@ -85,10 +110,20 @@ check_shadow_empty_graph() {
   # Scaffold artifacts are not "source needing documentation": a freshly
   # bootstrapped docs-only project tracks its routers and markers but no code
   # (fable/sonnet P3-r01 shared finding — the gate must not fail it).
-  if ! git -C "$source_root" ls-files 2>/dev/null \
-    | grep -qvE '^(docs/|AGENTS\.md$|CLAUDE\.md$|README\.md$|\.gitignore$|\.codeguide-source-root$)'; then
-    return 0
-  fi
+  # The listing is read by a loop that stops at the first real source path, not piped into
+  # `grep -q`: grep exited at that path while `git ls-files` was still writing, and under
+  # pipefail the SIGPIPE read as "no source", so a repository whose listing outgrew the pipe
+  # buffer skipped this gate and strict validation passed an empty shadow graph.
+  while IFS= read -r tracked_path; do
+    case "$tracked_path" in
+      docs/*|AGENTS.md|CLAUDE.md|README.md|.gitignore|.codeguide-source-root) ;;
+      *)
+        has_source="true"
+        break
+        ;;
+    esac
+  done < <(git -C "$source_root" ls-files 2>/dev/null)
+  [[ "$has_source" == "true" ]] || return 0
 
   [[ -d "$SHADOW_DIR" ]] || return 0
 
@@ -155,7 +190,7 @@ shadow_tree_has_source_declarations() {
   while IFS= read -r shadow_doc; do
     grep -qE "source_of_truth_paths" "$shadow_doc" 2>/dev/null || continue
     result="$(python3 "$digest_helper" "$shadow_doc" --project-root "$PROJECT_ROOT_ABS" --verify-paths 2>/dev/null || true)"
-    has_paths="$(printf "%s\n" "$result" | grep -m1 "^has_paths: " | sed 's/^has_paths: //')"
+    has_paths="$(printf "%s\n" "$result" | sed -n 's/^has_paths: //p' | sed -n '1p')"
     if [[ "$has_paths" == "true" ]]; then
       return 0
     fi
@@ -371,7 +406,7 @@ check_shadow_unit_schema() {
         if [[ -z "$bucket_value" ]]; then
           fail "shadow unit overview missing home_bucket: $shadow_doc"
           problems=1
-        elif ! printf '%s\n' "${SHADOW_BUCKETS[@]}" | grep -qxF -- "$bucket_value"; then
+        elif ! is_shadow_bucket "$bucket_value"; then
           fail "shadow unit overview home_bucket is not a known bucket (${bucket_value}): $shadow_doc"
           problems=1
         fi
@@ -793,11 +828,11 @@ check_catalog_probe_coverage() {
 
   while IFS= read -r id; do
     [[ -n "$id" ]] || continue
-    if ! printf "%s\n" "$declared_ids" | grep -Fxq "$id"; then
+    if ! list_has_line "$declared_ids" "$id"; then
       fail "implemented_primary_v1 id must be declared in validators block: ${id} (${catalog_file})"
       mismatch_count=$((mismatch_count + 1))
     fi
-    if [[ -n "$probe_ids" ]] && ! printf "%s\n" "$probe_ids" | grep -Fxq "$id"; then
+    if [[ -n "$probe_ids" ]] && ! list_has_line "$probe_ids" "$id"; then
       fail "implemented_primary_v1 id must be implemented by shadow_evidence_probe.py: ${id} (${catalog_file})"
       mismatch_count=$((mismatch_count + 1))
     fi
@@ -805,7 +840,7 @@ check_catalog_probe_coverage() {
 
   while IFS= read -r id; do
     [[ -n "$id" ]] || continue
-    if ! printf "%s\n" "$implemented_ids" | grep -Fxq "$id"; then
+    if ! list_has_line "$implemented_ids" "$id"; then
       fail "shadow_evidence_probe.py primary validator missing from implemented_primary_v1: ${id} (${catalog_file})"
       mismatch_count=$((mismatch_count + 1))
     fi
@@ -813,11 +848,11 @@ check_catalog_probe_coverage() {
 
   while IFS= read -r id; do
     [[ -n "$id" ]] || continue
-    if ! printf "%s\n" "$declared_ids" | grep -Fxq "$id"; then
+    if ! list_has_line "$declared_ids" "$id"; then
       fail "parser_backed_now id must be declared in validators block: ${id} (${catalog_file})"
       mismatch_count=$((mismatch_count + 1))
     fi
-    if ! printf "%s\n" "$implemented_ids" | grep -Fxq "$id"; then
+    if ! list_has_line "$implemented_ids" "$id"; then
       fail "parser_backed_now id must also be implemented_primary_v1: ${id} (${catalog_file})"
       mismatch_count=$((mismatch_count + 1))
     fi
@@ -825,15 +860,15 @@ check_catalog_probe_coverage() {
 
   while IFS= read -r id; do
     [[ -n "$id" ]] || continue
-    if ! printf "%s\n" "$declared_ids" | grep -Fxq "$id"; then
+    if ! list_has_line "$declared_ids" "$id"; then
       fail "source_probe_only id must be declared in validators block: ${id} (${catalog_file})"
       mismatch_count=$((mismatch_count + 1))
     fi
-    if ! printf "%s\n" "$implemented_ids" | grep -Fxq "$id"; then
+    if ! list_has_line "$implemented_ids" "$id"; then
       fail "source_probe_only id must also be implemented_primary_v1: ${id} (${catalog_file})"
       mismatch_count=$((mismatch_count + 1))
     fi
-    if printf "%s\n" "$parser_ids" | grep -Fxq "$id"; then
+    if list_has_line "$parser_ids" "$id"; then
       fail "source_probe_only id must not also be parser_backed_now: ${id} (${catalog_file})"
       mismatch_count=$((mismatch_count + 1))
     fi
@@ -1115,7 +1150,7 @@ check_rule_registry_refs_exist() {
 
   while IFS= read -r ref; do
     [[ -n "$ref" ]] || continue
-    if ! printf "%s\n" "$known_ids" | grep -Fxq "$ref"; then
+    if ! list_has_line "$known_ids" "$ref"; then
       fail "rule registry references unknown ${ref_kind} ${known_label}: ${ref} (${rule_file})"
       missing_count=$((missing_count + 1))
     fi

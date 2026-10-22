@@ -476,7 +476,7 @@ count_non_git_active_tasks() {
   fi
 
   while IFS= read -r task_file; do
-    task_status="$(sed -n 's/^- status:[[:space:]]*//p' "$task_file" | head -n 1 | sed 's/[[:space:]]*$//')"
+    task_status="$(sed -n 's/^- status:[[:space:]]*//p' "$task_file" | sed -n '1p' | sed 's/[[:space:]]*$//')"
     case "$task_status" in
       in_progress|blocked) active_count=$((active_count + 1)) ;;
     esac
