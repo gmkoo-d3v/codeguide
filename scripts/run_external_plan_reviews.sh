@@ -882,6 +882,14 @@ response_field_value() {
   normalize_one_line "$raw"
 }
 
+# response_field_present: key presence for the same fence-blind `^- key:` line that
+# response_field_value reads, so "present but empty" and "missing" stay distinguishable.
+response_field_present() {
+  local file_path="$1"
+  local key="$2"
+  grep -qE "^- ${key}:" "$file_path" 2>/dev/null
+}
+
 ensure_plan_field() {
   local key="$1"
   local value
@@ -1334,7 +1342,7 @@ $(build_prompt "$evaluator" "$review_style" "$strict_retry")
 
 - Valid verdict values are accept, revise, or blocked.
 - Standard reviews must include verdict, summary, strengths, risks, and requested_changes.
-- Adversarial reviews must also include objection, counterproposal, rebuttal, and residual_risk.
+- Adversarial reviews must also include objection, counterproposal, rebuttal, and residual_risk; residual_risk is always non-empty, and the other three may be empty only when the verdict is accept.
 
 ## Payload
 
@@ -1825,8 +1833,20 @@ parse_review_response() {
     return 1
   fi
   if [[ "$review_style" == "adversarial" ]]; then
-    if [[ -z "$PARSED_OBJECTION" || -z "$PARSED_COUNTERPROPOSAL" || -z "$PARSED_REBUTTAL" || -z "$PARSED_RESIDUAL_RISK" ]]; then
+    # Adversarial-report field rule (references/orchestration-review-contract.md): all
+    # four keys must be present; residual_risk is non-empty on every verdict; the debate
+    # fields may be empty only on accept, where the reviewer has no objection to state.
+    local key
+    for key in objection counterproposal rebuttal residual_risk; do
+      response_field_present "$response_file" "$key" || return 1
+    done
+    if [[ -z "$PARSED_RESIDUAL_RISK" ]]; then
       return 1
+    fi
+    if [[ "$PARSED_VERDICT" != "accept" ]]; then
+      if [[ -z "$PARSED_OBJECTION" || -z "$PARSED_COUNTERPROPOSAL" || -z "$PARSED_REBUTTAL" ]]; then
+        return 1
+      fi
     fi
   fi
   return 0

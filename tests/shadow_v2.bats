@@ -1185,3 +1185,146 @@ EOF
   [ "$status" -eq 1 ]
   assert_contains "$output" "requires evaluator antigravity or agy"
 }
+
+# ========== Adversarial field rule in the close gate ==========
+# references/orchestration-review-contract.md: on an adversarial accept the debate keys
+# (objection/counterproposal/rebuttal) must be present but may be empty; residual_risk is
+# non-empty on every verdict. The gate must read each key on its own line -- a reader that
+# crosses line breaks makes the result depend on field order.
+
+# Runs the wrapper with agy as the adversarial reviewer (mocked; every runner mock is
+# local) and prints the sanitized response path. $2 is the raw response body.
+create_adversarial_agy_artifact() {
+  local task_id="$1"
+  local body="$2"
+  local mock_bin="$TEST_WORKSPACE/mock-bin-${task_id}"
+  local body_file="$TEST_WORKSPACE/${task_id}.agy-body.md"
+  local run_output="$TEST_WORKSPACE/${task_id}-external-review.out"
+  cat > "$DOCS_ROOT/plan/PLAN-${task_id}-v1.0.md" <<EOF
+# PLAN-${task_id}-v1.0
+
+- task_id: ${task_id}
+- plan_version: v1.0
+- objective: adversarial close-gate fixture
+- scope: test fixture generation
+- assumptions: none
+- risks: fixture generation failure
+- acceptance_signals: response and provenance files are written
+- stop_conditions: wrapper completes
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+  printf '%s\n' "$body" > "$body_file"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/agy" "#!/usr/bin/env bash
+cat \"$body_file\""
+  local runner
+  for runner in claude codex gemini; do
+    write_mock_cli "$mock_bin/$runner" '#!/usr/bin/env bash
+exit 99'
+  done
+  env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "$task_id" --plan-version "v1.0" --primary-tool "codex" \
+    --reviewer "agy-current" --adversarial-evaluator "agy-current" --review-round "r01" \
+    --risk-preflight-status "approved" --approval-ref "user-approval-${task_id}" \
+    --approved-next-step "run external review ${task_id} v1.0 r01" > "$run_output" 2>&1 || {
+      cat "$run_output" >&2
+      return 1
+    }
+  printf "%s/agy-current.response.md\n" "$(external_handoff_dir "$task_id" "v1.0" "r01")"
+}
+
+# Rewrites a sanitized response and re-binds its provenance hash, so the gate's own
+# field rule is exercised on input the wrapper would have refused to produce.
+rewrite_adversarial_response() {
+  local artifact="$1"
+  local body="$2"
+  printf '%s\n' "$body" > "$artifact"
+  local digest
+  digest="sha256:$(shasum -a 256 "$artifact" | awk '{print $1}')"
+  sed -i.bak "s/^- response_sha256: .*/- response_sha256: ${digest}/" "${artifact%.md}.provenance.md"
+  rm -f "${artifact%.md}.provenance.md.bak"
+}
+
+run_close_gate_with_external() {
+  local artifact="$1"
+  local internal_artifact
+  internal_artifact="$(create_mock_internal_review_artifact "shadow-v2-adv-internal")"
+  run python3 "$SHADOW_V2_SKELETON" \
+    --project-root "$TEST_PROJECT" \
+    --external-review-requested \
+    --external-review-approval-ref "user-approval-001" \
+    --external-review-approved-next-step "close shadow v2 external review gate" \
+    --external-review-recorded-by "main-thread-supervising-lead-architect" \
+    --close-required-review "internal_subagent_md_handoff" \
+    --close-required-review "external_antigravity" \
+    --completed-review "internal_subagent_md_handoff" \
+    --completed-review-artifact "internal_subagent_md_handoff=$internal_artifact" \
+    --completed-review "external_antigravity" \
+    --completed-review-artifact "external_antigravity=$artifact" \
+    --print-contract
+}
+
+ADV_STANDARD_LINES='- verdict: accept
+- summary: The plan is execution-ready for this bounded scope.
+- strengths: It separates review collection from plan mutation.
+- risks: Operators may still skim the adversarial report.
+- requested_changes: None blocking.'
+
+@test "shadow_v2 close gate accepts an adversarial accept with empty debate fields in any field order" {
+  local artifact
+  artifact="$(create_adversarial_agy_artifact "adv-gate-canonical" "${ADV_STANDARD_LINES}
+- objection:
+- counterproposal:
+- rebuttal:
+- residual_risk: Did not exercise the rollback path.")"
+  [ -f "$artifact" ]
+  run_close_gate_with_external "$artifact"
+  [ "$status" -eq 0 ]
+  assert_contains "$output" '"status":"ok"'
+
+  # Empty debate key as the LAST line: nothing follows it for a line-crossing reader.
+  artifact="$(create_adversarial_agy_artifact "adv-gate-rebuttal-last" "${ADV_STANDARD_LINES}
+- residual_risk: Did not exercise the rollback path.
+- objection:
+- counterproposal:
+- rebuttal:")"
+  [ -f "$artifact" ]
+  run_close_gate_with_external "$artifact"
+  [ "$status" -eq 0 ]
+  assert_contains "$output" '"status":"ok"'
+  refute_contains "$output" "requires parser-compatible field"
+}
+
+@test "shadow_v2 close gate blocks an adversarial accept missing a debate key or with empty residual_risk" {
+  local artifact key
+  for key in objection counterproposal rebuttal residual_risk; do
+    artifact="$(create_adversarial_agy_artifact "adv-gate-missing-${key}" "${ADV_STANDARD_LINES}
+- objection:
+- counterproposal:
+- rebuttal:
+- residual_risk: Did not exercise the rollback path.")"
+    [ -f "$artifact" ]
+    rewrite_adversarial_response "$artifact" "$(grep -v -E "^- ${key}:" "$artifact")"
+    run_close_gate_with_external "$artifact"
+    [ "$status" -eq 1 ]
+    assert_contains "$output" "completed adversarial external antigravity review artifact requires parser-compatible field ${key}"
+  done
+
+  # Empty residual_risk followed by another line: a line-crossing reader would read the
+  # next bullet as its value and let it through.
+  artifact="$(create_adversarial_agy_artifact "adv-gate-empty-residual" "${ADV_STANDARD_LINES}
+- objection:
+- counterproposal:
+- rebuttal:
+- residual_risk: Did not exercise the rollback path.")"
+  rewrite_adversarial_response "$artifact" "${ADV_STANDARD_LINES}
+- residual_risk:
+- objection:
+- counterproposal:
+- rebuttal:"
+  run_close_gate_with_external "$artifact"
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "completed adversarial external antigravity review artifact requires parser-compatible field residual_risk"
+  refute_contains "$output" "response_sha256 must match"
+}

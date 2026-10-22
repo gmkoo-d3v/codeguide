@@ -43,6 +43,7 @@ Valid response handoff files should use the parser-compatible bullet fields belo
   - `counterproposal`
   - `rebuttal`
   - `residual_risk`
+- Always return all four bullet keys. `residual_risk` must be non-empty on every verdict. On `revise` or `blocked`, `objection`, `counterproposal`, and `rebuttal` must be non-empty; on `accept` they may be left empty (keep the key, for example `- objection:`), but a missing key is a malformed response.
 
 ## Output discipline
 - Return only the requested markdown bullet fields.

@@ -3489,3 +3489,328 @@ EOF
   # skipped rather than answered with.
   refute_contains "$output" "High-risk task detected"
 }
+
+# ========== Adversarial response field rule (parse_review_response) ==========
+# references/orchestration-review-contract.md: on verdict accept the debate fields
+# (objection/counterproposal/rebuttal) must be PRESENT but may be empty; on revise or
+# blocked they must be non-empty; residual_risk is non-empty on every verdict. A missing
+# key and a present-but-empty key are different defects, so these cases drive the parser
+# through the manual-ingest path (no external CLI is invoked; every runner mock exits 99).
+
+# Writes a plan, runs --manual-handoff-only, drops $2 in as the user-run raw response, and
+# leaves `run --ingest-manual-responses` in $status/$output. $3 is the review style:
+# adversarial (default) routes the single claude reviewer through --adversarial-evaluator.
+ingest_review_response() {
+  local task_id="$1"
+  local response_body="$2"
+  local review_style="${3:-adversarial}"
+  local style_args=()
+  if [[ "$review_style" == "adversarial" ]]; then
+    style_args=(--adversarial-evaluator "claude-current")
+  fi
+
+  cat > "$DOCS_ROOT/plan/PLAN-${task_id}-v1.0.md" <<EOF
+# PLAN-${task_id}-v1.0
+
+- task_id: ${task_id}
+- plan_version: v1.0
+- objective: pin the adversarial response field rule
+- scope: parse_review_response
+- assumptions: none
+- risks: the parser and the report contract disagree
+- acceptance_signals: parser verdict matches the contract table
+- stop_conditions: ingest completes
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+  local runner
+  for runner in agy claude codex; do
+    write_mock_cli "$mock_bin/$runner" "#!/usr/bin/env bash
+touch \"\${TEST_WORKSPACE}/${runner}-called\"
+exit 99"
+  done
+
+  local common_args=(
+    --task-id "$task_id"
+    --plan-version "v1.0"
+    --primary-tool "codex"
+    --reviewer "claude-current"
+    "${style_args[@]}"
+    --review-round "r01"
+    --risk-preflight-status "approved"
+    --approval-ref "user-approval-${task_id}"
+    --approved-next-step "run external review ${task_id} v1.0 r01"
+  )
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" "${common_args[@]}" --manual-handoff-only
+  [ "$status" -eq 0 ]
+
+  local handoff_dir
+  handoff_dir="$(external_handoff_dir "$task_id" "v1.0" "r01")"
+  [ -n "$handoff_dir" ]
+  printf '%s\n' "$response_body" > "$handoff_dir/claude-current.command-response.raw.md"
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" "${common_args[@]}" --ingest-manual-responses
+
+  local called
+  for called in "$TEST_WORKSPACE"/*-called; do
+    [ ! -e "$called" ]
+  done
+}
+
+# Asserts the last ingest_review_response produced a report for $1 in style $2.
+assert_review_ingested() {
+  local task_id="$1"
+  local review_style="$2"
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "[OK] evaluator=claude route=claude:current style=${review_style}"
+  [ -f "$DOCS_ROOT/report/PLAN-${task_id}-v1.0-review-claude-current-r01.md" ]
+}
+
+# Asserts the last ingest_review_response was rejected and wrote no report for $1.
+assert_review_rejected() {
+  local task_id="$1"
+  local review_style="$2"
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "[FAIL] evaluator=claude route=claude:current style=${review_style}"
+  [ ! -f "$DOCS_ROOT/report/PLAN-${task_id}-v1.0-review-claude-current-r01.md" ]
+  local handoff_dir
+  handoff_dir="$(external_handoff_dir "$task_id" "v1.0" "r01")"
+  [ ! -f "$handoff_dir/claude-current.response.provenance.md" ]
+  if [[ "$review_style" == "adversarial" ]]; then
+    assert_contains "$output" "Required adversarial review did not complete successfully for evaluator=claude:current"
+  fi
+}
+
+# Builds an adversarial response. $1 = verdict; each remaining arg is `key=value`
+# (value may be empty) or `-key` to drop that bullet line entirely.
+adversarial_response() {
+  local verdict="$1"
+  shift
+  local -a keys=(summary strengths risks requested_changes objection counterproposal rebuttal residual_risk)
+  local -a values=(
+    "The plan is execution-ready for this bounded scope."
+    "It separates review collection from plan mutation."
+    "Operators may still skim the adversarial report."
+    "None blocking."
+    "The rollout order is unproven."
+    "Stage the rollout behind a validation gate."
+    "The current draft still isolates review from mutation."
+    "Did not exercise the rollback path, only reviewed it."
+  )
+  local override key i
+  local -a dropped=()
+  for override in "$@"; do
+    if [[ "$override" == -* ]]; then
+      dropped+=("${override#-}")
+      continue
+    fi
+    key="${override%%=*}"
+    for i in "${!keys[@]}"; do
+      if [[ "${keys[$i]}" == "$key" ]]; then
+        values[$i]="${override#*=}"
+      fi
+    done
+  done
+  printf -- '- verdict: %s\n' "$verdict"
+  for i in "${!keys[@]}"; do
+    if [[ " ${dropped[*]-} " == *" ${keys[$i]} "* ]]; then
+      continue
+    fi
+    if [[ -n "${values[$i]}" ]]; then
+      printf -- '- %s: %s\n' "${keys[$i]}" "${values[$i]}"
+    else
+      printf -- '- %s:\n' "${keys[$i]}"
+    fi
+  done
+}
+
+@test "adversarial accept with present-but-empty debate fields and residual_risk is accepted" {
+  ingest_review_response "adv-accept-empty-debate" \
+    "$(adversarial_response accept objection= counterproposal= rebuttal=)"
+
+  assert_review_ingested "adv-accept-empty-debate" "adversarial"
+  assert_contains "$output" "verdict=accept"
+  local report="$DOCS_ROOT/report/PLAN-adv-accept-empty-debate-v1.0-review-claude-current-r01.md"
+  run grep -c -E '^- (objection|counterproposal|rebuttal):[[:space:]]*$' "$report"
+  [ "$output" = "3" ]
+  run grep -F -- "- residual_risk: Did not exercise the rollback path, only reviewed it." "$report"
+  [ "$status" -eq 0 ]
+
+  # The accept exemption follows the lowercased verdict, not the raw casing.
+  ingest_review_response "adv-accept-mixed-case" \
+    "$(adversarial_response Accept objection= counterproposal= rebuttal=)"
+  assert_review_ingested "adv-accept-mixed-case" "adversarial"
+  assert_contains "$output" "verdict=accept"
+}
+
+@test "adversarial accept rejects a debate field whose key is missing" {
+  local key
+  for key in objection counterproposal rebuttal; do
+    ingest_review_response "adv-accept-missing-${key}" \
+      "$(adversarial_response accept objection= counterproposal= rebuttal= "-${key}")"
+    assert_review_rejected "adv-accept-missing-${key}" "adversarial"
+  done
+}
+
+@test "adversarial accept rejects an empty or missing residual_risk" {
+  ingest_review_response "adv-accept-empty-residual" \
+    "$(adversarial_response accept objection= counterproposal= rebuttal= residual_risk=)"
+  assert_review_rejected "adv-accept-empty-residual" "adversarial"
+
+  ingest_review_response "adv-accept-missing-residual" \
+    "$(adversarial_response accept -residual_risk)"
+  assert_review_rejected "adv-accept-missing-residual" "adversarial"
+}
+
+@test "adversarial revise and blocked reject any empty debate field or residual_risk" {
+  local verdict key
+  for verdict in revise blocked; do
+    for key in objection counterproposal rebuttal residual_risk; do
+      ingest_review_response "adv-${verdict}-empty-${key}" \
+        "$(adversarial_response "$verdict" "${key}=")"
+      assert_review_rejected "adv-${verdict}-empty-${key}" "adversarial"
+    done
+  done
+}
+
+@test "adversarial accept, revise, and blocked with every field filled are accepted" {
+  local verdict
+  for verdict in accept revise blocked; do
+    ingest_review_response "adv-${verdict}-complete" "$(adversarial_response "$verdict")"
+    assert_review_ingested "adv-${verdict}-complete" "adversarial"
+    assert_contains "$output" "verdict=${verdict}"
+  done
+}
+
+@test "standard review field rule is unchanged by the adversarial accept rule" {
+  # Valid standard response: no adversarial keys at all, still accepted.
+  ingest_review_response "std-valid" "- verdict: accept
+- summary: Standard review completed.
+- strengths: The request was bounded.
+- risks: None material.
+- requested_changes: None." standard
+  assert_review_ingested "std-valid" "standard"
+
+  # Standard fields stay required non-empty on every verdict, accept included.
+  local key
+  for key in summary strengths risks requested_changes; do
+    ingest_review_response "std-empty-${key}" \
+      "$(adversarial_response accept "${key}=" | grep -v -E '^- (objection|counterproposal|rebuttal|residual_risk):')" standard
+    assert_review_rejected "std-empty-${key}" "standard"
+  done
+
+  ingest_review_response "std-bad-verdict" "$(adversarial_response approve)" standard
+  assert_review_rejected "std-bad-verdict" "standard"
+}
+
+@test "adversarial accept with empty debate fields passes on the first CLI attempt with existing report and provenance format" {
+  local task_id="adv-accept-first-attempt"
+  cat > "$DOCS_ROOT/plan/PLAN-${task_id}-v1.0.md" <<EOF
+# PLAN-${task_id}-v1.0
+
+- task_id: ${task_id}
+- plan_version: v1.0
+- objective: an adversarial accept must not burn the formatting retry
+- scope: parse_review_response
+- assumptions: none
+- risks: a contract-valid accept is retried or failed
+- acceptance_signals: one CLI call, report and provenance written
+- stop_conditions: run completes
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  local mock_bin="$TEST_WORKSPACE/mock-bin"
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/claude" '#!/usr/bin/env bash
+count_file="${TEST_WORKSPACE}/claude-count"
+count=0
+[[ -f "$count_file" ]] && count="$(cat "$count_file")"
+printf "%s" "$((count + 1))" > "$count_file"
+cat <<EOF
+- verdict: accept
+- summary: The plan is execution-ready for this bounded scope.
+- strengths: It separates review collection from plan mutation.
+- risks: Operators may still skim the adversarial report.
+- requested_changes: None blocking.
+- objection:
+- counterproposal:
+- rebuttal:
+- residual_risk: Did not exercise the rollback path, only reviewed it.
+EOF'
+
+  run env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "$task_id" \
+    --plan-version "v1.0" \
+    --primary-tool "codex" \
+    --reviewer "claude-current" \
+    --adversarial-evaluator "claude-current" \
+    --review-round "r01" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-${task_id}" \
+    --approved-next-step "run external review ${task_id} v1.0 r01"
+
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "[OK] evaluator=claude requested_route=claude:current actual_route=claude:current quota_fallback=false style=adversarial verdict=accept"
+  [ "$(cat "$TEST_WORKSPACE/claude-count")" = "1" ]
+
+  local handoff_dir
+  handoff_dir="$(external_handoff_dir "$task_id" "v1.0" "r01")"
+  [ -n "$handoff_dir" ]
+  [ ! -e "$handoff_dir/claude-current.retry-request.md" ]
+  [ ! -e "$handoff_dir/claude-current.retry-response.md" ]
+
+  # The request tells the reviewer about the accept exception (prompt template + Verify).
+  run grep -F -- 'on `accept` they may be left empty (keep the key, for example `- objection:`), but a missing key is a malformed response.' "$handoff_dir/claude-current.request.md"
+  [ "$status" -eq 0 ]
+  run grep -F -- "residual_risk is always non-empty, and the other three may be empty only when the verdict is accept." "$handoff_dir/claude-current.request.md"
+  [ "$status" -eq 0 ]
+
+  # Report: every template key, in template order, with the accepted empties preserved.
+  local report="$DOCS_ROOT/report/PLAN-${task_id}-v1.0-review-claude-current-r01.md"
+  [ -f "$report" ]
+  run bash -c "grep -E '^- [a-z_]+:' \"\$1\" | sed -E 's/^- ([a-z_]+):.*/\\1/' | tr '\\n' ' '" _ "$report"
+  [ "$output" = "task_id plan_version evaluator evaluator_requested_runner evaluator_actual_runner evaluator_requested_route evaluator_actual_route evaluator_requested_model evaluator_actual_model evaluator_requested_cli_model evaluator_actual_cli_model evaluator_model_selection quota_fallback_triggered review_style review_round verdict summary strengths risks requested_changes objection counterproposal rebuttal residual_risk last_updated " ]
+  run grep -F -- "- verdict: accept" "$report"
+  [ "$status" -eq 0 ]
+  run grep -F -- "- review_style: adversarial" "$report"
+  [ "$status" -eq 0 ]
+  run grep -c -E '^- (objection|counterproposal|rebuttal):[[:space:]]*$' "$report"
+  [ "$output" = "3" ]
+
+  # Provenance: existing manifest keys, bound to the sanitized response by hash.
+  local provenance="$handoff_dir/claude-current.response.provenance.md"
+  [ -f "$provenance" ]
+  run grep -F -- "- artifact_kind: external_cli_review_response_provenance" "$provenance"
+  [ "$status" -eq 0 ]
+  run grep -F -- "- review_style: adversarial" "$provenance"
+  [ "$status" -eq 0 ]
+  run grep -F -- "- verdict: accept" "$provenance"
+  [ "$status" -eq 0 ]
+  run grep -F -- "- request_file: $handoff_dir/claude-current.request.md" "$provenance"
+  [ "$status" -eq 0 ]
+  run grep -F -- "- response_file: $handoff_dir/claude-current.response.md" "$provenance"
+  [ "$status" -eq 0 ]
+  local response_hash
+  response_hash="sha256:$(shasum -a 256 "$handoff_dir/claude-current.response.md" | awk '{print $1}')"
+  run grep -F -- "- response_sha256: ${response_hash}" "$provenance"
+  [ "$status" -eq 0 ]
+  run grep -F -- "- raw_capture_deleted: true" "$provenance"
+  [ "$status" -eq 0 ]
+  run grep -F -- "- sanitized_response: true" "$provenance"
+  [ "$status" -eq 0 ]
+
+  # The report the wrapper wrote must satisfy the same rule in the strict docs
+  # validator. Positive control first: flipping only the verdict to revise must make
+  # the validator flag the empty debate field, proving it reached this report.
+  sed -i.bak 's/^- verdict: accept$/- verdict: revise/' "$report" && rm -f "${report}.bak"
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  assert_contains "$output" "objection is present but empty in adversarial evaluator report: $report"
+  sed -i.bak 's/^- verdict: revise$/- verdict: accept/' "$report" && rm -f "${report}.bak"
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  refute_contains "$output" "in adversarial evaluator report: $report"
+}
