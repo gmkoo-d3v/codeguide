@@ -1291,9 +1291,13 @@ write_handoff_request() {
   local review_style="$5"
   local strict_retry="${6:-false}"
   local raw_request_file
+  local plan_hash
 
   raw_request_file="$(mktemp)"
   register_tmp_file "$raw_request_file"
+  # Hash of the plan file as it is embedded below; the provenance copies it from here and the
+  # evidence verifier compares it with the plan file at gate time.
+  plan_hash="$(file_sha256_ref "$PLAN_FILE")"
 
   cat > "$raw_request_file" <<EOF
 # External plan review request (${evaluator})
@@ -1305,6 +1309,7 @@ write_handoff_request() {
 - review_round: ${REVIEW_ROUND}
 - primary_author_tool: ${PRIMARY_TOOL}
 - source_plan_file: ${PLAN_FILE}
+- plan_sha256: ${plan_hash}
 - expected_response_file: ${response_file}
 - command_response_path: ${command_response_file}
 - sanitized_response_file: ${response_file}
@@ -1871,6 +1876,8 @@ write_response_provenance_file() {
   local provenance_file
   local now_utc
   local response_hash
+  local request_hash
+  local plan_hash
   local evaluator_requested_runner
   local evaluator_actual_runner
   local evaluator_requested_cli_model
@@ -1881,6 +1888,14 @@ write_response_provenance_file() {
   ensure_handoff_path "$provenance_file" "response_provenance_file"
   now_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   response_hash="$(file_sha256_ref "$response_file")"
+  request_hash="$(file_sha256_ref "$request_file")"
+  # The plan hash the request recorded when it was written is authoritative: a manual response
+  # ingested after the plan changed must not re-bind itself to the newer plan. A request written
+  # before plan hashing existed has none, so the current plan is the only thing left to bind.
+  plan_hash="$(capsule_field_value "$request_file" "plan_sha256")"
+  if [[ -z "$plan_hash" ]]; then
+    plan_hash="$(file_sha256_ref "$PLAN_FILE")"
+  fi
   evaluator_requested_runner="$(model_runner_for "$evaluator_requested_model")"
   evaluator_actual_runner="$(model_runner_for "$evaluator_actual_model")"
   evaluator_requested_cli_model="$(model_cli_model_for "$evaluator_requested_model")"
@@ -1912,6 +1927,8 @@ write_response_provenance_file() {
 - request_file: ${request_file}
 - response_file: ${response_file}
 - response_sha256: ${response_hash}
+- request_sha256: ${request_hash}
+- plan_sha256: ${plan_hash}
 - command_response_path: ${command_response_file}
 - raw_capture_deleted: true
 - sanitized_response: true

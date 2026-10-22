@@ -27,14 +27,19 @@ The route is satisfied when ANY recognised set verifies completely. For the set 
               where a present-but-empty value is the coherent "nothing to object to" answer
   request     present; task_id / plan_version / review_round / evaluator (== route) match;
               sanitized_response_file, expected_response_file and command_response_path
-              name this very response / raw-capture file
+              name this very response / raw-capture file; plan_sha256 equals the one the
+              provenance recorded
   provenance  present; artifact_kind and generated_by are the wrapper's; task_id,
               plan_version, review_round match the consumed plan and round; requested and
               actual route both equal the required route and no quota fallback happened;
               verdict is accept and equals the response's; request_file / response_file /
               command_response_path name the companion files; raw_capture_deleted and
-              sanitized_response are true; response_sha256 equals the SHA-256 recomputed
-              from the response file's bytes right now
+              sanitized_response are true; response_sha256 and request_sha256 equal the
+              SHA-256 recomputed from the response and request files' bytes right now;
+              plan_sha256 equals the SHA-256 of docs/plan/PLAN-<task>-<plan-version>.md
+              right now, so a plan edited after its review no longer counts as reviewed
+              (a manifest without request_sha256 or plan_sha256 predates this binding and
+              is rejected: run a new review round)
 
 Recorded paths are compared by their TAIL (<task>/external-cli/<plan-version>/<round>/<file>,
 or just the file name when the manifest recorded a bare name). The wrapper records absolute
@@ -130,6 +135,16 @@ def candidates(slug: str) -> tuple[dict[str, str], ...]:
     )
 
 
+def plan_path_for(result_dir: Path, task_id: str, plan_version: str) -> Path | None:
+    """docs/plan/PLAN-<task>-<version>.md for a round directory
+    docs/orchestration/<task>/external-cli/<version>/<round>; None when the directory is not
+    laid out that way."""
+    parts = result_dir.parts
+    if len(parts) < 6 or parts[-5] != "orchestration" or parts[-3] != "external-cli":
+        return None
+    return Path(*parts[:-5]) / "plan" / f"PLAN-{task_id}-{plan_version}.md"
+
+
 def verify_set(
     names: dict[str, str],
     result_dir: Path,
@@ -137,6 +152,7 @@ def verify_set(
     task_id: str,
     plan_version: str,
     review_round: str,
+    plan_path: Path | None,
 ) -> list[str]:
     problems: list[str] = []
     response_path = result_dir / names["response"]
@@ -161,6 +177,7 @@ def verify_set(
     # --- provenance (read first: it decides whether adversarial fields are required) ---
     provenance_text = ""
     review_style = ""
+    recorded_plan_hash: str | None = None
     if not regular_file(provenance_path):
         problems.append(f"provenance manifest is missing: {names['provenance']}")
     else:
@@ -201,6 +218,26 @@ def verify_set(
             problems.append(
                 "provenance response_sha256 does not match the response file (edited, truncated or replaced after the wrapper hashed it)"
             )
+        # The request and the plan it embeds are bound the same way as the response: a manifest
+        # that predates this binding, or one whose files changed afterwards, is not evidence.
+        recorded_request_hash = field(provenance_text, "request_sha256")
+        if not recorded_request_hash:
+            problems.append("provenance request_sha256 is missing (recorded before request hashing; run a new review round)")
+        elif regular_file(request_path) and recorded_request_hash != sha256_ref(request_path):
+            problems.append(
+                "provenance request_sha256 does not match the request file (edited, truncated or replaced after the wrapper hashed it)"
+            )
+        recorded_plan_hash = field(provenance_text, "plan_sha256")
+        if not recorded_plan_hash:
+            problems.append("provenance plan_sha256 is missing (recorded before plan hashing; run a new review round)")
+        elif plan_path is None or not plan_path.is_file():
+            problems.append(
+                f"plan file PLAN-{task_id}-{plan_version}.md was not found under docs/plan, so plan_sha256 cannot be verified"
+            )
+        elif recorded_plan_hash != sha256_ref(plan_path):
+            problems.append(
+                f"provenance plan_sha256 does not match PLAN-{task_id}-{plan_version}.md (the plan changed after this review; run a new review round)"
+            )
         if not tail_matches(field(provenance_text, "response_file"), response_tail):
             problems.append(f"provenance response_file does not name {names['response']} of this round")
         if not tail_matches(field(provenance_text, "request_file"), request_tail):
@@ -240,6 +277,8 @@ def verify_set(
                     problems.append(f"request {key} is '{got if got is not None else 'missing'}', expected '{wanted}'")
             if review_style and field(request_text, "review_style") != review_style:
                 problems.append("request review_style disagrees with the provenance review_style")
+            if recorded_plan_hash and field(request_text, "plan_sha256") != recorded_plan_hash:
+                problems.append("request plan_sha256 disagrees with the provenance plan_sha256")
             for key, tail, label in (
                 ("sanitized_response_file", response_tail, names["response"]),
                 ("expected_response_file", response_tail, names["response"]),
@@ -280,9 +319,10 @@ def main(argv: list[str]) -> int:
         print("no recognised response file carries verdict: accept")
         return 1
 
+    plan_path = plan_path_for(directory, task_id, plan_version)
     all_problems: list[str] = []
     for names in present:
-        problems = verify_set(names, directory, route, task_id, plan_version, review_round)
+        problems = verify_set(names, directory, route, task_id, plan_version, review_round, plan_path)
         if not problems:
             return 0
         prefix = f"[{names['label']}] " if len(present) > 1 else ""
