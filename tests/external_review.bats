@@ -1931,13 +1931,27 @@ for route, cli_model in expected.items():
     assert models[route]["cli_model"] == cli_model, (route, models[route]["cli_model"])
 PY
   [ "$status" -eq 0 ]
+}
 
-  if command -v agy >/dev/null 2>&1; then
-    run agy models
-    [ "$status" -eq 0 ]
-    local catalog="$output"
-    local cli_models
-    cli_models="$(python3 - "$registry_file" <<'PY'
+@test "bundled agy routes are listed by the live agy model catalog (opt-in: CODEGUIDE_LIVE_AGY_CATALOG=1)" {
+  # `agy models` is the real, authenticated agy binary. The default run must never reach it
+  # (it used to run whenever an agy happened to be on PATH), so the comparison against the
+  # live catalog runs only when asked for explicitly; the static map above stays always on.
+  if [[ "${CODEGUIDE_LIVE_AGY_CATALOG:-}" != "1" ]]; then
+    skip "live agy catalog check is opt-in: set CODEGUIDE_LIVE_AGY_CATALOG=1"
+  fi
+  command -v agy >/dev/null 2>&1 || {
+    echo "CODEGUIDE_LIVE_AGY_CATALOG=1 was set but agy is not on PATH" >&2
+    return 1
+  }
+
+  local registry_file="$SCRIPTS_DIR/../config/ai_model_registry.json"
+
+  run agy models
+  [ "$status" -eq 0 ]
+  local catalog="$output"
+  local cli_models
+  cli_models="$(python3 - "$registry_file" <<'PY'
 import json
 import sys
 
@@ -1949,11 +1963,10 @@ for route, model in registry["models"].items():
         print(model["cli_model"])
 PY
 )"
-    local cli_model
-    while IFS= read -r cli_model; do
-      assert_contains "$catalog" "$cli_model"
-    done <<< "$cli_models"
-  fi
+  local cli_model
+  while IFS= read -r cli_model; do
+    assert_contains "$catalog" "$cli_model"
+  done <<< "$cli_models"
 }
 
 @test "run_external_plan_reviews loads runner routes from registry override and still stops on quota" {
