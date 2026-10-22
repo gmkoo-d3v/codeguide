@@ -74,6 +74,12 @@ AXIS_HOW=""
 AXIS_WHERE=""
 AXIS_VERIFY=""
 EXECUTION_MODE="solo"
+# Whether the user actually typed these options. The values above/below are DEFAULTS for
+# validation; forwarding a default to doc_garden.sh as if it were an instruction rewrote an
+# existing ORCH capsule's execution_mode / preflight record on every plain run.
+EXECUTION_MODE_EXPLICIT="false"
+RISK_PREFLIGHT_RECORDED_BY_EXPLICIT="false"
+SUPERVISOR_AGENT_EXPLICIT="false"
 RISK_PREFLIGHT_STATUS=""
 RISK_PREFLIGHT_RECORDED_BY="main-thread-supervising-lead-architect"
 RISK_PREFLIGHT_SUMMARY=""
@@ -202,6 +208,7 @@ while [[ $# -gt 0 ]]; do
     --execution-mode)
       require_option_value "$1" "$#"
       EXECUTION_MODE="${2:-}"
+      EXECUTION_MODE_EXPLICIT="true"
       shift 2
       ;;
     --risk-preflight-status)
@@ -212,6 +219,7 @@ while [[ $# -gt 0 ]]; do
     --risk-preflight-recorded-by)
       require_option_value "$1" "$#"
       RISK_PREFLIGHT_RECORDED_BY="${2:-}"
+      RISK_PREFLIGHT_RECORDED_BY_EXPLICIT="true"
       shift 2
       ;;
     --risk-preflight-summary)
@@ -232,6 +240,7 @@ while [[ $# -gt 0 ]]; do
     --supervisor-agent)
       require_option_value "$1" "$#"
       SUPERVISOR_AGENT="${2:-}"
+      SUPERVISOR_AGENT_EXPLICIT="true"
       shift 2
       ;;
     --planner-agents)
@@ -644,6 +653,30 @@ RESOLVED_DECISION_ID="$(infer_decision_id "$BRANCH" "$RESOLVED_TASK_ID")"
 RESOLVED_MODE="$(resolve_validation_mode "$RESOLVED_SCOPE")"
 RESOLVED_DELEGATION_STATUS="$(resolve_delegation_status)"
 
+# Fail-closed external review gate. validate_docs advisory warnings are deliberately
+# non-fatal below (a general task with warnings must still reach runtime validation), but a
+# task whose ORCH requires an ingested external review before implementation starts must not
+# slip through on a WARN: this is the one check here whose answer is an exit code. It runs
+# BEFORE any docs mutation or runtime command, so a refusal leaves no side effects, and only
+# when this run moves the task into implementation (in_progress) or closes it (done);
+# --task-status planned/blocked is planning or parking and stays allowed. A task with no
+# ORCH requirement (every general task, and any brand-new one) passes silently.
+# The grep is only a cheap pre-filter so general tasks do not pay for a second validator
+# start-up: it is a deliberate SUPERSET of what the gate treats as `implementation_start`
+# (looser whitespace, no fence awareness), so it can send a task to the gate needlessly but
+# can never skip one the gate would have judged.
+EXTERNAL_REVIEW_GATE_ORCH="$(codeguide_orchestration_file "$PROJECT_ROOT_ABS" "$RESOLVED_TASK_ID")"
+if [[ "$TASK_STATUS" == "in_progress" || "$TASK_STATUS" == "done" ]] \
+  && [[ -f "$EXTERNAL_REVIEW_GATE_ORCH" ]] \
+  && grep -Eq '^-[[:space:]]*external_review_required_for:.*implementation_start' "$EXTERNAL_REVIEW_GATE_ORCH"; then
+  if ! EXTERNAL_REVIEW_GATE_OUTPUT="$("$VALIDATE_SCRIPT" "$PROJECT_ROOT_ABS" --gate external-review --task-id "$RESOLVED_TASK_ID" --to-status "$TASK_STATUS" 2>&1)"; then
+    printf '%s\n' "$EXTERNAL_REVIEW_GATE_OUTPUT" >&2
+    echo "[BLOCKED] external review gate is not satisfied for task ${RESOLVED_TASK_ID}: implementation (--task-status ${TASK_STATUS}) needs an ingested external review or a verified user waiver. Nothing was recorded and no runtime validation ran. Re-run with --task-status planned to keep planning, or complete the review (see references/orchestration-review-contract.md)." >&2
+    exit 1
+  fi
+  printf '%s\n' "$EXTERNAL_REVIEW_GATE_OUTPUT" | grep -E '^\[PASS\] external review await gate' || true
+fi
+
 if [[ "$EXECUTION_MODE" != "solo" && ( "$RISK_PREFLIGHT_STATUS" == "blocked" || "$RISK_PREFLIGHT_STATUS" == "approval_required" ) ]]; then
   RESOLVED_DELEGATION_STATUS="blocked"
   if [[ -z "$DELEGATION_NOTE" ]]; then
@@ -673,11 +706,29 @@ GARDEN_ARGS=(
   --scope-type "$RESOLVED_SCOPE"
   --chosen-by user
   --selected-option "$SELECTED_OPTION"
-  --execution-mode "$EXECUTION_MODE"
-  --risk-preflight-recorded-by "$RISK_PREFLIGHT_RECORDED_BY"
-  --supervisor-agent "$SUPERVISOR_AGENT"
-  --delegation-status "$RESOLVED_DELEGATION_STATUS"
 )
+
+# Only what the user actually passed is forwarded as an orchestration instruction. An
+# omitted option is left for doc_garden.sh, which keeps an existing ORCH capsule's value and
+# applies its own default only when the capsule has none (a new task still gets solo/pass).
+if [[ "$EXECUTION_MODE_EXPLICIT" == "true" ]]; then
+  GARDEN_ARGS+=(--execution-mode "$EXECUTION_MODE")
+fi
+
+if [[ "$RISK_PREFLIGHT_RECORDED_BY_EXPLICIT" == "true" ]]; then
+  GARDEN_ARGS+=(--risk-preflight-recorded-by "$RISK_PREFLIGHT_RECORDED_BY")
+fi
+
+if [[ "$SUPERVISOR_AGENT_EXPLICIT" == "true" ]]; then
+  GARDEN_ARGS+=(--supervisor-agent "$SUPERVISOR_AGENT")
+fi
+
+# delegation_status follows the task status; forward it only when the user set it or this
+# run stopped delegation (blocked preflight). Otherwise doc_garden.sh derives it from the
+# task status AND the preserved preflight record, so a pending approval keeps it blocked.
+if [[ -n "$DELEGATION_STATUS" || "$RESOLVED_DELEGATION_STATUS" == "blocked" ]]; then
+  GARDEN_ARGS+=(--delegation-status "$RESOLVED_DELEGATION_STATUS")
+fi
 
 if [[ -n "$RISK_PREFLIGHT_STATUS" ]]; then
   GARDEN_ARGS+=(--risk-preflight-status "$RISK_PREFLIGHT_STATUS")

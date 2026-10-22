@@ -727,3 +727,294 @@ EOF
 
   rm -rf "$workspace"
 }
+
+# ========== External review approval gate at the implementation transition ==========
+#
+# run_codeguide.sh used to run validate_docs in advisory mode and carry on: for a task
+# whose ORCH requires an ingested external review before implementation starts, the gate
+# WARN was indistinguishable from ordinary advisory noise and the runtime lint/test/e2e
+# phase ran anyway. These tests pin the split: ordinary advisory warnings stay
+# non-fatal, an unsatisfied approval gate stops the run (exit code) before any docs
+# mutation or runtime command.
+
+orch_field() {
+  sed -n "s/^- $2:[[:space:]]*//p" "$1" | head -n 1
+}
+
+# A planned task whose ORCH demands an ingested review of its consumed plan before
+# implementation may start. $2 is the ORCH external_review_status.
+make_review_required_task() {
+  local task_id="$1"
+  local review_status="$2"
+  local orch_file="$DOCS_ROOT/orchestration/${task_id}/ORCH.md"
+  local task_file="$DOCS_ROOT/task/TASK-${task_id}.md"
+
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "$task_id" --mode advisory --task-status planned
+  [ "$status" -eq 0 ]
+  sed -i.bak \
+    -e "s/^- external_review_status:.*/- external_review_status: ${review_status}/" \
+    -e "s/^- external_review_required_for:.*/- external_review_required_for: implementation_start/" \
+    -e "s/^- required_review_routes:.*/- required_review_routes: agy:current/" \
+    -e "s/^- external_review_round:.*/- external_review_round: r01/" \
+    "$orch_file"
+  rm -f "$orch_file.bak"
+  if grep -q '^- consumes_plan_ref:' "$task_file"; then
+    sed -i.bak "s/^- consumes_plan_ref:.*/- consumes_plan_ref: PLAN-${task_id}-v1.0/" "$task_file"
+    rm -f "$task_file.bak"
+  else
+    printf '%s\n' "- consumes_plan_ref: PLAN-${task_id}-v1.0" >> "$task_file"
+  fi
+}
+
+@test "run_codeguide stops before docs mutation and runtime validation when the required external review gate is unsatisfied" {
+  make_review_required_task "run-gate-block-01" "requested"
+  local task_file="$DOCS_ROOT/task/TASK-run-gate-block-01.md"
+  local marker="$TEST_WORKSPACE/runtime-ran-block"
+  local allow_file="$TEST_WORKSPACE/runtime-allow-block.txt"
+  printf 'touch\n' > "$allow_file"
+
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "run-gate-block-01" --mode advisory \
+    --task-status in_progress \
+    --change-scope code-or-runtime \
+    --runtime-test-cmd "touch $marker" \
+    --runtime-allow-list "$allow_file"
+
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "[FAIL] external review await gate not satisfied for TASK-run-gate-block-01: external_review_status=requested"
+  assert_contains "$output" "[BLOCKED] external review gate"
+  # Fail closed: the runtime command never ran and the planned task was not flipped to in_progress.
+  [ ! -e "$marker" ]
+  run grep '^- status: planned' "$task_file"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_codeguide also blocks closing a gated task as done while the review gate is unsatisfied" {
+  make_review_required_task "run-gate-block-done-01" "not_requested"
+
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "run-gate-block-done-01" --mode advisory --task-status done
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "[BLOCKED] external review gate"
+  run grep '^- status: planned' "$DOCS_ROOT/task/TASK-run-gate-block-done-01.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_codeguide still proceeds to runtime validation past ordinary advisory warnings" {
+  local marker="$TEST_WORKSPACE/runtime-ran-advisory"
+  local allow_file="$TEST_WORKSPACE/runtime-allow-advisory.txt"
+  printf 'touch\n' > "$allow_file"
+
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "run-advisory-ok-01" --mode advisory \
+    --change-scope code-or-runtime \
+    --runtime-test-cmd "touch $marker" \
+    --runtime-allow-list "$allow_file"
+
+  # A general task with advisory warnings is not a failure: the split must not turn every
+  # warning into an exit code.
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "[WARN]"
+  [ -e "$marker" ]
+  refute_contains "$output" "[BLOCKED] external review gate"
+}
+
+@test "run_codeguide re-syncs a closed gated task but blocks reopening it without the review" {
+  make_review_required_task "run-gate-closed-01" "requested"
+  local task_file="$DOCS_ROOT/task/TASK-run-gate-closed-01.md"
+  # Close it directly, the way a historical task ended up done with a recorded review state.
+  sed -i.bak "s/^- status:.*/- status: done/" "$task_file"
+  rm -f "$task_file.bak"
+
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "run-gate-closed-01" --mode advisory --task-status done
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "[BLOCKED] external review gate"
+
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "run-gate-closed-01" --mode advisory --task-status in_progress
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "[BLOCKED] external review gate"
+  run grep '^- status: done' "$task_file"
+  [ "$status" -eq 0 ]
+}
+
+@test "run_codeguide does not apply the review gate to a planning-only run" {
+  make_review_required_task "run-gate-planning-01" "requested"
+
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "run-gate-planning-01" --mode advisory --task-status planned
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "[BLOCKED] external review gate"
+}
+
+@test "run_codeguide proceeds past the review gate with complete wrapper evidence and keeps the ORCH approval metadata" {
+  local task_id="run-gate-pass-01"
+  local orch_file="$DOCS_ROOT/orchestration/${task_id}/ORCH.md"
+  local marker="$TEST_WORKSPACE/runtime-ran-pass"
+  local allow_file="$TEST_WORKSPACE/runtime-allow-pass.txt"
+  printf 'touch\n' > "$allow_file"
+
+  make_review_required_task "$task_id" "ingested"
+  # Genuine wrapper output (mock runner CLI only). The wrapper also records the external
+  # review approval in ORCH: execution_mode / review_mode / preflight=approved.
+  create_mock_external_review_artifact "$task_id" "agy-current" >/dev/null
+  sed -i.bak \
+    -e "s/^- external_review_status:.*/- external_review_status: ingested/" \
+    -e "s/^- external_review_required_for:.*/- external_review_required_for: implementation_start/" \
+    -e "s/^- required_review_routes:.*/- required_review_routes: agy:current/" \
+    -e "s/^- external_review_round:.*/- external_review_round: r01/" \
+    -e "s#^- external_review_result_ref:.*#- external_review_result_ref: docs/orchestration/${task_id}/external-cli/v1.0/r01#" \
+    "$orch_file"
+  rm -f "$orch_file.bak"
+  [ "$(orch_field "$orch_file" risk_preflight_status)" = "approved" ]
+
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "$task_id" --mode advisory \
+    --task-status in_progress \
+    --change-scope code-or-runtime \
+    --runtime-test-cmd "touch $marker" \
+    --runtime-allow-list "$allow_file"
+
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "[PASS] external review await gate satisfied for PLAN-${task_id}-v1.0"
+  [ -e "$marker" ]
+  # Default options must not have rewritten the approval the wrapper recorded.
+  [ "$(orch_field "$orch_file" risk_preflight_status)" = "approved" ]
+  [ "$(orch_field "$orch_file" approval_required)" = "true" ]
+  [ "$(orch_field "$orch_file" approval_ref)" = "user-approval-${task_id}" ]
+  [ "$(orch_field "$orch_file" execution_mode)" = "supervisor_subagents" ]
+}
+
+# ---- ORCH approval / preflight metadata must survive default-option runs -----------------
+
+seed_external_review_orch() {
+  local task_id="$1"
+
+  run "$DOC_GARDEN" "$TEST_PROJECT" --task-id "$task_id" --task-title "Seeded external review capsule" \
+    --execution-mode "supervisor_subagents" \
+    --primary-author-tool "codex" \
+    --review-mode "external_cli" \
+    --risk-preflight-status "approved" \
+    --risk-preflight-recorded-by "main-thread-supervising-lead-architect" \
+    --risk-preflight-summary "user approved the external review of ${task_id}" \
+    --approval-ref "user-approval-${task_id}" \
+    --approved-next-step "run external review for ${task_id}" \
+    --supervisor-agent "main-thread-supervising-lead-architect" \
+    --planner-agents "codex-primary-author" \
+    --reviewer-agents "external-cli:agy:current" \
+    --implementation-agents "impl-a" \
+    --validation-agents "val-a" \
+    --owned-scopes "scope-a" \
+    --delegation-note "Seeded review capsule; implementation stays on the main thread."
+  [ "$status" -eq 0 ]
+}
+
+assert_seeded_orch_intact() {
+  local task_id="$1"
+  local orch_file="$DOCS_ROOT/orchestration/${task_id}/ORCH.md"
+
+  [ "$(orch_field "$orch_file" execution_mode)" = "supervisor_subagents" ]
+  [ "$(orch_field "$orch_file" review_mode)" = "external_cli" ]
+  [ "$(orch_field "$orch_file" risk_preflight_status)" = "approved" ]
+  [ "$(orch_field "$orch_file" risk_preflight_summary)" = "user approved the external review of ${task_id}" ]
+  [ "$(orch_field "$orch_file" approval_required)" = "true" ]
+  [ "$(orch_field "$orch_file" approval_ref)" = "user-approval-${task_id}" ]
+  [ "$(orch_field "$orch_file" approved_next_step)" = "run external review for ${task_id}" ]
+  [ "$(orch_field "$orch_file" supervisor_agent)" = "main-thread-supervising-lead-architect" ]
+  [ "$(orch_field "$orch_file" delegation_note)" = "Seeded review capsule; implementation stays on the main thread." ]
+}
+
+@test "run_codeguide default options do not overwrite an existing external-review ORCH capsule" {
+  seed_external_review_orch "run-orch-keep-01"
+  assert_seeded_orch_intact "run-orch-keep-01"
+
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "run-orch-keep-01" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_seeded_orch_intact "run-orch-keep-01"
+  # ... and the capsule it left behind is still self-consistent for the validator.
+  refute_contains "$output" "orchestration review_mode=external_cli requires risk_preflight_status=approved"
+  refute_contains "$output" "orchestration execution_mode=solo contradicts"
+  refute_contains "$output" "orchestration risk_preflight_status=pass requires approval_required=false"
+}
+
+@test "doc_garden default options do not overwrite an existing external-review ORCH capsule" {
+  seed_external_review_orch "garden-orch-keep-01"
+
+  run "$DOC_GARDEN" "$TEST_PROJECT" --task-id "garden-orch-keep-01"
+  [ "$status" -eq 0 ]
+  assert_seeded_orch_intact "garden-orch-keep-01"
+}
+
+@test "an explicit option still overwrites the matching ORCH field (only implicit defaults are held back)" {
+  seed_external_review_orch "run-orch-explicit-01"
+  local orch_file="$DOCS_ROOT/orchestration/run-orch-explicit-01/ORCH.md"
+
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "run-orch-explicit-01" --mode advisory \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-run-orch-explicit-01-r2" \
+    --approved-next-step "run the second external review round" \
+    --risk-preflight-summary "user re-approved a second round"
+  [ "$status" -eq 0 ]
+  [ "$(orch_field "$orch_file" approval_ref)" = "user-approval-run-orch-explicit-01-r2" ]
+  [ "$(orch_field "$orch_file" approved_next_step)" = "run the second external review round" ]
+  [ "$(orch_field "$orch_file" risk_preflight_summary)" = "user re-approved a second round" ]
+  # The untouched fields keep their seeded values.
+  [ "$(orch_field "$orch_file" review_mode)" = "external_cli" ]
+  [ "$(orch_field "$orch_file" supervisor_agent)" = "main-thread-supervising-lead-architect" ]
+
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "run-orch-explicit-01" --mode advisory \
+    --execution-mode "solo" \
+    --risk-preflight-status "pass"
+  [ "$status" -eq 0 ]
+  [ "$(orch_field "$orch_file" execution_mode)" = "solo" ]
+  [ "$(orch_field "$orch_file" risk_preflight_status)" = "pass" ]
+  [ "$(orch_field "$orch_file" approval_required)" = "false" ]
+}
+
+@test "a preflight recorded for one execution mode is never carried across an explicit mode change" {
+  # Escalation: the capsule's `pass` was granted for solo work. Asking for
+  # supervisor_subagents needs its own explicit preflight, exactly as it always did.
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "run-orch-escalate-01" --mode advisory
+  [ "$status" -eq 0 ]
+
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "run-orch-escalate-01" --mode advisory \
+    --execution-mode "supervisor_subagents"
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "--risk-preflight-status is required before delegated orchestration"
+
+  run "$DOC_GARDEN" "$TEST_PROJECT" --task-id "run-orch-escalate-01" --execution-mode "supervisor_subagents"
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "requires --risk-preflight-status"
+  [ "$(orch_field "$DOCS_ROOT/orchestration/run-orch-escalate-01/ORCH.md" execution_mode)" = "solo" ]
+
+  # De-escalation: an approval granted for delegated work does not follow the task back to solo.
+  seed_external_review_orch "run-orch-deescalate-01"
+  local orch_file="$DOCS_ROOT/orchestration/run-orch-deescalate-01/ORCH.md"
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "run-orch-deescalate-01" --mode advisory --execution-mode "solo"
+  [ "$status" -eq 0 ]
+  [ "$(orch_field "$orch_file" execution_mode)" = "solo" ]
+  [ "$(orch_field "$orch_file" risk_preflight_status)" = "pass" ]
+  [ "$(orch_field "$orch_file" approval_required)" = "false" ]
+}
+
+@test "default options keep a blocked delegation blocked while the preflight still needs approval" {
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "run-orch-blocked-01" --mode advisory \
+    --execution-mode "supervisor_subagents" \
+    --risk-preflight-status "approval_required"
+  [ "$status" -eq 0 ]
+  local orch_file="$DOCS_ROOT/orchestration/run-orch-blocked-01/ORCH.md"
+  [ "$(orch_field "$orch_file" delegation_status)" = "blocked" ]
+
+  # A later default run must neither lift the block nor forget that approval is pending.
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "run-orch-blocked-01" --mode advisory
+  [ "$status" -eq 0 ]
+  [ "$(orch_field "$orch_file" risk_preflight_status)" = "approval_required" ]
+  [ "$(orch_field "$orch_file" approval_required)" = "true" ]
+  [ "$(orch_field "$orch_file" delegation_status)" = "blocked" ]
+}
+
+@test "default options keep an existing solo delegation_note instead of the generic default" {
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "run-orch-solo-note-01" --mode advisory \
+    --delegation-note "Solo on purpose: single-file edit, delegation cost exceeds the work."
+  [ "$status" -eq 0 ]
+  local orch_file="$DOCS_ROOT/orchestration/run-orch-solo-note-01/ORCH.md"
+
+  run "$RUN_CODEGUIDE" "$TEST_PROJECT" --task-id "run-orch-solo-note-01" --mode advisory
+  [ "$status" -eq 0 ]
+  [ "$(orch_field "$orch_file" delegation_note)" = "Solo on purpose: single-file edit, delegation cost exceeds the work." ]
+}

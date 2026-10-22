@@ -44,6 +44,7 @@ Use this reference when planning or evaluating local quality checks, CI gates, a
 - Run doc sync for each task/decision update: `scripts/doc_garden.sh <project-root> ...`.
 - Run local docs validation in warning mode: `scripts/validate_docs.sh <project-root> --mode advisory`.
 - Run CI docs validation in blocking mode: `scripts/validate_docs.sh <project-root> --mode strict`.
+- Decide by exit code whether review-gated implementation may start: `scripts/validate_docs.sh <project-root> --gate external-review [--task-id <id>]` (0 = not required or satisfied, 1 = required and not satisfied); `run_codeguide.sh` applies it automatically to `--task-status in_progress|done` runs.
 - Ensure 5-axis records are present in docs:
   - decisions: Why/What/How/Where/Verify
   - tasks: Why/Where/Verify
@@ -73,6 +74,8 @@ Use `<skill-dir>` for the directory containing this skill package and `SKILL.md`
   - `--resume-checkpoint` writes the seven `resume_*` fields onto the task file (contract: `references/session-resume-contract.md`): `resume_source_head`, `resume_changed_files` (capped at 10 with `+N more`), `resume_checkpointed_at`, `resume_state_revision` (incremented per run), plus optional `resume_next_action`, `resume_last_verified`, `resume_blockers`. It is a surgical read-modify-write that bypasses scaffold init and shadow refresh, serialized with the same lock primitive as the index writers so concurrent sub-agent checkpoints cannot race on the revision. Requires an existing task file; records `unborn`/`no-source-repo` states instead of failing under `set -e`.
 - `<skill-dir>/scripts/validate_docs.sh <project-root> --mode advisory`
 - `<skill-dir>/scripts/validate_docs.sh <project-root> --mode strict`
+- `<skill-dir>/scripts/validate_docs.sh <project-root> --gate external-review --task-id <TASK_ID>`
+  - Fail-closed external review await gate for the implementation-start transition: evaluates only that gate (unrelated advisory findings cannot fail or dilute it) and exits 0 or 1. Evidence verification (`validate_docs_review_evidence.py`) requires the wrapper's request, response and provenance set with a matching SHA-256; a waiver must cite an existing accepted user decision linked to the task. `--format json` is supported.
 - `<skill-dir>/scripts/check_english_docs.sh <skill-dir>`
 - `<skill-dir>/scripts/codeguide shadow-impact <project-root>` (`shadow_impact_report.py`)
 - `<skill-dir>/scripts/codeguide shadow-effect-impact <project-root>` (`shadow_effect_impact_report.py`)

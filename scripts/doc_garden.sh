@@ -117,6 +117,11 @@ AXIS_HOW=""
 AXIS_WHERE=""
 AXIS_VERIFY=""
 EXECUTION_MODE="solo"
+# Whether the caller actually passed these options. Their values are DEFAULTS until then;
+# see seed_orchestration_options_from_existing_capsule for why that distinction matters.
+EXECUTION_MODE_EXPLICIT="false"
+RISK_PREFLIGHT_RECORDED_BY_EXPLICIT="false"
+SUPERVISOR_AGENT_EXPLICIT="false"
 PRIMARY_AUTHOR_TOOL=""
 REVIEW_MODE=""
 RISK_PREFLIGHT_STATUS=""
@@ -421,6 +426,7 @@ while [[ $# -gt 0 ]]; do
     --execution-mode)
       require_option_value "$1" "$#"
       EXECUTION_MODE="${2:-}"
+      EXECUTION_MODE_EXPLICIT="true"
       shift 2
       ;;
     --primary-author-tool)
@@ -441,6 +447,7 @@ while [[ $# -gt 0 ]]; do
     --risk-preflight-recorded-by)
       require_option_value "$1" "$#"
       RISK_PREFLIGHT_RECORDED_BY="${2:-}"
+      RISK_PREFLIGHT_RECORDED_BY_EXPLICIT="true"
       shift 2
       ;;
     --risk-preflight-summary)
@@ -461,6 +468,7 @@ while [[ $# -gt 0 ]]; do
     --supervisor-agent)
       require_option_value "$1" "$#"
       SUPERVISOR_AGENT="${2:-}"
+      SUPERVISOR_AGENT_EXPLICIT="true"
       shift 2
       ;;
     --planner-agents)
@@ -575,6 +583,110 @@ if [[ "$RESUME_CHECKPOINT" != "true" && ( -n "$RESUME_NEXT_ACTION" || -n "$RESUM
   exit 1
 fi
 
+THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$THIS_DIR/codeguide_paths.sh"
+CODEGUIDE_DOC_LINES_SCRIPT_DIR="$THIS_DIR"
+source "$THIS_DIR/codeguide_doc_lines.sh"
+# Main shell, before anything is read or written. Every other refusal in the adapter is
+# observable only one command substitution deep, because bash 3.2.57 does not inherit
+# `set -e` into a substitution subshell; this one is checked where `set -e` is in force, so
+# it holds no matter how deeply a future caller nests the read.
+require_shared_reader
+
+PROJECT_ROOT_ABS="$(codeguide_resolve_project_root "$PROJECT_ROOT")"
+SOURCE_ROOT_ABS="$(codeguide_source_root "$PROJECT_ROOT" || true)"
+
+# An omitted orchestration option must not silently rewrite an existing ORCH capsule. The
+# CLI defaults (solo / pass / the generic recorder and supervisor names) used to be upserted
+# as if the caller had asked for them, so ONE default-option run over a capsule recording an
+# approved external review reset execution_mode and the whole preflight record while
+# review_mode: external_cli stayed -- a self-contradicting capsule that had also lost its
+# approval provenance. Effective value = what the caller passed, else what the capsule
+# already records (only when that recorded value is itself valid), else the default. A task
+# with no capsule yet is untouched, so a new task still starts as solo/pass.
+#
+# The preflight record (status, summary, approval ref, approved next step) is one unit: it is
+# adopted only when the caller passed none of its members, and an `approved` record only when
+# its approval ref and approved step are concrete, so adopting it can never trip the
+# "approved needs concrete approval metadata" refusal below. execution_mode=supervisor_subagents
+# is adopted only together with a valid preflight record for the same reason. A preflight is
+# also never carried across a change of execution mode: a `pass` recorded for solo work must not
+# authorize a caller who now asks for supervisor_subagents (and an approval granted for
+# delegated work does not follow a de-escalation to solo), so an explicit --execution-mode that
+# differs from the recorded one needs its own explicit preflight, exactly as before.
+seed_orchestration_options_from_existing_capsule() {
+  local orch_file
+  local existing
+  local existing_mode=""
+  local existing_status=""
+  local existing_ref=""
+  local existing_step=""
+  local seed_preflight="false"
+  local mode_changed="false"
+  local normalized
+
+  EXISTING_ORCH_DELEGATION_NOTE=""
+  [[ -n "$TASK_ID" ]] || return 0
+  orch_file="$(codeguide_orchestration_file "$PROJECT_ROOT_ABS" "$TASK_ID")"
+  [[ -f "$orch_file" ]] || return 0
+
+  EXISTING_ORCH_DELEGATION_NOTE="$(unfenced_field_value "$orch_file" "delegation_note")"
+  existing_mode="$(unfenced_field_value "$orch_file" "execution_mode")"
+  if [[ "$EXECUTION_MODE_EXPLICIT" == "true" && "$EXECUTION_MODE" != "$existing_mode" ]]; then
+    mode_changed="true"
+  fi
+
+  if [[ "$mode_changed" != "true" && -z "$RISK_PREFLIGHT_STATUS" && -z "$RISK_PREFLIGHT_SUMMARY" && -z "$APPROVAL_REF" && -z "$APPROVED_NEXT_STEP" ]]; then
+    existing_status="$(unfenced_field_value "$orch_file" "risk_preflight_status")"
+    existing_ref="$(unfenced_field_value "$orch_file" "approval_ref")"
+    existing_step="$(unfenced_field_value "$orch_file" "approved_next_step")"
+    case "$existing_status" in
+      pass|blocked|approval_required) seed_preflight="true" ;;
+      approved)
+        if ! is_placeholder_approval_value "$existing_ref" && ! is_placeholder_approval_value "$existing_step"; then
+          seed_preflight="true"
+        fi
+        ;;
+    esac
+  fi
+
+  if [[ "$EXECUTION_MODE_EXPLICIT" != "true" ]]; then
+    case "$existing_mode" in
+      solo) EXECUTION_MODE="solo" ;;
+      supervisor_subagents)
+        if [[ "$seed_preflight" == "true" || -n "$RISK_PREFLIGHT_STATUS" ]]; then
+          EXECUTION_MODE="supervisor_subagents"
+        fi
+        ;;
+    esac
+  fi
+
+  if [[ "$SUPERVISOR_AGENT_EXPLICIT" != "true" ]]; then
+    existing="$(unfenced_field_value "$orch_file" "supervisor_agent")"
+    if [[ -n "$existing" ]]; then
+      SUPERVISOR_AGENT="$existing"
+    fi
+  fi
+
+  if [[ "$RISK_PREFLIGHT_RECORDED_BY_EXPLICIT" != "true" ]]; then
+    existing="$(unfenced_field_value "$orch_file" "risk_preflight_recorded_by")"
+    normalized="$(printf "%s" "$existing" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    case "$normalized" in
+      ""|antigravity|agy|claude|codex|gemini|external-runner|external-review-wrapper|external-cli*) ;;
+      *) RISK_PREFLIGHT_RECORDED_BY="$existing" ;;
+    esac
+  fi
+
+  if [[ "$seed_preflight" == "true" ]]; then
+    RISK_PREFLIGHT_STATUS="$existing_status"
+    RISK_PREFLIGHT_SUMMARY="$(unfenced_field_value "$orch_file" "risk_preflight_summary")"
+    APPROVAL_REF="$existing_ref"
+    APPROVED_NEXT_STEP="$existing_step"
+  fi
+}
+
+seed_orchestration_options_from_existing_capsule
+
 validate_task_status "$TASK_STATUS"
 if [[ -n "$RISK_LEVEL" ]]; then
   validate_risk_level "$RISK_LEVEL"
@@ -669,7 +781,10 @@ if [[ "$NEEDS_RISK_PREFLIGHT" == "true" && ( "$RISK_PREFLIGHT_STATUS" == "blocke
   fi
 fi
 
-if [[ "$EXECUTION_MODE" == "solo" && -z "$DELEGATION_NOTE" ]]; then
+# The generic note is only a default for a capsule that has no explanation yet: a solo
+# capsule's delegation_note is where the exception is justified, and a default-option run
+# must not replace that justification with boilerplate.
+if [[ "$EXECUTION_MODE" == "solo" && -z "$DELEGATION_NOTE" && -z "$EXISTING_ORCH_DELEGATION_NOTE" ]]; then
   DELEGATION_NOTE="Solo execution selected; no sub-agent or external review requested."
 fi
 
@@ -692,18 +807,6 @@ if [[ -z "$DELEGATION_STATUS" ]]; then
   esac
 fi
 
-THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$THIS_DIR/codeguide_paths.sh"
-CODEGUIDE_DOC_LINES_SCRIPT_DIR="$THIS_DIR"
-source "$THIS_DIR/codeguide_doc_lines.sh"
-# Main shell, before anything is read or written. Every other refusal in the adapter is
-# observable only one command substitution deep, because bash 3.2.57 does not inherit
-# `set -e` into a substitution subshell; this one is checked where `set -e` is in force, so
-# it holds no matter how deeply a future caller nests the read.
-require_shared_reader
-
-PROJECT_ROOT_ABS="$(codeguide_resolve_project_root "$PROJECT_ROOT")"
-SOURCE_ROOT_ABS="$(codeguide_source_root "$PROJECT_ROOT" || true)"
 INIT_SCRIPT="$THIS_DIR/init_docs_scaffold.sh"
 DOCS_DIR="$(codeguide_docs_root "$PROJECT_ROOT_ABS")"
 TASK_DIR="$DOCS_DIR/task"

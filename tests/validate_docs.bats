@@ -124,6 +124,133 @@ EOF
   printf "%s\n" "docs/orchestration/${task_id}/external-cli/${plan_version}/${review_round}"
 }
 
+# --- Genuine review evidence -------------------------------------------------------
+# create_await_gate_result_dir above writes BARE `*.response.md` files: no companion
+# request, no provenance manifest, no hash. That is exactly what the gate used to accept,
+# so it is now the NEGATIVE fixture. The POSITIVE fixture must be real
+# run_external_plan_reviews.sh output, otherwise these tests would certify an evidence
+# format somebody made up. Every runner binary (agy, claude, codex) is a mock on PATH, so
+# no external CLI is ever invoked.
+GATE_MOCK_ACCEPT='cat <<EOT
+- verdict: accept
+- summary: Mock reviewer accepts the bounded plan.
+- strengths: The fixture is deterministic.
+- risks: Fixture only.
+- requested_changes: None.
+EOT'
+
+gate_mock_runner_bins() {
+  local mock_bin="$1"
+  local emit_body="$2"
+
+  mkdir -p "$mock_bin"
+  write_mock_cli "$mock_bin/agy" "#!/usr/bin/env bash
+${emit_body}"
+  write_mock_cli "$mock_bin/claude" "#!/usr/bin/env bash
+${emit_body}"
+  write_mock_cli "$mock_bin/codex" "#!/usr/bin/env bash
+output_file=\"/dev/stdout\"
+while [[ \$# -gt 0 ]]; do
+  if [[ \"\$1\" == \"--output-last-message\" ]]; then
+    output_file=\"\${2:-}\"
+    shift 2
+  else
+    shift
+  fi
+done
+{
+${emit_body}
+} > \"\$output_file\""
+}
+
+# create_genuine_review_evidence <task> <plan-version> <round> <emit-body> <alias>...
+# Prints the repo-relative round directory. Call it BEFORE write_await_gate_fixture: the
+# fixture writer overwrites ORCH.md, the task file and the plan but leaves the
+# external-cli/ artifacts alone. The wrapper's exit status is deliberately ignored
+# because the incomplete-response mock makes it fail on purpose.
+create_genuine_review_evidence() {
+  local task_id="$1"
+  local plan_version="$2"
+  local review_round="$3"
+  local emit_body="$4"
+  shift 4
+  local mock_bin="$TEST_WORKSPACE/gate-mock-bin-${task_id}-${review_round}"
+  local reviewer_args=()
+  local alias_name
+
+  mkdir -p "$DOCS_ROOT/plan"
+  cat > "$DOCS_ROOT/plan/PLAN-${task_id}-${plan_version}.md" <<EOF
+# PLAN-${task_id}-${plan_version}
+
+- task_id: ${task_id}
+- plan_version: ${plan_version}
+- objective: genuine external review evidence for gate tests
+- scope: validate_docs test
+- assumptions: mock runner CLIs only
+- risks: low
+- acceptance_signals: wrapper writes request, response and provenance
+- stop_conditions: wrapper completes
+- owner: test
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+
+  gate_mock_runner_bins "$mock_bin" "$emit_body"
+  for alias_name in "$@"; do
+    # Extra wrapper flags (e.g. --adversarial-all) pass through; bare words are reviewers.
+    if [[ "$alias_name" == --* ]]; then
+      reviewer_args+=("$alias_name")
+    else
+      reviewer_args+=(--reviewer "$alias_name")
+    fi
+  done
+  env PATH="$mock_bin:$PATH" bash "$RUN_EXTERNAL_REVIEWS" "$TEST_PROJECT" \
+    --task-id "$task_id" \
+    --plan-version "$plan_version" \
+    --primary-tool "codex" \
+    "${reviewer_args[@]}" \
+    --review-round "$review_round" \
+    --risk-preflight-status "approved" \
+    --approval-ref "user-approval-${task_id}" \
+    --approved-next-step "run external review ${task_id} ${plan_version} ${review_round}" \
+    > "$TEST_WORKSPACE/${task_id}-${review_round}-genuine.out" 2>&1 || true
+
+  printf "docs/orchestration/%s/external-cli/%s/%s\n" "$task_id" "$plan_version" "$review_round"
+}
+
+# A waiver's only legitimate backing is a durable user decision, so the positive and
+# negative waiver fixtures are real decision records (status / chosen_by / linked_task
+# are the three fields the guard has to inspect).
+write_waiver_decision() {
+  local task_id="$1"
+  local decision_id="$2"
+  local decision_status="$3"
+  local chosen_by="$4"
+  local linked_task="$5"
+
+  mkdir -p "$DOCS_ROOT/decisions"
+  cat > "$DOCS_ROOT/decisions/decision-${decision_id}.md" <<EOF
+# decision-${decision_id}
+
+- decision_id: ${decision_id}
+- title: Waive external review for ${task_id}
+- date: 2026-01-01
+- scope_type: task
+- status: ${decision_status}
+- chosen_by: ${chosen_by}
+- linked_task: ${linked_task}
+- context: external review is unavailable for ${task_id}
+- selected_option: waive the implementation_start external review
+- rationale: recorded user decision for the waiver fixture
+- risk_level: low
+- last_updated: 2026-01-01T00:00:00Z
+EOF
+}
+
+# Read one `- key: value` line out of an evidence artifact (first occurrence).
+gate_artifact_field() {
+  sed -n "s/^- $2:[[:space:]]*//p" "$1" | head -n 1
+}
+
 @test "validate_docs advisory warns when dependent external review is requested" {
   write_await_gate_fixture "await-gate-requested-01" "in_progress" "implementation_start" "PLAN-await-gate-requested-01-v1.0" "requested" "agy:current" "" "" ""
 
@@ -149,24 +276,42 @@ EOF
 }
 
 @test "validate_docs advisory warns when ingested review lacks required route accept" {
-  local result_ref
-  result_ref="$(create_await_gate_result_dir "await-gate-missing-route-01" "v1.0" "r01" "agy:current=accept" "claude:current=revise")"
+  # agy:current is backed by genuine accepted wrapper evidence (it used to be a bare accept
+  # file, which no longer counts); claude:current is a genuine REVISE. Only the revised route
+  # may be named as missing.
+  local result_ref revise_body
+  revise_body='cat <<EOT
+- verdict: revise
+- summary: Mock reviewer asks for changes.
+- strengths: The fixture is deterministic.
+- risks: Fixture only.
+- requested_changes: Address the mock finding.
+EOT'
+  create_genuine_review_evidence "await-gate-missing-route-01" "v1.0" "r01" "$GATE_MOCK_ACCEPT" agy-current > /dev/null
+  result_ref="$(create_genuine_review_evidence "await-gate-missing-route-01" "v1.0" "r01" "$revise_body" claude-current)"
   write_await_gate_fixture "await-gate-missing-route-01" "in_progress" "implementation_start" "PLAN-await-gate-missing-route-01-v1.0" "ingested" "agy:current, claude:current" "$result_ref" "" ""
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
   assert_contains "$output" "[WARN] external review await gate missing accepted route artifact for claude:current"
+  refute_contains "$output" "missing accepted route artifact for agy:current"
 }
 
-@test "validate_docs advisory passes when ingested review has all required route accepts" {
+# This test used to be "passes when ingested review has all required route accepts" and
+# expected [PASS] for a round directory holding nothing but two bare `*.response.md`
+# files. Those carry no companion request, no wrapper-generated provenance manifest and
+# no hash, so anyone able to write a markdown file could mint an approval. A bare
+# `verdict: accept` is not review evidence; it must now be rejected (see the genuine
+# wrapper-evidence tests below for the accepted shape).
+@test "validate_docs advisory rejects bare accept responses that lack request and provenance evidence" {
   local result_ref
   result_ref="$(create_await_gate_result_dir "await-gate-accept-01" "v1.0" "r01" "agy:current=accept" "claude:current=accept")"
   write_await_gate_fixture "await-gate-accept-01" "in_progress" "implementation_start" "PLAN-await-gate-accept-01-v1.0" "ingested" "agy:current, claude:current" "$result_ref" "" ""
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
-  refute_contains "$output" "[WARN] external review await gate"
-  assert_contains "$output" "[PASS] external review await gate satisfied for PLAN-await-gate-accept-01-v1.0"
+  assert_contains "$output" "[WARN] external review await gate missing accepted route artifact for agy:current"
+  refute_contains "$output" "[PASS] external review await gate satisfied"
 }
 
 @test "validate_docs advisory warns when waived review lacks ref or reason" {
@@ -177,13 +322,78 @@ EOF
   assert_contains "$output" "[WARN] external review await gate waiver requires concrete external_review_waiver_ref and external_review_waiver_reason"
 }
 
-@test "validate_docs advisory passes when waived review has concrete ref and reason" {
+# This test used to point external_review_waiver_ref at docs/decisions/decision-waive-01.md
+# WITHOUT creating that file and still expected [PASS]: the guard only checked that the
+# ref was not a placeholder string, so any invented sentence waived the review. The ref
+# must resolve to a real, user-chosen, accepted decision linked to this task.
+@test "validate_docs advisory passes when waived review cites an existing accepted user decision for the task" {
+  write_waiver_decision "await-gate-waived-ok-01" "waive-01" "accepted" "user" "TASK-await-gate-waived-ok-01"
   write_await_gate_fixture "await-gate-waived-ok-01" "in_progress" "implementation_start" "PLAN-await-gate-waived-ok-01-v1.0" "waived" "agy:current" "" "docs/decisions/decision-waive-01.md" "user accepted external review waiver for this implementation"
 
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
   refute_contains "$output" "[WARN] external review await gate"
-  assert_contains "$output" "[PASS] external review await gate waived with concrete provenance"
+  assert_contains "$output" "[PASS] external review await gate waived with a verified user decision"
+}
+
+@test "validate_docs advisory rejects a waiver ref that points at no existing decision record" {
+  write_await_gate_fixture "await-gate-waived-ghost-01" "in_progress" "implementation_start" "PLAN-await-gate-waived-ghost-01-v1.0" "waived" "agy:current" "" "docs/decisions/decision-never-written.md" "user accepted external review waiver for this implementation"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "[WARN] external review await gate waiver ref does not resolve to an existing decision record"
+  refute_contains "$output" "[PASS] external review await gate waived"
+}
+
+@test "validate_docs advisory rejects a free-text waiver ref that names no decision file at all" {
+  write_await_gate_fixture "await-gate-waived-prose-01" "in_progress" "implementation_start" "PLAN-await-gate-waived-prose-01-v1.0" "waived" "agy:current" "" "user-approved-in-chat-trust-me" "user accepted external review waiver for this implementation"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "[WARN] external review await gate waiver ref does not resolve to an existing decision record"
+}
+
+@test "validate_docs advisory rejects waiver decisions that are not accepted, not user-chosen, or linked to another task" {
+  local variant status_value chosen_by linked_task expected
+  # variant | status | chosen_by | linked_task | expected message fragment
+  local rows=(
+    "proposed|proposed|user|TASK-await-gate-waiver-bad-01|status must be accepted"
+    "agent|accepted|codex|TASK-await-gate-waiver-bad-01|chosen_by must be user"
+    "other|accepted|user|TASK-some-other-task-01|linked_task must be TASK-await-gate-waiver-bad-01"
+  )
+  local row
+  for row in "${rows[@]}"; do
+    IFS='|' read -r variant status_value chosen_by linked_task expected <<< "$row"
+    write_waiver_decision "await-gate-waiver-bad-01" "waive-${variant}" "$status_value" "$chosen_by" "$linked_task"
+    write_await_gate_fixture "await-gate-waiver-bad-01" "in_progress" "implementation_start" "PLAN-await-gate-waiver-bad-01-v1.0" "waived" "agy:current" "" "docs/decisions/decision-waive-${variant}.md" "user accepted external review waiver for this implementation"
+
+    run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+    [ "$status" -eq 0 ]
+    assert_contains "$output" "[WARN] external review await gate waiver decision"
+    assert_contains "$output" "$expected"
+    refute_contains "$output" "[PASS] external review await gate waived"
+  done
+}
+
+@test "validate_docs advisory rejects a waiver ref that escapes the decisions directory" {
+  # A decision-shaped file OUTSIDE docs/decisions (and a symlink into it) must not satisfy
+  # the guard even though the filename and fields look right.
+  write_waiver_decision "await-gate-waiver-escape-01" "waive-escape" "accepted" "user" "TASK-await-gate-waiver-escape-01"
+  mkdir -p "$DOCS_ROOT/plan"
+  cp "$DOCS_ROOT/decisions/decision-waive-escape.md" "$DOCS_ROOT/plan/decision-outside.md"
+  write_await_gate_fixture "await-gate-waiver-escape-01" "in_progress" "implementation_start" "PLAN-await-gate-waiver-escape-01-v1.0" "waived" "agy:current" "" "docs/plan/decision-outside.md" "user accepted external review waiver for this implementation"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "[WARN] external review await gate waiver ref does not resolve to an existing decision record"
+
+  rm -f "$DOCS_ROOT/decisions/decision-link-out.md"
+  ln -s "$DOCS_ROOT/plan/decision-outside.md" "$DOCS_ROOT/decisions/decision-link-out.md"
+  write_await_gate_fixture "await-gate-waiver-escape-01" "in_progress" "implementation_start" "PLAN-await-gate-waiver-escape-01-v1.0" "waived" "agy:current" "" "docs/decisions/decision-link-out.md" "user accepted external review waiver for this implementation"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "[WARN] external review await gate waiver ref does not resolve to an existing decision record"
 }
 
 @test "validate_docs advisory does not warn independent task when ORCH does not require implementation review" {
@@ -261,6 +471,446 @@ EOF
   run "$VALIDATE" "$TEST_PROJECT" --mode advisory
   [ "$status" -eq 0 ]
   assert_contains "$output" "[WARN] external review await gate required_review_routes must use registered colon route: agy:not-a-real-route"
+}
+
+# --- Evidence integrity: genuine wrapper output in, forged or damaged evidence out ---------
+
+@test "validate_docs advisory passes when ingested review has complete wrapper-generated evidence for every route" {
+  local result_ref
+  result_ref="$(create_genuine_review_evidence "await-gate-genuine-01" "v1.0" "r01" "$GATE_MOCK_ACCEPT" agy-current claude-current)"
+  write_await_gate_fixture "await-gate-genuine-01" "in_progress" "implementation_start" "PLAN-await-gate-genuine-01-v1.0" "ingested" "agy:current, claude:current" "$result_ref" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "[WARN] external review await gate"
+  assert_contains "$output" "[PASS] external review await gate satisfied for PLAN-await-gate-genuine-01-v1.0"
+}
+
+@test "validate_docs advisory rejects an accept response whose bytes changed after the provenance hash was written" {
+  local result_ref
+  result_ref="$(create_genuine_review_evidence "await-gate-tamper-01" "v1.0" "r01" "$GATE_MOCK_ACCEPT" agy-current)"
+  # Any post-hoc edit (here: an appended line) must break the sha256 binding.
+  printf '%s\n' "- note: edited after review" >> "$DOCS_ROOT/orchestration/await-gate-tamper-01/external-cli/v1.0/r01/agy-current.response.md"
+  write_await_gate_fixture "await-gate-tamper-01" "in_progress" "implementation_start" "PLAN-await-gate-tamper-01-v1.0" "ingested" "agy:current" "$result_ref" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "[WARN] external review await gate missing accepted route artifact for agy:current"
+  assert_contains "$output" "response_sha256 does not match"
+}
+
+@test "validate_docs advisory rejects an accept verdict the wrapper itself refused (incomplete review, no provenance)" {
+  # The mock reviewer answers `verdict: accept` and nothing else. The wrapper rejects it
+  # (required review fields missing), retries, rejects again and exits non-zero without
+  # writing provenance - but the bare response.md with its accept line stays on disk.
+  # The old gate read only that line and treated the route as accepted.
+  local result_ref
+  result_ref="$(create_genuine_review_evidence "await-gate-incomplete-01" "v1.0" "r01" 'echo "- verdict: accept"' agy-current)"
+  run test -f "$DOCS_ROOT/orchestration/await-gate-incomplete-01/external-cli/v1.0/r01/agy-current.response.md"
+  [ "$status" -eq 0 ]
+  run test ! -f "$DOCS_ROOT/orchestration/await-gate-incomplete-01/external-cli/v1.0/r01/agy-current.response.provenance.md"
+  [ "$status" -eq 0 ]
+  write_await_gate_fixture "await-gate-incomplete-01" "in_progress" "implementation_start" "PLAN-await-gate-incomplete-01-v1.0" "ingested" "agy:current" "$result_ref" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "[WARN] external review await gate missing accepted route artifact for agy:current"
+  refute_contains "$output" "[PASS] external review await gate satisfied"
+}
+
+@test "validate_docs advisory accepts the retry-response evidence set the wrapper writes after a failed first attempt" {
+  # First reviewer call returns prose with no verdict, the second a full accept: the
+  # wrapper then records request/response/provenance under the retry-* names.
+  local result_ref retry_body
+  retry_body='counter="${TEST_WORKSPACE}/gate-retry-counter"
+n="$(cat "$counter" 2>/dev/null || echo 0)"
+n=$((n + 1))
+echo "$n" > "$counter"
+if [ "$n" -eq 1 ]; then
+  echo "I looked at the plan but will answer in prose."
+else
+  cat <<EOT
+- verdict: accept
+- summary: Retry answer accepts the bounded plan.
+- strengths: The fixture is deterministic.
+- risks: Fixture only.
+- requested_changes: None.
+EOT
+fi'
+  result_ref="$(create_genuine_review_evidence "await-gate-retry-01" "v1.0" "r01" "$retry_body" agy-current)"
+  run test -f "$DOCS_ROOT/orchestration/await-gate-retry-01/external-cli/v1.0/r01/agy-current.retry-response.provenance.md"
+  [ "$status" -eq 0 ]
+  write_await_gate_fixture "await-gate-retry-01" "in_progress" "implementation_start" "PLAN-await-gate-retry-01-v1.0" "ingested" "agy:current" "$result_ref" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "[WARN] external review await gate"
+  assert_contains "$output" "[PASS] external review await gate satisfied for PLAN-await-gate-retry-01-v1.0"
+}
+
+@test "validate_docs advisory still evaluates the gate when the task status carries a parenthetical note" {
+  # The gate used to key on the raw status value, so `in_progress (resumed)` slipped past
+  # it silently while every other active-task gate keyed on the primary token.
+  write_await_gate_fixture "await-gate-noted-status-01" "in_progress (resumed)" "implementation_start" "PLAN-await-gate-noted-status-01-v1.0" "requested" "agy:current" "" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "[WARN] external review await gate not satisfied for TASK-await-gate-noted-status-01: external_review_status=requested"
+}
+
+# --- strict mode: the gate used to be skipped entirely ------------------------------------
+
+@test "validate_docs strict fails an in_progress task whose required external review is only requested" {
+  write_await_gate_fixture "await-gate-strict-requested-01" "in_progress" "implementation_start" "PLAN-await-gate-strict-requested-01-v1.0" "requested" "agy:current" "" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "[FAIL] external review await gate not satisfied for TASK-await-gate-strict-requested-01: external_review_status=requested"
+}
+
+@test "validate_docs strict passes the await gate for an in_progress task with complete wrapper evidence" {
+  local result_ref
+  result_ref="$(create_genuine_review_evidence "await-gate-strict-ok-01" "v1.0" "r01" "$GATE_MOCK_ACCEPT" agy-current)"
+  write_await_gate_fixture "await-gate-strict-ok-01" "in_progress" "implementation_start" "PLAN-await-gate-strict-ok-01-v1.0" "ingested" "agy:current" "$result_ref" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  refute_contains "$output" "[FAIL] external review await gate"
+  assert_contains "$output" "[PASS] external review await gate satisfied for PLAN-await-gate-strict-ok-01-v1.0"
+}
+
+@test "validate_docs strict does not re-measure a done task against the await gate (terminal artifacts are immutable evidence)" {
+  # Same precedent as the orchestration size cap: a closed task's evidence is not judged
+  # by rules introduced after it closed. The advisory tier still reports it.
+  write_await_gate_fixture "await-gate-strict-done-01" "done" "implementation_start" "PLAN-await-gate-strict-done-01-v1.0" "requested" "agy:current" "" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode strict
+  refute_contains "$output" "external review await gate"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  assert_contains "$output" "[WARN] external review await gate not satisfied for TASK-await-gate-strict-done-01: external_review_status=requested"
+}
+
+@test "validate_docs advisory keeps the historical verdict-level reading and warning text for a done task" {
+  # Terminal tasks are not re-measured against the evidence rules: a bare accept still reads
+  # as accepted, a recorded revise keeps the original reason-free warning, and a string-only
+  # waiver keeps its original pass message. (An in_progress task gets none of this leniency.)
+  local result_ref
+  result_ref="$(create_await_gate_result_dir "await-gate-done-legacy-01" "v1.0" "r01" "agy:current=accept")"
+  write_await_gate_fixture "await-gate-done-legacy-01" "done" "implementation_start" "PLAN-await-gate-done-legacy-01-v1.0" "ingested" "agy:current" "$result_ref" "" ""
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  assert_contains "$output" "[PASS] external review await gate satisfied for PLAN-await-gate-done-legacy-01-v1.0"
+
+  result_ref="$(create_await_gate_result_dir "await-gate-done-legacy-02" "v1.0" "r01" "agy:current=revise")"
+  write_await_gate_fixture "await-gate-done-legacy-02" "done" "implementation_start" "PLAN-await-gate-done-legacy-02-v1.0" "ingested" "agy:current" "$result_ref" "" ""
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  assert_contains "$output" "[WARN] external review await gate missing accepted route artifact for agy:current under docs/orchestration/await-gate-done-legacy-02/external-cli/v1.0/r01"
+  refute_contains "$output" "no recognised response file"
+
+  write_await_gate_fixture "await-gate-done-legacy-03" "done" "implementation_start" "PLAN-await-gate-done-legacy-03-v1.0" "waived" "agy:current" "" "user-instruction-2026-07-10-historical" "user substituted the review leg"
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  assert_contains "$output" "[PASS] external review await gate waived with concrete provenance"
+}
+
+# --- fail-closed gate: exit code decides, advisory noise does not ------------------------
+
+@test "external-review gate exits non-zero for every non-terminal review status" {
+  local review_status
+  for review_status in requested not_requested running awaiting_response blocked skipped ""; do
+    write_await_gate_fixture "gate-status-01" "in_progress" "implementation_start" "PLAN-gate-status-01-v1.0" "$review_status" "agy:current" "" "" ""
+
+    run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id gate-status-01
+    [ "$status" -eq 1 ]
+    assert_contains "$output" "[FAIL] external review await gate"
+    assert_contains "$output" "[RESULT] External review gate failed"
+  done
+}
+
+@test "external-review gate exits zero with complete wrapper evidence and prints a pass result" {
+  local result_ref
+  result_ref="$(create_genuine_review_evidence "gate-ok-01" "v1.0" "r01" "$GATE_MOCK_ACCEPT" agy-current claude-current)"
+  write_await_gate_fixture "gate-ok-01" "in_progress" "implementation_start" "PLAN-gate-ok-01-v1.0" "ingested" "agy:current, claude:current" "$result_ref" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id gate-ok-01
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "[PASS] external review await gate satisfied for PLAN-gate-ok-01-v1.0"
+  assert_contains "$output" "[RESULT] External review gate passed."
+}
+
+@test "external-review gate applies to a planned task when asked about it by id (the implementation-start transition)" {
+  write_await_gate_fixture "gate-planned-01" "planned" "implementation_start" "PLAN-gate-planned-01-v1.0" "requested" "agy:current" "" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id gate-planned-01
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "[FAIL] external review await gate not satisfied for TASK-gate-planned-01"
+}
+
+@test "external-review gate is not applicable to a task whose ORCH does not require implementation review" {
+  write_await_gate_fixture "gate-independent-01" "in_progress" "close" "" "requested" "agy:current" "" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id gate-independent-01
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "[PASS] external review gate not required for TASK-gate-independent-01"
+  assert_contains "$output" "[RESULT] External review gate passed."
+}
+
+@test "external-review gate is not applicable to a task that has no orchestration capsule yet" {
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id gate-brand-new-01
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "[PASS] external review gate not required for TASK-gate-brand-new-01"
+}
+
+@test "external-review gate fails closed when ORCH requires review but the task file is missing" {
+  write_await_gate_fixture "gate-no-task-01" "in_progress" "implementation_start" "PLAN-gate-no-task-01-v1.0" "requested" "agy:current" "" "" ""
+  rm -f "$DOCS_ROOT/task/TASK-gate-no-task-01.md"
+
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id gate-no-task-01
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "[FAIL] external review await gate requires the task file for TASK-gate-no-task-01"
+}
+
+@test "external-review gate ignores unrelated advisory noise elsewhere in the docs" {
+  # A general advisory problem (an in_progress task with no owner/claim) must neither fail
+  # nor even appear in the gate run: advisory warnings and approval-gate failures are
+  # different things.
+  write_await_gate_fixture "gate-noise-01" "in_progress" "close" "" "not_requested" "" "" "" ""
+  sed -i.bak '/^- owner:/d' "$DOCS_ROOT/task/TASK-gate-noise-01.md"
+  rm -f "$DOCS_ROOT/task/TASK-gate-noise-01.md.bak"
+
+  run "$VALIDATE" "$TEST_PROJECT" --mode advisory
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "[WARN]"
+
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id gate-noise-01
+  [ "$status" -eq 0 ]
+  refute_contains "$output" "[WARN]"
+  refute_contains "$output" "[FAIL]"
+}
+
+@test "external-review gate without --task-id covers every in_progress task and fails on any unsatisfied one" {
+  local result_ref
+  result_ref="$(create_genuine_review_evidence "gate-all-ok-01" "v1.0" "r01" "$GATE_MOCK_ACCEPT" agy-current)"
+  write_await_gate_fixture "gate-all-ok-01" "in_progress" "implementation_start" "PLAN-gate-all-ok-01-v1.0" "ingested" "agy:current" "$result_ref" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review
+  [ "$status" -eq 0 ]
+
+  write_await_gate_fixture "gate-all-bad-01" "in_progress" "implementation_start" "PLAN-gate-all-bad-01-v1.0" "requested" "agy:current" "" "" ""
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "[FAIL] external review await gate not satisfied for TASK-gate-all-bad-01"
+  refute_contains "$output" "TASK-gate-all-ok-01: external_review_status"
+}
+
+@test "external-review gate rejects tampered, missing, mismatched or hand-written evidence" {
+  local evidence="$DOCS_ROOT/orchestration/gate-evidence-01/external-cli/v1.0/r01"
+  local result_ref slug="agy-current" mutation pristine row
+
+  result_ref="$(create_genuine_review_evidence "gate-evidence-01" "v1.0" "r01" "$GATE_MOCK_ACCEPT" agy-current)"
+  write_await_gate_fixture "gate-evidence-01" "in_progress" "implementation_start" "PLAN-gate-evidence-01-v1.0" "ingested" "agy:current" "$result_ref" "" ""
+
+  # Baseline: untouched wrapper output passes, so every rejection below is caused by its
+  # own mutation and not by the fixture.
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id gate-evidence-01
+  [ "$status" -eq 0 ]
+
+  pristine="$TEST_WORKSPACE/gate-evidence-pristine"
+  cp -R "$evidence" "$pristine"
+
+  # mutation name | expected rejection fragment
+  local rows=(
+    "drop_provenance|provenance manifest is missing"
+    "drop_request|companion request file is missing"
+    "tamper_response|response_sha256 does not match"
+    "wrong_task|provenance task_id"
+    "wrong_plan_version|provenance plan_version"
+    "wrong_round|provenance review_round"
+    "wrong_route|provenance evaluator_requested_route"
+    "wrong_actual_route|provenance evaluator_actual_route"
+    "fallback_used|provenance quota_fallback_triggered"
+    "verdict_revise_in_provenance|provenance verdict"
+    "not_wrapper_generated|provenance generated_by"
+    "not_provenance_kind|provenance artifact_kind"
+    "raw_capture_kept|provenance raw_capture_deleted"
+    "unsanitized|provenance sanitized_response"
+    "request_other_task|request task_id"
+    "request_other_route|request evaluator"
+    "response_other_path|provenance response_file"
+    "request_other_path|provenance request_file"
+    "missing_field|required review field"
+    "empty_hash|provenance response_sha256"
+  )
+  for row in "${rows[@]}"; do
+    mutation="${row%%|*}"
+    rm -rf "${evidence:?}"
+    cp -R "$pristine" "$evidence"
+    case "$mutation" in
+      drop_provenance) rm -f "$evidence/${slug}.response.provenance.md" ;;
+      drop_request) rm -f "$evidence/${slug}.request.md" ;;
+      tamper_response) printf '%s\n' "- note: edited after review" >> "$evidence/${slug}.response.md" ;;
+      wrong_task) sed -i.bak 's/^- task_id: .*/- task_id: some-other-task/' "$evidence/${slug}.response.provenance.md" ;;
+      wrong_plan_version) sed -i.bak 's/^- plan_version: .*/- plan_version: v9.9/' "$evidence/${slug}.response.provenance.md" ;;
+      wrong_round) sed -i.bak 's/^- review_round: .*/- review_round: r09/' "$evidence/${slug}.response.provenance.md" ;;
+      wrong_route) sed -i.bak 's/^- evaluator_requested_route: .*/- evaluator_requested_route: claude:current/' "$evidence/${slug}.response.provenance.md" ;;
+      wrong_actual_route) sed -i.bak 's/^- evaluator_actual_route: .*/- evaluator_actual_route: claude:current/' "$evidence/${slug}.response.provenance.md" ;;
+      fallback_used) sed -i.bak 's/^- quota_fallback_triggered: .*/- quota_fallback_triggered: true/' "$evidence/${slug}.response.provenance.md" ;;
+      verdict_revise_in_provenance) sed -i.bak 's/^- verdict: .*/- verdict: revise/' "$evidence/${slug}.response.provenance.md" ;;
+      not_wrapper_generated) sed -i.bak 's/^- generated_by: .*/- generated_by: hand-written/' "$evidence/${slug}.response.provenance.md" ;;
+      not_provenance_kind) sed -i.bak 's/^- artifact_kind: .*/- artifact_kind: notes/' "$evidence/${slug}.response.provenance.md" ;;
+      raw_capture_kept) sed -i.bak 's/^- raw_capture_deleted: .*/- raw_capture_deleted: false/' "$evidence/${slug}.response.provenance.md" ;;
+      unsanitized) sed -i.bak 's/^- sanitized_response: .*/- sanitized_response: false/' "$evidence/${slug}.response.provenance.md" ;;
+      request_other_task) sed -i.bak 's/^- task_id: .*/- task_id: some-other-task/' "$evidence/${slug}.request.md" ;;
+      request_other_route) sed -i.bak 's/^- evaluator: .*/- evaluator: claude:current/' "$evidence/${slug}.request.md" ;;
+      response_other_path) sed -i.bak 's#^- response_file: .*#- response_file: /somewhere/else/other.response.md#' "$evidence/${slug}.response.provenance.md" ;;
+      request_other_path) sed -i.bak 's#^- request_file: .*#- request_file: /somewhere/else/other.request.md#' "$evidence/${slug}.response.provenance.md" ;;
+      missing_field)
+        # Re-hash after the edit so ONLY the field check (not the hash check) can object.
+        sed -i.bak '/^- strengths:/d' "$evidence/${slug}.response.md"
+        sed -i.bak "s#^- response_sha256: .*#- response_sha256: $(sha256_file_ref "$evidence/${slug}.response.md")#" "$evidence/${slug}.response.provenance.md"
+        ;;
+      empty_hash) sed -i.bak 's/^- response_sha256: .*/- response_sha256:/' "$evidence/${slug}.response.provenance.md" ;;
+    esac
+    rm -f "${evidence:?}"/*.bak
+
+    run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id gate-evidence-01
+    if [ "$status" -ne 1 ]; then
+      printf 'mutation %s was NOT rejected (status=%s)\n%s\n' "$mutation" "$status" "$output" >&2
+      return 1
+    fi
+    assert_contains "$output" "[FAIL] external review await gate missing accepted route artifact for agy:current"
+    if [[ "$output" != *"${row#*|}"* ]]; then
+      printf 'mutation %s rejected for the wrong reason (wanted: %s)\n%s\n' "$mutation" "${row#*|}" "$output" >&2
+      return 1
+    fi
+  done
+}
+
+@test "external-review gate fails closed when the evidence cannot be read at all" {
+  # root ignores file modes, so the unreadable-file setup below proves nothing there.
+  [ "$(id -u)" -ne 0 ] || skip "root can read mode-000 files"
+  local result_ref evidence
+  result_ref="$(create_genuine_review_evidence "gate-unreadable-01" "v1.0" "r01" "$GATE_MOCK_ACCEPT" agy-current)"
+  evidence="$DOCS_ROOT/orchestration/gate-unreadable-01/external-cli/v1.0/r01"
+  write_await_gate_fixture "gate-unreadable-01" "in_progress" "implementation_start" "PLAN-gate-unreadable-01-v1.0" "ingested" "agy:current" "$result_ref" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id gate-unreadable-01
+  [ "$status" -eq 0 ]
+
+  # A verifier that dies (here: an unreadable response) is "could not verify", never "verified".
+  chmod 000 "$evidence/agy-current.response.md"
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id gate-unreadable-01
+  chmod 644 "$evidence/agy-current.response.md"
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "[FAIL] external review await gate missing accepted route artifact for agy:current"
+  assert_contains "$output" "could not run to completion"
+}
+
+@test "external-review gate accepts wrapper evidence after the project directory moves (absolute paths in provenance)" {
+  local result_ref relocated
+  result_ref="$(create_genuine_review_evidence "gate-moved-01" "v1.0" "r01" "$GATE_MOCK_ACCEPT" agy-current)"
+  write_await_gate_fixture "gate-moved-01" "in_progress" "implementation_start" "PLAN-gate-moved-01-v1.0" "ingested" "agy:current" "$result_ref" "" ""
+
+  relocated="$TEST_WORKSPACE/relocated-repo"
+  cp -R "$TEST_PROJECT" "$relocated"
+  # The provenance still names the ORIGINAL absolute paths; only the tail identifies the artifact.
+  grep -q "$TEST_PROJECT" "$DOCS_ROOT/orchestration/gate-moved-01/external-cli/v1.0/r01/agy-current.response.provenance.md"
+
+  run "$VALIDATE" "$relocated" --gate external-review --task-id gate-moved-01
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "[PASS] external review await gate satisfied for PLAN-gate-moved-01-v1.0"
+}
+
+@test "external-review gate requires the adversarial fields when the wrapper ran the review adversarially" {
+  local adversarial_body result_ref evidence
+  adversarial_body='cat <<EOT
+- verdict: accept
+- summary: Adversarial mock accepts.
+- strengths: The fixture is deterministic.
+- risks: Fixture only.
+- requested_changes: None.
+- objection: None found after probing the plan.
+- counterproposal: None needed.
+- rebuttal: The plan already covers the probe.
+- residual_risk: Fixture only.
+EOT'
+  result_ref="$(create_genuine_review_evidence "gate-adversarial-01" "v1.0" "r01" "$adversarial_body" agy-current --adversarial-all)"
+  evidence="$DOCS_ROOT/orchestration/gate-adversarial-01/external-cli/v1.0/r01"
+  [ "$(gate_artifact_field "$evidence/agy-current.response.provenance.md" review_style)" = "adversarial" ]
+  write_await_gate_fixture "gate-adversarial-01" "in_progress" "implementation_start" "PLAN-gate-adversarial-01-v1.0" "ingested" "agy:current" "$result_ref" "" ""
+
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id gate-adversarial-01
+  [ "$status" -eq 0 ]
+
+  sed -i.bak '/^- rebuttal:/d' "$evidence/agy-current.response.md"
+  sed -i.bak "s#^- response_sha256: .*#- response_sha256: $(sha256_file_ref "$evidence/agy-current.response.md")#" "$evidence/agy-current.response.provenance.md"
+  rm -f "${evidence:?}"/*.bak
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id gate-adversarial-01
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "required review field rebuttal"
+}
+
+@test "external-review gate waiver requires a verified user decision and exits non-zero otherwise" {
+  write_waiver_decision "gate-waiver-01" "gw-ok" "accepted" "user" "TASK-gate-waiver-01"
+  write_await_gate_fixture "gate-waiver-01" "in_progress" "implementation_start" "PLAN-gate-waiver-01-v1.0" "waived" "agy:current" "" "docs/decisions/decision-gw-ok.md" "user accepted the waiver"
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id gate-waiver-01
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "[PASS] external review await gate waived with a verified user decision"
+
+  write_await_gate_fixture "gate-waiver-01" "in_progress" "implementation_start" "PLAN-gate-waiver-01-v1.0" "waived" "agy:current" "" "docs/decisions/decision-invented.md" "user accepted the waiver"
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id gate-waiver-01
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "[FAIL] external review await gate waiver ref does not resolve to an existing decision record"
+}
+
+@test "external-review gate supports json output with the same exit code" {
+  write_await_gate_fixture "gate-json-01" "in_progress" "implementation_start" "PLAN-gate-json-01-v1.0" "requested" "agy:current" "" "" ""
+
+  run bash -c '"$1" "$2" --gate external-review --task-id gate-json-01 --format json 2>/dev/null' _ "$VALIDATE" "$TEST_PROJECT"
+  [ "$status" -eq 1 ]
+  printf '%s' "$output" | python3 -c '
+import json, sys
+doc = json.load(sys.stdin)
+assert doc["result"] == "fail", doc
+assert doc["counts"]["fail"] >= 1, doc
+assert any(i["id"] == "check_external_review_await_gate_for_task" and i["tier"] == "fail" for i in doc["issues"]), doc
+'
+}
+
+@test "external-review gate leaves an already closed task alone but gates reopening it" {
+  write_await_gate_fixture "gate-closed-01" "done" "implementation_start" "PLAN-gate-closed-01-v1.0" "requested" "agy:current" "" "" ""
+
+  # No transition claim, or the same status again: nothing left to guard.
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id gate-closed-01
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "[PASS] external review gate not required for TASK-gate-closed-01: task is already done"
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id gate-closed-01 --to-status done
+  [ "$status" -eq 0 ]
+
+  # Reopening starts implementation again and is gated like any other start.
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id gate-closed-01 --to-status in_progress
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "[FAIL] external review await gate not satisfied for TASK-gate-closed-01: external_review_status=requested"
+}
+
+@test "external-review gate rejects bad usage" {
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review --to-status in_progress
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "--to-status requires --gate and --task-id"
+
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id some-task-01 --to-status finished
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "Invalid --to-status"
+
+  run "$VALIDATE" "$TEST_PROJECT" --gate no-such-gate
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "Unknown --gate"
+
+  run "$VALIDATE" "$TEST_PROJECT" --task-id some-task-01
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "--task-id requires --gate"
+
+  run "$VALIDATE" "$TEST_PROJECT" --gate external-review --task-id "bad id/../x"
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "Invalid --task-id"
 }
 
 @test "validate_docs rejects legacy root orchestration paths" {

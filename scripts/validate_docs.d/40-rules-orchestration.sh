@@ -567,24 +567,36 @@ check_evaluator_reports_for_task() {
   fi
 }
 
+# Verifies the evidence set behind ONE required route. What counts as evidence (companion
+# request, wrapper-generated provenance, SHA-256 of the response, task/plan/round/route
+# coherence, review fields) lives in validate_docs_review_evidence.py; this wrapper only
+# runs it. On rejection the reasons are left in AWAIT_GATE_EVIDENCE_REASON for the caller's
+# message. $6 selects the tier: `full` (default) is the integrity check; `verdict` keeps
+# the pre-hardening reading (any recognised response file saying `verdict: accept`) for
+# terminal tasks only, whose closed evidence is immutable history and is not re-measured
+# against rules introduced after they closed.
 await_gate_route_has_accept_artifact() {
   local result_dir="$1"
   local route="$2"
-  local slug
-  local candidate
-  local verdict
+  local task_id="$3"
+  local plan_version="$4"
+  local review_round="$5"
+  local verify_tier="${6:-full}"
+  local verify_args=()
 
-  slug="$(route_slug_for_filename "$route")"
-  for candidate in "$result_dir/${slug}.response.md" "$result_dir/${slug}.retry-response.md"; do
-    if [[ ! -f "$candidate" ]]; then
-      continue
-    fi
-    verdict="$(extract_field_value "$candidate" "verdict")"
-    if [[ "$verdict" == "accept" ]]; then
-      return 0
-    fi
-  done
-
+  AWAIT_GATE_EVIDENCE_REASON=""
+  if [[ "$verify_tier" == "verdict" ]]; then
+    verify_args+=(--verdict-only)
+  fi
+  if AWAIT_GATE_EVIDENCE_REASON="$(python3 -I "$SCRIPT_DIR/validate_docs_review_evidence.py" ${verify_args[@]+"${verify_args[@]}"} "$result_dir" "$route" "$task_id" "$plan_version" "$review_round")"; then
+    return 0
+  fi
+  # Fail closed on ANY non-zero exit, including a verifier that crashed (unreadable file,
+  # missing interpreter): that is "could not verify", never "verified".
+  AWAIT_GATE_EVIDENCE_REASON="$(printf '%s' "$AWAIT_GATE_EVIDENCE_REASON" | tr '\n' ';' | sed 's/;/; /g; s/; $//')"
+  if [[ -z "$AWAIT_GATE_EVIDENCE_REASON" ]]; then
+    AWAIT_GATE_EVIDENCE_REASON="the evidence verifier could not run to completion (see stderr)"
+  fi
   return 1
 }
 
@@ -678,8 +690,14 @@ check_ingested_external_review_await_gate() {
   fi
 
   for route in "${AWAIT_GATE_ROUTES[@]}"; do
-    if ! await_gate_route_has_accept_artifact "$result_dir_physical" "$route"; then
-      fail "external review await gate missing accepted route artifact for ${route} under ${result_ref}"
+    if ! await_gate_route_has_accept_artifact "$result_dir_physical" "$route" "$task_id" "$consumed_plan_version" "$review_round" "${AWAIT_GATE_VERIFY_TIER:-full}"; then
+      if [[ "${AWAIT_GATE_VERIFY_TIER:-full}" == "verdict" ]]; then
+        # The terminal-task tier keeps its historical message byte for byte (text output is a
+        # frozen contract); only the full tier explains WHY the evidence was rejected.
+        fail "external review await gate missing accepted route artifact for ${route} under ${result_ref}"
+      else
+        fail "external review await gate missing accepted route artifact for ${route} under ${result_ref}: ${AWAIT_GATE_EVIDENCE_REASON}"
+      fi
       return
     fi
   done
@@ -687,10 +705,26 @@ check_ingested_external_review_await_gate() {
   pass "external review await gate satisfied for ${consumes_plan_ref}"
 }
 
+# A waiver is a user decision (references/goal-loop-contract.md lists "waiver" among the
+# user-decision gates), so its only legitimate backing is a durable user decision record. A
+# non-placeholder STRING proves nothing -- any invented sentence satisfied the old guard --
+# so the ref must resolve to a real docs/decisions/decision-<id>.md that is accepted,
+# chosen by the user, and linked to THIS task (not another task's decision reused). The
+# reason must still be concrete. Terminal tasks keep the pre-hardening string check (closed
+# evidence is immutable history; see await_gate_route_has_accept_artifact).
 check_waived_external_review_await_gate() {
   local orchestration_file="$1"
+  local task_id="$2"
   local waiver_ref
   local waiver_reason
+  local waiver_path
+  local waiver_base
+  local waiver_dir_physical
+  local decisions_dir_physical
+  local decision_status
+  local decision_chosen_by
+  local decision_linked_task
+  local problems=""
 
   waiver_ref="$(extract_field_value "$orchestration_file" "external_review_waiver_ref")"
   waiver_reason="$(extract_field_value "$orchestration_file" "external_review_waiver_reason")"
@@ -699,7 +733,42 @@ check_waived_external_review_await_gate() {
     return
   fi
 
-  pass "external review await gate waived with concrete provenance"
+  if [[ "${AWAIT_GATE_VERIFY_TIER:-full}" == "verdict" ]]; then
+    pass "external review await gate waived with concrete provenance"
+    return
+  fi
+
+  waiver_path="$(resolve_docs_ref_path "$waiver_ref")"
+  waiver_base="$(basename "$waiver_path")"
+  if [[ ! -f "$waiver_path" || -L "$waiver_path" || ! -d "$DECISIONS_DIR" || "$waiver_base" != decision-*.md || "$waiver_base" == "decision-template.md" || "$waiver_base" == "decision-index.md" ]]; then
+    fail "external review await gate waiver ref does not resolve to an existing decision record under docs/decisions: ${waiver_ref}"
+    return
+  fi
+  waiver_dir_physical="$(cd "$(dirname "$waiver_path")" && pwd -P)"
+  decisions_dir_physical="$(cd "$DECISIONS_DIR" && pwd -P)"
+  if [[ "$waiver_dir_physical" != "$decisions_dir_physical" ]]; then
+    fail "external review await gate waiver ref does not resolve to an existing decision record under docs/decisions: ${waiver_ref}"
+    return
+  fi
+
+  decision_status="$(extract_field_value "$waiver_path" "status")"
+  decision_chosen_by="$(printf '%s' "$(extract_field_value "$waiver_path" "chosen_by")" | tr '[:upper:]' '[:lower:]')"
+  decision_linked_task="$(extract_field_value "$waiver_path" "linked_task")"
+  if [[ "$decision_status" != "accepted" ]]; then
+    problems="${problems}status must be accepted (got '${decision_status:-missing}'); "
+  fi
+  if [[ "$decision_chosen_by" != "user" ]]; then
+    problems="${problems}chosen_by must be user (got '${decision_chosen_by:-missing}'); "
+  fi
+  if [[ "$decision_linked_task" != "TASK-${task_id}" ]]; then
+    problems="${problems}linked_task must be TASK-${task_id} (got '${decision_linked_task:-missing}'); "
+  fi
+  if [[ -n "$problems" ]]; then
+    fail "external review await gate waiver decision ${waiver_ref} is not a valid user waiver: ${problems%; }"
+    return
+  fi
+
+  pass "external review await gate waived with a verified user decision"
 }
 
 check_external_review_await_gate_for_task() {
@@ -713,8 +782,24 @@ check_external_review_await_gate_for_task() {
   local consumed_plan_version
   local status
 
-  [[ "$MODE" == "advisory" ]] || return 0
-  [[ "$task_status" == "in_progress" || "$task_status" == "done" ]] || return 0
+  # Which tasks are evaluated, and how hard (references/orchestration-review-contract.md):
+  #   in_progress  advisory AND strict; full evidence verification
+  #   done         advisory only; verdict-level reading -- a closed task's evidence is
+  #                immutable history and is not re-measured against later rules (same
+  #                precedent as the orchestration size cap), and strict never judged it
+  #   anything else only when the fail-closed gate asks about this very task
+  #                (AWAIT_GATE_TRANSITION=true), i.e. an implementation-start transition
+  AWAIT_GATE_VERIFY_TIER="full"
+  if [[ "${AWAIT_GATE_TRANSITION:-false}" != "true" ]]; then
+    case "$task_status" in
+      in_progress) ;;
+      done)
+        [[ "$MODE" == "advisory" ]] || return 0
+        AWAIT_GATE_VERIFY_TIER="verdict"
+        ;;
+      *) return 0 ;;
+    esac
+  fi
 
   orchestration_file="$(codeguide_orchestration_file "$PROJECT_ROOT_ABS" "$task_id")"
   [[ -f "$orchestration_file" ]] || return 0
@@ -743,7 +828,7 @@ check_external_review_await_gate_for_task() {
       check_ingested_external_review_await_gate "$task_id" "$consumes_plan_ref" "$consumed_plan_version" "$orchestration_file"
       ;;
     waived)
-      check_waived_external_review_await_gate "$orchestration_file"
+      check_waived_external_review_await_gate "$orchestration_file" "$task_id"
       ;;
     "")
       fail "external review await gate requires external_review_status for ${task_ref}"
@@ -756,4 +841,97 @@ check_external_review_await_gate_for_task() {
       ;;
   esac
   return 0
+}
+
+# One task for the fail-closed gate. $2 is "true" when the caller named this task, which
+# makes the gate answer for it whatever its stored status is (the implementation-start
+# transition is requested BEFORE the status moves); a task that is already closed has no
+# transition left to guard.
+external_review_gate_one_task() {
+  local task_id="$1"
+  local explicit="$2"
+  local task_ref="TASK-${task_id}"
+  local task_file="$TASK_DIR/${task_ref}.md"
+  local orchestration_file
+  local required_for
+  local task_status
+  local task_status_primary
+
+  orchestration_file="$(codeguide_orchestration_file "$PROJECT_ROOT_ABS" "$task_id")"
+  if [[ ! -f "$orchestration_file" ]]; then
+    pass "external review gate not required for ${task_ref}: no orchestration capsule"
+    return
+  fi
+  required_for="$(extract_field_value "$orchestration_file" "external_review_required_for")"
+  if [[ "$required_for" != "implementation_start" ]]; then
+    pass "external review gate not required for ${task_ref}: ORCH external_review_required_for is not implementation_start"
+    return
+  fi
+  if [[ ! -f "$task_file" ]]; then
+    fail "external review await gate requires the task file for ${task_ref}: ${task_file}"
+    return
+  fi
+
+  task_status="$(extract_field_value "$task_file" "status")"
+  task_status_primary="${task_status%% *}"
+  # A closed task has no transition left to guard -- unless the caller is reopening it
+  # (--to-status names a different status), which starts implementation again and is gated
+  # like any other start. Without --to-status the caller made no transition claim, so a
+  # closed task is not re-measured (re-syncing a historical task must keep working).
+  case "$task_status_primary" in
+    done|superseded|cancelled)
+      if [[ -z "${GATE_TO_STATUS:-}" || "$GATE_TO_STATUS" == "$task_status_primary" ]]; then
+        pass "external review gate not required for ${task_ref}: task is already ${task_status_primary}"
+        return
+      fi
+      ;;
+  esac
+
+  AWAIT_GATE_TRANSITION="$explicit"
+  check_external_review_await_gate_for_task "$task_id" "$task_ref" "$task_file" "$task_status_primary"
+  AWAIT_GATE_TRANSITION="false"
+}
+
+# validate_docs.sh --gate external-review [--task-id <id>]: the fail-closed counterpart of
+# the advisory/strict document checks. It evaluates ONLY the external-review await gate, so
+# unrelated advisory noise can neither fail it nor hide in it, and its exit code is the
+# verdict: 0 = not required or satisfied, 1 = required and not satisfied (or unverifiable).
+# MODE is forced to strict so every violation prints as [FAIL]; with --task-id the gate
+# answers for that task regardless of its stored status, without it for every in_progress
+# task. Document-check semantics of --mode advisory/strict are untouched.
+run_external_review_gate_phase() {
+  local gate_task_id="$1"
+  local task_file
+  local task_id
+  local task_status
+  local task_status_primary
+
+  MODE="strict"
+  AWAIT_GATE_TRANSITION="false"
+  if [[ -n "$gate_task_id" ]]; then
+    external_review_gate_one_task "$gate_task_id" "true"
+  else
+    while IFS= read -r task_file; do
+      task_id="$(basename "$task_file" .md)"
+      task_id="${task_id#TASK-}"
+      task_status="$(extract_field_value "$task_file" "status")"
+      task_status_primary="${task_status%% *}"
+      [[ "$task_status_primary" == "in_progress" ]] || continue
+      external_review_gate_one_task "$task_id" "false"
+    done < <(find "$TASK_DIR" -maxdepth 1 -type f -name 'TASK-*.md' | sort)
+  fi
+
+  if [[ "$VALIDATE_FORMAT" == "json" ]]; then
+    emit_json_result
+    if (( ISSUE_COUNT > 0 )); then
+      exit 1
+    fi
+    exit 0
+  fi
+  if (( ISSUE_COUNT > 0 )); then
+    echo "[RESULT] External review gate failed with ${ISSUE_COUNT} issue(s)." >&2
+    exit 1
+  fi
+  echo "[RESULT] External review gate passed."
+  exit 0
 }

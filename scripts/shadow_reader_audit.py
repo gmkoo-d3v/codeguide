@@ -100,6 +100,16 @@ EXCLUSIONS = {
         "Reads external-review request/provenance handoff files under docs/orchestration, "
         "not shadow documents."
     ),
+    "scripts/validate_docs_review_evidence.py": (
+        "Verifies wrapper-generated external-review artifacts under docs/orchestration "
+        "(request, response, provenance), not shadow documents; same class as "
+        "shadow_v2_gate_skeleton.py. It deliberately keeps the wrapper's own `^- key:` "
+        "first-match grammar (run_external_plan_reviews.sh response_field_value) instead of "
+        "the fence-aware shared reader: these are machine-written bullet lists with no fenced "
+        "examples, and the evidence check has to read them exactly the way the wrapper that "
+        "produced them did. The `- key:` regex is what the audit's criterion matches, not a "
+        "shadow-field read."
+    ),
     "scripts/run_codeguide.sh": "Front CLI dispatcher; reads no document fields itself.",
     # scripts/run_external_plan_reviews.sh was excluded here on a polarity conflict: ONE
     # fence-blind `extract_field_value` served both the PLAN/TASK/DECISION capsules and the

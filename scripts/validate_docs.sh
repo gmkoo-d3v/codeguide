@@ -25,6 +25,16 @@ Usage:
 Options:
   --mode <advisory|strict>   Validation mode (default: advisory)
   --format <text|json>        Output format (default: text; json => one JSON object on stdout)
+  --gate <name>               Run ONE fail-closed gate instead of the document checks and
+                              exit 0 (not required / satisfied) or 1 (required and not
+                              satisfied). Supported: external-review (the implementation-
+                              start external review await gate). Unrelated advisory/strict
+                              document findings are neither evaluated nor reported.
+  --task-id <id>              With --gate: answer for this task (whatever its stored status);
+                              without it the gate covers every in_progress task.
+  --to-status <status>        With --gate --task-id: the status the caller is about to set
+                              (planned|in_progress|blocked|done). An already closed task has
+                              no transition left to guard unless this reopens it.
   --max-shadow-lines <n>      Maximum lines per project docs/shadow/*.md file (default: 300)
   --max-task-lines <n>        Maximum lines per project docs/task/TASK-*.md (default: 220)
   --max-decision-lines <n>    Maximum lines per project docs/decisions/decision-*.md (default: 180)
@@ -59,6 +69,9 @@ shift
 
 MODE="advisory"
 VALIDATE_FORMAT="text"
+GATE=""
+GATE_TASK_ID=""
+GATE_TO_STATUS=""
 MAX_SHADOW_LINES=300
 MAX_TASK_LINES=220
 MAX_DECISION_LINES=180
@@ -114,6 +127,21 @@ while [[ $# -gt 0 ]]; do
     --format)
       require_option_value "$1" "$#"
       VALIDATE_FORMAT="${2:-}"
+      shift 2
+      ;;
+    --gate)
+      require_option_value "$1" "$#"
+      GATE="${2:-}"
+      shift 2
+      ;;
+    --task-id)
+      require_option_value "$1" "$#"
+      GATE_TASK_ID="${2:-}"
+      shift 2
+      ;;
+    --to-status)
+      require_option_value "$1" "$#"
+      GATE_TO_STATUS="${2:-}"
       shift 2
       ;;
     --max-shadow-lines)
@@ -185,6 +213,31 @@ fi
 
 if [[ "$VALIDATE_FORMAT" != "text" && "$VALIDATE_FORMAT" != "json" ]]; then
   echo "[ERROR] Invalid format: $VALIDATE_FORMAT (use text or json)" >&2
+  exit 1
+fi
+
+if [[ -n "$GATE" && "$GATE" != "external-review" ]]; then
+  echo "[ERROR] Unknown --gate: $GATE (supported: external-review)" >&2
+  exit 1
+fi
+
+if [[ -n "$GATE_TASK_ID" && -z "$GATE" ]]; then
+  echo "[ERROR] --task-id requires --gate" >&2
+  exit 1
+fi
+
+if [[ -n "$GATE_TASK_ID" && ! "$GATE_TASK_ID" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "[ERROR] Invalid --task-id: $GATE_TASK_ID (allowed: letters, digits, dot, underscore, hyphen)" >&2
+  exit 1
+fi
+
+if [[ -n "$GATE_TO_STATUS" && -z "$GATE_TASK_ID" ]]; then
+  echo "[ERROR] --to-status requires --gate and --task-id" >&2
+  exit 1
+fi
+
+if [[ -n "$GATE_TO_STATUS" && "$GATE_TO_STATUS" != "planned" && "$GATE_TO_STATUS" != "in_progress" && "$GATE_TO_STATUS" != "blocked" && "$GATE_TO_STATUS" != "done" ]]; then
+  echo "[ERROR] Invalid --to-status: $GATE_TO_STATUS (use planned, in_progress, blocked, or done)" >&2
   exit 1
 fi
 
@@ -275,6 +328,12 @@ for _required_cmd in python3 perl; do
     exit 1
   fi
 done
+
+# Fail-closed gate entry: evaluates the one gate and exits with its verdict, so none of the
+# document checks below run (and none of their warnings can mask or dilute the result).
+if [[ -n "$GATE" ]]; then
+  run_external_review_gate_phase "$GATE_TASK_ID"
+fi
 
 
 # --- Structure checks ---
@@ -549,7 +608,7 @@ if [[ -d "$TASK_DIR" ]]; then
         fail "missing plan file for active task ${task_ref}: expected ${PLAN_DIR}/PLAN-${task_id}-v*.md"
       fi
       check_orchestration_file_for_task "$task_id" "$task_ref" "$task_status_primary"
-      check_external_review_await_gate_for_task "$task_id" "$task_ref" "$task_file" "$task_status"
+      check_external_review_await_gate_for_task "$task_id" "$task_ref" "$task_file" "$task_status_primary"
       orchestration_mode="$(orchestration_execution_mode_for_task "$task_id")"
       adversarial_source="$(adversarial_requirement_source_for_task "$task_id")"
       check_evaluator_reports_for_task "$task_id" "$task_ref" "$orchestration_mode" "$adversarial_source" "$latest_plan_version" "$task_status_primary"
