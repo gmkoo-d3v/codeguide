@@ -44,7 +44,9 @@ write_await_gate_fixture() {
 - axis_verify: bats
 EOF
 
-  cat > "$plan_file" <<EOF
+  # A plan that already exists is the one a genuine review read (create_genuine_review_evidence
+  # runs first): plan_sha256 binds that evidence to its exact bytes, so it must not be rewritten.
+  [[ -f "$plan_file" ]] || cat > "$plan_file" <<EOF
 # PLAN-${task_id}-${plan_version}
 
 - task_id: ${task_id}

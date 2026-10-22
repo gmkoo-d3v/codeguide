@@ -3799,6 +3799,17 @@ EOF'
   response_hash="sha256:$(shasum -a 256 "$handoff_dir/claude-current.response.md" | awk '{print $1}')"
   run grep -F -- "- response_sha256: ${response_hash}" "$provenance"
   [ "$status" -eq 0 ]
+  # The request and the plan it embeds are bound the same way, and the request carries the
+  # plan hash it was written with (the manifest copies it from there).
+  local request_hash plan_hash
+  request_hash="sha256:$(shasum -a 256 "$handoff_dir/claude-current.request.md" | awk '{print $1}')"
+  run grep -F -- "- request_sha256: ${request_hash}" "$provenance"
+  [ "$status" -eq 0 ]
+  plan_hash="sha256:$(shasum -a 256 "$DOCS_ROOT/plan/PLAN-${task_id}-v1.0.md" | awk '{print $1}')"
+  run grep -F -- "- plan_sha256: ${plan_hash}" "$provenance"
+  [ "$status" -eq 0 ]
+  run grep -F -- "- plan_sha256: ${plan_hash}" "$handoff_dir/claude-current.request.md"
+  [ "$status" -eq 0 ]
   run grep -F -- "- raw_capture_deleted: true" "$provenance"
   [ "$status" -eq 0 ]
   run grep -F -- "- sanitized_response: true" "$provenance"

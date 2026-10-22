@@ -523,24 +523,76 @@ refute_review_field_fail() {
 }
 
 # ---------------------------------------------------------------------------------------------
+# E. The review is bound to the plan it read and the request it answered (plan_sha256, request_sha256)
+#    These two used to be pinned as known limitations KL-1 and KL-2; the manifest now records both
+#    hashes and the verifier recomputes them, so an edit after the review is refused.
+# ---------------------------------------------------------------------------------------------
+
+@test "TC-17 a PLAN edited after its review is refused by the verifier and the gate (plan_sha256)" {
+  adv_empty_base tc17
+  printf '\n%s\n' "- note: plan changed after the external review accepted it" >> "$DOCS_ROOT/plan/PLAN-tc17-v1.0.md"
+  rg_verify tc17 v1.0 r01 agy:current
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "provenance plan_sha256 does not match PLAN-tc17-v1.0.md"
+  rg_gate tc17
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "plan_sha256 does not match"
+}
+
+@test "TC-18 an altered Request payload is refused by the verifier and the gate (request_sha256)" {
+  adv_empty_base tc18
+  printf '%s\n' "payload line added after the review ran" >> "$(rg_evidence_dir tc18 v1.0 r01)/agy-current.request.md"
+  rg_verify tc18 v1.0 r01 agy:current
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "provenance request_sha256 does not match the request file"
+  rg_gate tc18
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "request_sha256 does not match"
+}
+
+@test "TC-19 a manifest recorded before plan and request hashing is refused: the reason asks for a new review round" {
+  adv_empty_base tc19
+  local provenance
+  provenance="$(rg_evidence_dir tc19 v1.0 r01)/agy-current.response.provenance.md"
+  sed -i.bak '/^- request_sha256:/d; /^- plan_sha256:/d' "$provenance"
+  rm -f "$provenance.bak"
+  rg_verify tc19 v1.0 r01 agy:current
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "provenance request_sha256 is missing"
+  assert_contains "$output" "provenance plan_sha256 is missing"
+  assert_contains "$output" "run a new review round"
+  rg_gate tc19
+  [ "$status" -eq 1 ]
+}
+
+@test "TC-20 a request whose recorded plan hash disagrees with the manifest is refused" {
+  adv_empty_base tc20
+  local request provenance
+  request="$(rg_evidence_dir tc20 v1.0 r01)/agy-current.request.md"
+  provenance="$(rg_evidence_dir tc20 v1.0 r01)/agy-current.response.provenance.md"
+  sed -i.bak 's#^- plan_sha256: .*#- plan_sha256: sha256:0000000000000000000000000000000000000000000000000000000000000000#' "$request"
+  rm -f "$request.bak"
+  # re-bind request_sha256 to the edited request so only the plan-hash disagreement remains
+  sed -i.bak "s#^- request_sha256: .*#- request_sha256: $(sha256_file_ref "$request")#" "$provenance"
+  rm -f "$provenance.bak"
+  rg_verify tc20 v1.0 r01 agy:current
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "request plan_sha256 disagrees with the provenance plan_sha256"
+}
+
+@test "TC-21 a missing plan file cannot be verified, so the review is refused rather than assumed current" {
+  adv_empty_base tc21
+  mv "$DOCS_ROOT/plan/PLAN-tc21-v1.0.md" "$DOCS_ROOT/plan/PLAN-tc21-v1.0.md.moved"
+  rg_verify tc21 v1.0 r01 agy:current
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "plan_sha256 cannot be verified"
+}
+
+# ---------------------------------------------------------------------------------------------
 # KNOWN LIMITATIONS: pinned CURRENT behaviour, not fixes. Each of these passes today because the
 # contract does not cover it; strengthening any of them should make its test fail on purpose and
 # be replaced by a real test. They are tracked in the plan of the integration task.
 # ---------------------------------------------------------------------------------------------
-
-@test "KNOWN-LIMITATION KL-1 a PLAN edited after its review is not detected (no plan hash is recorded)" {
-  adv_empty_base kl1
-  printf '\n%s\n' "- note: plan changed after the external review accepted it" >> "$DOCS_ROOT/plan/PLAN-kl1-v1.0.md"
-  rg_gate kl1
-  [ "$status" -eq 0 ]
-}
-
-@test "KNOWN-LIMITATION KL-2 an altered Request payload is not detected (the request carries no hash)" {
-  adv_empty_base kl2
-  printf '%s\n' "payload line added after the review ran" >> "$(rg_evidence_dir kl2 v1.0 r01)/agy-current.request.md"
-  rg_gate kl2
-  [ "$status" -eq 0 ]
-}
 
 @test "KNOWN-LIMITATION KL-3 work that skips the harness is not gated: a planning-only run on an unapproved review exits 0" {
   rg_write_task kl3 planned implementation_start PLAN-kl3-v1.0 requested "agy:current" "" "" ""
