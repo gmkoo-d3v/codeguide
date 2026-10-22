@@ -1,0 +1,237 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>통합 계약 검증 보고</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: an audit ledger. A verdict strip first, then one evidence table per question the reader asks. */
+:root {
+  --bg: #f4f6f7;
+  --surface: #ffffff;
+  --ink: #14212b;
+  --muted: #55666f;
+  --line: #d8e0e4;
+  --accent: #0e6a6a;
+  --accent-soft: #dff0ef;
+  --ok: #17703f;
+  --ok-soft: #dcf2e4;
+  --warn: #8a5a00;
+  --warn-soft: #fbefcf;
+  --bad: #ab2a1d;
+  --bad-soft: #fbe0dc;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: ui-sans-serif, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f171c; --surface: #16222a; --ink: #e5edf1; --muted: #93a6b2; --line: #263640;
+    --accent: #5cc4c2; --accent-soft: #163536; --ok: #62d08f; --ok-soft: #12301f;
+    --warn: #e5b445; --warn-soft: #382c10; --bad: #ff8d82; --bad-soft: #3b1a17;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f171c; --surface: #16222a; --ink: #e5edf1; --muted: #93a6b2; --line: #263640;
+  --accent: #5cc4c2; --accent-soft: #163536; --ok: #62d08f; --ok-soft: #12301f;
+  --warn: #e5b445; --warn-soft: #382c10; --bad: #ff8d82; --bad-soft: #3b1a17;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 var(--sans);
+  padding-block: 28px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+main { max-width: 1000px; margin: 0 auto; display: grid; gap: 28px; }
+h1 { font-size: 28px; line-height: 1.25; margin: 4px 0 10px; text-wrap: balance; }
+h2 { font-size: 18px; margin: 0 0 12px; }
+h2 small { font-weight: 400; color: var(--muted); font-size: 13px; margin-left: 8px; }
+.eyebrow { font: 600 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.lead { max-width: 70ch; margin: 0; }
+.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-top: 18px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; min-width: 0; }
+.stat b { display: block; font-size: 20px; line-height: 1.3; }
+.stat span { color: var(--muted); font-size: 13px; }
+section { min-width: 0; }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 680px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
+th { font: 600 12px/1.3 var(--mono); letter-spacing: .04em; color: var(--muted); background: var(--accent-soft); }
+tr:last-child td { border-bottom: 0; }
+td.n { font-family: var(--mono); color: var(--muted); white-space: nowrap; }
+code, .path { font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
+.pill { display: inline-block; font: 600 12px/1 var(--mono); padding: 4px 8px; border-radius: 999px; white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+ul { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.note { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--warn); border-radius: 8px; padding: 12px 14px; }
+.note.ok { border-left-color: var(--ok); }
+.verdict { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--ok); border-radius: 8px; padding: 14px 16px; }
+.pathrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
+.pathrow .path { flex: 1 1 320px; min-width: 0; }
+button { font: 600 12px/1 var(--sans); border: 1px solid var(--line); background: var(--accent-soft); color: var(--ink); border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<main>
+  <header>
+    <div class="eyebrow">codeguide · adversarial 리뷰 × 외부 승인 게이트</div>
+    <h1>통합 계약 검증 보고</h1>
+    <p class="lead">두 브랜치를 격리된 통합 브랜치에서 합쳤고 충돌은 없었습니다. 합친 뒤 검증기 하나(<code>validate_docs_review_evidence.py</code>)만 계약과 어긋나 있었고, 그 한 곳을 고쳤습니다. 신규 통합 테스트 24개는 세 번 실행해 모두 통과했고, 기존 675개 테스트에서는 이번 통합이 만든 새 실패가 없습니다. 실제 외부 CLI는 한 번도 실행되지 않았습니다. main에는 병합하지 않았습니다.</p>
+    <div class="strip">
+      <div class="stat"><b>24 / 24 × 3회</b><span>통합 스위트, 단일 1회 + 반복 2회</span></div>
+      <div class="stat"><b>새 실패 0건</b><span>기존 675개 중 672 통과, 3건은 통합과 무관</span></div>
+      <div class="stat"><b>실제 CLI 실행 0회</b><span>트립와이어가 1회 시도를 가로챔</span></div>
+      <div class="stat"><b>충돌 1건 해결</b><span>검증기가 wrapper보다 엄격했던 불일치</span></div>
+    </div>
+  </header>
+
+  <section>
+    <h2>1. 통합 브랜치와 작업 위치</h2>
+    <div class="pathrow"><span class="path">PROJECT_ROOT/.claude/worktrees/integration-adversarial-gate</span><button type="button" data-copy="PROJECT_ROOT/.claude/worktrees/integration-adversarial-gate">복사</button></div>
+    <div class="pathrow"><span class="path">PROJECT_ROOT/.claude/worktrees/integration-adversarial-gate/codeguide</span><button type="button" data-copy="PROJECT_ROOT/.claude/worktrees/integration-adversarial-gate/codeguide">복사</button></div>
+    <p style="color:var(--muted);margin:6px 0 0">브랜치 <code>claude/integration-adversarial-gate</code> (docs 저장소와 스킬 저장소 양쪽). 기존 워킹 트리와 브랜치는 읽기만 했고 삭제하거나 바꾸지 않았습니다. 기존 두 워킹 트리의 미커밋 변경은 없었습니다.</p>
+  </section>
+
+  <section>
+    <h2>2. 두 브랜치의 변경 통합 결과</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>구성</th><th>커밋</th><th>내용</th></tr></thead>
+      <tbody>
+        <tr><td>게이트 브랜치 (이미 main)</td><td class="n">13a1597</td><td>증거 검증형·fail-closed 구현 시작 게이트, <code>validate_docs_review_evidence.py</code> 신규</td></tr>
+        <tr><td>adversarial 브랜치</td><td class="n">643a1d7</td><td>adversarial accept의 반박 필드를 빈 값으로 허용: wrapper 파서, Shadow v2 게이트, 프롬프트, 계약 문서</td></tr>
+        <tr><td>통합 병합(<code>--no-ff</code>)</td><td class="n">6476e2d</td><td>자동 병합, 충돌 없음. 양쪽이 건드린 <code>orchestration-review-contract.md</code>는 서로 다른 문단이라 자동 해결</td></tr>
+        <tr><td>통합 수정과 테스트</td><td class="n">2ecf622</td><td>검증기 규칙 정렬, 통합 스위트와 헬퍼, 계약 문서 보강 (스킬 저장소)</td></tr>
+        <tr><td>작업 기록</td><td class="n">docs 저장소</td><td>TASK·PLAN·ORCH와 결과, 미해결 항목 8건</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>3. 해결된 계약 충돌</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>verdict</th><th>objection / counterproposal / rebuttal</th><th>residual_risk</th><th>구현 승인</th></tr></thead>
+      <tbody>
+        <tr><td>accept</td><td>키 존재 필수, 값은 비어도 됨</td><td>값 필수</td><td>증거 세트가 완전할 때만</td></tr>
+        <tr><td>revise</td><td>키 존재, 값 필수</td><td>값 필수</td><td>불가 (형식은 유효)</td></tr>
+        <tr><td>blocked</td><td>키 존재, 값 필수</td><td>값 필수</td><td>불가 (형식은 유효)</td></tr>
+      </tbody>
+    </table></div>
+    <ul style="margin-top:12px">
+      <li><b>충돌:</b> wrapper는 빈 반박 필드의 정상 accept를 첫 시도에서 받아들였는데, 제 검증기는 세 필드에 값을 요구해 같은 응답을 승인 게이트에서 거부했습니다. TC-01이 실제로 이 모순을 재현했습니다(`response is missing required review field objection` 등).</li>
+      <li><b>수정:</b> 키 부재(<code>None</code>)와 빈 값(<code>""</code>)을 구분해 계약대로 적용했습니다. 네 키는 모든 verdict에서 있어야 하고, <code>residual_risk</code>는 항상 비어 있으면 안 되며, 반박 3필드는 accept가 아니면 값이 있어야 합니다. 검증을 우회하거나 기대값을 느슨하게 바꾸지 않았고, 검증기는 여전히 <code>accept</code>만 승인합니다.</li>
+      <li><b>변이 확인:</b> 수정 전 검증기를 되돌리면 TC-01과 PARITY-01이 실패하고, 수정 전 wrapper 파서를 되돌려도 실패합니다. 테스트가 어느 쪽 이탈도 잡습니다.</li>
+      <li><b>Shadow v2 게이트:</b> 필드 규칙은 같아서 코드를 바꾸지 않았습니다. 다만 키 문법이 다릅니다. wrapper와 검증기는 열 0의 <code>- key:</code> 줄만 읽고, Shadow v2는 다른 글머리표·들여쓰기·대소문자도 받아들입니다. 손으로 쓴 응답은 Shadow v2만 통과할 수 있고, 진짜 wrapper 산출물은 셋 모두 통과합니다. 계약 문서에 기록했습니다.</li>
+      <li><b>공유 계약 검토:</b> 두 파이썬 읽기 주체는 코드를 공유할 수 있지만 bash wrapper는 그럴 수 없고, 다른 브랜치의 게이트와 테스트까지 건드려야 해서 범위를 넓히지 않았습니다. 대신 규칙을 한 곳의 실행 가능한 표(PARITY-01)로 두고 wrapper와 검증기가 모두 통과해야 하게 했습니다. 코드 통합은 후속 과제입니다.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>4. TC-01~TC-16 개별 결과<small>세 번 실행(단일 1회 + 반복 2회) 모두 같은 결과</small></h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>ID</th><th>검증 내용</th><th>결과</th><th>Mock 호출 / retry (테스트가 단언)</th></tr></thead>
+      <tbody>
+        <tr><td class="n">TC-01</td><td>adversarial accept + 빈 반박 필드: 첫 시도 수락, request·response·provenance·보고서 생성, 검증기 승인, strict 게이트 통과</td><td><span class="pill ok">PASS</span></td><td>1 / 0</td></tr>
+        <tr><td class="n">TC-02</td><td>adversarial accept + 값이 있는 반박 필드: 기존 정상 입력 유지, 게이트 통과</td><td><span class="pill ok">PASS</span></td><td>1 / 0</td></tr>
+        <tr><td class="n">TC-03</td><td>standard accept: 기존 규칙 불변, 게이트 통과 (필드 누락 음성도 거부)</td><td><span class="pill ok">PASS</span></td><td>1 / 0, 음성 2 / 1</td></tr>
+        <tr><td class="n">TC-04</td><td>반박 키 3개를 각각 제거하면 거부, 빈 값 TC-01과 판정이 다름</td><td><span class="pill ok">PASS</span></td><td>대조 1 / 0, 변형 3종 각 2 / 1</td></tr>
+        <tr><td class="n">TC-05</td><td><code>residual_risk</code> 누락·빈 값 모두 거부</td><td><span class="pill ok">PASS</span></td><td>각 2 / 1</td></tr>
+        <tr><td class="n">TC-06</td><td>revise/blocked 정상 응답은 형식 유효하지만 승인 거부, 빈 값은 파서가 거부</td><td><span class="pill ok">PASS</span></td><td>정상 각 1 / 0, 빈 값 6종 각 2 / 1</td></tr>
+        <tr><td class="n">TC-07</td><td>정상 accept + Request 누락 → 증거 세트 거부</td><td><span class="pill ok">PASS</span></td><td>1 / 0</td></tr>
+        <tr><td class="n">TC-08</td><td>정상 accept + Provenance 누락 → 거부</td><td><span class="pill ok">PASS</span></td><td>1 / 0</td></tr>
+        <tr><td class="n">TC-09</td><td>Response 변조 → SHA-256 불일치로 게이트 실패</td><td><span class="pill ok">PASS</span></td><td>1 / 0</td></tr>
+        <tr><td class="n">TC-10</td><td>task_id, plan_version, review_round, route, 경로 연결 9종 변조 → 모두 거부</td><td><span class="pill ok">PASS</span></td><td>1 / 0</td></tr>
+        <tr><td class="n">TC-11</td><td>리뷰 미승인 상태에서 <code>run_codeguide.sh</code> in_progress 전환: 종료 코드 ≠ 0, 런타임 미실행, 상태와 ORCH 메타데이터 불변</td><td><span class="pill ok">PASS</span></td><td>0 / 0</td></tr>
+        <tr><td class="n">TC-12</td><td>정상 승인 후 in_progress 전환, 허용된 mock 런타임 명령만 실행, 허용 목록 밖 명령은 차단</td><td><span class="pill ok">PASS</span></td><td>1 / 0 (run_codeguide는 호출 0)</td></tr>
+        <tr><td class="n">TC-13</td><td>필수 경로 2개: 없음, revise, blocked, wrapper가 거부한 accept는 모두 차단, 둘 다 정상 accept일 때만 통과</td><td><span class="pill ok">PASS</span></td><td>총 6 / 1</td></tr>
+        <tr><td class="n">TC-14</td><td><code>in_progress (resumed)</code>처럼 주석이 붙어도 advisory·strict·run_codeguide 모두 우회 불가</td><td><span class="pill ok">PASS</span></td><td>0 / 0</td></tr>
+        <tr><td class="n">TC-15</td><td>기본 옵션 <code>run_codeguide.sh</code> 재실행 뒤에도 기존 ORCH 승인·리뷰 필드 9개 보존</td><td><span class="pill ok">PASS</span></td><td>0 / 0</td></tr>
+        <tr><td class="n">TC-16</td><td>실존·accepted·<code>chosen_by: user</code>·linked_task 일치 waiver만 인정, 없는 파일·다른 작업·proposed·agent 결정은 거부</td><td><span class="pill ok">PASS</span></td><td>0 / 0</td></tr>
+        <tr><td class="n">추가</td><td>PARITY-01: 응답 변형 13종을 실제 wrapper와 검증기에 넣어 판정이 일치하는지, GUARD-01/02: 실제 CLI 차단, KL-1~5: 알려진 한계 현재 동작 고정</td><td><span class="pill ok">PASS</span></td><td>PARITY 23 / 8</td></tr>
+      </tbody>
+    </table></div>
+    <p style="color:var(--muted);margin:10px 0 0">한 번의 전체 실행에서 mock 호출은 약 66회이고, 그중 retry 21회는 일부러 잘못 만든 응답이 일으킨 형식 재시도입니다. 형식이 올바른 응답은 모두 한 번에 수락됐습니다. 호출 수는 테스트의 단언에서 계산한 값입니다.</p>
+  </section>
+
+  <section>
+    <h2>5. 기존 전체 테스트 대비 회귀 여부<small>모두 실제 CLI를 못 쓰는 PATH에서 단일 실행</small></h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>범위</th><th>결과</th><th>분류</th></tr></thead>
+      <tbody>
+        <tr><td><code>validate_docs.bats</code> 287개 (샤드 4)</td><td><span class="pill warn">285 통과</span></td><td>실패 2건은 main(<code>13a1597</code>)과 adversarial(<code>643a1d7</code>)에서도 똑같이 실패하는 기존 실패: done 작업의 이전 계획 버전 평가 보고서, JSON 이슈 id 이름</td></tr>
+        <tr><td><code>run_codeguide.bats</code> + <code>external_review.bats</code> 116개</td><td><span class="pill warn">115 통과</span></td><td>실패 1건은 <code>bundled agy routes use catalog cli_model values</code>: 이 테스트가 agy가 PATH에 있으면 <code>agy models</code>를 실행해서 트립와이어에 막혀 실패. 두 부모에도 같은 줄이 있어 통합과 무관</td></tr>
+        <tr><td>shadow_v2(adversarial 게이트 테스트 2개 포함), 리더 감사, doc_garden, front_cli 등 14개 파일 272개</td><td><span class="pill ok">272 통과</span></td><td>새 실패 없음</td></tr>
+        <tr><td>신규 통합 스위트 24개</td><td><span class="pill ok">24 × 3회</span></td><td>단일 1회 + 반복 2회 모두 통과</td></tr>
+      </tbody>
+    </table></div>
+    <div class="note" style="margin-top:12px">
+      <b>SIGPIPE 경쟁은 성공으로 처리하지 않았습니다.</b> 이전에 부하에서 strict 검증을 흔들던 <code>20-rules-shadow.sh</code>의 <code>printf … | grep -Fxq</code> 경쟁은 이번 단일 실행에서는 어떤 실패의 원인으로도 확인되지 않았습니다. 실패를 통과로 바꾸기 위해 재실행하거나 검증을 고치지 않았고, 이 결함은 그대로 남아 있습니다.
+    </div>
+  </section>
+
+  <section>
+    <h2>6. 실제 외부 CLI 호출 0회<small>설치된 agy·claude·codex가 실제로 있어서 차단이 필요했습니다</small></h2>
+    <ul>
+      <li>실제 바이너리는 <code>~/.local/bin/agy</code>, <code>~/.local/bin/claude</code>, <code>/opt/homebrew/bin/codex</code>에 있습니다. 테스트 PATH에서 이 디렉터리를 뺐고, 모든 CLI 이름(agy, claude, codex, gemini, antigravity)에 호출을 기록하고 거부하는 트립와이어를 달았으며, <code>CODEGUIDE_*_BIN</code>은 mock을 가리킵니다. 매 테스트의 teardown이 트립와이어 로그가 비었는지 확인합니다(GUARD-01/02).</li>
+      <li>기존 스위트도 같은 방식의 PATH로 돌렸습니다. 트립와이어 로그는 <b>한 줄</b>, <code>agy models</code>뿐입니다. 위 <code>external_review.bats:1799</code> 테스트가 <code>command -v agy</code>로 agy를 찾아 <code>agy models</code>를 실행한 것이고, 트립와이어가 가로채 종료 코드 97을 돌려 실제 바이너리는 실행되지 않았습니다.</li>
+      <li><b>주의:</b> 이 테스트는 차단 없이 돌리면 실제 <code>agy models</code>를 실행합니다. 기존 baseline 실행에서도 그랬을 수 있습니다. 적용하지 않았지만, agy가 있어도 mock 목록을 쓰거나 명시적 허용 환경 변수가 있을 때만 실행하도록 바꾸는 것을 권합니다(agy 트랙 파일이라 요청 없이는 수정하지 않았습니다).</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>7. 수정된 파일과 핵심 줄 번호<small>스킬 저장소 <code>codeguide/</code> 기준</small></h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>파일</th><th>줄</th><th>내용</th></tr></thead>
+      <tbody>
+        <tr><td><code>scripts/validate_docs_review_evidence.py</code></td><td class="n">18–27, 77, 213–222</td><td>adversarial 필드 규칙 정렬: 키 부재와 빈 값 구분, residual_risk 항상 필수, 반박 필드는 accept에서만 빈 값 허용</td></tr>
+        <tr><td><code>tests/review_contract_integration.bats</code> (신규, 566줄)</td><td class="n">47, 60, 71–420, 453, 531–559</td><td>GUARD-01/02, TC-01~TC-16, PARITY-01, KL-1~5</td></tr>
+        <tr><td><code>tests/review_gate_helper.bash</code> (신규, 363줄)</td><td class="n">전체</td><td>PATH 차단·트립와이어, mock 호출 기록, 응답 빌더, 실제 wrapper 실행 헬퍼, 증거 위조 헬퍼</td></tr>
+        <tr><td><code>references/orchestration-review-contract.md</code></td><td class="n">증거 세트 문단, 138</td><td>증거 세트가 적용하는 adversarial 규칙, 세 읽기 주체의 필드 규칙 공유와 키 문법 차이</td></tr>
+        <tr><td>변경 없음 (읽기만)</td><td class="n">—</td><td><code>run_external_plan_reviews.sh</code>, <code>shadow_v2_gate_skeleton.py</code>, <code>validate_docs.sh</code>, <code>run_codeguide.sh</code>: 이미 계약과 일치</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>8. 남은 구조적 우회와 무결성 문제<small>해결했다고 보고하지 않습니다</small></h2>
+    <p style="margin:0 0 10px;color:var(--muted)">현재 계약상 통과하는 테스트(TC)와 향후 강화가 필요한 항목(KL)은 분리했습니다. KL 테스트는 약점의 현재 동작을 그대로 고정한 것이라 강화되면 일부러 깨집니다.</p>
+    <ul>
+      <li><b>KL-1</b> 리뷰 뒤에 계획서가 바뀌어도 감지하지 못합니다(계획서 해시 없음).</li>
+      <li><b>KL-2</b> 리뷰 뒤에 Request 원문이 바뀌어도 감지하지 못합니다(request 해시 없음).</li>
+      <li><b>KL-3</b> 하네스를 거치지 않는 직접 수정이나 <code>--task-status planned</code> 실행은 게이트를 거치지 않습니다.</li>
+      <li><b>KL-4</b> 리뷰 요구 필드(<code>external_review_required_for</code>)를 에이전트가 비워 두면 리뷰가 필요 없는 작업처럼 보입니다.</li>
+      <li><b>KL-5</b> 완료된 작업의 승인 이력은 다시 검사하지 않습니다.</li>
+      <li>waiver의 결정 문서는 형식만 확인하며 사용자의 실제 승인은 암호학적으로 증명하지 못합니다.</li>
+      <li>Shadow v2 게이트의 키 문법이 다른 두 읽기 주체보다 느슨합니다.</li>
+      <li><code>20-rules-shadow.sh</code>의 SIGPIPE 경쟁이 부하에서 strict 검증을 흔듭니다(기존 결함, 이번에 손대지 않음).</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>9. main 병합 가능 여부</h2>
+    <div class="verdict">
+      <b>조건부 가능.</b> 계약 통합 관점에서 병합을 막는 요인은 없습니다: 충돌 없는 병합, 불일치 1건 해결, 신규 24/24 세 번 통과, 기존 675개에서 새 실패 0건, 실제 CLI 실행 0회. 사용자의 승인만 남았습니다.
+      <ul style="margin-top:10px">
+        <li>스킬 저장소: <code>main</code>(<code>13a1597</code>)이 통합 브랜치의 조상이라 fast-forward로 병합됩니다. 이 병합은 adversarial 브랜치(<code>643a1d7</code>)도 함께 main에 들입니다.</li>
+        <li>docs 저장소: main 체크아웃의 미커밋 변경이 정리된 뒤 병합합니다.</li>
+        <li>병합해도 기존 실패 3건(기존 2건, 실제 agy를 부르는 테스트 1건)과 위 8개 한계는 그대로입니다.</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<script>
+document.querySelectorAll('button[data-copy]').forEach(function (button) {
+  button.addEventListener('click', function () {
+    var text = button.getAttribute('data-copy');
+    var done = function () { button.textContent = '복사됨'; setTimeout(function () { button.textContent = '복사'; }, 1500); };
+    try {
+      navigator.clipboard.writeText(text).then(done, function () { window.getSelection().selectAllChildren(button.previousElementSibling); });
+    } catch (e) {
+      window.getSelection().selectAllChildren(button.previousElementSibling);
+    }
+  });
+});
+</script>

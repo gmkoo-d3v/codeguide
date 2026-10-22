@@ -1,0 +1,189 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>승인 게이트 수정 보고</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: an audit ledger. Verdict strip first, then one evidence table per question the reader asks (재현 / 수정 / 테스트 / 한계). */
+:root {
+  --bg: #f4f6f7;
+  --surface: #ffffff;
+  --ink: #14212b;
+  --muted: #55666f;
+  --line: #d8e0e4;
+  --accent: #0e6a6a;
+  --accent-soft: #dff0ef;
+  --ok: #17703f;
+  --ok-soft: #dcf2e4;
+  --warn: #8a5a00;
+  --warn-soft: #fbefcf;
+  --bad: #ab2a1d;
+  --bad-soft: #fbe0dc;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: ui-sans-serif, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f171c; --surface: #16222a; --ink: #e5edf1; --muted: #93a6b2; --line: #263640;
+    --accent: #5cc4c2; --accent-soft: #163536; --ok: #62d08f; --ok-soft: #12301f;
+    --warn: #e5b445; --warn-soft: #382c10; --bad: #ff8d82; --bad-soft: #3b1a17;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f171c; --surface: #16222a; --ink: #e5edf1; --muted: #93a6b2; --line: #263640;
+  --accent: #5cc4c2; --accent-soft: #163536; --ok: #62d08f; --ok-soft: #12301f;
+  --warn: #e5b445; --warn-soft: #382c10; --bad: #ff8d82; --bad-soft: #3b1a17;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 var(--sans);
+  padding-block: 28px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+main { max-width: 980px; margin: 0 auto; display: grid; gap: 28px; }
+h1 { font-size: 28px; line-height: 1.25; margin: 4px 0 10px; text-wrap: balance; }
+h2 { font-size: 18px; margin: 0 0 12px; }
+h2 small { font-weight: 400; color: var(--muted); font-size: 13px; margin-left: 8px; }
+.eyebrow { font: 600 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.lead { max-width: 68ch; margin: 0; color: var(--ink); }
+.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-top: 18px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; min-width: 0; }
+.stat b { display: block; font-size: 20px; line-height: 1.3; }
+.stat span { color: var(--muted); font-size: 13px; }
+section { min-width: 0; }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 640px; }
+th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
+th { font: 600 12px/1.3 var(--mono); letter-spacing: .04em; color: var(--muted); background: var(--accent-soft); }
+tr:last-child td { border-bottom: 0; }
+td.n { font-family: var(--mono); color: var(--muted); white-space: nowrap; }
+code, .path { font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
+.pill { display: inline-block; font: 600 12px/1 var(--mono); padding: 4px 8px; border-radius: 999px; white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+ul { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.note { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--warn); border-radius: 8px; padding: 12px 14px; }
+.note.ok { border-left-color: var(--ok); }
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+summary { cursor: pointer; font-weight: 600; }
+summary:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.paths { display: grid; gap: 8px; }
+.pathrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+.pathrow .path { flex: 1 1 320px; min-width: 0; }
+button { font: 600 12px/1 var(--sans); border: 1px solid var(--line); background: var(--accent-soft); color: var(--ink); border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+@media (prefers-reduced-motion: no-preference) { button { transition: background-color .15s; } }
+</style>
+
+<main>
+  <header>
+    <div class="eyebrow">codeguide · 외부 리뷰 승인 게이트</div>
+    <h1>승인 게이트 수정 보고</h1>
+    <p class="lead">외부 정적 감사가 지적한 5건을 mock 테스트로 먼저 재현했고, 재현된 결함만 고쳤습니다. 5건 모두 수정 전 코드에서 확인됐고(3번은 일부만), 같은 경로에서 우회 1건을 더 찾았습니다. 검증 중에는 제 변경이 만든 회귀 1건(섀도 리더 감사)도 잡아 고쳤습니다. 외부 유료 CLI는 한 번도 호출하지 않았고, 아무것도 커밋하지 않았습니다.</p>
+    <div class="strip">
+      <div class="stat"><b>5 / 5 재현</b><span>3번은 부분 확정, 상태 주석 우회 1건 추가</span></div>
+      <div class="stat"><b>신규·수정 테스트 통과</b><span>run_codeguide 43/43, 게이트 대상 33/33</span></div>
+      <div class="stat"><b>회귀 1건 수정</b><span>섀도 리더 감사 4건 → 8/8 통과</span></div>
+      <div class="stat"><b>외부 CLI 0회</b><span>agy·claude·codex 전부 mock 바이너리</span></div>
+    </div>
+  </header>
+
+  <section>
+    <h2>1. 재현 결과<small>수정 전 원본 스크립트에 같은 테스트를 실행</small></h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>#</th><th>감사 지적</th><th>판정</th><th>수정 전에 확인된 동작</th><th>수정 후</th></tr></thead>
+      <tbody>
+        <tr><td class="n">1</td><td><code>verdict: accept</code>만 확인</td><td><span class="pill bad">확정</span></td><td>요청·provenance 없는 accept 파일, 해시 뒤에 한 줄을 덧붙인 응답, wrapper가 필드 누락으로 거부한 불완전 accept가 모두 <code>[PASS] ... satisfied</code>로 통과</td><td>세 경우 모두 거부하고 사유를 출력. 증거 변조 20종도 각각 구체적 사유로 거부</td></tr>
+        <tr><td class="n">2</td><td>strict에서 검사 생략</td><td><span class="pill bad">확정</span></td><td>strict에서 게이트 <code>[FAIL]</code>이 아예 나오지 않음. 계획서 v1.4가 advisory 우선 롤아웃으로 둔 제한이며, 이번 요청이 그 후속 결정</td><td>in_progress 작업은 strict에서도 FAIL. done 작업은 기존대로 advisory 전용(닫힌 증거는 재검사하지 않음)</td></tr>
+        <tr><td class="n">3</td><td><code>run_codeguide.sh</code>가 경고 뒤 런타임 진행</td><td><span class="pill warn">부분 확정</span></td><td>일반 작업의 advisory 경고가 비실패인 것은 의도된 동작이라 유지. 재현된 결함은 리뷰 필수 작업이 게이트 미충족인데도 exit 0, 상태가 in_progress로 바뀌고 런타임 명령까지 실행된 것</td><td><code>validate_docs.sh --gate external-review</code>(exit 0/1)를 docs 변경과 런타임 실행 전에 실행, 미충족이면 <code>[BLOCKED]</code>와 exit 1. 일반 경고는 여전히 exit 0</td></tr>
+        <tr><td class="n">4</td><td>bats의 잘못된 성공 기대</td><td><span class="pill bad">확정</span></td><td>지적한 2개(bare accept → PASS, 없는 waiver 파일 → PASS)에 더해, <code>lacks required route accept</code> 테스트도 bare accept를 정상 route로 사용</td><td>3개 모두 올바른 기대로 수정하고 정상·비정상 회귀 테스트 추가</td></tr>
+        <tr><td class="n">5</td><td>기본 옵션이 ORCH를 덮어씀</td><td><span class="pill bad">확정</span></td><td>승인된 external_cli ORCH에 기본 <code>run_codeguide.sh</code>를 한 번 실행: execution_mode → solo, preflight → pass, approval_required → false, approval_ref → not_required, 승인 단계·요약·노트도 덮어쓰기, 검증기 모순 경고 2건</td><td>모든 필드 보존, 모순 0. 명시한 옵션은 여전히 덮어씀</td></tr>
+        <tr><td class="n">+</td><td>status 주석으로 게이트 우회</td><td><span class="pill bad">추가 확정</span></td><td><code>in_progress (resumed)</code>처럼 주석이 붙으면 게이트가 조용히 건너뜀</td><td>primary status 토큰 기준으로 평가</td></tr>
+        <tr><td class="n">+</td><td>waiver 문자열 위조</td><td><span class="pill bad">확정</span></td><td>임의 문장이나 존재하지 않는 파일 경로만으로 PASS</td><td>실존하는 <code>docs/decisions/decision-*.md</code>가 accepted, <code>chosen_by: user</code>, 해당 작업에 연결(linked_task)일 때만 인정</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>2. 수정 파일·줄 번호<small>스킬 저장소 <code>codeguide/</code> 기준</small></h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>파일</th><th>줄</th><th>내용</th></tr></thead>
+      <tbody>
+        <tr><td><code>scripts/validate_docs_review_evidence.py</code> (신규, 283줄)</td><td class="n">125, 243</td><td>request·response·provenance·SHA-256 재계산·task/plan/round/route 정합성 검증(<code>verify_set</code>, <code>main</code>). 경로는 꼬리 비교라 프로젝트를 옮겨도 정상 증거가 유지됨. <code>--verdict-only</code>는 닫힌 작업용 기존 판독</td></tr>
+        <tr><td><code>scripts/validate_docs.d/40-rules-orchestration.sh</code></td><td class="n">578, 643, 715, 774, 850, 902</td><td>검증기 호출(크래시도 실패 처리), ingested 가드 사유, waiver 가드, 작업 단계 구분과 primary status, fail-closed 게이트 진입점</td></tr>
+        <tr><td><code>scripts/validate_docs.sh</code></td><td class="n">28, 132–146, 219–243, 332, 611</td><td><code>--gate</code>, <code>--task-id</code>, <code>--to-status</code> 옵션·검증, 게이트 연결, primary status 전달</td></tr>
+        <tr><td><code>scripts/run_codeguide.sh</code></td><td class="n">77–82, 211–243, 656–679, 708–732</td><td>명시 옵션 추적, docs 변경·런타임 실행 전 게이트, 사용자가 준 옵션만 doc_garden에 전달</td></tr>
+        <tr><td><code>scripts/doc_garden.sh</code></td><td class="n">120–124, 429–471, 586–688, 787</td><td>명시 옵션 추적, 기존 ORCH 값 보존(실행 모드 변경 시 preflight는 이월하지 않음), solo 기본 노트 보호</td></tr>
+        <tr><td><code>scripts/shadow_reader_audit.py</code></td><td class="n">103</td><td>새 검증기를 truthful 사유와 함께 제외 항목으로 분류(회귀 수정)</td></tr>
+        <tr><td>테스트</td><td class="n">—</td><td><code>tests/validate_docs.bats</code>, <code>tests/run_codeguide.bats</code>: 잘못된 기대 3건 수정, 신규 41개 추가(validate_docs 29, run_codeguide 12)</td></tr>
+        <tr><td>문서</td><td class="n">—</td><td><code>references/</code> 5개 파일과 <code>README.md</code>의 게이트 계약, 상위 <code>docs/</code>의 TASK·PLAN·ORCH·결정 기록·DOC-GOVERNANCE</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>3. 테스트 결과</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>범위</th><th>결과</th><th>비고</th></tr></thead>
+      <tbody>
+        <tr><td><code>run_codeguide.bats</code> 전체</td><td><span class="pill ok">43 / 43</span></td><td>신규 12개 포함(게이트 차단, 일반 경고 통과, ORCH 보존, 실행 모드 변경)</td></tr>
+        <tr><td>게이트·증거·waiver·strict 대상 <code>validate_docs</code></td><td><span class="pill ok">전부 통과</span></td><td>증거 변조 20종, 재시도 세트, 프로젝트 이동, 적대적 필드, waiver 변형 6종, JSON 출력, 사용법 오류</td></tr>
+        <tr><td>수정 전 코드로 같은 테스트 실행</td><td><span class="pill bad">재현</span></td><td>결함 대상 테스트는 <code>not ok</code>, 정상 동작 보존 테스트는 <code>ok</code></td></tr>
+        <tr><td>섀도 리더 감사</td><td><span class="pill ok">8 / 8</span></td><td>제 변경으로 4건이 실패했다가 분류 추가로 해결</td></tr>
+        <tr><td>실제 docs 코퍼스 advisory 출력(고정 사본)</td><td><span class="pill ok">수정 전/후 동일</span></td><td>strict는 양쪽 모두 exit 1: 원래 있던 issue 문서 문제와 아래 SIGPIPE 경쟁</td></tr>
+        <tr><td>영문 정책, 패키징, 규칙 커버리지, pytest</td><td><span class="pill ok">통과</span></td><td>UNKNOWN 0, UNTESTED 0(106개 규칙), vendor-neutral 2건 통과. macOS bash 3.2.57에서도 게이트 통과</td></tr>
+        <tr><td>doc_garden 등 13개 파일 235개</td><td><span class="pill warn">229 통과</span></td><td>실패 6건: 섀도 리더 감사 4건은 제 회귀였고 수정함, <code>check_all --suite fast</code>와 scratch scaffold validate 2건은 단독 재실행에서 통과. <code>external_review.bats</code>, 섀도 계열 스위트, <code>check_all.sh</code> 전체는 실행하지 못했습니다</td></tr>
+        <tr><td>전체 <code>validate_docs.bats</code> 287개</td><td><span class="pill warn">265 통과 · 22 실패 → 재실행 20 통과</span></td><td>22건 실패는 부하성 SIGPIPE 경쟁으로 보입니다. 경쟁을 무력화한 임시 사본에서 수정 전·후 코드를 같은 방식으로 재실행하니 20건은 통과했고, 2건(done 작업의 이전 계획 버전 평가 보고서, JSON 이슈 id 이름)은 수정 전 원본에서도 실패합니다. 수정 전에는 통과하고 수정 후에만 실패하는 테스트는 0건입니다. 단일 실행으로 한 번에 깨끗이 통과한 결과는 아닙니다.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="note" style="margin-top:12px">
+      <b>부하에서만 뜨는 기존 결함.</b> <code>validate_docs.d/20-rules-shadow.sh</code>의 <code>printf … | grep -Fxq</code>가 pipefail과 만나 SIGPIPE 경쟁을 일으키고, 컴퓨터가 바쁠 때 <code>Broken pipe</code>와 가짜 <code>[FAIL]</code>을 냅니다. 빈 scaffold에 strict를 12회 돌리자 수정 전 원본은 12회 모두, 제 트리는 10회 실패했습니다. 이 작업 범위가 아니라 repo에는 고치지 않았고, 비교용 임시 사본에만 같은 패치를 적용해 둘을 비교했습니다. 별도 작업으로 here-string으로 바꾸는 것을 권합니다.
+    </div>
+  </section>
+
+  <section>
+    <h2>4. 여전히 LLM 지침 준수에 의존하는 영역</h2>
+    <ul>
+      <li><b>사용자가 정말 승인했는지.</b> 로컬 증거는 일관성 증거일 뿐 위변조 방지 증명이 아닙니다. 쓰기 권한이 있으면 해시까지 맞춘 가짜 증거 세트나 <code>chosen_by: user</code> 결정 파일을 만들 수 있습니다.</li>
+      <li><b>게이트를 실제로 거치는지.</b> <code>run_codeguide.sh</code>를 쓰지 않고 직접 수정하거나 <code>--task-status planned</code>로 구현하면 우회됩니다. CI·pre-commit 연결은 추가하지 않았습니다.</li>
+      <li><b>요구 사항의 기록.</b> <code>external_review_required_for</code>, <code>required_review_routes</code>, 상태 필드는 에이전트가 직접 적습니다. 비워 두거나 약한 route만 적어도 게이트는 알 수 없고, wrapper가 이 필드를 자동 기록하지도 않습니다.</li>
+      <li><b>리뷰 이후의 변화.</b> 계획서가 리뷰 뒤에 바뀌었는지, request 내용이 변조됐는지는 확인하지 못합니다(wrapper가 계획서·request 해시를 기록하지 않음). 이 부분은 사용자 트랙이라 wrapper는 건드리지 않았습니다.</li>
+      <li><b>범위의 경계.</b> 닫힌(done) 작업은 의도적으로 재검사하지 않습니다. 실제 코퍼스의 유일한 <code>implementation_start</code> 작업은 기록된 리뷰가 <code>revise</code>이고 provenance도 없지만 이 예외로 걸리지 않습니다. waiver는 계획 버전에 묶이지 않고, 외부 CLI route가 아닌 native 서브에이전트 리뷰는 이 게이트로 증명할 수 없습니다.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>5. 확인이 필요한 변경</h2>
+    <ul>
+      <li>손으로 쓴 provenance는 더 이상 인정되지 않습니다. 수동 리뷰는 wrapper의 <code>--ingest-manual-responses</code>로 다시 넣어야 합니다.</li>
+      <li>리뷰 필수 작업에서 기본 옵션(<code>--task-status in_progress</code>)으로 <code>run_codeguide.sh</code>를 돌리면 게이트가 막습니다. 계획만 갱신할 때는 <code>--task-status planned</code>를 쓰세요.</li>
+      <li>strict에서 in_progress이면서 리뷰가 필요한 작업이 게이트 미충족이면 이제 실패합니다.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>6. 위치와 상태</h2>
+    <div class="paths">
+      <div class="pathrow"><span class="path">PROJECT_ROOT/.claude/worktrees/external-review-gate-defects-166a56</span><button type="button" data-copy="PROJECT_ROOT/.claude/worktrees/external-review-gate-defects-166a56">복사</button></div>
+      <div class="pathrow"><span class="path">PROJECT_ROOT/.claude/worktrees/external-review-gate-defects-166a56/codeguide</span><button type="button" data-copy="PROJECT_ROOT/.claude/worktrees/external-review-gate-defects-166a56/codeguide">복사</button></div>
+    </div>
+    <p style="color:var(--muted);margin:10px 0 0">브랜치 <code>claude/external-review-gate-defects-166a56</code>, 두 워킹 트리 모두 미커밋입니다.</p>
+  </section>
+</main>
+
+<script>
+document.querySelectorAll('button[data-copy]').forEach(function (button) {
+  button.addEventListener('click', function () {
+    var text = button.getAttribute('data-copy');
+    var done = function () { button.textContent = '복사됨'; setTimeout(function () { button.textContent = '복사'; }, 1500); };
+    try {
+      navigator.clipboard.writeText(text).then(done, function () { window.getSelection().selectAllChildren(button.previousElementSibling); });
+    } catch (e) {
+      window.getSelection().selectAllChildren(button.previousElementSibling);
+    }
+  });
+});
+</script>

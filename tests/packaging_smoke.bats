@@ -31,8 +31,9 @@ _seed_packaging_fixture() {
 
   # SHIP: allowlisted directories, including a name-with-spaces file and an
   # empty allowlisted subdirectory (must still classify SHIP).
-  mkdir -p "$root/agents" "$root/config" "$root/references" "$root/scripts" \
+  mkdir -p "$root/agents" "$root/case-studies" "$root/config" "$root/references" "$root/scripts" \
     "$root/tests" "$root/scripts/empty-ship-subdir"
+  printf '<html></html>\n' > "$root/case-studies/report.html"
   printf 'agent\n' > "$root/agents/default-prompt.yaml"
   printf '{}\n' > "$root/config/ai_model_registry.json"
   printf 'ref\n' > "$root/references/notes.md"
@@ -87,7 +88,7 @@ unknown = set(payload["unknown"])
 
 for expected in (
     "SKILL.md", "README.md", "requirements-dev.txt",
-    "agents/default-prompt.yaml", "config/ai_model_registry.json",
+    "agents/default-prompt.yaml", "case-studies/report.html", "config/ai_model_registry.json",
     "references/notes.md", "scripts/my script.py", "tests/test_x.py",
     "scripts/empty-ship-subdir",
 ):

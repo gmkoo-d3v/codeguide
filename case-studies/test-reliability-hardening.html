@@ -1,0 +1,204 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>테스트 신뢰성 보강 보고</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: an audit ledger. A verdict strip first, then one evidence table per question the reader asks. */
+:root {
+  --bg: #f4f6f7;
+  --surface: #ffffff;
+  --ink: #14212b;
+  --muted: #55666f;
+  --line: #d8e0e4;
+  --accent: #0e6a6a;
+  --accent-soft: #dff0ef;
+  --ok: #17703f;
+  --ok-soft: #dcf2e4;
+  --warn: #8a5a00;
+  --warn-soft: #fbefcf;
+  --bad: #ab2a1d;
+  --bad-soft: #fbe0dc;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: ui-sans-serif, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f171c; --surface: #16222a; --ink: #e5edf1; --muted: #93a6b2; --line: #263640;
+    --accent: #5cc4c2; --accent-soft: #163536; --ok: #62d08f; --ok-soft: #12301f;
+    --warn: #e5b445; --warn-soft: #382c10; --bad: #ff8d82; --bad-soft: #3b1a17;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f171c; --surface: #16222a; --ink: #e5edf1; --muted: #93a6b2; --line: #263640;
+  --accent: #5cc4c2; --accent-soft: #163536; --ok: #62d08f; --ok-soft: #12301f;
+  --warn: #e5b445; --warn-soft: #382c10; --bad: #ff8d82; --bad-soft: #3b1a17;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 var(--sans);
+  padding-block: 28px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+main { max-width: 1000px; margin: 0 auto; display: grid; gap: 28px; }
+h1 { font-size: 28px; line-height: 1.25; margin: 4px 0 10px; text-wrap: balance; }
+h2 { font-size: 18px; margin: 0 0 12px; }
+h2 small { font-weight: 400; color: var(--muted); font-size: 13px; margin-left: 8px; }
+.eyebrow { font: 600 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.lead { max-width: 72ch; margin: 0; }
+.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 18px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; min-width: 0; }
+.stat b { display: block; font-size: 20px; line-height: 1.3; }
+.stat span { color: var(--muted); font-size: 13px; }
+section { min-width: 0; }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 680px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
+th { font: 600 12px/1.3 var(--mono); letter-spacing: .04em; color: var(--muted); background: var(--accent-soft); }
+tr:last-child td { border-bottom: 0; }
+td.n { font-family: var(--mono); color: var(--muted); white-space: nowrap; }
+code { font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
+.pill { display: inline-block; font: 600 12px/1 var(--mono); padding: 4px 8px; border-radius: 999px; white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+ul { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.note { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--warn); border-radius: 8px; padding: 12px 14px; }
+.note.ok { border-left-color: var(--ok); }
+.muted { color: var(--muted); }
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+details + details { margin-top: 8px; }
+summary { cursor: pointer; font-weight: 600; }
+summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+details > :not(summary) { margin-top: 10px; }
+</style>
+
+<main>
+  <header>
+    <div class="eyebrow">codeguide · 검증 신뢰성 후속 작업</div>
+    <h1>테스트 신뢰성 보강 보고</h1>
+    <p class="lead">검증이 틀린 답을 내거나 조용히 건너뛰던 곳을 고쳤습니다. 파이프가 일찍 닫히며 결과를 바꾸던 14곳을 정리했고, 기본 테스트가 실제 <code>agy</code>를 실행하던 것을 막았습니다. 승인된 리뷰를 계획서와 요청서의 해시에 묶었고, 새 모델 17개 경로를 레지스트리에 등록하면서 기본 OpenAI 리뷰어를 GPT-6.1 Sol로 바꿨습니다. 전체 스위트에서 새 실패는 없고, 실제 외부 CLI는 한 번도 실행되지 않았습니다.</p>
+    <div class="strip">
+      <div class="stat"><b>857 / 859</b><span>SIGPIPE 수정 뒤 전체 스위트의 ok. 그중 1건은 의도한 skip, 실패 2건은 수정 전부터 있던 것</span></div>
+      <div class="stat"><b>14곳</b><span>조기 종료 파이프를 고친 곳. 동작이 틀어지는 것을 재현한 곳은 3곳</span></div>
+      <div class="stat"><b>5 / 5</b><span>해시 결합 테스트가 옛 검증기에서는 실패함</span></div>
+      <div class="stat"><b>실제 CLI 0회</b><span>트립와이어 로그가 늘지 않음</span></div>
+    </div>
+  </header>
+
+  <section>
+    <h2>1. 네 작업의 현재 상태</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>작업</th><th>상태</th><th>핵심 근거</th></tr></thead>
+      <tbody>
+        <tr><td>모델 레지스트리 갱신</td><td><span class="pill ok">main 병합</span><br><code>3e8d5be</code></td><td>새 경로 17개, 기본 리뷰어 GPT-6.1 Sol(medium). 신규·확장 테스트 3개가 옛 레지스트리에서 실패함</td></tr>
+        <tr><td>SIGPIPE·실제 CLI 호출 수정</td><td><span class="pill ok">main 병합</span><br><code>bab734f</code></td><td>결정적 재현 3종, 신규 테스트 7개 중 6개가 옛 스크립트에서 실패(나머지 1개는 대조 실험), 전체 857/859</td></tr>
+        <tr><td>계획서·요청서 해시 결합</td><td><span class="pill warn">브랜치, 미병합</span></td><td>통합 스위트 27/27, 신규 TC-17~21이 옛 검증기에서 5/5 실패, 래퍼 계열 스위트 233/233</td></tr>
+        <tr><td>README·case-studies</td><td><span class="pill warn">브랜치, 미병합</span></td><td>이 보고서 포함. packaging 테스트 12/12, 옛 분류기는 새 폴더를 UNKNOWN으로 판정해 게이트가 깨짐</td></tr>
+      </tbody>
+    </table></div>
+    <p class="muted" style="margin:10px 0 0">B와 D는 skill 저장소에 병합 커밋 <code>ff0ca32</code>로, docs 저장소에는 fast-forward <code>7eff652</code>로 들어갔습니다. 푸시는 하지 않았습니다.</p>
+  </section>
+
+  <section>
+    <h2>2. 조기 종료 파이프: 가장 위험한 형태는 조용한 통과<small>SIGPIPE under <code>set -o pipefail</code></small></h2>
+    <p style="margin:0 0 10px">소비자가 일찍 끝나는 파이프(<code>grep -q</code>, <code>grep -m1</code>, <code>head -n N</code>)는 아직 쓰는 중인 생산자를 SIGPIPE로 죽입니다. <code>pipefail</code> 아래에서는 그 종료 상태가 파이프 전체의 상태가 되어, 맞는 답이 실패로 읽힙니다. 스크립트 전체에서 이런 파이프 26개를 전수 조사해 14곳을 고쳤습니다. 나머지는 <code>|| true</code>로 상태가 가려져 있거나 생산자가 한 줄뿐이라 영향이 없습니다.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>재현 (수정 전 → 후)</th><th>수정 전</th><th>수정 후</th></tr></thead>
+      <tbody>
+        <tr><td>빈 shadow 그래프 검사<br><span class="muted">소스 파일은 있고 shadow unit은 없는 저장소</span></td><td>추적 파일 목록 1.6KB: <code>shadow graph is empty</code> 보고, 종료 1.<br><b>목록 243KB: 아무 보고 없이 strict 통과, 종료 0</b></td><td>두 크기 모두 보고하고 종료 1</td></tr>
+        <tr><td>레지스트리 id 멤버십 검사<br><span class="muted">id 8000개 목록을 넣은 단위 테스트</span></td><td>목록에 있는 id 4개를 "선언되지 않음"으로 보고</td><td>보고 0건</td></tr>
+        <tr><td>doc_garden 재개 체크포인트<br><span class="muted">변경 경로 1500개</span></td><td><code>set -e</code>로 스크립트 중단</td><td>정상 종료, <code>(+1490 more)</code> 기록</td></tr>
+      </tbody>
+    </table></div>
+    <ul style="margin-top:12px">
+      <li><b>조용한 쪽이 더 나쁩니다.</b> 무작위로 실패하는 검증은 눈에 띄지만, 저장소가 커졌다는 이유만으로 검사를 건너뛰고 통과하는 검증은 아무도 모릅니다.</li>
+      <li><b>고친 방식:</b> 멤버십 검사는 파이프도 임시 파일도 쓰지 않는 순수 bash <code>case</code> 헬퍼(<code>list_has_line</code>)로 바꿨습니다. here-string은 일부러 쓰지 않았습니다. bash 3.2는 here-string을 <code>$TMPDIR</code>을 무시하는 임시 파일로 만들어, 샌드박스에서 검증기가 깨질 수 있습니다. 나머지는 입력을 끝까지 읽는 <code>sed -n '1,10p'</code>, 첫 소스 경로에서 멈추는 읽기 루프로 바꿨습니다.</li>
+      <li><b>회귀 방지:</b> <code>tests/pipe_safety.bats</code>의 정적 검사가 <code>scripts/</code>에서 이 패턴의 재유입을 막습니다. 헬퍼는 <code>grep -Fx</code>와 23개 경계 사례(전체 줄 일치, 글롭·정규식 문자, 공백, 빈 목록, 선행 대시, 대소문자)에서 같은 답을 내는지 대조했습니다.</li>
+      <li><b>재현하지 못한 것:</b> 부하에서 id 검사가 무작위로 실패하는 현상은 이번에 재현되지 않았습니다(바쁜 루프 10개 아래 strict 검증 6/6 통과). 그래서 그 부분은 대용량 단위 테스트와 정적 검사로 막았고, 실제 부하 재현으로 증명했다고 말하지 않습니다.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>3. 기본 테스트가 실제 agy를 실행하지 않게<small>실제 CLI 호출 문제</small></h2>
+    <ul>
+      <li>이전 통합 작업의 트립와이어 로그에는 <code>agy models</code> 한 줄이 있었습니다. 기존 테스트 하나(<code>bundled agy routes use catalog cli_model values</code>)가 agy가 PATH에 있으면 실제로 <code>agy models</code>를 실행했고, 전체 스위트에서 실제 CLI를 건드린 유일한 곳이었습니다.</li>
+      <li>이제 정적 레지스트리 맵 검증은 항상 실행하고, 실제 카탈로그와의 비교는 <code>CODEGUIDE_LIVE_AGY_CATALOG=1</code>일 때만 실행합니다. 건너뛴 사실은 TAP에 <code># skip</code>으로 남습니다.</li>
+      <li>선택 실행 경로 자체도 mock agy로 검증했습니다. 모든 모델이 있는 목록에서는 통과하고, 등록된 모델이 하나 빠진 목록에서는 실패합니다.</li>
+      <li>이는 자동 검사 하나를 선택 실행으로 옮긴 것입니다. 기본 실행에서 실제 카탈로그와의 대조가 사라졌으므로, 모델을 갱신할 때는 사람이 한 번 켜서 확인해야 합니다.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>4. 승인된 리뷰를 계획서·요청서에 묶기<small>PLAN·Request 해시 검증</small></h2>
+    <p style="margin:0 0 10px">이전에는 manifest에 응답 해시만 있어서, 리뷰가 끝난 뒤 계획서를 고치거나 요청서를 바꿔도 옛 승인이 그대로 통했습니다(알려진 한계 KL-1·KL-2). 이제 요청서에 <code>plan_sha256</code>, manifest에 <code>request_sha256</code>과 <code>plan_sha256</code>을 기록하고, 검증기가 현재 파일로 다시 계산합니다.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>ID</th><th>거부되는 경우</th><th>옛 검증기</th></tr></thead>
+      <tbody>
+        <tr><td class="n">TC-17</td><td>리뷰 뒤에 계획서를 고침</td><td><span class="pill bad">통과시킴</span></td></tr>
+        <tr><td class="n">TC-18</td><td>리뷰 뒤에 요청서를 바꿈</td><td><span class="pill bad">통과시킴</span></td></tr>
+        <tr><td class="n">TC-19</td><td>해시가 없는 옛 manifest (새 리뷰 라운드를 요구)</td><td><span class="pill bad">통과시킴</span></td></tr>
+        <tr><td class="n">TC-20</td><td>요청서가 기록한 계획서 해시와 manifest가 다름</td><td><span class="pill bad">통과시킴</span></td></tr>
+        <tr><td class="n">TC-21</td><td>계획서 파일을 찾을 수 없음</td><td><span class="pill bad">통과시킴</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="note ok" style="margin-top:12px">
+      <b>테스트가 제 변경의 결함을 잡았습니다.</b> 처음 돌렸을 때 정상 리뷰를 쓰는 게이트 테스트 9개가 "계획서가 리뷰 뒤에 바뀌었다"며 실패했습니다. 검증기 결함이 아니었습니다. 테스트 픽스처가 리뷰가 읽은 계획서를 다른 내용으로 덮어쓰고 있었고, 해시 결합이 그것을 정확히 보고한 것입니다. 픽스처가 이미 있는 계획서를 다시 쓰지 않게 고친 뒤 24개 모두 통과했습니다.
+    </div>
+    <ul style="margin-top:12px">
+      <li><b>동작 변경:</b> 이 변경 이전에 승인된 <code>in_progress</code> 작업은 새 리뷰 라운드를 돌리기 전까지 게이트에서 막힙니다. <code>done</code> 작업은 이전과 같이 verdict만 읽습니다.</li>
+      <li><b>한계:</b> 쓰기 가능한 작업 공간에서는 해시까지 포함해 일관된 manifest를 위조할 수 있습니다. 일관성 증거이지 증명이 아닙니다. Shadow v2 close 게이트는 새 해시를 검사하지 않습니다.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>5. 새 모델 등록과 기본 리뷰어</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>벤더</th><th>추가한 경로</th><th>모델 ID의 근거</th></tr></thead>
+      <tbody>
+        <tr><td>agy</td><td>Gemini 3.8 Flash high·medium·low (3개)</td><td>agy CLI가 자신의 로그에 기록한 ID</td></tr>
+        <tr><td>claude</td><td>Opus 5.5, Sonnet 5.5(+xhigh), Haiku 5.5, Fable 5.1 (5개)</td><td>세션이 알려 주는 모델 ID (<code>claude-opus-5-5</code> 등). 점 표기와 대시 표기 별칭 모두 등록</td></tr>
+        <tr><td>codex</td><td>GPT-6.1 Sol, GPT-6 Astra (각각 기본·medium·high·xhigh), GPT-6 Luna (9개)</td><td>로컬 codex 모델 카탈로그(2026-10-22 갱신)의 slug</td></tr>
+      </tbody>
+    </table></div>
+    <ul style="margin-top:12px">
+      <li><b>실제 CLI 없이 확인했습니다.</b> 카탈로그 캐시와 로그를 읽기만 했고 agy·claude·codex를 실행하지 않았습니다. ID를 추정하지 않기 위한 선택입니다.</li>
+      <li><b>기본 OpenAI 리뷰어:</b> <code>codex-gpt-6.1-sol-medium</code>(사용자 결정). 카탈로그가 6.1 Sol과 Astra의 기본 effort를 low로 알려 주므로, 접미사 없는 별칭은 medium으로 고정했습니다. 카탈로그 안내 문구가 6.1 Sol을 "Astra에 근접한 성능을 더 낮은 비용으로" 쓰는 모델이라고 설명하므로, Astra를 이전 기본값 Terra의 후속으로 단정하지 않았습니다.</li>
+      <li><b>버전이 없는 별칭 7개</b>(<code>claude-sonnet-latest</code> 등)는 새 세대를 가리키고, 버전이 붙은 별칭과 기존 경로는 그대로입니다. 기존 Sonnet 5 ↔ Fable 5 적대적 리뷰 짝도 그대로고, Sonnet 5.5 ↔ Fable 5.1이 새로 짝지어졌습니다.</li>
+      <li><b>기본값 변경이 깨뜨린 테스트 1건:</b> Terra를 명시한 어드버서리얼 평가자 테스트였습니다. 평가자는 기본 리뷰어 집합 안에 있어야 해서 오류가 났고, 새 기본값 이름으로 갱신했습니다. 단언은 그대로입니다.</li>
+      <li><b>등록하지 않은 것:</b> Gemini 4 Argon은 로컬에 모델 ID 근거가 없어 넣지 않았습니다. 역할 라우팅 문서와 에이전트 프리셋(Terra·Astra 이름 문제)도 건드리지 않았습니다.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>6. 검증 결과<small>모두 실제 CLI를 못 쓰는 PATH, 고정 복사본에서 실행</small></h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>범위</th><th>결과</th><th>비고</th></tr></thead>
+      <tbody>
+        <tr><td>SIGPIPE 수정 브랜치 전체 스위트 (859개)</td><td><span class="pill ok">857 ok</span></td><td>그중 1건은 의도한 skip. 실패 2건은 수정 전부터 있던 기준선 실패로, 두 부모에서도 똑같이 실패합니다. 이번 수정으로 안 고쳐졌으므로 SIGPIPE가 원인이 아닙니다. 원인은 조사하지 않았습니다.</td></tr>
+        <tr><td>해시 결합 브랜치: 통합 스위트</td><td><span class="pill ok">27 / 27</span></td><td>GUARD 2, TC-01~21, PARITY-01, KL-3~5</td></tr>
+        <tr><td>해시 결합 브랜치: 래퍼 계열 스위트 (233개)</td><td><span class="pill ok">233 / 233</span></td><td>external_review, run_codeguide, doc_garden, 통합, shadow_v2</td></tr>
+        <tr><td>레지스트리 브랜치: 래퍼 계열 + 게이트</td><td><span class="pill ok">264 / 265</span></td><td>실패 1건은 위 5절의 Terra 명시 테스트이고, 고친 뒤 기본값 의존 테스트 22개가 모두 통과</td></tr>
+        <tr><td>병합된 main: external_review + pipe_safety</td><td><span class="pill ok">84 / 84 ok</span></td><td>그중 1건은 의도한 skip(실제 agy 카탈로그 선택 실행)</td></tr>
+        <tr><td>병합된 main: 게이트·evidence 테스트</td><td><span class="pill ok">31 / 31</span></td><td></td></tr>
+        <tr><td>병합된 main: run_codeguide, doc_garden, 통합, shadow_v2, packaging 등 (190개)</td><td><span class="pill ok">190 / 190</span></td><td>실패 0건, 실제 agy 호출 없음</td></tr>
+      </tbody>
+    </table></div>
+    <p class="muted" style="margin:10px 0 0">모든 실행에서 트립와이어 로그는 이전 통합 작업의 <code>agy models</code> 한 줄뿐입니다.</p>
+  </section>
+
+  <section>
+    <h2>7. 남은 것과 한계</h2>
+    <ul>
+      <li>해시 결합 브랜치는 병합 이전의 main에서 갈라졌습니다. 레지스트리·SIGPIPE 수정이 들어간 main 위에서 다시 돌려 본 뒤 병합해야 합니다.</li>
+      <li>README의 "계획서·요청서 수정은 검출되지 않는다"는 한계 문장은 해시 결합이 병합되면 지워야 합니다.</li>
+      <li>기준선 실패 2건(done 작업의 이전 계획 버전 평가 보고서, JSON 이슈 id)은 원인을 조사하지 않았습니다.</li>
+      <li>Shadow v2 close 게이트는 새 해시를 검사하지 않고, 증거는 여전히 위조 가능한 일관성 증거입니다.</li>
+      <li>하네스를 거치지 않는 작업, 에이전트가 쓰는 리뷰 요구 필드, 완료된 작업의 승인 이력은 이전과 같이 게이트 밖에 있습니다(KL-3~5).</li>
+      <li>Gemini 4 Argon과 역할 라우팅 문서·에이전트 프리셋은 사용자 결정이 필요합니다.</li>
+    </ul>
+  </section>
+</main>
