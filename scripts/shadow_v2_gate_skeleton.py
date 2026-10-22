@@ -104,6 +104,15 @@ def review_field(text: str, field: str) -> str | None:
     return match.group(1).strip()
 
 
+def review_line_field(text: str, field: str) -> str | None:
+    # Line-local twin of review_field: None when the key is absent, "" when present but
+    # empty. review_field's `\s*` crosses line breaks, so an empty key reads the next line.
+    match = re.search(rf"(?im)^[ \t]*(?:[-*][ \t]*)?{re.escape(field)}[ \t]*:[ \t]*(.*?)[ \t]*$", text)
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
 def normalized_text(value: str | None) -> str:
     if not isinstance(value, str):
         return ""
@@ -326,8 +335,13 @@ def validate_external_response_artifact(summary: dict[str, Any], path: Path, con
         if not review_field(content, field):
             blockers.append(f"completed external antigravity review artifact requires parser-compatible field {field}: {path}")
     if review_style == "adversarial":
+        # Adversarial-report field rule (references/orchestration-review-contract.md): every
+        # key present; residual_risk non-empty; debate fields may be empty only on accept.
+        is_accept = normalized_text(verdict) == "accept"
         for field in ADVERSARIAL_EXTERNAL_REVIEW_FIELDS:
-            if not review_field(content, field):
+            value = review_line_field(content, field)
+            may_be_empty = is_accept and field != "residual_risk"
+            if value is None or (not value and not may_be_empty):
                 blockers.append(f"completed adversarial external antigravity review artifact requires parser-compatible field {field}: {path}")
     if any(marker in content.lower() for marker in BLOCKED_REVIEW_MARKERS):
         blockers.append(f"completed external antigravity review artifact contains blocked/error/no-response marker: {path}")
