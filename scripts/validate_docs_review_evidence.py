@@ -17,8 +17,14 @@ where <slug> is the route with every character outside [A-Za-z0-9._-] replaced b
 The route is satisfied when ANY recognised set verifies completely. For the set it checks:
 
   response    non-empty, `verdict: accept`, every parser-compatible review field the
-              wrapper itself requires (standard: summary/strengths/risks/requested_changes;
-              adversarial adds objection/counterproposal/rebuttal/residual_risk)
+              wrapper itself requires. Standard: summary/strengths/risks/requested_changes,
+              all non-empty. Adversarial adds objection/counterproposal/rebuttal/residual_risk
+              under the contract's adversarial field rule (references/
+              orchestration-review-contract.md), the same rule run_external_plan_reviews.sh
+              and the Shadow v2 close gate apply: all four KEYS must be present on every
+              verdict (a missing key is malformed); residual_risk must be non-empty on every
+              verdict; objection/counterproposal/rebuttal must be non-empty except on accept,
+              where a present-but-empty value is the coherent "nothing to object to" answer
   request     present; task_id / plan_version / review_round / evaluator (== route) match;
               sanitized_response_file, expected_response_file and command_response_path
               name this very response / raw-capture file
@@ -67,6 +73,8 @@ ARTIFACT_KIND = "external_cli_review_response_provenance"
 GENERATED_BY = "run_external_plan_reviews.sh"
 STANDARD_FIELDS = ("summary", "strengths", "risks", "requested_changes")
 ADVERSARIAL_FIELDS = ("objection", "counterproposal", "rebuttal", "residual_risk")
+# The only adversarial value that may be empty, and only on accept; residual_risk never may.
+ADVERSARIAL_DEBATE_FIELDS = ("objection", "counterproposal", "rebuttal")
 
 
 def route_slug(route: str) -> str:
@@ -200,13 +208,18 @@ def verify_set(
         if not tail_matches(field(provenance_text, "command_response_path"), raw_tail):
             problems.append(f"provenance command_response_path does not name {names['raw']} of this round")
 
-    # --- response fields (the wrapper rejects a response lacking any of these) ---
-    required = list(STANDARD_FIELDS)
-    if review_style == "adversarial":
-        required.extend(ADVERSARIAL_FIELDS)
-    for key in required:
+    # --- response fields: the same rules run_external_plan_reviews.sh applies when it parses ---
+    for key in STANDARD_FIELDS:
         if not field(response_text, key):
             problems.append(f"response is missing required review field {key}")
+    if review_style == "adversarial":
+        # field() separates "key absent" (None) from "key present, value empty" ("").
+        for key in ADVERSARIAL_FIELDS:
+            value = field(response_text, key)
+            if value is None:
+                problems.append(f"response is missing required review field {key}")
+            elif not value and (key not in ADVERSARIAL_DEBATE_FIELDS or verdict != "accept"):
+                problems.append(f"response has an empty required review field {key}")
 
     # --- companion request ---
     if not regular_file(request_path):
