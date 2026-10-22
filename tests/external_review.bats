@@ -841,17 +841,17 @@ EOF'
     --approval-ref "user-approval-ext-review-02" \
     --approved-next-step "run external review ext-review-02 v1.0 r02" \
     --allow-partial-review \
-    --adversarial-evaluator "codex-gpt-5.6-terra-medium"
+    --adversarial-evaluator "codex-gpt-6.1-sol-medium"
 
   [ "$status" -eq 0 ]
   assert_contains "$output" "[FAIL] evaluator=claude"
-  assert_contains "$output" "[OK] evaluator=codex requested_route=codex:gpt-5.6-terra-medium actual_route=codex:gpt-5.6-terra-medium quota_fallback=false style=adversarial"
+  assert_contains "$output" "[OK] evaluator=codex requested_route=codex:gpt-6.1-sol-medium actual_route=codex:gpt-6.1-sol-medium quota_fallback=false style=adversarial"
 
-  run test -f "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-gpt-5.6-terra-medium-r02.md"
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-gpt-6.1-sol-medium-r02.md"
   [ "$status" -eq 0 ]
-  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-gpt-5.6-terra-medium-r02.md"
+  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-gpt-6.1-sol-medium-r02.md"
   [ "$status" -eq 0 ]
-  run grep "^- objection:" "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-gpt-5.6-terra-medium-r02.md"
+  run grep "^- objection:" "$DOCS_ROOT/report/PLAN-ext-review-02-v1.0-review-codex-gpt-6.1-sol-medium-r02.md"
   [ "$status" -eq 0 ]
   run grep -- "--sandbox" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
@@ -870,19 +870,19 @@ EOF'
   handoff_dir="$(external_handoff_dir "ext-review-02" "v1.0" "r02")"
   [ -n "$handoff_dir" ]
   [[ "$handoff_dir" =~ /ext-review-02/external-cli/v1\.0/r02$ ]] || false
-  run test -f "$handoff_dir/codex-gpt-5.6-terra-medium.request.md"
+  run test -f "$handoff_dir/codex-gpt-6.1-sol-medium.request.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/codex-gpt-5.6-terra-medium.response.md"
+  run test -f "$handoff_dir/codex-gpt-6.1-sol-medium.response.md"
   [ "$status" -eq 0 ]
   run test -f "$handoff_dir/claude-current.stderr.md"
   [ "$status" -eq 0 ]
-  run grep "# PLAN-ext-review-02-v1.0" "$handoff_dir/codex-gpt-5.6-terra-medium.request.md"
+  run grep "# PLAN-ext-review-02-v1.0" "$handoff_dir/codex-gpt-6.1-sol-medium.request.md"
   [ "$status" -eq 0 ]
-  run grep "$handoff_dir/codex-gpt-5.6-terra-medium.request.md" "$TEST_WORKSPACE/codex-args.log"
+  run grep "$handoff_dir/codex-gpt-6.1-sol-medium.request.md" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
-  run grep "$handoff_dir/codex-gpt-5.6-terra-medium.command-response.raw.md" "$TEST_WORKSPACE/codex-args.log"
+  run grep "$handoff_dir/codex-gpt-6.1-sol-medium.command-response.raw.md" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
-  run test ! -f "$handoff_dir/codex-gpt-5.6-terra-medium.command-response.raw.md"
+  run test ! -f "$handoff_dir/codex-gpt-6.1-sol-medium.command-response.raw.md"
   [ "$status" -eq 0 ]
   run grep -F "[REDACTED_SECRET]" "$handoff_dir/claude-current.stderr.md"
   [ "$status" -eq 0 ]
@@ -984,13 +984,13 @@ EOF'
   [ "$status" -eq 0 ]
   assert_contains "$output" "auto-selecting adversarial evaluator=agy:current"
   assert_contains "$output" "[OK] evaluator=agy requested_route=agy:current actual_route=agy:current quota_fallback=false style=adversarial"
-  assert_contains "$output" "[OK] evaluator=codex requested_route=codex:gpt-5.6-terra-medium actual_route=codex:gpt-5.6-terra-medium quota_fallback=false style=standard"
+  assert_contains "$output" "[OK] evaluator=codex requested_route=codex:gpt-6.1-sol-medium actual_route=codex:gpt-6.1-sol-medium quota_fallback=false style=standard"
 
   run test -f "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-agy-current-r04.md"
   [ "$status" -eq 0 ]
   run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-agy-current-r04.md"
   [ "$status" -eq 0 ]
-  run test -f "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-codex-gpt-5.6-terra-medium-r04.md"
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-04-v1.0-review-codex-gpt-6.1-sol-medium-r04.md"
   [ "$status" -eq 0 ]
 
   local handoff_dir
@@ -1001,13 +1001,13 @@ EOF'
   [ "$status" -eq 0 ]
   run test -f "$handoff_dir/agy-current.response.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/codex-gpt-5.6-terra-medium.request.md"
+  run test -f "$handoff_dir/codex-gpt-6.1-sol-medium.request.md"
   [ "$status" -eq 0 ]
-  run test -f "$handoff_dir/codex-gpt-5.6-terra-medium.response.md"
+  run test -f "$handoff_dir/codex-gpt-6.1-sol-medium.response.md"
   [ "$status" -eq 0 ]
   run grep "$handoff_dir/agy-current.command-response.raw.md" "$TEST_WORKSPACE/gemini-args.log"
   [ "$status" -eq 0 ]
-  run grep "$handoff_dir/codex-gpt-5.6-terra-medium.command-response.raw.md" "$TEST_WORKSPACE/codex-args.log"
+  run grep "$handoff_dir/codex-gpt-6.1-sol-medium.command-response.raw.md" "$TEST_WORKSPACE/codex-args.log"
   [ "$status" -eq 0 ]
 }
 
@@ -1083,7 +1083,7 @@ exit 4'
   assert_contains "$output" "[FAIL] evaluator=codex"
   run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-03-v1.0-review-agy-current-r03.md"
   [ "$status" -eq 0 ]
-  run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-03-v1.0-review-codex-gpt-5.6-terra-medium-r03.md"
+  run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-03-v1.0-review-codex-gpt-6.1-sol-medium-r03.md"
   [ "$status" -eq 0 ]
   run find "$DOCS_ROOT/report" -maxdepth 1 -type f -name 'PLAN-ext-review-03-v1.0-review-agy-current-r03.md.stale-*'
   [ "$status" -eq 0 ]
@@ -1171,7 +1171,7 @@ EOF'
 
   [ "$status" -ne 0 ]
   assert_contains "$output" "Required adversarial review did not complete successfully"
-  run test -f "$DOCS_ROOT/report/PLAN-ext-review-05-v1.0-review-codex-gpt-5.6-terra-medium-r05.md"
+  run test -f "$DOCS_ROOT/report/PLAN-ext-review-05-v1.0-review-codex-gpt-6.1-sol-medium-r05.md"
   [ "$status" -eq 0 ]
 }
 
@@ -1230,15 +1230,15 @@ exit 0'
 
   [ "$status" -ne 0 ]
   assert_contains "$output" "[FAIL] evaluator=codex"
-  run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-06-v1.0-review-codex-gpt-5.6-terra-medium-r06.md"
+  run test ! -f "$DOCS_ROOT/report/PLAN-ext-review-06-v1.0-review-codex-gpt-6.1-sol-medium-r06.md"
   [ "$status" -eq 0 ]
 
   local handoff_dir
   handoff_dir="$(external_handoff_dir "ext-review-06" "v1.0" "r06")"
   [ -n "$handoff_dir" ]
-  run grep "codex final message file was empty" "$handoff_dir/codex-gpt-5.6-terra-medium.stderr.md"
+  run grep "codex final message file was empty" "$handoff_dir/codex-gpt-6.1-sol-medium.stderr.md"
   [ "$status" -eq 0 ]
-  run grep "codex runtime log only" "$handoff_dir/codex-gpt-5.6-terra-medium.stderr.md"
+  run grep "codex runtime log only" "$handoff_dir/codex-gpt-6.1-sol-medium.stderr.md"
   [ "$status" -eq 0 ]
 }
 
@@ -1796,6 +1796,109 @@ exit 1'
   assert_contains "$registry_output" $'model\tclaude:opus-4.8\tclaude\topus-4.8'
 }
 
+# Exact-line match against emit-shell output: assert_contains alone would let a row
+# for `claude:sonnet-5` keep passing after it was repointed to `claude:sonnet-5.5`.
+registry_has_line() {
+  assert_contains $'\n'"$1"$'\n' $'\n'"$2"$'\n'
+}
+
+@test "bundled registry registers the Gemini 3.8, Claude 5.5 and GPT-6 lineups with their own cli models" {
+  local registry_file="$SCRIPTS_DIR/../config/ai_model_registry.json"
+
+  run python3 "$SCRIPTS_DIR/ai_model_registry.py" emit-shell "$registry_file"
+  [ "$status" -eq 0 ]
+  local rows="$output"
+
+  # model <route> <runner> <cli_model> <quota_group> <display_name> <vendor> <adversarial_peer> <cli_effort>
+  registry_has_line "$rows" $'model\tagy:gemini-3.8-flash-high\tagy\tgemini-3.8-flash-high\tagy-gemini-shared\tGemini 3.8 Flash (High)\tgoogle\t\t'
+  registry_has_line "$rows" $'model\tagy:gemini-3.8-flash-medium\tagy\tgemini-3.8-flash-medium\tagy-gemini-shared\tGemini 3.8 Flash (Medium)\tgoogle\t\t'
+  registry_has_line "$rows" $'model\tagy:gemini-3.8-flash-low\tagy\tgemini-3.8-flash-low\tagy-gemini-shared\tGemini 3.8 Flash (Low)\tgoogle\t\t'
+
+  registry_has_line "$rows" $'model\tclaude:opus-5.5\tclaude\tclaude-opus-5-5\tclaude-direct-subscription\tClaude Opus 5.5\tanthropic\t\t'
+  registry_has_line "$rows" $'model\tclaude:sonnet-5.5\tclaude\tclaude-sonnet-5-5\tclaude-direct-subscription\tClaude Sonnet 5.5\tanthropic\tclaude:fable-5.1\t'
+  registry_has_line "$rows" $'model\tclaude:sonnet-5.5-xhigh\tclaude\tclaude-sonnet-5-5\tclaude-direct-subscription\tClaude Sonnet 5.5 (xhigh effort)\tanthropic\t\t'
+  registry_has_line "$rows" $'model\tclaude:haiku-5.5\tclaude\tclaude-haiku-5-5\tclaude-direct-subscription\tClaude Haiku 5.5\tanthropic\t\t'
+  registry_has_line "$rows" $'model\tclaude:fable-5.1\tclaude\tclaude-fable-5-1\tclaude-direct-subscription\tClaude Fable 5.1\tanthropic\tclaude:sonnet-5.5\t'
+
+  registry_has_line "$rows" $'model\tcodex:gpt-6.1-sol\tcodex\tgpt-6.1-sol\tcodex-direct-subscription\tGPT-6.1 Sol\topenai\t\t'
+  registry_has_line "$rows" $'model\tcodex:gpt-6.1-sol-medium\tcodex\tgpt-6.1-sol\tcodex-direct-subscription\tGPT-6.1 Sol (Medium)\topenai\t\tmedium'
+  registry_has_line "$rows" $'model\tcodex:gpt-6.1-sol-high\tcodex\tgpt-6.1-sol\tcodex-direct-subscription\tGPT-6.1 Sol (High)\topenai\t\thigh'
+  registry_has_line "$rows" $'model\tcodex:gpt-6.1-sol-xhigh\tcodex\tgpt-6.1-sol\tcodex-direct-subscription\tGPT-6.1 Sol (xhigh)\topenai\t\txhigh'
+  registry_has_line "$rows" $'model\tcodex:gpt-6-astra\tcodex\tgpt-6-astra\tcodex-direct-subscription\tGPT-6 Astra\topenai\t\t'
+  registry_has_line "$rows" $'model\tcodex:gpt-6-astra-medium\tcodex\tgpt-6-astra\tcodex-direct-subscription\tGPT-6 Astra (Medium)\topenai\t\tmedium'
+  registry_has_line "$rows" $'model\tcodex:gpt-6-astra-high\tcodex\tgpt-6-astra\tcodex-direct-subscription\tGPT-6 Astra (High)\topenai\t\thigh'
+  registry_has_line "$rows" $'model\tcodex:gpt-6-astra-xhigh\tcodex\tgpt-6-astra\tcodex-direct-subscription\tGPT-6 Astra (xhigh)\topenai\t\txhigh'
+  registry_has_line "$rows" $'model\tcodex:gpt-6-luna\tcodex\tgpt-6-luna\tcodex-direct-subscription\tGPT-6 Luna\topenai\t\t'
+}
+
+@test "bundled registry aliases: model ids resolve, version-less aliases follow the newest generation, versioned ones stay" {
+  local registry_file="$SCRIPTS_DIR/../config/ai_model_registry.json"
+
+  run python3 "$SCRIPTS_DIR/ai_model_registry.py" emit-shell "$registry_file"
+  [ "$status" -eq 0 ]
+  local rows="$output"
+
+  # The dashed forms are the model ids the models report for themselves.
+  registry_has_line "$rows" $'alias\tclaude-opus-5-5\tclaude:opus-5.5'
+  registry_has_line "$rows" $'alias\tclaude-sonnet-5-5\tclaude:sonnet-5.5'
+  registry_has_line "$rows" $'alias\tclaude-haiku-5-5\tclaude:haiku-5.5'
+  registry_has_line "$rows" $'alias\tclaude-fable-5-1\tclaude:fable-5.1'
+  registry_has_line "$rows" $'alias\tclaude-opus-5.5\tclaude:opus-5.5'
+  registry_has_line "$rows" $'alias\tclaude-sonnet-5.5\tclaude:sonnet-5.5'
+  registry_has_line "$rows" $'alias\tclaude-haiku-5.5\tclaude:haiku-5.5'
+  registry_has_line "$rows" $'alias\tclaude-fable-5.1\tclaude:fable-5.1'
+  registry_has_line "$rows" $'alias\tclaude-sonnet-5.5-xhigh\tclaude:sonnet-5.5-xhigh'
+
+  # Aliases without a version in their name move to the newest generation.
+  registry_has_line "$rows" $'alias\tclaude-sonnet-latest\tclaude:sonnet-5.5'
+  registry_has_line "$rows" $'alias\tclaude-sonnet-direct\tclaude:sonnet-5.5'
+  registry_has_line "$rows" $'alias\tclaude-sonnet-xhigh\tclaude:sonnet-5.5-xhigh'
+  registry_has_line "$rows" $'alias\tclaude-fable-latest\tclaude:fable-5.1'
+  registry_has_line "$rows" $'alias\tclaude-fable-direct\tclaude:fable-5.1'
+  registry_has_line "$rows" $'alias\tclaude-opus-direct\tclaude:opus-5.5'
+  registry_has_line "$rows" $'alias\tclaude-haiku-direct\tclaude:haiku-5.5'
+
+  # Aliases that carry a version keep naming that version, and the previous generation
+  # keeps its own adversarial pairing (Sonnet 5 <-> Fable 5), never a cross-generation one.
+  registry_has_line "$rows" $'alias\tclaude-sonnet-5\tclaude:sonnet-5'
+  registry_has_line "$rows" $'alias\tclaude-fable-5\tclaude:fable-5'
+  registry_has_line "$rows" $'alias\tclaude-opus-4.8\tclaude:opus-4.8'
+  registry_has_line "$rows" $'alias\tclaude-haiku-4.5\tclaude:haiku-4.5'
+  registry_has_line "$rows" $'model\tclaude:sonnet-5\tclaude\tclaude-sonnet-5\tclaude-direct-subscription\tClaude Sonnet 5\tanthropic\tclaude:fable-5\t'
+  registry_has_line "$rows" $'model\tclaude:fable-5\tclaude\tclaude-fable-5\tclaude-direct-subscription\tClaude Fable 5\tanthropic\tclaude:sonnet-5\t'
+
+  # GPT-6.1 Sol and GPT-6 Astra default to low effort in the codex catalog, so their
+  # unsuffixed aliases pin medium rather than inherit that default (as 5.6 Sol does).
+  registry_has_line "$rows" $'alias\tcodex-gpt-6.1-sol\tcodex:gpt-6.1-sol-medium'
+  registry_has_line "$rows" $'alias\tcodex-6.1-sol\tcodex:gpt-6.1-sol-medium'
+  registry_has_line "$rows" $'alias\tcodex-gpt-6-astra\tcodex:gpt-6-astra-medium'
+  registry_has_line "$rows" $'alias\tcodex-6-astra\tcodex:gpt-6-astra-medium'
+  registry_has_line "$rows" $'alias\tcodex-gpt-6-luna\tcodex:gpt-6-luna'
+  registry_has_line "$rows" $'alias\tcodex-gpt-6.1-sol-xhigh\tcodex:gpt-6.1-sol-xhigh'
+  registry_has_line "$rows" $'alias\tcodex-gpt-6-astra-high\tcodex:gpt-6-astra-high'
+  registry_has_line "$rows" $'alias\tcodex-gpt-5.6-sol\tcodex:gpt-5.6-sol-medium'
+  registry_has_line "$rows" $'alias\tagy-gemini-3.8-flash-high\tagy:gemini-3.8-flash-high'
+  registry_has_line "$rows" $'alias\tagy-gemini-3.8-flash-medium\tagy:gemini-3.8-flash-medium'
+  registry_has_line "$rows" $'alias\tagy-gemini-3.8-flash-low\tagy:gemini-3.8-flash-low'
+}
+
+@test "bundled registry defaults one reviewer per vendor, with GPT-6.1 Sol at medium effort for OpenAI" {
+  local registry_file="$SCRIPTS_DIR/../config/ai_model_registry.json"
+
+  run python3 "$SCRIPTS_DIR/ai_model_registry.py" emit-shell "$registry_file"
+  [ "$status" -eq 0 ]
+  local rows="$output"
+
+  registry_has_line "$rows" $'default_reviewer\tagy:current'
+  registry_has_line "$rows" $'default_reviewer\tclaude:current'
+  registry_has_line "$rows" $'default_reviewer\tcodex:gpt-6.1-sol-medium'
+  registry_has_line "$rows" $'vendor_default_reviewer\tgoogle\tagy:current'
+  registry_has_line "$rows" $'vendor_default_reviewer\tanthropic\tclaude:current'
+  registry_has_line "$rows" $'vendor_default_reviewer\topenai\tcodex:gpt-6.1-sol-medium'
+  # The previous OpenAI default stays registered and reachable, just no longer the default.
+  registry_has_line "$rows" $'alias\tcodex-gpt-5.6-terra-medium\tcodex:gpt-5.6-terra-medium'
+}
+
 @test "bundled agy routes use catalog cli_model values" {
   local registry_file="$SCRIPTS_DIR/../config/ai_model_registry.json"
 
@@ -1817,6 +1920,9 @@ expected = {
     "agy:gemini-3.7-flash-low": "gemini-3.7-flash-low",
     "agy:gemini-3.7-flash-medium": "gemini-3.7-flash-medium",
     "agy:gemini-3.7-flash-high": "gemini-3.7-flash-high",
+    "agy:gemini-3.8-flash-low": "gemini-3.8-flash-low",
+    "agy:gemini-3.8-flash-medium": "gemini-3.8-flash-medium",
+    "agy:gemini-3.8-flash-high": "gemini-3.8-flash-high",
     "agy:gemini-3.1-pro-low": "gemini-3.1-pro-low",
     "agy:gemini-3.1-pro-high": "gemini-3.1-pro-high",
 }
@@ -2744,13 +2850,13 @@ EOF'
     --adversarial-cross-check
 
   [ "$status" -eq 0 ]
-  assert_contains "$output" "auto-selected reviewers=claude:sonnet-5 agy:current codex:gpt-5.6-terra-medium"
+  assert_contains "$output" "auto-selected reviewers=claude:sonnet-5 agy:current codex:gpt-6.1-sol-medium"
   # One contiguous needle per evaluator: splitting these into "[OK] evaluator=X" plus a
   # bare "style=adversarial" would let ANY line supply the style and stop binding the
   # style to the evaluator that must carry it (review finding, 2026-08-02).
   assert_contains "$output" "[OK] evaluator=claude requested_route=claude:sonnet-5 actual_route=claude:sonnet-5 quota_fallback=false style=adversarial"
   assert_contains "$output" "[OK] evaluator=agy requested_route=agy:current actual_route=agy:current quota_fallback=false style=adversarial"
-  assert_contains "$output" "[OK] evaluator=codex requested_route=codex:gpt-5.6-terra-medium actual_route=codex:gpt-5.6-terra-medium quota_fallback=false style=adversarial"
+  assert_contains "$output" "[OK] evaluator=codex requested_route=codex:gpt-6.1-sol-medium actual_route=codex:gpt-6.1-sol-medium quota_fallback=false style=adversarial"
   refute_contains "$output" "style=standard"
 
   run grep -- "--model" "$TEST_WORKSPACE/claude-args.log"
@@ -2762,7 +2868,7 @@ EOF'
   [ "$status" -eq 0 ]
   run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-cross-check-v1.0-review-agy-current-r01.md"
   [ "$status" -eq 0 ]
-  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-cross-check-v1.0-review-codex-gpt-5.6-terra-medium-r01.md"
+  run grep "^- review_style: adversarial" "$DOCS_ROOT/report/PLAN-ext-cross-check-v1.0-review-codex-gpt-6.1-sol-medium-r01.md"
   [ "$status" -eq 0 ]
 }
 

@@ -68,6 +68,27 @@
       "quota_group": "agy-gemini-shared",
       "vendor": "google"
     },
+    "agy:gemini-3.8-flash-high": {
+      "runner": "agy",
+      "cli_model": "gemini-3.8-flash-high",
+      "display_name": "Gemini 3.8 Flash (High)",
+      "quota_group": "agy-gemini-shared",
+      "vendor": "google"
+    },
+    "agy:gemini-3.8-flash-medium": {
+      "runner": "agy",
+      "cli_model": "gemini-3.8-flash-medium",
+      "display_name": "Gemini 3.8 Flash (Medium)",
+      "quota_group": "agy-gemini-shared",
+      "vendor": "google"
+    },
+    "agy:gemini-3.8-flash-low": {
+      "runner": "agy",
+      "cli_model": "gemini-3.8-flash-low",
+      "display_name": "Gemini 3.8 Flash (Low)",
+      "quota_group": "agy-gemini-shared",
+      "vendor": "google"
+    },
     "agy:gemini-3.1-pro-low": {
       "runner": "agy",
       "cli_model": "gemini-3.1-pro-low",
@@ -108,6 +129,46 @@
       "cli_model": "preconfigured-runtime",
       "display_name": "Claude preconfigured runtime",
       "quota_group": "claude-preconfigured-runtime",
+      "vendor": "anthropic"
+    },
+    "claude:sonnet-5.5": {
+      "runner": "claude",
+      "cli_model": "claude-sonnet-5-5",
+      "display_name": "Claude Sonnet 5.5",
+      "quota_group": "claude-direct-subscription",
+      "effort": "max",
+      "vendor": "anthropic",
+      "adversarial_peer": "claude:fable-5.1"
+    },
+    "claude:sonnet-5.5-xhigh": {
+      "runner": "claude",
+      "cli_model": "claude-sonnet-5-5",
+      "display_name": "Claude Sonnet 5.5 (xhigh effort)",
+      "quota_group": "claude-direct-subscription",
+      "effort": "xhigh",
+      "vendor": "anthropic"
+    },
+    "claude:fable-5.1": {
+      "runner": "claude",
+      "cli_model": "claude-fable-5-1",
+      "display_name": "Claude Fable 5.1",
+      "quota_group": "claude-direct-subscription",
+      "vendor": "anthropic",
+      "adversarial_peer": "claude:sonnet-5.5"
+    },
+    "claude:opus-5.5": {
+      "runner": "claude",
+      "cli_model": "claude-opus-5-5",
+      "display_name": "Claude Opus 5.5",
+      "quota_group": "claude-direct-subscription",
+      "effort": "max",
+      "vendor": "anthropic"
+    },
+    "claude:haiku-5.5": {
+      "runner": "claude",
+      "cli_model": "claude-haiku-5-5",
+      "display_name": "Claude Haiku 5.5",
+      "quota_group": "claude-direct-subscription",
       "vendor": "anthropic"
     },
     "claude:sonnet-5": {
@@ -177,6 +238,75 @@
       "cli_model": "preconfigured-runtime",
       "display_name": "Codex preconfigured runtime",
       "quota_group": "codex-preconfigured-runtime",
+      "vendor": "openai"
+    },
+    "codex:gpt-6.1-sol": {
+      "runner": "codex",
+      "cli_model": "gpt-6.1-sol",
+      "display_name": "GPT-6.1 Sol",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-6.1-sol-high": {
+      "runner": "codex",
+      "cli_model": "gpt-6.1-sol",
+      "cli_effort": "high",
+      "display_name": "GPT-6.1 Sol (High)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-6.1-sol-medium": {
+      "runner": "codex",
+      "cli_model": "gpt-6.1-sol",
+      "cli_effort": "medium",
+      "display_name": "GPT-6.1 Sol (Medium)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-6.1-sol-xhigh": {
+      "runner": "codex",
+      "cli_model": "gpt-6.1-sol",
+      "cli_effort": "xhigh",
+      "display_name": "GPT-6.1 Sol (xhigh)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-6-astra": {
+      "runner": "codex",
+      "cli_model": "gpt-6-astra",
+      "display_name": "GPT-6 Astra",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-6-astra-medium": {
+      "runner": "codex",
+      "cli_model": "gpt-6-astra",
+      "cli_effort": "medium",
+      "display_name": "GPT-6 Astra (Medium)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-6-astra-high": {
+      "runner": "codex",
+      "cli_model": "gpt-6-astra",
+      "cli_effort": "high",
+      "display_name": "GPT-6 Astra (High)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-6-astra-xhigh": {
+      "runner": "codex",
+      "cli_model": "gpt-6-astra",
+      "cli_effort": "xhigh",
+      "display_name": "GPT-6 Astra (xhigh)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-6-luna": {
+      "runner": "codex",
+      "cli_model": "gpt-6-luna",
+      "display_name": "GPT-6 Luna",
+      "quota_group": "codex-direct-subscription",
       "vendor": "openai"
     },
     "codex:gpt-5.6-sol": {
@@ -259,6 +389,9 @@
     "agy-gemini-3.7-flash-high": "agy:gemini-3.7-flash-high",
     "agy-gemini-3.7-flash-medium": "agy:gemini-3.7-flash-medium",
     "agy-gemini-3.7-flash-low": "agy:gemini-3.7-flash-low",
+    "agy-gemini-3.8-flash-high": "agy:gemini-3.8-flash-high",
+    "agy-gemini-3.8-flash-medium": "agy:gemini-3.8-flash-medium",
+    "agy-gemini-3.8-flash-low": "agy:gemini-3.8-flash-low",
     "agy-gemini-3.1-pro-low": "agy:gemini-3.1-pro-low",
     "agy-gemini-3.1-pro-high": "agy:gemini-3.1-pro-high",
     "agy-claude-sonnet-4.6-thinking": "agy:claude-sonnet-4.6-thinking",
@@ -269,24 +402,51 @@
     "agy-gpt-oss-120b": "agy:gpt-oss-120b-medium",
     "claude-current": "claude:current",
     "claude": "claude:current",
+    "claude-sonnet-5.5": "claude:sonnet-5.5",
+    "claude-sonnet-5-5": "claude:sonnet-5.5",
     "claude-sonnet-5": "claude:sonnet-5",
-    "claude-sonnet-latest": "claude:sonnet-5",
-    "claude-sonnet-xhigh": "claude:sonnet-xhigh",
+    "claude-sonnet-latest": "claude:sonnet-5.5",
+    "claude-sonnet-5.5-xhigh": "claude:sonnet-5.5-xhigh",
+    "claude-sonnet-xhigh": "claude:sonnet-5.5-xhigh",
+    "claude-fable-5.1": "claude:fable-5.1",
+    "claude-fable-5-1": "claude:fable-5.1",
     "claude-fable-5": "claude:fable-5",
-    "claude-fable-direct": "claude:fable-5",
-    "claude-fable-latest": "claude:fable-5",
+    "claude-fable-direct": "claude:fable-5.1",
+    "claude-fable-latest": "claude:fable-5.1",
+    "claude-opus-5.5": "claude:opus-5.5",
+    "claude-opus-5-5": "claude:opus-5.5",
     "claude-opus-4.8": "claude:opus-4.8",
-    "claude-opus-direct": "claude:opus-4.8",
+    "claude-opus-direct": "claude:opus-5.5",
     "claude-opus-4.7": "claude:opus-4.7-legacy",
     "claude-opus-4.7-legacy": "claude:opus-4.7-legacy",
     "claude-sonnet-4.6": "claude:sonnet-4.6",
-    "claude-sonnet-direct": "claude:sonnet-5",
+    "claude-sonnet-direct": "claude:sonnet-5.5",
+    "claude-haiku-5.5": "claude:haiku-5.5",
+    "claude-haiku-5-5": "claude:haiku-5.5",
     "claude-haiku-4.5": "claude:haiku-4.5",
-    "claude-haiku-direct": "claude:haiku-4.5",
+    "claude-haiku-direct": "claude:haiku-5.5",
     "claude-opus-4.6-legacy": "claude:opus-4.6-legacy",
     "claude-opus-legacy": "claude:opus-4.7-legacy",
     "codex-current": "codex:current",
     "codex": "codex:current",
+    "codex-gpt-6.1-sol": "codex:gpt-6.1-sol-medium",
+    "codex-6.1-sol": "codex:gpt-6.1-sol-medium",
+    "codex-gpt-6.1-sol-high": "codex:gpt-6.1-sol-high",
+    "codex-6.1-sol-high": "codex:gpt-6.1-sol-high",
+    "codex-gpt-6.1-sol-medium": "codex:gpt-6.1-sol-medium",
+    "codex-6.1-sol-medium": "codex:gpt-6.1-sol-medium",
+    "codex-gpt-6.1-sol-xhigh": "codex:gpt-6.1-sol-xhigh",
+    "codex-6.1-sol-xhigh": "codex:gpt-6.1-sol-xhigh",
+    "codex-gpt-6-astra": "codex:gpt-6-astra-medium",
+    "codex-6-astra": "codex:gpt-6-astra-medium",
+    "codex-gpt-6-astra-medium": "codex:gpt-6-astra-medium",
+    "codex-6-astra-medium": "codex:gpt-6-astra-medium",
+    "codex-gpt-6-astra-high": "codex:gpt-6-astra-high",
+    "codex-6-astra-high": "codex:gpt-6-astra-high",
+    "codex-gpt-6-astra-xhigh": "codex:gpt-6-astra-xhigh",
+    "codex-6-astra-xhigh": "codex:gpt-6-astra-xhigh",
+    "codex-gpt-6-luna": "codex:gpt-6-luna",
+    "codex-6-luna": "codex:gpt-6-luna",
     "codex-gpt-5.6-sol": "codex:gpt-5.6-sol-medium",
     "codex-5.6-sol": "codex:gpt-5.6-sol-medium",
     "codex-gpt-5.6-terra": "codex:gpt-5.6-terra",
@@ -309,12 +469,12 @@
   "default_reviewer_aliases": [
     "agy-current",
     "claude-current",
-    "codex-gpt-5.6-terra-medium"
+    "codex-gpt-6.1-sol-medium"
   ],
   "vendor_default_reviewers": {
     "google": "agy-current",
     "anthropic": "claude-current",
-    "openai": "codex-gpt-5.6-terra-medium"
+    "openai": "codex-gpt-6.1-sol-medium"
   },
   "fallback_policy": {
     "on_quota_exhausted": [],
