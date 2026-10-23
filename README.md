@@ -132,8 +132,8 @@ What the automation verifies about itself, and where that stops. The reports beh
 
 Case studies (point-in-time reports of the work as it happened; the HTML reports are in Korean, the Markdown report is in English):
 
-- [External review approval gate hardening](./case-studies/external-review-gate-hardening.html) (Korean HTML)
-- [Adversarial rule x approval gate integration](./case-studies/adversarial-gate-integration.html) (Korean HTML)
+- [External review approval gate hardening](./case-studies/external-review-gate-hardening.html) (Korean HTML; its key test runs were re-run from the old commits: [`evidence/05-gate-hardening-regenerated/`](./case-studies/evidence/05-gate-hardening-regenerated/))
+- [Adversarial rule x approval gate integration](./case-studies/adversarial-gate-integration.html) (Korean HTML; its key test runs were re-run from the old commits: [`evidence/06-adversarial-integration-regenerated/`](./case-studies/evidence/06-adversarial-integration-regenerated/))
 - [Test reliability hardening](./case-studies/test-reliability-hardening.md) (English; [Korean HTML version](./case-studies/test-reliability-hardening.html)): early-exit pipes under `pipefail` (14 sites, 3 reproduced), the default run no longer executes the real `agy`, plan and request hash binding for approved reviews, and the model registry update. The raw test logs it cites are in [`case-studies/evidence/`](./case-studies/evidence/).
 
 ## Single Entry Point: scripts/codeguide

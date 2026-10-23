@@ -1,0 +1,12 @@
+1..8
+# REGENERATED LOG - not the original run output. Produced on 2026-10-23 from a frozen copy of skill commit 13a1597 (after the gate hardening fix).
+# Command: bats --tap tests/shadow_reader_audit.bats. PATH reached agy, claude, codex and gemini only through tripwire shims.
+ok 1 shadow reader audit passes on the shipped skill with nothing unclassified
+ok 2 shadow reader audit reports an exclusion that is already compliant
+ok 3 shadow reader audit records every exclusion with a reason
+ok 4 shadow reader audit fails closed when a new unclassified reader appears
+ok 5 shadow reader audit reports an exclusion that is no longer a reader
+ok 6 shadow reader audit classifies transitive delegation, not just direct imports
+ok 7 shadow reader audit shell source regex accepts every real source form
+ok 8 shadow reader audit does not certify a shell reader on a COMMENT mention
+bats-exit=0

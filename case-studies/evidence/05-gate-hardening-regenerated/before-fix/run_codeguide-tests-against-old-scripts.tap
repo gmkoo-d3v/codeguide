@@ -1,0 +1,153 @@
+1..43
+# REGENERATED LOG - not the original run output. Produced on 2026-10-23 from a frozen copy of the scripts of 7fc71f8 (parent of the gate hardening fix) with the tests of 13a1597.
+# Command: bats --tap tests/run_codeguide.bats. PATH reached agy, claude, codex and gemini only through tripwire shims.
+ok 1 upsert_field skips empty values on existing non-empty fields
+ok 2 upsert_field allows empty overwrite with --allow-empty-overwrite
+ok 3 axis fields are not overwritten when empty
+ok 4 infer_task_id: explicit --task-id has highest priority
+ok 5 infer_task_id: branch pattern takes priority over latest task file
+ok 6 run_codeguide strips one TASK- prefix without creating TASK-TASK-* artifacts
+ok 7 skills package root can resolve to parent project docs root
+ok 8 ordinary nested git repo does not borrow parent project docs root
+ok 9 run_codeguide bootstraps orchestration doc for active task
+ok 10 approved preflight rejects placeholder approval metadata before recording or external review
+ok 11 run_codeguide and validate_docs reject evaluator identity recorders consistently
+ok 12 task-index places row under correct status section
+ok 13 task-index prevents duplicate rows
+ok 14 run_codeguide reports docs-only scope by default
+ok 15 run_codeguide forwards risk_level into generated docs
+ok 16 run_codeguide fails clearly when option value is missing
+ok 17 run_codeguide requires risk preflight before delegated orchestration
+ok 18 run_codeguide records blocked delegation when preflight requires approval
+ok 19 run_codeguide reports code-or-runtime when runtime cmd provided
+ok 20 run_codeguide passes shadow note through to project shadow
+ok 21 SKILL.md documents pre-orchestration risk approval gate
+ok 22 run_codeguide bootstraps initial plan doc for active task
+ok 23 decision-index places row under correct status section
+ok 24 decision-index prevents duplicate rows
+ok 25 decision-index migrates legacy table format
+ok 26 run_codeguide works in non-git directory with info message
+ok 27 run_codeguide in non-git falls back to latest task file when no explicit id
+ok 28 run_codeguide in non-git requires --task-id when multiple active tasks exist
+ok 29 run_codeguide in non-git with no tasks uses timestamp fallback
+ok 30 branch inference resolves through the source repo in the skills layout
+ok 31 run_codeguide on a main trunk branch writes a per-task decision file
+not ok 32 run_codeguide stops before docs mutation and runtime validation when the required external review gate is unsatisfied
+# (in test file <scratch>/r1-old-new-tests/tests/run_codeguide.bats, line 782)
+#   `[ "$status" -ne 0 ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.SHvcQqzhHV/repo/docs
+# Repository root: <tmp>/tmp.SHvcQqzhHV/repo
+# Created directories:
+#   - <tmp>/tmp.SHvcQqzhHV/repo/docs/task
+#   - <tmp>/tmp.SHvcQqzhHV/repo/docs/shadow
+#   - <tmp>/tmp.SHvcQqzhHV/repo/docs/decisions
+#   - <tmp>/tmp.SHvcQqzhHV/repo/docs/plan
+#   - <tmp>/tmp.SHvcQqzhHV/repo/docs/report
+#   - <tmp>/tmp.SHvcQqzhHV/repo/docs/orchestration
+#   - <tmp>/tmp.SHvcQqzhHV/repo/docs/issues
+# Template files are created only when missing.
+not ok 33 run_codeguide also blocks closing a gated task as done while the review gate is unsatisfied
+# (in test file <scratch>/r1-old-new-tests/tests/run_codeguide.bats, line 795)
+#   `[ "$status" -ne 0 ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.kH6e51l0Nu/repo/docs
+# Repository root: <tmp>/tmp.kH6e51l0Nu/repo
+# Created directories:
+#   - <tmp>/tmp.kH6e51l0Nu/repo/docs/task
+#   - <tmp>/tmp.kH6e51l0Nu/repo/docs/shadow
+#   - <tmp>/tmp.kH6e51l0Nu/repo/docs/decisions
+#   - <tmp>/tmp.kH6e51l0Nu/repo/docs/plan
+#   - <tmp>/tmp.kH6e51l0Nu/repo/docs/report
+#   - <tmp>/tmp.kH6e51l0Nu/repo/docs/orchestration
+#   - <tmp>/tmp.kH6e51l0Nu/repo/docs/issues
+# Template files are created only when missing.
+ok 34 run_codeguide still proceeds to runtime validation past ordinary advisory warnings
+not ok 35 run_codeguide re-syncs a closed gated task but blocks reopening it without the review
+# (in test file <scratch>/r1-old-new-tests/tests/run_codeguide.bats, line 831)
+#   `[ "$status" -ne 0 ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.1z7Oo4zKE5/repo/docs
+# Repository root: <tmp>/tmp.1z7Oo4zKE5/repo
+# Created directories:
+#   - <tmp>/tmp.1z7Oo4zKE5/repo/docs/task
+#   - <tmp>/tmp.1z7Oo4zKE5/repo/docs/shadow
+#   - <tmp>/tmp.1z7Oo4zKE5/repo/docs/decisions
+#   - <tmp>/tmp.1z7Oo4zKE5/repo/docs/plan
+#   - <tmp>/tmp.1z7Oo4zKE5/repo/docs/report
+#   - <tmp>/tmp.1z7Oo4zKE5/repo/docs/orchestration
+#   - <tmp>/tmp.1z7Oo4zKE5/repo/docs/issues
+# Template files are created only when missing.
+ok 36 run_codeguide does not apply the review gate to a planning-only run
+not ok 37 run_codeguide proceeds past the review gate with complete wrapper evidence and keeps the ORCH approval metadata
+# (in test file <scratch>/r1-old-new-tests/tests/run_codeguide.bats, line 876)
+#   `[ "$(orch_field "$orch_file" risk_preflight_status)" = "approved" ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.eMojhM7MRE/repo/docs
+# Repository root: <tmp>/tmp.eMojhM7MRE/repo
+# Created directories:
+#   - <tmp>/tmp.eMojhM7MRE/repo/docs/task
+#   - <tmp>/tmp.eMojhM7MRE/repo/docs/shadow
+#   - <tmp>/tmp.eMojhM7MRE/repo/docs/decisions
+#   - <tmp>/tmp.eMojhM7MRE/repo/docs/plan
+#   - <tmp>/tmp.eMojhM7MRE/repo/docs/report
+#   - <tmp>/tmp.eMojhM7MRE/repo/docs/orchestration
+#   - <tmp>/tmp.eMojhM7MRE/repo/docs/issues
+# Template files are created only when missing.
+not ok 38 run_codeguide default options do not overwrite an existing external-review ORCH capsule
+# (from function `assert_seeded_orch_intact' in file <scratch>/r1-old-new-tests/tests/run_codeguide.bats, line 910,
+#  in test file <scratch>/r1-old-new-tests/tests/run_codeguide.bats, line 927)
+#   `assert_seeded_orch_intact "run-orch-keep-01"' failed
+# Initialized project docs scaffold under: <tmp>/tmp.OodDBsYIww/repo/docs
+# Repository root: <tmp>/tmp.OodDBsYIww/repo
+# Created directories:
+#   - <tmp>/tmp.OodDBsYIww/repo/docs/task
+#   - <tmp>/tmp.OodDBsYIww/repo/docs/shadow
+#   - <tmp>/tmp.OodDBsYIww/repo/docs/decisions
+#   - <tmp>/tmp.OodDBsYIww/repo/docs/plan
+#   - <tmp>/tmp.OodDBsYIww/repo/docs/report
+#   - <tmp>/tmp.OodDBsYIww/repo/docs/orchestration
+#   - <tmp>/tmp.OodDBsYIww/repo/docs/issues
+# Template files are created only when missing.
+not ok 39 doc_garden default options do not overwrite an existing external-review ORCH capsule
+# (from function `assert_seeded_orch_intact' in file <scratch>/r1-old-new-tests/tests/run_codeguide.bats, line 910,
+#  in test file <scratch>/r1-old-new-tests/tests/run_codeguide.bats, line 939)
+#   `assert_seeded_orch_intact "garden-orch-keep-01"' failed
+# Initialized project docs scaffold under: <tmp>/tmp.V86JDb0Msu/repo/docs
+# Repository root: <tmp>/tmp.V86JDb0Msu/repo
+# Created directories:
+#   - <tmp>/tmp.V86JDb0Msu/repo/docs/task
+#   - <tmp>/tmp.V86JDb0Msu/repo/docs/shadow
+#   - <tmp>/tmp.V86JDb0Msu/repo/docs/decisions
+#   - <tmp>/tmp.V86JDb0Msu/repo/docs/plan
+#   - <tmp>/tmp.V86JDb0Msu/repo/docs/report
+#   - <tmp>/tmp.V86JDb0Msu/repo/docs/orchestration
+#   - <tmp>/tmp.V86JDb0Msu/repo/docs/issues
+# Template files are created only when missing.
+ok 40 an explicit option still overwrites the matching ORCH field (only implicit defaults are held back)
+ok 41 a preflight recorded for one execution mode is never carried across an explicit mode change
+not ok 42 default options keep a blocked delegation blocked while the preflight still needs approval
+# (in test file <scratch>/r1-old-new-tests/tests/run_codeguide.bats, line 1006)
+#   `[ "$(orch_field "$orch_file" risk_preflight_status)" = "approval_required" ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.JgGgPN2Ohh/repo/docs
+# Repository root: <tmp>/tmp.JgGgPN2Ohh/repo
+# Created directories:
+#   - <tmp>/tmp.JgGgPN2Ohh/repo/docs/task
+#   - <tmp>/tmp.JgGgPN2Ohh/repo/docs/shadow
+#   - <tmp>/tmp.JgGgPN2Ohh/repo/docs/decisions
+#   - <tmp>/tmp.JgGgPN2Ohh/repo/docs/plan
+#   - <tmp>/tmp.JgGgPN2Ohh/repo/docs/report
+#   - <tmp>/tmp.JgGgPN2Ohh/repo/docs/orchestration
+#   - <tmp>/tmp.JgGgPN2Ohh/repo/docs/issues
+# Template files are created only when missing.
+not ok 43 default options keep an existing solo delegation_note instead of the generic default
+# (in test file <scratch>/r1-old-new-tests/tests/run_codeguide.bats, line 1019)
+#   `[ "$(orch_field "$orch_file" delegation_note)" = "Solo on purpose: single-file edit, delegation cost exceeds the work." ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.pyolO26TwK/repo/docs
+# Repository root: <tmp>/tmp.pyolO26TwK/repo
+# Created directories:
+#   - <tmp>/tmp.pyolO26TwK/repo/docs/task
+#   - <tmp>/tmp.pyolO26TwK/repo/docs/shadow
+#   - <tmp>/tmp.pyolO26TwK/repo/docs/decisions
+#   - <tmp>/tmp.pyolO26TwK/repo/docs/plan
+#   - <tmp>/tmp.pyolO26TwK/repo/docs/report
+#   - <tmp>/tmp.pyolO26TwK/repo/docs/orchestration
+#   - <tmp>/tmp.pyolO26TwK/repo/docs/issues
+# Template files are created only when missing.
+bats-exit=1

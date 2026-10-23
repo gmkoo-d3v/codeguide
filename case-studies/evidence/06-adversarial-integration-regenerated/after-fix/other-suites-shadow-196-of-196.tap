@@ -1,0 +1,200 @@
+1..196
+# REGENERATED LOG - not the original run output. Produced on 2026-10-23 from a frozen copy of skill commit 2ecf622 (after the verifier fix of the adversarial integration).
+# Command: bats --tap 10 files: shadow_core, shadow_coverage_report, shadow_effect_impact_report, shadow_evidence_probe, shadow_impact_report, shadow_metrics_report, shadow_nav_graph_report, shadow_rationale_report, shadow_reader_audit, shadow_v2. PATH reached agy, claude, codex and gemini only through tripwire shims.
+ok 1 shadow_review_queue turns probe records into bounded human questions
+ok 2 shadow_review_queue never hides high unresolved questions behind max_questions
+ok 3 shadow_review_queue does not trust arbitrary priority or risk fields for cap bypass
+ok 4 shadow_review_queue defers under-specified questions instead of asking user
+ok 5 shadow_review_queue keeps runtime trace provenance visible
+ok 6 shadow_review_queue renders deterministic metadata and decision context
+ok 7 shadow_review_queue can optionally ask about parser-backed pass records
+ok 8 shadow_review_queue reports invalid JSON as machine-readable error
+ok 9 shadow_llm_candidate_wrapper creates non-promotable candidate with provenance
+ok 10 shadow_llm_candidate_wrapper rejects missing provenance and forbidden markers
+ok 11 shadow_llm_candidate_wrapper refuses output under docs shadow
+ok 12 shadow_apply_gate blocks without final user decision and allows supervised dry-run
+ok 13 shadow_apply_gate rejects forged candidate provenance and expired decisions
+ok 14 shadow_user_decision_wrapper creates gated apply and fact evidence artifacts
+ok 15 shadow_user_decision_wrapper derives runtime_scenario_fit binding metadata from record evidence
+ok 16 shadow_effect_writer dry-run previews without writing shadow docs
+ok 17 shadow_effect_writer separates final apply approval from user decision evidence
+ok 18 shadow_effect_writer enforces deterministic evidence metadata
+ok 19 shadow_effect_writer hints the runtime_scenario_fit decision command
+ok 20 shadow_effect_writer names runtime_scenario_fit for a generic missing evidence decision blocker
+ok 21 shadow_effect_writer accepts Java parser-backed deterministic code evidence
+ok 22 shadow_effect_writer accepts JavaScript parser-backed deterministic code evidence
+ok 23 shadow_effect_writer accepts TypeScript generic parser-backed deterministic code evidence
+ok 24 shadow_effect_writer accepts FastAPI parser-backed route decorator evidence
+ok 25 shadow_effect_writer rejects Python parser-backed evidence when anchor symbol differs from matched symbol
+ok 26 shadow_effect_writer binds deterministic evidence to policy registry and source hashes
+ok 27 shadow_effect_writer write requires target hash and updates exact record id
+ok 28 shadow_effect_writer enforces lifecycle transitions for existing record ids
+ok 29 shadow_effect_writer refuses non-effect-map shadow targets
+ok 30 shadow_effect_writer reads the target doc_role outside fences, both directions
+ok 31 shadow_effect_writer rejects malformed record refs and existing markers
+ok 32 shadow_effect_writer blocks stale target hash traversal and llm evidence
+ok 33 shadow_policy_loader reports adapter ids and catalog parity
+ok 34 the shared document read keeps the bytes on disk, so python and sed count the same lines
+ok 35 a source digest write round-trips the document byte-exactly
+ok 36 source_paths_for_doc reads declared paths with the shared line rule
+ok 37 the effect-map lifecycle write gate counts lines the way every other reader does
+ok 38 the shared scan emits a fence boundary at the closing marker as well as the opening one
+ok 39 the shared line rule splits on newlines only and round-trips a document exactly
+ok 40 a source digest write refuses a document that is not valid UTF-8
+ok 41 an effect write round-trips the existing effect map byte-exactly
+ok 42 coverage report flags a changed source that no shadow doc documents
+ok 43 coverage report treats a source under a documented directory as covered
+ok 44 coverage report treats an exactly-declared source file as covered
+ok 45 coverage report does not treat a changed doc as source needing coverage
+ok 46 coverage report --exit-code returns 1 when a source is uncovered
+ok 47 coverage report working-tree mode flags an undocumented changed source in a git repo
+ok 48 coverage report ignores source_of_truth_paths under _deprecated
+ok 49 coverage report flags an undocumented directory passed via --changed-file
+ok 50 coverage report does not let a blanket '.' declaration cover the whole project
+ok 51 coverage report does not crash on a malformed (NUL-byte) declared path
+ok 52 coverage report scopes to project_root and ignores a sibling subproject change
+ok 53 effect impact report flags a confirmed anchor in the change set
+ok 54 effect impact report does not flag non-confirmed anchors
+ok 55 effect impact report does not flag when a changed file is not an anchor
+ok 56 effect impact report warns when an effect anchor file does not exist
+ok 57 effect impact report never auto-decides invalidation
+ok 58 effect impact report is empty for a doc with no records
+ok 59 effect impact report finds effect_map docs across the shadow tree
+ok 60 shadow_evidence_probe returns unsupported for unknown validator without guessing
+ok 61 shadow_evidence_probe uses Python AST for real calls and ignores comments or strings
+ok 62 shadow_evidence_probe rejects Python AST primary evidence from test paths
+ok 63 shadow_evidence_probe uses Python AST for real decorators
+ok 64 shadow_evidence_probe FastAPI route parser-backed matcher validates decorator and literal route path
+ok 65 shadow_evidence_probe fastapi.dependency@v1 parser-backed matcher validates explicit route dependencies
+ok 66 shadow_evidence_probe express.route@v1 tier1 parser-backed route matcher validates literal routes and rejects non-routes
+ok 67 shadow_evidence_probe react.effect_hook@v1 tier1 parser-backed matcher validates React imports and rejects non-hooks
+ok 68 shadow_evidence_probe react.effect_hook@v1 reports dependency_status syntax metadata
+ok 69 shadow_evidence_probe react.jsx_event_binding@v1 reports syntax-only event binding metadata
+ok 70 shadow_evidence_probe react.jsx_event_binding@v1 ignores non-event props and rejects excluded test paths
+ok 71 shadow_evidence_probe regex fallback emits fallback_result only
+ok 72 shadow_evidence_probe JavaScript regex fallback accepts synced non-src roots
+ok 73 shadow_evidence_probe Java primary source_probe is scoped and non-parser-backed
+ok 74 shadow_evidence_probe Java parser-backed call matcher ignores comments and strings
+ok 75 shadow_evidence_probe Java parser-backed call matcher rejects declarations and test paths
+ok 76 shadow_evidence_probe Java parser-backed call matcher handles generic-style syntax
+ok 77 shadow_evidence_probe JavaScript parser-backed call matcher ignores comments strings declarations and test paths
+ok 78 shadow_evidence_probe JavaScript parser-backed call matcher rejects nested excluded paths
+ok 79 shadow_evidence_probe JavaScript parser-backed call matcher rejects regex literal only matches
+ok 80 shadow_evidence_probe JavaScript parser-backed call matcher supports optional chaining receiver calls
+ok 81 shadow_evidence_probe TypeScript parser-backed call matcher rejects signatures and declaration files
+ok 82 shadow_evidence_probe TypeScript parser-backed call matcher rejects nested excluded paths
+ok 83 shadow_evidence_probe TypeScript parser-backed v2 matcher supports generic call syntax while v1 stays fail-closed
+ok 84 shadow_evidence_probe JS and TS parser-backed matchers reject cross-extension files
+ok 85 shadow_evidence_probe regex fallback ignores comments and strings
+ok 86 shadow_evidence_probe rejects fallback evidence from excluded paths
+ok 87 shadow_evidence_probe rejects primary source_probe evidence from excluded paths
+ok 88 shadow_evidence_probe runtime trace requires exact explicit event line
+ok 89 shadow_evidence_probe runtime trace rejects duplicate and dotted selected fields
+ok 90 shadow_evidence_probe rejects traversal and does not write shadow docs
+ok 91 impact report flags a shadow doc whose source changed but the doc was not refreshed
+ok 92 impact report treats a shadow doc as ok when it changed alongside its source
+ok 93 impact report reports no impact when the changed file is unrelated
+ok 94 impact report shows a distinct coverage-gap line when zero shadow docs declare source_of_truth_paths
+ok 95 impact report resolves the mixed inline+nested source_of_truth_paths form
+ok 96 impact report --exit-code returns 1 when a shadow doc needs refresh
+ok 97 impact report ignores docs under _deprecated
+ok 98 impact report working-tree mode flags unrefreshed source changes in a git repo
+ok 99 impact report errors clearly when there is no git repo and no explicit change set
+ok 100 impact report handles project_root that is a subproject below the git root
+ok 101 impact report still flags a source that was renamed away (no-renames)
+ok 102 impact report works in a fresh repo with no commits (unborn HEAD)
+ok 103 impact report rejects combining --range with --changed-file
+ok 104 impact report --range mode reports impact across a commit range
+ok 105 impact report split-root: docs-repo working-tree refresh is detected
+ok 106 impact report split-root: untouched shadow doc still needs refresh
+ok 107 impact report split-root without a docs repo reports unknown instead of false NEEDS REFRESH
+ok 108 impact report split-root without a docs repo keeps --changed-file refresh detection
+ok 109 metrics report summarizes the always-read layer of a fresh scaffold
+ok 110 metrics report flags a doc over the hard cap
+ok 111 metrics report flags a doc over the soft target but under the cap
+ok 112 metrics report reports a low routing percentage for a prose-heavy doc
+ok 113 metrics report --exit-code returns 1 when a doc exceeds the soft target
+ok 114 metrics report ignores docs under _deprecated
+ok 115 metrics report counts fenced blocks as code, not routing or prose
+ok 116 metrics report line count matches wc -l (no trailing newline is not over cap)
+ok 117 metrics report resolves a skill-package root whose docs live in the parent
+ok 118 metrics report --exit-code returns 1 for a hard-cap violation too
+ok 119 metrics report keeps a nested 3-backtick line inside a 4-backtick fence as code
+ok 120 metrics report rejects an inverted --soft-target/--hard-cap
+ok 121 metrics report reports unreadable docs instead of silently dropping them
+ok 122 nav graph report finds no orphans in a fresh scaffold
+ok 123 nav graph report flags an overview that no bucket index links
+ok 124 nav graph report treats an overview linked from its bucket index as reachable
+ok 125 nav graph report reaches a concern leaf via next_docs but orphans an unlinked one
+ok 126 nav graph report --exit-code returns 1 when an orphan exists
+ok 127 nav graph report does not orphan an unreachable side-path doc (effect_map)
+ok 128 nav graph report ignores docs under _deprecated
+ok 129 nav graph report reports a missing router instead of crashing
+ok 130 nav graph report does not attach a post-fence bullet to a nav field (fence reset)
+ok 131 nav graph report resolves the git root when given a subproject path
+ok 132 nav graph report reaches a carrier through a redirect_shim canonical_path
+ok 133 nav graph report surfaces a doc with an unrecognized doc_role as unclassified
+ok 134 nav graph report orphans a bucket index the router does not link
+ok 135 rationale report is empty but valid on a fresh scaffold
+ok 136 rationale report lists both directions of a resolved edge
+ok 137 rationale report aggregates several shadow docs citing one decision
+ok 138 rationale report lists accepted decisions that no shadow doc cites
+ok 139 rationale report surfaces dangling, malformed, index, and duplicate entries
+ok 140 rationale report flags rationale declared on a non-carrier doc_role
+ok 141 rationale report ignores fenced examples and the _deprecated tree
+ok 142 rationale report resolves the git root when given a subproject path
+ok 143 rationale report exits 2 on a usage error and 0 with findings
+ok 144 rationale report writes nothing: no new bytecode cache and no doc mutation
+ok 145 rationale report prints all five sections even when empty and is byte-stable
+ok 146 rationale report exits 2 on a nonexistent project root
+ok 147 rationale report surfaces the nested-bullet form while a tilde-fenced example stays silent
+ok 148 rationale report does not close a backtick fence on a tilde marker
+ok 149 a fence boundary breaks the linked_decisions header-to-bullet binding
+ok 150 rationale report ignores a second linked_decisions occurrence
+ok 151 rationale --lint emits the declared summary and tab-separated findings
+ok 152 shadow reader audit passes on the shipped skill with nothing unclassified
+ok 153 shadow reader audit reports an exclusion that is already compliant
+ok 154 shadow reader audit records every exclusion with a reason
+ok 155 shadow reader audit fails closed when a new unclassified reader appears
+ok 156 shadow reader audit reports an exclusion that is no longer a reader
+ok 157 shadow reader audit classifies transitive delegation, not just direct imports
+ok 158 shadow reader audit shell source regex accepts every real source form
+ok 159 shadow reader audit does not certify a shell reader on a COMMENT mention
+ok 160 shadow_v2_gate_skeleton prints a no-write Phase 0 contract
+ok 161 shadow_v2_gate_skeleton activates hints only after project scope is verified
+ok 162 shadow_v2_gate_skeleton blocks external review by default and disables batch apply
+ok 163 shadow_v2_gate_skeleton blocks combined close when required external review is blocked
+ok 164 shadow_v2_gate_skeleton requires durable accepted internal review artifact before close completion
+ok 165 shadow_v2_gate_skeleton requires durable accepted external review artifact before close completion
+ok 166 shadow_v2_gate_skeleton ignores optional blocked external close route
+ok 167 shadow_v2_gate_skeleton rejects hint evidence for confirmed facts
+ok 168 shadow_v2_gate_skeleton rejects generic user decisions and final apply as fact evidence
+ok 169 shadow_v2_user_decision_assistant turns source probes into bounded user questions
+ok 170 shadow_v2_user_decision_assistant groups bounded questions without answering them
+ok 171 shadow_v2_user_decision_assistant enforces project-scope hint activation
+ok 172 shadow_v2_user_decision_assistant does not hang when stdin is an open pipe with no data
+ok 173 shadow_v2_user_decision_assistant surfaces writer user-decision command hints
+ok 174 shadow_v2_user_decision_assistant blocks forged writer command hints
+ok 175 shadow_v2_user_decision_assistant blocks external reviewer command hint tools
+ok 176 shadow_v2_user_decision_assistant renders command text only from validated argv
+ok 177 shadow_v2_user_decision_assistant rejects python command smuggling
+ok 178 shadow_v2_user_decision_assistant rejects duplicate decision flags
+ok 179 shadow_v2_user_decision_assistant rejects spoofed wrapper paths
+ok 180 shadow_v2_user_decision_assistant refuses outputs under docs shadow
+ok 181 shadow_v2_review_packet_generator emits bounded internal review packets
+ok 182 shadow_v2_review_packet_generator carries plural source_refs into the packet
+ok 183 shadow_v2_review_packet_generator combines singular and plural refs within the limit
+ok 184 shadow_v2_review_packet_generator bounds plural refs with deduped input order
+ok 185 shadow_v2_review_packet_generator refuses artifact inputs outside project root
+ok 186 shadow_v2_review_packet_generator blocks external route unless requested
+ok 187 shadow_v2_review_packet_generator refuses outputs under docs shadow
+ok 188 shadow_v2_pipeline_wrapper emits incomplete dry-run plans without executing commands
+ok 189 shadow_v2_pipeline_wrapper writer command is dry-run only
+ok 190 shadow_v2_pipeline_wrapper blocks external review route without approval
+ok 191 shadow_v2_pipeline_wrapper blocks combined close when required external review is blocked
+ok 192 shadow_v2_pipeline_wrapper requires external close artifact provenance
+ok 193 shadow_v2_pipeline_wrapper refuses outputs under docs shadow
+ok 194 shadow_v2_gate_skeleton blocks a declared non-antigravity evaluator despite an agy filename
+ok 195 shadow_v2 close gate accepts an adversarial accept with empty debate fields in any field order
+ok 196 shadow_v2 close gate blocks an adversarial accept missing a debate key or with empty residual_risk
+bats-exit=0

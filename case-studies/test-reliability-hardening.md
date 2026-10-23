@@ -120,3 +120,5 @@ These are HTML files, so GitHub shows their source. Download one and open it in 
 
 - [External review approval gate fix report](./external-review-gate-hardening.html): a record of reproducing the five defects raised in an audit with mock tests and fixing only the ones that were confirmed
 - [Integration contract verification report](./adversarial-gate-integration.html): a record of finding and fixing one verifier that disagreed with the contract when the adversarial review rule and the approval gate were combined
+
+The original test runs behind these two reports were not saved. Their key runs were re-run later from the old commits and are in [evidence/05-gate-hardening-regenerated/](./evidence/05-gate-hardening-regenerated/) and [evidence/06-adversarial-integration-regenerated/](./evidence/06-adversarial-integration-regenerated/), marked as regenerated. [evidence/README.md](./evidence/README.md) lists which claims of these reports are backed by a log and which are not.

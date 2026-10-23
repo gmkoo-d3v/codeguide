@@ -1,0 +1,47 @@
+1..43
+# REGENERATED LOG - not the original run output. Produced on 2026-10-23 from a frozen copy of skill commit 13a1597 (after the gate hardening fix).
+# Command: bats --tap tests/run_codeguide.bats. PATH reached agy, claude, codex and gemini only through tripwire shims.
+ok 1 upsert_field skips empty values on existing non-empty fields
+ok 2 upsert_field allows empty overwrite with --allow-empty-overwrite
+ok 3 axis fields are not overwritten when empty
+ok 4 infer_task_id: explicit --task-id has highest priority
+ok 5 infer_task_id: branch pattern takes priority over latest task file
+ok 6 run_codeguide strips one TASK- prefix without creating TASK-TASK-* artifacts
+ok 7 skills package root can resolve to parent project docs root
+ok 8 ordinary nested git repo does not borrow parent project docs root
+ok 9 run_codeguide bootstraps orchestration doc for active task
+ok 10 approved preflight rejects placeholder approval metadata before recording or external review
+ok 11 run_codeguide and validate_docs reject evaluator identity recorders consistently
+ok 12 task-index places row under correct status section
+ok 13 task-index prevents duplicate rows
+ok 14 run_codeguide reports docs-only scope by default
+ok 15 run_codeguide forwards risk_level into generated docs
+ok 16 run_codeguide fails clearly when option value is missing
+ok 17 run_codeguide requires risk preflight before delegated orchestration
+ok 18 run_codeguide records blocked delegation when preflight requires approval
+ok 19 run_codeguide reports code-or-runtime when runtime cmd provided
+ok 20 run_codeguide passes shadow note through to project shadow
+ok 21 SKILL.md documents pre-orchestration risk approval gate
+ok 22 run_codeguide bootstraps initial plan doc for active task
+ok 23 decision-index places row under correct status section
+ok 24 decision-index prevents duplicate rows
+ok 25 decision-index migrates legacy table format
+ok 26 run_codeguide works in non-git directory with info message
+ok 27 run_codeguide in non-git falls back to latest task file when no explicit id
+ok 28 run_codeguide in non-git requires --task-id when multiple active tasks exist
+ok 29 run_codeguide in non-git with no tasks uses timestamp fallback
+ok 30 branch inference resolves through the source repo in the skills layout
+ok 31 run_codeguide on a main trunk branch writes a per-task decision file
+ok 32 run_codeguide stops before docs mutation and runtime validation when the required external review gate is unsatisfied
+ok 33 run_codeguide also blocks closing a gated task as done while the review gate is unsatisfied
+ok 34 run_codeguide still proceeds to runtime validation past ordinary advisory warnings
+ok 35 run_codeguide re-syncs a closed gated task but blocks reopening it without the review
+ok 36 run_codeguide does not apply the review gate to a planning-only run
+ok 37 run_codeguide proceeds past the review gate with complete wrapper evidence and keeps the ORCH approval metadata
+ok 38 run_codeguide default options do not overwrite an existing external-review ORCH capsule
+ok 39 doc_garden default options do not overwrite an existing external-review ORCH capsule
+ok 40 an explicit option still overwrites the matching ORCH field (only implicit defaults are held back)
+ok 41 a preflight recorded for one execution mode is never carried across an explicit mode change
+ok 42 default options keep a blocked delegation blocked while the preflight still needs approval
+ok 43 default options keep an existing solo delegation_note instead of the generic default
+bats-exit=0

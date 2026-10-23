@@ -1,0 +1,133 @@
+1..116
+# REGENERATED LOG - not the original run output. Produced on 2026-10-23 from a frozen copy of skill commit 2ecf622 (after the verifier fix of the adversarial integration).
+# Command: bats --tap tests/run_codeguide.bats tests/external_review.bats. PATH reached agy, claude, codex and gemini only through tripwire shims.
+ok 1 upsert_field skips empty values on existing non-empty fields
+ok 2 upsert_field allows empty overwrite with --allow-empty-overwrite
+ok 3 axis fields are not overwritten when empty
+ok 4 infer_task_id: explicit --task-id has highest priority
+ok 5 infer_task_id: branch pattern takes priority over latest task file
+ok 6 run_codeguide strips one TASK- prefix without creating TASK-TASK-* artifacts
+ok 7 skills package root can resolve to parent project docs root
+ok 8 ordinary nested git repo does not borrow parent project docs root
+ok 9 run_codeguide bootstraps orchestration doc for active task
+ok 10 approved preflight rejects placeholder approval metadata before recording or external review
+ok 11 run_codeguide and validate_docs reject evaluator identity recorders consistently
+ok 12 task-index places row under correct status section
+ok 13 task-index prevents duplicate rows
+ok 14 run_codeguide reports docs-only scope by default
+ok 15 run_codeguide forwards risk_level into generated docs
+ok 16 run_codeguide fails clearly when option value is missing
+ok 17 run_codeguide requires risk preflight before delegated orchestration
+ok 18 run_codeguide records blocked delegation when preflight requires approval
+ok 19 run_codeguide reports code-or-runtime when runtime cmd provided
+ok 20 run_codeguide passes shadow note through to project shadow
+ok 21 SKILL.md documents pre-orchestration risk approval gate
+ok 22 run_codeguide bootstraps initial plan doc for active task
+ok 23 decision-index places row under correct status section
+ok 24 decision-index prevents duplicate rows
+ok 25 decision-index migrates legacy table format
+ok 26 run_codeguide works in non-git directory with info message
+ok 27 run_codeguide in non-git falls back to latest task file when no explicit id
+ok 28 run_codeguide in non-git requires --task-id when multiple active tasks exist
+ok 29 run_codeguide in non-git with no tasks uses timestamp fallback
+ok 30 branch inference resolves through the source repo in the skills layout
+ok 31 run_codeguide on a main trunk branch writes a per-task decision file
+ok 32 run_codeguide stops before docs mutation and runtime validation when the required external review gate is unsatisfied
+ok 33 run_codeguide also blocks closing a gated task as done while the review gate is unsatisfied
+ok 34 run_codeguide still proceeds to runtime validation past ordinary advisory warnings
+ok 35 run_codeguide re-syncs a closed gated task but blocks reopening it without the review
+ok 36 run_codeguide does not apply the review gate to a planning-only run
+ok 37 run_codeguide proceeds past the review gate with complete wrapper evidence and keeps the ORCH approval metadata
+ok 38 run_codeguide default options do not overwrite an existing external-review ORCH capsule
+ok 39 doc_garden default options do not overwrite an existing external-review ORCH capsule
+ok 40 an explicit option still overwrites the matching ORCH field (only implicit defaults are held back)
+ok 41 a preflight recorded for one execution mode is never carried across an explicit mode change
+ok 42 default options keep a blocked delegation blocked while the preflight still needs approval
+ok 43 default options keep an existing solo delegation_note instead of the generic default
+ok 44 runtime-cmd blocked by allow-list
+ok 45 runtime-cmd blocks chained shell syntax in allow-list mode
+ok 46 runtime-cmd blocks ampersand shell syntax in allow-list mode
+ok 47 runtime-cmd passes with allow-list match
+ok 48 runtime-cmd allow-list supports executable+subcommand matching
+ok 49 runtime-cmd blocks when executable+subcommand is not allow-listed
+ok 50 runtime-cmd allow-list supports prefix patterns
+ok 51 runtime-cmd requires allow-list in code-or-runtime mode
+ok 52 runtime-cmd uses bash -c instead of eval
+ok 53 run_external_plan_reviews requires passing preflight before invoking reviewers
+ok 54 run_external_plan_reviews retries malformed output and writes reports without mutating the plan
+ok 55 run_external_plan_reviews external CLI timeout kills a hung runner and records failure
+ok 56 run_external_plan_reviews writes ORCH.md fields outside a quoted template example
+ok 57 run_external_plan_reviews can target a selected reviewer only
+ok 58 run_external_plan_reviews supports last-resort manual handoff and response ingest without invoking CLIs
+ok 59 run_external_plan_reviews supports adversarial reviewer with best-effort success
+ok 60 run_external_plan_reviews auto-selects adversarial reviewer for high-risk task and supports primary claude success path
+ok 61 run_external_plan_reviews exits non-zero when all evaluators fail
+ok 62 run_external_plan_reviews exits non-zero when required adversarial reviewer fails even if another reviewer succeeds
+ok 63 run_external_plan_reviews treats empty codex final message as failure
+ok 64 run_external_plan_reviews stops on agy quota exhaustion and asks for user model switch in planning phase
+ok 65 run_external_plan_reviews stops on agy quota exhaustion and asks for user model switch in code phase
+ok 66 run_external_plan_reviews direct Claude quota exhaustion fails closed without explicit fallback
+ok 67 run_external_plan_reviews sends Claude request on stdin and passes explicit registry model
+ok 68 run_external_plan_reviews non-stdin routes do not inherit caller stdin
+ok 69 run_external_plan_reviews does not misdiagnose a CLI's own exit 124 as a timeout
+ok 70 run_with_deadline resets the timeout marker per call so a later CLI-124 is not misdiagnosed
+ok 71 run_external_plan_reviews passes explicit Codex registry model
+ok 72 run_external_plan_reviews stops on Claude model unavailable before parser retry
+ok 73 run_external_plan_reviews reports Claude 401 auth unavailable with sandbox guidance
+ok 74 bundled registry exposes the requested OpenAI and Anthropic lineups
+not ok 75 bundled agy routes use catalog cli_model values
+# (in test file <scratch>/r2-new/tests/external_review.bats, line 1831)
+#   `[ "$status" -eq 0 ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.38d5uJgnuj/repo/docs
+# Repository root: <tmp>/tmp.38d5uJgnuj/repo
+# Created directories:
+#   - <tmp>/tmp.38d5uJgnuj/repo/docs/task
+#   - <tmp>/tmp.38d5uJgnuj/repo/docs/shadow
+#   - <tmp>/tmp.38d5uJgnuj/repo/docs/decisions
+#   - <tmp>/tmp.38d5uJgnuj/repo/docs/plan
+#   - <tmp>/tmp.38d5uJgnuj/repo/docs/report
+#   - <tmp>/tmp.38d5uJgnuj/repo/docs/orchestration
+#   - <tmp>/tmp.38d5uJgnuj/repo/docs/issues
+# Template files are created only when missing.
+ok 76 run_external_plan_reviews loads runner routes from registry override and still stops on quota
+ok 77 run_external_plan_reviews --help does not require a readable model registry
+ok 78 run_external_plan_reviews rejects invalid task phase before fallback routing
+ok 79 run_external_plan_reviews unregistered reviewer route fails closed before invocation
+ok 80 run_external_plan_reviews rejects registry fallback targets outside known routes
+ok 81 run_external_plan_reviews stops after first exhausted route without fallback invocation
+ok 82 run_external_plan_reviews resolves adversarial evaluator runner aliases
+ok 83 external_review_runner enqueues current-task debate and dry-runs runner participants
+ok 84 external_review_runner treats any coordinator's own current route as manual/current-thread, not only codex
+ok 85 external_review_runner executes agy with current CLI flags and registry model selection
+ok 86 external_review_runner run-once warns and skips a participant whose response already exists without --force
+ok 87 external_review_runner run-once --force suppresses the skip warning and actually reruns the participant
+ok 88 external_review_runner executes codex with preconfigured model selection
+ok 89 external_review_runner passes explicit Codex registry model
+ok 90 external_review_runner preserves auth-unavailable stdout in stderr artifact
+ok 91 external_review_runner classifies Claude 401 auth failure as auth unavailable
+ok 92 run_external_plan_reviews --adversarial-all runs same-vendor peer and cross-vendor reviewers adversarially
+ok 93 run_external_plan_reviews repeatable adversarial evaluators fail closed even with allow-partial-review
+ok 94 run_external_plan_reviews --adversarial-cross-check auto-selects registry vendor peer and cross-vendor reviewers
+ok 95 run_external_plan_reviews --adversarial-cross-check rejects combination with --reviewer
+ok 96 run_external_plan_reviews passes codex reasoning effort for cli_effort routes
+ok 97 external_review_runner dry-run includes codex reasoning effort for cli_effort routes
+ok 98 run_external_plan_reviews blocks sandboxed claude invocation with non-sandboxed remediation
+ok 99 external_review_runner blocks sandboxed claude invocation before running the binary
+ok 100 sandbox guard ignores explicitly falsy codex markers
+ok 101 sandbox guard blocks on a truthy network-disabled marker alone
+ok 102 model registry rejects control characters in registry fields
+ok 103 model registry rejects cli_effort on non-codex runners
+ok 104 sandbox guard trims whitespace before truthiness (parity with python)
+ok 105 sandbox guard fires for any claude_code-kind runner id, not only 'claude'
+ok 106 external_review_runner blocks a second claude_code runner id under a sandbox (regression pin)
+ok 107 run_external_plan_reviews refuses to run when the shared fence reader is unavailable
+ok 108 run_external_plan_reviews refuses rather than silently waiving adversarial review
+ok 109 the risk gate walks every linked decision and falls through cleanly
+ok 110 adversarial accept with present-but-empty debate fields and residual_risk is accepted
+ok 111 adversarial accept rejects a debate field whose key is missing
+ok 112 adversarial accept rejects an empty or missing residual_risk
+ok 113 adversarial revise and blocked reject any empty debate field or residual_risk
+ok 114 adversarial accept, revise, and blocked with every field filled are accepted
+ok 115 standard review field rule is unchanged by the adversarial accept rule
+ok 116 adversarial accept with empty debate fields passes on the first CLI attempt with existing report and provenance format
+bats-exit=1

@@ -1,0 +1,62 @@
+1..24
+# REGENERATED LOG - not the original run output. Produced on 2026-10-23 from a frozen copy of the scripts of 6476e2d (before the verifier fix) with the tests of 2ecf622.
+# Command: bats --tap tests/review_contract_integration.bats. PATH reached agy, claude, codex and gemini only through tripwire shims.
+ok 1 GUARD-01 no real agy/claude/codex/gemini/antigravity is reachable from the test PATH
+ok 2 GUARD-02 the tripwire records and refuses any CLI name that is not a mock
+not ok 3 TC-01 adversarial accept with present-but-empty debate fields: one attempt, full artifact set, evidence verified, strict gate passes
+# (in test file <scratch>/r2-old-new-tests/tests/review_contract_integration.bats, line 80)
+#   `[ "$status" -eq 0 ]' failed
+ok 4 TC-02 adversarial accept with every debate field filled is still approved end to end
+ok 5 TC-03 standard accept: the standard field rule is unchanged and the result passes the gate
+ok 6 TC-04 adversarial accept with a MISSING debate key is rejected, unlike the same response with the key present but empty
+ok 7 TC-05 adversarial accept with residual_risk missing or empty is rejected
+ok 8 TC-06 revise and blocked: filled responses are format-valid but never approve; an empty debate value is rejected by the parser
+not ok 9 TC-07 an accepted response without its Request file is not approved
+# (from function `adv_empty_base' in file <scratch>/r2-old-new-tests/tests/review_contract_integration.bats, line 33,
+#  in test file <scratch>/r2-old-new-tests/tests/review_contract_integration.bats, line 190)
+#   `adv_empty_base tc07' failed
+not ok 10 TC-08 an accepted response without its Provenance manifest is not approved
+# (from function `adv_empty_base' in file <scratch>/r2-old-new-tests/tests/review_contract_integration.bats, line 33,
+#  in test file <scratch>/r2-old-new-tests/tests/review_contract_integration.bats, line 202)
+#   `adv_empty_base tc08' failed
+not ok 11 TC-09 a Response edited after review fails the SHA-256 binding and the gate
+# (from function `adv_empty_base' in file <scratch>/r2-old-new-tests/tests/review_contract_integration.bats, line 33,
+#  in test file <scratch>/r2-old-new-tests/tests/review_contract_integration.bats, line 214)
+#   `adv_empty_base tc09' failed
+not ok 12 TC-10 any identifier mismatch (task, plan version, round, route, request/response linkage) is rejected
+# (from function `adv_empty_base' in file <scratch>/r2-old-new-tests/tests/review_contract_integration.bats, line 33,
+#  in test file <scratch>/r2-old-new-tests/tests/review_contract_integration.bats, line 227)
+#   `adv_empty_base tc10' failed
+ok 13 TC-11 run_codeguide refuses the in_progress transition without an approved review: non-zero, no runtime, no state or metadata change
+not ok 14 TC-12 after an approved empty-debate adversarial accept, run_codeguide enters in_progress and runs only the allowed mock runtime command
+# (in test file <scratch>/r2-old-new-tests/tests/review_contract_integration.bats, line 307)
+#   `[ "$status" -eq 0 ]' failed
+not ok 15 TC-13 with two required routes, implementation is blocked until BOTH are genuine accepts
+# (from function `assert_contains' in file <scratch>/r2-old-new-tests/tests/codeguide_helper.bash, line 220,
+#  in test file <scratch>/r2-old-new-tests/tests/review_contract_integration.bats, line 331)
+#   `assert_contains "$output" "missing accepted route artifact for claude:current"' failed
+# assert_contains failed
+#   expected to find: missing accepted route artifact for claude:current
+#   in: [FAIL] external review await gate missing accepted route artifact for agy:current under docs/orchestration/tc13/external-cli/v1.0/r01: response is missing required review field objection; response is missing required review field counterproposal; response is missing required review field rebuttal
+# [RESULT] External review gate failed with 1 issue(s).
+ok 16 TC-14 a status carrying a note (in_progress (resumed)) cannot bypass an unapproved review
+ok 17 TC-15 a default-option run_codeguide leaves an existing external_cli ORCH approval and review metadata intact
+ok 18 TC-16 a waiver is honoured only for an existing accepted user decision linked to the task
+not ok 19 PARITY-01 for every response variant the wrapper parser and the evidence verifier agree
+# (in test file <scratch>/r2-old-new-tests/tests/review_contract_integration.bats, line 516)
+#   `return 1' failed
+# variant adv|accept|objection= counterproposal= rebuttal=|ok|ok: wrapper=ok but verifier REJECTED: response is missing required review field objection
+# response is missing required review field counterproposal
+# response is missing required review field rebuttal
+not ok 20 KNOWN-LIMITATION KL-1 a PLAN edited after its review is not detected (no plan hash is recorded)
+# (from function `adv_empty_base' in file <scratch>/r2-old-new-tests/tests/review_contract_integration.bats, line 33,
+#  in test file <scratch>/r2-old-new-tests/tests/review_contract_integration.bats, line 532)
+#   `adv_empty_base kl1' failed
+not ok 21 KNOWN-LIMITATION KL-2 an altered Request payload is not detected (the request carries no hash)
+# (from function `adv_empty_base' in file <scratch>/r2-old-new-tests/tests/review_contract_integration.bats, line 33,
+#  in test file <scratch>/r2-old-new-tests/tests/review_contract_integration.bats, line 539)
+#   `adv_empty_base kl2' failed
+ok 22 KNOWN-LIMITATION KL-3 work that skips the harness is not gated: a planning-only run on an unapproved review exits 0
+ok 23 KNOWN-LIMITATION KL-4 an agent that leaves external_review_required_for empty makes the task look review-free
+ok 24 KNOWN-LIMITATION KL-5 a done task's approval history is not re-checked (strict ignores it, the gate skips it)
+bats-exit=1
