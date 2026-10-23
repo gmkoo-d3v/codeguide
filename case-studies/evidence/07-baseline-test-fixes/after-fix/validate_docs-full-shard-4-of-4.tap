@@ -1,0 +1,75 @@
+1..71
+# RUN LOG - produced on 2026-10-23 from a frozen copy of main 89a49d8 with the two test fixes in tests/validate_docs.bats.
+# Command: bats --tap tests/validate_docs_shard4.bats (shard 4 of 4; the shards split tests/validate_docs.bats round-robin, 287 tests in all). PATH reached agy, claude, codex and gemini only through tripwire shims.
+ok 1 validate_docs advisory warns when ingested review lacks required route accept
+ok 2 validate_docs advisory rejects a waiver ref that points at no existing decision record
+ok 3 validate_docs advisory does not warn independent task when ORCH does not require implementation review
+ok 4 validate_docs advisory warns when external_review_required_for is outside allowlist enum
+ok 5 validate_docs advisory warns when required review route is not registry resolvable
+ok 6 validate_docs advisory accepts the retry-response evidence set the wrapper writes after a failed first attempt
+ok 7 validate_docs strict does not re-measure a done task against the await gate (terminal artifacts are immutable evidence)
+ok 8 external-review gate applies to a planned task when asked about it by id (the implementation-start transition)
+ok 9 external-review gate ignores unrelated advisory noise elsewhere in the docs
+ok 10 external-review gate accepts wrapper evidence after the project directory moves (absolute paths in provenance)
+ok 11 external-review gate leaves an already closed task alone but gates reopening it
+ok 12 validate_docs advisory warns when an orchestration capsule is missing its task-index row
+ok 13 validate_docs strict fails when docs/orchestration/_archive exists
+ok 14 validate_docs advisory does not warn about tmp/ path references inside a fenced code block
+ok 15 validate_docs and the tmp-scan awk agree that a carriage return is not a line ending
+ok 16 validate_docs reads an issue-tracker index row quoted inside a fence as no row at all
+ok 17 validate_docs advisory reports both classes when one line matches tmp and _archive
+ok 18 validate_docs strict accepts canonical probe coverage for valid effect_map evidence
+ok 19 validate_docs strict fails when rule registry has rule ids but no primary validator mappings
+ok 20 validate_docs strict fails when policy promotion gate contract drifts
+ok 21 validate_docs strict fails when rule registry primary reference is not a declared catalog id
+ok 22 validate_docs strict fails when catalog claims unimplemented probe primary
+ok 23 validate_docs advisory warns when supervisor_subagents ORCH capsule has no agent fields or delegation_status
+ok 24 validate_docs strict fails when supervisor_subagents orchestration fields are blank
+ok 25 validate_docs advisory mode passes with empty fields (warns only)
+ok 26 validate_docs shadow empty-graph gate does not fire once a bucket declares a unit
+ok 27 validate_docs strict fails when active task has no linked plan file
+ok 28 validate_docs advisory warns when active task omits risk_level
+ok 29 validate_docs strict rejects stale evaluator report for latest plan
+ok 30 validate_docs strict fails when adversarial evaluator report omits rebuttal fields
+ok 31 validate_docs strict fails on invalid task status enum
+ok 32 validate_docs secret scan catches Google Gemini API key formats
+ok 33 validate_docs strict fails when root-level legacy shadow doc is not a redirect shim
+ok 34 validate_docs strict fails on a stale task-index row with no matching task file
+ok 35 validate_docs treats a bare task-index row as present in both readers
+ok 36 validate_docs strict fails on a current issue missing its current/README index row
+ok 37 validate_docs strict tolerates a status field with trailing parenthetical notes for task-index section match
+ok 38 validate_docs advisory warns when an in_progress task is missing claimed_at
+ok 39 validate_docs strict fails on an orphaned claim directory with no matching task file
+ok 40 validate_docs strict fails when resume_next_action is present but empty
+ok 41 validate_docs advisory warns when resume_state_revision is present but non-numeric
+ok 42 validate_docs advisory warns when a unit overview next_docs reference dangles
+ok 43 validate_docs advisory ignores navigation references inside fenced code examples
+ok 44 validate_docs advisory passes when a shadow source-of-truth digest matches current source
+ok 45 validate_docs strict skips the advisory source-of-truth digest check
+ok 46 shadow source digest --write does not corrupt the pure nested-bullet form
+ok 47 validate_docs advisory warns on an escaping source_of_truth path in a digest-less doc
+ok 48 validate_docs advisory is not silenced by a fenced source_of_truth_digest example
+ok 49 validate_docs advisory warns when a unit overview home_bucket is not a known bucket
+ok 50 validate_docs advisory keeps a bucket index doc_role when the file quotes the unit overview template in a fence
+ok 51 validate_docs still reports a genuinely in-progress task as stale by last_updated
+ok 52 validate_docs answers a field VALUE with the same column-0 anchor the presence probe uses
+ok 53 a cache entry the source has outrun is refused, and a current one is still served
+ok 54 validate_docs advisory surfaces an indented unit overview instead of skipping it
+ok 55 validate_docs advisory validates delegation_status enum on planned-task capsules
+ok 56 empty-graph gate is not silenced by a unit row quoted inside a fence
+ok 57 validate_docs strict fails cancelled task without a disposition field
+ok 58 validate_docs flags superseded task whose capsule delegation_status is still planned in both modes
+ok 59 validate_docs strict still requires adversarial debate fields on revise verdict
+ok 60 init_docs_scaffold task-index template includes terminal status sections
+ok 61 validate_docs --format json rejects an invalid format value
+ok 62 validate_docs CLI errors keep json-mode stdout empty and route usage to stderr
+ok 63 validate_docs advisory warns when a linked_decisions entry does not resolve
+ok 64 validate_docs advisory warns on a duplicate or empty linked_decisions member
+ok 65 validate_docs advisory warns when linked_decisions is written as nested bullets
+ok 66 validate_docs advisory warns when the shadow router updated_by_task does not resolve
+ok 67 validate_docs advisory flags a trailing-comma linked_decisions member
+ok 68 validate_docs advisory flags a missing selection_summary on a unit row
+ok 69 validate_docs strict mode skips the selection_summary check entirely
+ok 70 validate_docs advisory ignores secondary_tags in fenced examples and archive trees
+ok 71 validate_docs advisory still honors backtick fences after the parser unification
+bats-exit=0

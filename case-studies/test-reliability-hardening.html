@@ -178,7 +178,7 @@ details > :not(summary) { margin-top: 10px; }
     <div class="tablewrap"><table>
       <thead><tr><th>범위</th><th>결과</th><th>비고</th></tr></thead>
       <tbody>
-        <tr><td>SIGPIPE 수정 브랜치 전체 스위트 (859개)</td><td><span class="pill ok">857 ok</span></td><td>그중 1건은 의도한 skip. 실패 2건은 수정 전부터 있던 기준선 실패로, 두 부모에서도 똑같이 실패합니다. 이번 수정으로 안 고쳐졌으므로 SIGPIPE가 원인이 아닙니다. 원인은 조사하지 않았습니다.</td></tr>
+        <tr><td>SIGPIPE 수정 브랜치 전체 스위트 (859개)</td><td><span class="pill ok">857 ok</span></td><td>그중 1건은 의도한 skip. 실패 2건은 수정 전부터 있던 기준선 실패로, 두 부모에서도 똑같이 실패합니다. 이번 수정으로 안 고쳐졌으므로 SIGPIPE가 원인이 아닙니다. 원인은 당시에는 조사하지 않았고, 이후 조사한 결과는 7절에 있습니다.</td></tr>
         <tr><td>해시 결합 브랜치: 통합 스위트</td><td><span class="pill ok">27 / 27</span></td><td>GUARD 2, TC-01~21, PARITY-01, KL-3~5</td></tr>
         <tr><td>해시 결합 브랜치: 래퍼 계열 스위트 (233개)</td><td><span class="pill ok">233 / 233</span></td><td>external_review, run_codeguide, doc_garden, 통합, shadow_v2</td></tr>
         <tr><td>레지스트리 브랜치: 래퍼 계열 + 게이트</td><td><span class="pill ok">264 / 265</span></td><td>실패 1건은 위 5절의 Terra 명시 테스트이고, 고친 뒤 기본값 의존 테스트 22개가 모두 통과</td></tr>
@@ -196,7 +196,7 @@ details > :not(summary) { margin-top: 10px; }
     <h2>7. 남은 것과 한계</h2>
     <ul>
       <li>무작위 SIGPIPE 경쟁 자체는 재현하지 못했습니다(2절). 대용량 단위 테스트와 정적 검사로 막았을 뿐입니다.</li>
-      <li>기준선 실패 2건(done 작업의 이전 계획 버전 평가 보고서, JSON 이슈 id)은 원인을 조사하지 않았습니다.</li>
+      <li>기준선 실패 2건(done 작업의 이전 계획 버전 평가 보고서, JSON 이슈 id)은 이후에 조사했습니다. 둘 다 제품 결함이 아니었습니다. 닫힘 기록 게이트(<code>ada11d9</code>)가 검증기를 바꾸면서 더 오래된 테스트 두 개의 기대값이 맞지 않게 된 것입니다. 첫째는 닫힘 기록 필드가 빈 done 작업을 만들어 strict에서 실패했고(테스트가 <code>objective</code>, <code>acceptance_criteria</code>, <code>outcome</code>을 채우고 인덱스를 다시 만들도록 고침), 둘째는 JSON 이슈 id로 옛 함수 이름 <code>check_field_non_empty</code>를 기대했지만 지금은 <code>check_close_field_block_non_empty</code>가 냅니다. 둘 다 <code>tests/validate_docs.bats</code>에서 고쳤고, 고친 트리의 <code>validate_docs.bats</code> 전체가 4개 샤드로 287/287 통과합니다(<code>case-studies/evidence/07-baseline-test-fixes/</code>).</li>
       <li>Shadow v2 close 게이트는 새 해시를 검사하지 않고, 증거는 여전히 위조 가능한 일관성 증거입니다.</li>
       <li>하네스를 거치지 않는 작업, 에이전트가 쓰는 리뷰 요구 필드, 완료된 작업의 승인 이력은 이전과 같이 게이트 밖에 있습니다(KL-3~5).</li>
       <li>Gemini 4 Argon과 역할 라우팅 문서·에이전트 프리셋은 사용자 결정이 필요합니다.</li>

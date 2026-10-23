@@ -96,7 +96,7 @@ All runs used frozen copies, with a `PATH` that cannot reach the real CLIs. The 
 
 | Scope | Result | Notes |
 |---|---|---|
-| Full suite on the SIGPIPE-fix branch (859 tests) | 857 ok | 1 of them an intended skip. The 2 failures are baseline failures that predate the fix and fail identically on both parents. This fix did not repair them, so SIGPIPE is not their cause. I did not investigate the cause. |
+| Full suite on the SIGPIPE-fix branch (859 tests) | 857 ok | 1 of them an intended skip. The 2 failures are baseline failures that predate the fix and fail identically on both parents. This fix did not repair them, so SIGPIPE is not their cause. I did not investigate the cause at the time; section 7 has the later finding. |
 | Hash-binding branch: integration suite | 27 / 27 | GUARD 2, TC-01 to TC-21, PARITY-01, KL-3 to KL-5 |
 | Hash-binding branch: wrapper-driven suites (233 tests) | 233 / 233 | external_review, run_codeguide, doc_garden, integration, shadow_v2 |
 | Registry branch: wrapper-driven suites + gate | 264 / 265 | The 1 failure is the Terra-explicit test from section 5; after the fix the 22 default-dependent tests all pass |
@@ -108,7 +108,7 @@ All runs used frozen copies, with a `PATH` that cannot reach the real CLIs. The 
 
 ## 7. What remains, and limits
 
-- The 2 baseline failures (a done task's evaluator report for an earlier plan version, and JSON issue ids) were not investigated.
+- The 2 baseline failures (a done task's evaluator report for an earlier plan version, and JSON issue ids) were investigated afterwards. Neither is a product defect: the terminal close-record gate (`ada11d9`) changed the validator and left two older tests with expectations that no longer held. The first test builds a done task with empty close-record fields, which strict mode now fails, so the test now fills `objective`, `acceptance_criteria` and `outcome` and rebuilds the task index. The second expected the old emitter name `check_field_non_empty` as the JSON issue id, while the disposition check is now raised by `check_close_field_block_non_empty`. Both are fixed in `tests/validate_docs.bats`, and the full `validate_docs.bats` of the fixed tree passes 287 of 287 in four parallel shards ([evidence/07-baseline-test-fixes/](./evidence/07-baseline-test-fixes/)).
 - The Shadow v2 close gate does not check the new hashes, and the evidence remains forgeable consistency evidence.
 - Work that bypasses the harness, the review-requirement field the agent writes, and the approval history of completed tasks remain outside the gate, as before (KL-3 to KL-5).
 - The random SIGPIPE race itself was not reproduced (section 2).

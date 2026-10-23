@@ -6027,6 +6027,15 @@ EOF
     --delegation-status "completed" \
     --no-init
 
+  # doc_garden leaves the close-record fields empty, and strict mode fails a done task without objective,
+  # acceptance_criteria and outcome (the terminal close-record gate). This test is about the plan-lineage
+  # rule, so the task gets a valid close record and the lineage rule is the only thing under test. The
+  # task-index row summary projects from the stored outcome, so the index is rebuilt after the edit.
+  sed -i.bak 's/^- objective:.*/- objective: exercise the plan lineage rule for a done task/' "$DOCS_ROOT/task/TASK-lineage-done-01.md"
+  sed -i.bak 's/^- acceptance_criteria:.*/- acceptance_criteria: the validator finds the consumed plan report in the lineage/' "$DOCS_ROOT/task/TASK-lineage-done-01.md"
+  sed -i.bak 's/^- outcome:.*/- outcome: closed after plan v1.0 was reviewed; v1.1 only records the review/' "$DOCS_ROOT/task/TASK-lineage-done-01.md"
+  "$DOC_GARDEN" "$TEST_PROJECT" --rebuild-task-index --no-init > /dev/null
+
   cat > "$DOCS_ROOT/plan/PLAN-lineage-done-01-v1.0.md" <<'EOF'
 # PLAN-lineage-done-01-v1.0
 
@@ -6414,15 +6423,17 @@ assert set(obj.keys()) == {"mode","project_root","format_version","issues","coun
 }
 
 @test "validate_docs --format json captures the emitting check-function name as issue id" {
-  # disposition failure is raised by check_field_non_empty (helper emitter)
-  # called from the top-level task-file loop, so caller is "main".
+  # The empty disposition of a terminal task is raised by check_close_field_block_non_empty (helper
+  # emitter) called from the top-level task-file loop, so caller is "main". The id is the name of the
+  # function that emitted the issue; the terminal close-record gate moved these close fields from the
+  # generic check_field_non_empty to this emitter, so the id changed with it.
   write_terminal_task_fixture "json-id-disp-01" "superseded" "" "Superseded"
 
   run "$VALIDATE" "$TEST_PROJECT" --mode strict --format json
   [ "$status" -eq 1 ]
 
   local needle="disposition is present but empty in superseded task"
-  [ "$(json_issue_field "$output" "$needle" "id")" = "check_field_non_empty" ]
+  [ "$(json_issue_field "$output" "$needle" "id")" = "check_close_field_block_non_empty" ]
   [ "$(json_issue_field "$output" "$needle" "caller")" = "main" ]
 }
 

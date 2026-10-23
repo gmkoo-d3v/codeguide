@@ -1,0 +1,40 @@
+1..2
+# RUN LOG - produced on 2026-10-23 from a frozen copy of main 89a49d8 as pushed.
+# Command: bats --tap -f <the two baseline test names> tests/validate_docs.bats. PATH reached agy, claude, codex and gemini only through tripwire shims.
+not ok 1 validate_docs strict passes done task whose evaluator report covers an earlier plan version
+# (in test file <scratch>/a-frozen6/tests/validate_docs.bats, line 6077)
+#   `[ "$status" -eq 0 ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.RaGvhtWism/repo/docs
+# Repository root: <tmp>/tmp.RaGvhtWism/repo
+# Created directories:
+#   - <tmp>/tmp.RaGvhtWism/repo/docs/task
+#   - <tmp>/tmp.RaGvhtWism/repo/docs/shadow
+#   - <tmp>/tmp.RaGvhtWism/repo/docs/decisions
+#   - <tmp>/tmp.RaGvhtWism/repo/docs/plan
+#   - <tmp>/tmp.RaGvhtWism/repo/docs/report
+#   - <tmp>/tmp.RaGvhtWism/repo/docs/orchestration
+#   - <tmp>/tmp.RaGvhtWism/repo/docs/issues
+# Template files are created only when missing.
+# [WARN] closing TASK-lineage-done-01 as done but objective is empty; the terminal close-record gate requires objective + acceptance_criteria + outcome (references/task-state-contract.md)
+# [WARN] closing TASK-lineage-done-01 as done but acceptance_criteria is empty; the terminal close-record gate requires objective + acceptance_criteria + outcome (references/task-state-contract.md)
+# [WARN] closing TASK-lineage-done-01 as done but outcome is empty; the terminal close-record gate requires objective + acceptance_criteria + outcome (references/task-state-contract.md)
+# [OK] Doc-gardening sync complete.
+#   - Project: <tmp>/tmp.RaGvhtWism/repo
+#   - Docs root: <tmp>/tmp.RaGvhtWism/repo/docs
+#   - Task: TASK-lineage-done-01
+#   - shadow_refresh_mode: same_session
+not ok 2 validate_docs --format json captures the emitting check-function name as issue id
+# (in test file <scratch>/a-frozen6/tests/validate_docs.bats, line 6425)
+#   `[ "$(json_issue_field "$output" "$needle" "id")" = "check_field_non_empty" ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.2sOwT0MC6J/repo/docs
+# Repository root: <tmp>/tmp.2sOwT0MC6J/repo
+# Created directories:
+#   - <tmp>/tmp.2sOwT0MC6J/repo/docs/task
+#   - <tmp>/tmp.2sOwT0MC6J/repo/docs/shadow
+#   - <tmp>/tmp.2sOwT0MC6J/repo/docs/decisions
+#   - <tmp>/tmp.2sOwT0MC6J/repo/docs/plan
+#   - <tmp>/tmp.2sOwT0MC6J/repo/docs/report
+#   - <tmp>/tmp.2sOwT0MC6J/repo/docs/orchestration
+#   - <tmp>/tmp.2sOwT0MC6J/repo/docs/issues
+# Template files are created only when missing.
+bats-exit=1

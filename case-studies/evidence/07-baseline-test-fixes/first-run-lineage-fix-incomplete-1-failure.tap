@@ -1,0 +1,27 @@
+1..2
+# RUN LOG - produced on 2026-10-23 from a frozen copy of main 89a49d8 with the first, incomplete version of the two test fixes.
+# Command: bats --tap -f <the two baseline test names> tests/validate_docs.bats. PATH reached agy, claude, codex and gemini only through tripwire shims.
+not ok 1 validate_docs strict passes done task whose evaluator report covers an earlier plan version
+# (in test file <scratch>/a-frozen7/tests/validate_docs.bats, line 6084)
+#   `[ "$status" -eq 0 ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.42dfq3GIkX/repo/docs
+# Repository root: <tmp>/tmp.42dfq3GIkX/repo
+# Created directories:
+#   - <tmp>/tmp.42dfq3GIkX/repo/docs/task
+#   - <tmp>/tmp.42dfq3GIkX/repo/docs/shadow
+#   - <tmp>/tmp.42dfq3GIkX/repo/docs/decisions
+#   - <tmp>/tmp.42dfq3GIkX/repo/docs/plan
+#   - <tmp>/tmp.42dfq3GIkX/repo/docs/report
+#   - <tmp>/tmp.42dfq3GIkX/repo/docs/orchestration
+#   - <tmp>/tmp.42dfq3GIkX/repo/docs/issues
+# Template files are created only when missing.
+# [WARN] closing TASK-lineage-done-01 as done but objective is empty; the terminal close-record gate requires objective + acceptance_criteria + outcome (references/task-state-contract.md)
+# [WARN] closing TASK-lineage-done-01 as done but acceptance_criteria is empty; the terminal close-record gate requires objective + acceptance_criteria + outcome (references/task-state-contract.md)
+# [WARN] closing TASK-lineage-done-01 as done but outcome is empty; the terminal close-record gate requires objective + acceptance_criteria + outcome (references/task-state-contract.md)
+# [OK] Doc-gardening sync complete.
+#   - Project: <tmp>/tmp.42dfq3GIkX/repo
+#   - Docs root: <tmp>/tmp.42dfq3GIkX/repo/docs
+#   - Task: TASK-lineage-done-01
+#   - shadow_refresh_mode: same_session
+ok 2 validate_docs --format json captures the emitting check-function name as issue id
+bats-exit=1

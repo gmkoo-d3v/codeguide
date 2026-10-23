@@ -1,0 +1,6 @@
+1..2
+# RUN LOG - produced on 2026-10-23 from a frozen copy of main 89a49d8 with the two test fixes in tests/validate_docs.bats.
+# Command: bats --tap -f <the two baseline test names> tests/validate_docs.bats. PATH reached agy, claude, codex and gemini only through tripwire shims.
+ok 1 validate_docs strict passes done task whose evaluator report covers an earlier plan version
+ok 2 validate_docs --format json captures the emitting check-function name as issue id
+bats-exit=0

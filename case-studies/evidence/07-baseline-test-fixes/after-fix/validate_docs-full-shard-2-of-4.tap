@@ -1,0 +1,76 @@
+1..72
+# RUN LOG - produced on 2026-10-23 from a frozen copy of main 89a49d8 with the two test fixes in tests/validate_docs.bats.
+# Command: bats --tap tests/validate_docs_shard2.bats (shard 2 of 4; the shards split tests/validate_docs.bats round-robin, 287 tests in all). PATH reached agy, claude, codex and gemini only through tripwire shims.
+ok 1 validate_docs advisory warns when dependent external review is not requested
+ok 2 validate_docs advisory warns when waived review lacks ref or reason
+ok 3 validate_docs advisory rejects waiver decisions that are not accepted, not user-chosen, or linked to another task
+ok 4 validate_docs advisory warns when implementation-start review omits consumes_plan_ref
+ok 5 validate_docs advisory warns when waived review uses placeholder values
+ok 6 validate_docs advisory rejects an accept response whose bytes changed after the provenance hash was written
+ok 7 validate_docs strict fails an in_progress task whose required external review is only requested
+ok 8 external-review gate exits non-zero for every non-terminal review status
+ok 9 external-review gate is not applicable to a task that has no orchestration capsule yet
+ok 10 external-review gate rejects tampered, missing, mismatched or hand-written evidence
+ok 11 external-review gate waiver requires a verified user decision and exits non-zero otherwise
+ok 12 validate_docs rejects legacy root orchestration paths
+ok 13 validate_docs strict fails when docs/plan/_archive exists
+ok 14 validate_docs advisory warns when durable docs reference a gitignored tmp/ path
+ok 15 validate_docs does not read a form feed as the start of a new field line
+ok 16 validate_docs reads a field value to the end of a line carrying a carriage return
+ok 17 validate_docs advisory completes on a multi-file corpus (ISSUE-20260802 crash regression)
+ok 18 validate_docs strict audits effect_map markers and confirmed fields
+ok 19 validate_docs strict allows mixed review_queue with deferred and bounded question
+ok 20 validate_docs strict completes and cleanly fails when a rule id has zero allowed_effect_types mappings
+ok 21 validate_docs strict fails when fallback mapping lacks its own cap
+ok 22 validate_docs strict fails when validator catalog probe coverage metadata is missing
+ok 23 validate_docs strict fails when adapter metadata drifts from catalog
+ok 24 validate_docs advisory does not warn when ORCH capsule fields are mutually consistent
+ok 25 validate_docs strict fails when approved preflight leaves approval_required false
+ok 26 validate_docs advisory warns (does not fail) on an entirely empty shadow graph
+ok 27 validate_docs strict fails when required shadow bucket index is missing
+ok 28 validate_docs strict fails on invalid task risk_level enum
+ok 29 validate_docs strict fails on hollow evaluator report fields
+ok 30 validate_docs strict fails when high-risk task has only standard review
+ok 31 validate_docs fails clearly when option value is missing
+ok 32 validate_docs secret scan skips default template files
+ok 33 validate_docs reports missing rg for secret scanning
+ok 34 validate_docs strict escapes decision filenames in decision-index checks
+ok 35 validate_docs strict fails on duplicate task-index rows for the same task
+ok 36 validate_docs does not accept a task-index row that differs from the ref only where an unescaped dot would match
+ok 37 validate_docs strict fails when a resolved issue has no paired resolution doc
+ok 38 validate_docs strict passes with a well-formed resolved issue and paired resolution doc
+ok 39 validate_docs advisory does not warn when the claim contract is fully satisfied
+ok 40 validate_docs advisory does not nudge adoption once any resume_* field is present
+ok 41 validate_docs strict passes when resume_next_action and resume_last_verified are both truthfully filled
+ok 42 validate_docs advisory warns when a bucket index overview_doc reference does not resolve
+ok 43 validate_docs strict skips the advisory navigation link check (recommended tier)
+ok 44 validate_docs advisory does not let an unrelated same-named file mask a dangling shadow ref
+ok 45 validate_docs advisory warns when a declared source-of-truth path is deleted
+ok 46 a fenced source_of_truth_digest example does not manufacture a verified verdict
+ok 47 doc_garden does not ADD a source_of_truth_digest to a doc that has none
+ok 48 validate_docs does not double-warn a dead source when the doc carries a digest
+ok 49 validate_docs advisory passes a well-formed unit overview schema
+ok 50 validate_docs strict skips the advisory unit schema check
+ok 51 validate_docs advisory treats an indented fence marker like a column-0 one
+ok 52 validate_docs reports a fenced-only capsule field as missing rather than present-but-empty
+ok 53 the pre-strip cache is keyed by the walked docs path, so no field read re-strips
+ok 54 a cache entry becomes visible only when complete, so a concurrent read never sees half a document
+ok 55 validate_docs advisory takes the first non-empty concern_id, ignoring an empty stub
+ok 56 empty-graph gate ignores scaffold-only docs projects (routers are not source)
+ok 57 validate_docs strict passes superseded task with disposition and no plan or report
+ok 58 validate_docs strict skips plan size cap and completeness fields for terminal task artifacts
+ok 59 validate_docs strict fails done task with no evaluator report anywhere in the lineage
+ok 60 validate_docs strict lineage gate ignores a report naming a phantom plan version
+ok 61 validate_docs default output equals --format text byte-for-byte (with FAIL and WARN lines)
+ok 62 validate_docs --format json records the invoking rule as caller for helper-emitted issues
+ok 63 validate_docs --format json result and exit code mirror text mode (advisory vs strict)
+ok 64 validate_docs notes a proposed linked_decisions target without failing strict
+ok 65 validate_docs advisory warns on a bare-id linked_decisions member
+ok 66 the nav-link and linked_decisions rules agree on a tilde marker inside a backtick block
+ok 67 validate_docs advisory nudges an unfilled policy template_linked_decision only once decisions exist
+ok 68 validate_docs advisory flags selection_summary drift from the row side
+ok 69 validate_docs advisory flags an overview with no unit_summary to prefix
+ok 70 validate_docs advisory flags a multi-line selection_summary continuation
+ok 71 validate_docs advisory does not invent unit rows from bucket-index header fields
+ok 72 validate_docs advisory closes a fence only on a same-character marker
+bats-exit=0

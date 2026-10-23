@@ -2,7 +2,7 @@
 
 Raw bats TAP output for the test runs behind the three reports in the parent folder. There are two kinds of log:
 
-- **Original run outputs**: folders `00` to `04` and [`tripwire-log.txt`](./tripwire-log.txt). They back the newest report, [`test-reliability-hardening.md`](../test-reliability-hardening.md), and, for the integration contract, one run of the second report.
+- **Original run outputs**: folders `00` to `04`, folder `07` and [`tripwire-log.txt`](./tripwire-log.txt). They back the newest report, [`test-reliability-hardening.md`](../test-reliability-hardening.md), and, for the integration contract, one run of the second report. Folder `07` backs the later fix of the two baseline test failures.
 - **Regenerated logs**: folders `05` and `06` and [`tripwire-log-regenerated.txt`](./tripwire-log-regenerated.txt). They back the two earlier reports. The original runs of those reports were not saved, so their key runs were re-run later from the old commits. Each regenerated file says so on its second line.
 
 [Coverage of the three reports](#coverage-of-the-three-reports) lists which claim is backed by which log and which claims have no log. Only machine-specific paths (working directory, per-test temporary directories, home directory) were replaced with `<scratch>`, `<tmp>` and `<home>`. Test names, order, counts and exit codes are unchanged.
@@ -43,7 +43,7 @@ What the logs do not contain: the output of git operations such as the merges. A
 | | Shadow reader audit 8 of 8 | Regenerated: 8 of 8 |
 | | `validate_docs.bats` 265 pass and 22 failed (20 pass on rerun); the 13-file, 235-test run; the advisory output compared over a frozen docs corpus; the repeated strict-scaffold runs; the bash 3.2.57 run | **No log.** Not regenerated |
 
-Why some claims were not regenerated: `validate_docs.bats` takes hours, and the old scripts carry the SIGPIPE race that load triggers, so a run on the old tree would not be stable. The later full-suite logs (`01-sigpipe-and-real-cli/after-fix/full-suite/` and `02-hash-binding/on-merged-main-full-suite/`) cover `validate_docs.bats` on newer trees. The other comparisons need inputs of that day (a frozen docs corpus, a specific shell) that are not in the repository.
+Why some claims were not regenerated: `validate_docs.bats` takes hours, and the old scripts carry the SIGPIPE race that load triggers, so a run on the old tree would not be stable. The later full-suite logs (`01-sigpipe-and-real-cli/after-fix/full-suite/` and `02-hash-binding/on-merged-main-full-suite/`) cover `validate_docs.bats` on newer trees. The other comparisons need inputs of that day (a frozen docs corpus, a specific shell) that are not in the repository. The full `validate_docs.bats` of the current tree, after the two stale tests were fixed, is in `07-baseline-test-fixes/` (287 of 287).
 
 ## File list
 
@@ -121,15 +121,24 @@ Why some claims were not regenerated: `validate_docs.bats` takes hours, and the 
 | `after-fix/run_codeguide-and-external_review-115-of-116.tap` | `run_codeguide.bats` and `external_review.bats` at `2ecf622`: 115 of 116 pass. The one failure is `bundled agy routes use catalog cli_model values`, which at that commit ran `agy models` whenever agy was on PATH; the tripwire shim refused it |
 | `after-fix/other-suites-non-shadow-227-of-227.tap`, `after-fix/other-suites-shadow-196-of-196.tap` | Every other suite at `2ecf622` (22 files, 423 tests): all pass |
 
+### `07-baseline-test-fixes/` (original runs on 2026-10-23, later than the reports above)
+
+| File | What it shows |
+|---|---|
+| `before-fix/two-tests-on-main.tap` | The two baseline tests run alone on the pushed main: both fail. Strict validation of a done task with empty close-record fields fails the terminal close-record gate, and the JSON issue id of the empty `disposition` is now `check_close_field_block_non_empty` instead of `check_field_non_empty` |
+| `first-run-lineage-fix-incomplete-1-failure.tap` | **The first attempt at the fix, kept on purpose**: the JSON id test passes, the lineage test still fails. Filling `objective`, `acceptance_criteria` and `outcome` was not enough, because the task-index row summary projects from the stored outcome and no longer matched; the test now rebuilds the index |
+| `after-fix/two-tests-fixed-2-of-2.tap` | The same two tests after the fix: both pass |
+| `after-fix/validate_docs-full-shard-1-of-4.tap` to `-4-of-4.tap` | The whole `validate_docs.bats` of the fixed tree, 287 tests in four parallel shards (72, 72, 72, 71): all pass. Four shards at once is the load that used to trigger the SIGPIPE race, and no random failure appeared |
+
 ### Other
 
 | File | What it shows |
 |---|---|
 | `tripwire-log.txt` | The calls recorded by the real-CLI shims after the runs of folders `00` to `04` finished: one line (`agy models`, from before this series) |
-| `tripwire-log-regenerated.txt` | The calls recorded by the shims during the regenerated runs of folders `05` and `06`: one line, `agy models`, the old real-agy test of `2ecf622` stopped by the shim. Nothing else reached a real CLI |
+| `tripwire-log-regenerated.txt` | The calls recorded by the shims during the regenerated runs of folders `05` and `06` and the runs of folder `07`: one line, `agy models`, the old real-agy test of `2ecf622` stopped by the shim. Nothing else reached a real CLI |
 
 ## Limits
 
 - These logs record single runs, not statistical repetition. The race that failed at random under load did not reproduce this time (`before-fix/load-probe-...`).
-- The 2 baseline failures remain as they were in `validate_docs` shard 1 of the `full-suite` logs. This work neither fixed nor worsened them, and their cause was not investigated.
+- The 2 baseline failures stay visible in `validate_docs` shard 1 of the `full-suite` logs of folders `01` and `02`, because those logs were taken before the tests were fixed. Their cause (two stale test expectations left by the terminal close-record gate) and the fix are in `07-baseline-test-fixes/`.
 - The files in folders `05` and `06` are regenerated, not the original outputs, which were not saved. They come from the same commits and commands as the reports describe, so the counts match where the selection is the same, and the coverage table lists the differences. Reports measured their "before" numbers on the working tree before the fix was committed, so a regenerated "before" run agrees with them only as far as the commit equals that tree.
