@@ -1,0 +1,22 @@
+1..2
+ok 1 doc_garden resume-checkpoint caps resume_changed_files at 10 entries with a (+N more) suffix
+not ok 2 doc_garden resume-checkpoint caps a changed-file list that outgrows the pipe buffer
+# (in test file <scratch>/d-mut/tests/doc_garden.bats, line 561)
+#   `[ "$status" -eq 0 ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.Ac2hZdXd63/repo/docs
+# Repository root: <tmp>/tmp.Ac2hZdXd63/repo
+# Created directories:
+#   - <tmp>/tmp.Ac2hZdXd63/repo/docs/task
+#   - <tmp>/tmp.Ac2hZdXd63/repo/docs/shadow
+#   - <tmp>/tmp.Ac2hZdXd63/repo/docs/decisions
+#   - <tmp>/tmp.Ac2hZdXd63/repo/docs/plan
+#   - <tmp>/tmp.Ac2hZdXd63/repo/docs/report
+#   - <tmp>/tmp.Ac2hZdXd63/repo/docs/orchestration
+#   - <tmp>/tmp.Ac2hZdXd63/repo/docs/issues
+# Template files are created only when missing.
+# [OK] Doc-gardening sync complete.
+#   - Project: <tmp>/tmp.Ac2hZdXd63/repo
+#   - Docs root: <tmp>/tmp.Ac2hZdXd63/repo/docs
+#   - Task: TASK-resume-bigcap-01
+#   - shadow_refresh_mode: same_session
+bats-exit=1

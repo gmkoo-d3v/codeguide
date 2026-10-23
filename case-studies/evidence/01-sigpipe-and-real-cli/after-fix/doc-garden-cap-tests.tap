@@ -1,0 +1,4 @@
+1..2
+ok 1 doc_garden resume-checkpoint caps resume_changed_files at 10 entries with a (+N more) suffix
+ok 2 doc_garden resume-checkpoint caps a changed-file list that outgrows the pipe buffer
+bats-exit=0

@@ -1,0 +1,192 @@
+1..190
+ok 1 upsert_field skips empty values on existing non-empty fields
+ok 2 upsert_field allows empty overwrite with --allow-empty-overwrite
+ok 3 axis fields are not overwritten when empty
+ok 4 infer_task_id: explicit --task-id has highest priority
+ok 5 infer_task_id: branch pattern takes priority over latest task file
+ok 6 run_codeguide strips one TASK- prefix without creating TASK-TASK-* artifacts
+ok 7 skills package root can resolve to parent project docs root
+ok 8 ordinary nested git repo does not borrow parent project docs root
+ok 9 run_codeguide bootstraps orchestration doc for active task
+ok 10 approved preflight rejects placeholder approval metadata before recording or external review
+ok 11 run_codeguide and validate_docs reject evaluator identity recorders consistently
+ok 12 task-index places row under correct status section
+ok 13 task-index prevents duplicate rows
+ok 14 run_codeguide reports docs-only scope by default
+ok 15 run_codeguide forwards risk_level into generated docs
+ok 16 run_codeguide fails clearly when option value is missing
+ok 17 run_codeguide requires risk preflight before delegated orchestration
+ok 18 run_codeguide records blocked delegation when preflight requires approval
+ok 19 run_codeguide reports code-or-runtime when runtime cmd provided
+ok 20 run_codeguide passes shadow note through to project shadow
+ok 21 SKILL.md documents pre-orchestration risk approval gate
+ok 22 run_codeguide bootstraps initial plan doc for active task
+ok 23 decision-index places row under correct status section
+ok 24 decision-index prevents duplicate rows
+ok 25 decision-index migrates legacy table format
+ok 26 run_codeguide works in non-git directory with info message
+ok 27 run_codeguide in non-git falls back to latest task file when no explicit id
+ok 28 run_codeguide in non-git requires --task-id when multiple active tasks exist
+ok 29 run_codeguide in non-git with no tasks uses timestamp fallback
+ok 30 branch inference resolves through the source repo in the skills layout
+ok 31 run_codeguide on a main trunk branch writes a per-task decision file
+ok 32 run_codeguide stops before docs mutation and runtime validation when the required external review gate is unsatisfied
+ok 33 run_codeguide also blocks closing a gated task as done while the review gate is unsatisfied
+ok 34 run_codeguide still proceeds to runtime validation past ordinary advisory warnings
+ok 35 run_codeguide re-syncs a closed gated task but blocks reopening it without the review
+ok 36 run_codeguide does not apply the review gate to a planning-only run
+ok 37 run_codeguide proceeds past the review gate with complete wrapper evidence and keeps the ORCH approval metadata
+ok 38 run_codeguide default options do not overwrite an existing external-review ORCH capsule
+ok 39 doc_garden default options do not overwrite an existing external-review ORCH capsule
+ok 40 an explicit option still overwrites the matching ORCH field (only implicit defaults are held back)
+ok 41 a preflight recorded for one execution mode is never carried across an explicit mode change
+ok 42 default options keep a blocked delegation blocked while the preflight still needs approval
+ok 43 default options keep an existing solo delegation_note instead of the generic default
+ok 44 doc_garden preserves backslashes in field values
+ok 45 doc_garden writes shared risk_level to task and decision docs
+ok 46 doc_garden concurrent task updates keep both index rows
+ok 47 doc_garden records blocked delegation when preflight still needs approval
+ok 48 doc_garden rejects external_cli review with pass preflight
+ok 49 doc_garden accepts canonical codex current-task debate orchestration fields
+ok 50 doc_garden accepts canonical claude native subagent orchestration fields
+ok 51 orchestration enum contract stays aligned across references and producers
+ok 52 doc_garden scaffold orchestration validates without enum template warnings
+ok 53 doc_garden rejects external-runner as risk preflight recorder
+ok 54 doc_garden refreshes shadow graph and keeps change note router-only
+ok 55 doc_garden router no-op refresh (same task, same note) leaves the file byte-identical
+ok 56 doc_garden router bumps last_updated only when task or note actually differs
+ok 57 doc_garden never bumps bucket or global shadow metadata docs across refreshes
+ok 58 doc_garden rejects git_diff shadow refresh without explicit range
+ok 59 doc_garden fails clearly when option value is missing
+ok 60 doc_garden requires risk preflight before delegated orchestration is recorded
+ok 61 doc_garden rejects invalid task id characters
+ok 62 doc_garden rejects invalid decision id characters
+ok 63 doc_garden rejects invalid task status enum
+ok 64 doc_garden rejects invalid scope type enum
+ok 65 doc_garden rejects invalid decision status enum
+ok 66 doc_garden resume-checkpoint writes all four script-maintained fields
+ok 67 doc_garden resume-checkpoint split-root fixture resolves the source repo via the marker file
+ok 68 doc_garden resume-checkpoint is deterministic apart from checkpointed_at and revision
+ok 69 doc_garden resume-checkpoint increments resume_state_revision across runs and resets from a non-numeric value
+ok 70 doc_garden resume-checkpoint caps resume_changed_files at 10 entries with a (+N more) suffix
+ok 71 doc_garden resume-checkpoint caps a changed-file list that outgrows the pipe buffer
+ok 72 doc_garden resume-checkpoint writes no-source-repo when no source repo is reachable
+ok 73 doc_garden resume-checkpoint pass-through options land the three agent-maintained fields
+ok 74 doc_garden resume-checkpoint does not touch the shadow graph or any other doc mutation
+ok 75 doc_garden rejects --resume-checkpoint without --task-id
+ok 76 doc_garden rejects resume pass-through options without --resume-checkpoint
+ok 77 doc_garden rejects --resume-checkpoint for a task file that does not exist yet
+ok 78 resume checkpoint records an unborn source-repo HEAD instead of dying
+ok 79 resume checkpoint preserves special characters verbatim in agent fields
+ok 80 concurrent resume checkpoints serialize and never lose revision increments
+ok 81 doc_garden does not rewrite a fenced example line as if it were the real field
+ok 82 doc_garden edits the line sed addresses when a capsule carries a carriage return
+ok 83 doc_garden does not rewrite a fenced example when a carriage return shifts the line count
+ok 84 doc_garden targets a column-0 field line, not any line that contains the key
+ok 85 doc_garden writes a task-index row outside a quoted row-format example
+ok 86 doc_garden writes a decision-index row outside a quoted row-format example
+ok 87 doc_garden refuses to append a field to a capsule that ends inside an unterminated fence
+ok 88 doc_garden refuses to edit a capsule when the shared fence reader is unavailable
+ok 89 doc_garden refuses to append an index ROW into an unterminated fence
+ok 90 doc_garden refuses to append a task-index ROW into an unterminated fence
+ok 91 ensure_decision_index_sections creates the REAL heading when a fence quotes one
+ok 92 doc_garden inserts an index row under the FIRST unfenced section heading
+ok 93 doc_garden deletes EVERY stale index row, not just the first
+ok 94 doc_garden refuses to overwrite a decision linked to a different task
+ok 95 doc_garden refuses a task-less --decision-id reuse that would clobber a task-owned decision
+ok 96 doc_garden trims a trailing-space linked task before the ownership comparison
+ok 97 doc_garden updates a decision linked to the same task without error
+ok 98 GUARD-01 no real agy/claude/codex/gemini/antigravity is reachable from the test PATH
+ok 99 GUARD-02 the tripwire records and refuses any CLI name that is not a mock
+ok 100 TC-01 adversarial accept with present-but-empty debate fields: one attempt, full artifact set, evidence verified, strict gate passes
+ok 101 TC-02 adversarial accept with every debate field filled is still approved end to end
+ok 102 TC-03 standard accept: the standard field rule is unchanged and the result passes the gate
+ok 103 TC-04 adversarial accept with a MISSING debate key is rejected, unlike the same response with the key present but empty
+ok 104 TC-05 adversarial accept with residual_risk missing or empty is rejected
+ok 105 TC-06 revise and blocked: filled responses are format-valid but never approve; an empty debate value is rejected by the parser
+ok 106 TC-07 an accepted response without its Request file is not approved
+ok 107 TC-08 an accepted response without its Provenance manifest is not approved
+ok 108 TC-09 a Response edited after review fails the SHA-256 binding and the gate
+ok 109 TC-10 any identifier mismatch (task, plan version, round, route, request/response linkage) is rejected
+ok 110 TC-11 run_codeguide refuses the in_progress transition without an approved review: non-zero, no runtime, no state or metadata change
+ok 111 TC-12 after an approved empty-debate adversarial accept, run_codeguide enters in_progress and runs only the allowed mock runtime command
+ok 112 TC-13 with two required routes, implementation is blocked until BOTH are genuine accepts
+ok 113 TC-14 a status carrying a note (in_progress (resumed)) cannot bypass an unapproved review
+ok 114 TC-15 a default-option run_codeguide leaves an existing external_cli ORCH approval and review metadata intact
+ok 115 TC-16 a waiver is honoured only for an existing accepted user decision linked to the task
+ok 116 PARITY-01 for every response variant the wrapper parser and the evidence verifier agree
+ok 117 KNOWN-LIMITATION KL-1 a PLAN edited after its review is not detected (no plan hash is recorded)
+ok 118 KNOWN-LIMITATION KL-2 an altered Request payload is not detected (the request carries no hash)
+ok 119 KNOWN-LIMITATION KL-3 work that skips the harness is not gated: a planning-only run on an unapproved review exits 0
+ok 120 KNOWN-LIMITATION KL-4 an agent that leaves external_review_required_for empty makes the task look review-free
+ok 121 KNOWN-LIMITATION KL-5 a done task's approval history is not re-checked (strict ignores it, the gate skips it)
+ok 122 shadow_v2_gate_skeleton prints a no-write Phase 0 contract
+ok 123 shadow_v2_gate_skeleton activates hints only after project scope is verified
+ok 124 shadow_v2_gate_skeleton blocks external review by default and disables batch apply
+ok 125 shadow_v2_gate_skeleton blocks combined close when required external review is blocked
+ok 126 shadow_v2_gate_skeleton requires durable accepted internal review artifact before close completion
+ok 127 shadow_v2_gate_skeleton requires durable accepted external review artifact before close completion
+ok 128 shadow_v2_gate_skeleton ignores optional blocked external close route
+ok 129 shadow_v2_gate_skeleton rejects hint evidence for confirmed facts
+ok 130 shadow_v2_gate_skeleton rejects generic user decisions and final apply as fact evidence
+ok 131 shadow_v2_user_decision_assistant turns source probes into bounded user questions
+ok 132 shadow_v2_user_decision_assistant groups bounded questions without answering them
+ok 133 shadow_v2_user_decision_assistant enforces project-scope hint activation
+ok 134 shadow_v2_user_decision_assistant does not hang when stdin is an open pipe with no data
+ok 135 shadow_v2_user_decision_assistant surfaces writer user-decision command hints
+ok 136 shadow_v2_user_decision_assistant blocks forged writer command hints
+ok 137 shadow_v2_user_decision_assistant blocks external reviewer command hint tools
+ok 138 shadow_v2_user_decision_assistant renders command text only from validated argv
+ok 139 shadow_v2_user_decision_assistant rejects python command smuggling
+ok 140 shadow_v2_user_decision_assistant rejects duplicate decision flags
+ok 141 shadow_v2_user_decision_assistant rejects spoofed wrapper paths
+ok 142 shadow_v2_user_decision_assistant refuses outputs under docs shadow
+ok 143 shadow_v2_review_packet_generator emits bounded internal review packets
+ok 144 shadow_v2_review_packet_generator carries plural source_refs into the packet
+ok 145 shadow_v2_review_packet_generator combines singular and plural refs within the limit
+ok 146 shadow_v2_review_packet_generator bounds plural refs with deduped input order
+ok 147 shadow_v2_review_packet_generator refuses artifact inputs outside project root
+ok 148 shadow_v2_review_packet_generator blocks external route unless requested
+ok 149 shadow_v2_review_packet_generator refuses outputs under docs shadow
+ok 150 shadow_v2_pipeline_wrapper emits incomplete dry-run plans without executing commands
+ok 151 shadow_v2_pipeline_wrapper writer command is dry-run only
+ok 152 shadow_v2_pipeline_wrapper blocks external review route without approval
+ok 153 shadow_v2_pipeline_wrapper blocks combined close when required external review is blocked
+ok 154 shadow_v2_pipeline_wrapper requires external close artifact provenance
+ok 155 shadow_v2_pipeline_wrapper refuses outputs under docs shadow
+ok 156 shadow_v2_gate_skeleton blocks a declared non-antigravity evaluator despite an agy filename
+ok 157 shadow_v2 close gate accepts an adversarial accept with empty debate fields in any field order
+ok 158 shadow_v2 close gate blocks an adversarial accept missing a debate key or with empty residual_risk
+ok 159 packaging smoke classifies SHIP, DEV-ARTIFACT, and UNKNOWN on a scratch fixture
+ok 160 packaging smoke text format reports DEV-ARTIFACT summary buckets and the full UNKNOWN list
+ok 161 packaging smoke exits 0 by default when nothing is UNKNOWN
+ok 162 packaging smoke --no-exit-code stays 0 even though UNKNOWN paths are reported
+ok 163 packaging smoke classifies a symlink by its own path and never follows it into another tree
+ok 164 packaging smoke never lets a sibling directory name substring-match an allowlisted root
+ok 165 packaging smoke handles paths containing spaces without shell-splitting them
+ok 166 packaging smoke exits 2 with an error when --skill-root is not a directory
+ok 167 packaging smoke rejects an unknown --format value with exit 2 (argparse contract)
+ok 168 packaging smoke runs against the real skill root without crashing and reports well-formed sections
+ok 169 packaging smoke --format json on the real skill root parses and matches the text-mode counts
+ok 170 packaging smoke --manifest adds the full SHIP path list on the real skill root
+ok 171 coverage tool inventories the real repo without crashing and reports a summary
+ok 172 coverage tool real-repo run discloses the adapter main-flow aggregate row with sites
+ok 173 coverage tool real-repo run inventories known adapter and module functions
+ok 174 coverage tool fixture classifies TESTED/UNTESTED/NO-EMIT rules correctly
+ok 175 coverage tool never marks a rule TESTED on an ambiguous shared-prefix literal
+ok 176 coverage tool discloses fixture main-flow sites as one aggregate row with matched tests
+ok 177 coverage tool is heredoc-aware: a column-0 brace inside a python heredoc does not truncate the function
+ok 178 coverage tool --format json parses and matches the text-mode summary counts
+ok 179 coverage tool --exit-code is nonzero when an UNTESTED rule exists
+ok 180 coverage tool --exit-code is zero without --exit-code even when UNTESTED rules exist
+ok 181 coverage tool --exit-code is zero when no rule is UNTESTED (main-flow row never triggers it)
+ok 182 coverage tool does not crash on a project root with no validate_docs.d directory
+ok 183 shadow reader audit passes on the shipped skill with nothing unclassified
+ok 184 shadow reader audit reports an exclusion that is already compliant
+ok 185 shadow reader audit records every exclusion with a reason
+ok 186 shadow reader audit fails closed when a new unclassified reader appears
+ok 187 shadow reader audit reports an exclusion that is no longer a reader
+ok 188 shadow reader audit classifies transitive delegation, not just direct imports
+ok 189 shadow reader audit shell source regex accepts every real source form
+ok 190 shadow reader audit does not certify a shell reader on a COMMENT mention
+bats-exit=0

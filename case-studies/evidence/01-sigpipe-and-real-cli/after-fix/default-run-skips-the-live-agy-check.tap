@@ -1,0 +1,4 @@
+1..2
+ok 1 bundled agy routes use catalog cli_model values
+ok 2 bundled agy routes are listed by the live agy model catalog (opt-in: CODEGUIDE_LIVE_AGY_CATALOG=1) # skip live agy catalog check is opt-in: set CODEGUIDE_LIVE_AGY_CATALOG=1
+bats-exit=0

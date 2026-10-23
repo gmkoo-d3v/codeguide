@@ -1,0 +1,34 @@
+1..32
+ok 1 validate_docs advisory warns when dependent external review is requested
+ok 2 validate_docs advisory warns when dependent external review is not requested
+ok 3 validate_docs advisory warns when dependent external review is blocked
+ok 4 validate_docs advisory rejects bare accept responses that lack request and provenance evidence
+ok 5 validate_docs advisory rejects a waiver ref that points at no existing decision record
+ok 6 validate_docs advisory rejects a free-text waiver ref that names no decision file at all
+ok 7 validate_docs advisory rejects waiver decisions that are not accepted, not user-chosen, or linked to another task
+ok 8 validate_docs advisory rejects a waiver ref that escapes the decisions directory
+ok 9 validate_docs advisory passes when ingested review has complete wrapper-generated evidence for every route
+ok 10 validate_docs advisory accepts the retry-response evidence set the wrapper writes after a failed first attempt
+ok 11 validate_docs strict fails an in_progress task whose required external review is only requested
+ok 12 validate_docs strict passes the await gate for an in_progress task with complete wrapper evidence
+ok 13 validate_docs strict does not re-measure a done task against the await gate (terminal artifacts are immutable evidence)
+ok 14 external-review gate exits non-zero for every non-terminal review status
+ok 15 external-review gate exits zero with complete wrapper evidence and prints a pass result
+ok 16 external-review gate applies to a planned task when asked about it by id (the implementation-start transition)
+ok 17 external-review gate is not applicable to a task whose ORCH does not require implementation review
+ok 18 external-review gate is not applicable to a task that has no orchestration capsule yet
+ok 19 external-review gate fails closed when ORCH requires review but the task file is missing
+ok 20 external-review gate ignores unrelated advisory noise elsewhere in the docs
+ok 21 external-review gate without --task-id covers every in_progress task and fails on any unsatisfied one
+ok 22 external-review gate rejects tampered, missing, mismatched or hand-written evidence
+ok 23 external-review gate fails closed when the evidence cannot be read at all
+ok 24 external-review gate accepts wrapper evidence after the project directory moves (absolute paths in provenance)
+ok 25 external-review gate requires the adversarial fields when the wrapper ran the review adversarially
+ok 26 external-review gate waiver requires a verified user decision and exits non-zero otherwise
+ok 27 external-review gate supports json output with the same exit code
+ok 28 external-review gate leaves an already closed task alone but gates reopening it
+ok 29 external-review gate rejects bad usage
+ok 30 validate_docs strict accepts canonical probe coverage for valid effect_map evidence
+ok 31 validate_docs strict fails when validator evidence type mismatches rule evidence branch
+ok 32 validate_docs strict fails when fallback regex evidence type mismatches rule evidence branch
+bats-exit=0

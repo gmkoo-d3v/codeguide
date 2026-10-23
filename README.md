@@ -130,11 +130,11 @@ What the automation verifies about itself, and where that stops. The reports beh
 - **Tests shown to be able to fail.** The contract tests were run against the previous code and fail there, and the suites were compared with an unmodified baseline rather than a remembered count. The default test run never executes the real `agy` (the live model-catalog comparison is opt-in: `CODEGUIDE_LIVE_AGY_CATALOG=1`), and `tests/pipe_safety.bats` keeps pipelines whose consumer exits early (`grep -q`, `head`) out of `scripts/`, because under `set -o pipefail` they turn a correct answer into a failure.
 - **Known limits.** Pinned as current behavior in the tests (`KL-*`) or tracked as follow-ups, not claimed as fixed: the Shadow v2 close gate does not check the plan and request hashes; work that skips the harness is not gated; the review requirement is a field the agent writes; a done task's approval history is not re-checked; the evidence is consistency evidence, not attestation, so a writable workspace can still forge a matching manifest.
 
-Case studies (Korean, point-in-time reports of the work as it happened):
+Case studies (point-in-time reports of the work as it happened; the HTML reports are in Korean, the Markdown report is in English):
 
-- [External review approval gate hardening](./case-studies/external-review-gate-hardening.html)
-- [Adversarial rule x approval gate integration](./case-studies/adversarial-gate-integration.html)
-- [Test reliability hardening](./case-studies/test-reliability-hardening.html): early-exit pipes under `pipefail` (14 sites, 3 reproduced), the default run no longer executes the real `agy`, plan and request hash binding for approved reviews, and the model registry update.
+- [External review approval gate hardening](./case-studies/external-review-gate-hardening.html) (Korean HTML)
+- [Adversarial rule x approval gate integration](./case-studies/adversarial-gate-integration.html) (Korean HTML)
+- [Test reliability hardening](./case-studies/test-reliability-hardening.md) (English; [Korean HTML version](./case-studies/test-reliability-hardening.html)): early-exit pipes under `pipefail` (14 sites, 3 reproduced), the default run no longer executes the real `agy`, plan and request hash binding for approved reviews, and the model registry update. The raw test logs it cites are in [`case-studies/evidence/`](./case-studies/evidence/).
 
 ## Single Entry Point: scripts/codeguide
 
@@ -202,7 +202,7 @@ codeguide/
 
 - `SKILL.md`: operating contracts and workflow policy
 - `agents/`: skill-facing agent configuration
-- `case-studies/`: point-in-time reports (Korean HTML) of validation and reliability work; kept apart from the project-level `docs/` root on purpose
+- `case-studies/`: point-in-time reports of validation and reliability work (Korean HTML; the latest also as English Markdown), plus the raw test logs they cite in `evidence/`; kept apart from the project-level `docs/` root on purpose
 - `references/`: governance, architecture, and review standard documents
 - `scripts/`: executable automation layer
 - `tests/`: shell tool regression tests

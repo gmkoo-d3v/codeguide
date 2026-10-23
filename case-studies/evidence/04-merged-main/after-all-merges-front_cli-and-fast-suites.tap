@@ -1,0 +1,86 @@
+1..84
+ok 1 codeguide with no args prints usage listing every subcommand and exits 0
+ok 2 codeguide -h, --help, and help all print identical usage and exit 0
+ok 3 codeguide rejects an unknown subcommand: exits 2 with usage on stderr
+ok 4 codeguide <subcommand> --help delegates verbatim to that tool's own usage
+ok 5 codeguide validate runs end-to-end in advisory mode on a scratch scaffold
+ok 6 codeguide docs-sync preserves a quoted multi-word --task-title (arg-vector survival)
+ok 7 check_all --suite fast runs only the fast suite files
+ok 8 check_all rejects an unknown --suite name
+ok 9 check_all --suite fails loudly before any stage when a suite member file is missing
+ok 10 check_all fails the gate when packaging smoke finds a stray file, with the packaging stage marked FAIL
+ok 11 check_all --artifacts writes stage logs, a junit report, and names the dir in the summary
+ok 12 check_all --metrics-out appends one parseable JSON line per run across two runs
+ok 13 check_all --metrics-out records stage names/results matching the run summary
+ok 14 check_all --metrics-out includes the packaging-smoke stage with an integer duration
+ok 15 check_all --metrics-out records overall fail and the failing stage without changing the exit code
+ok 16 check_all --metrics-out without a value exits 2
+ok 17 init_docs_scaffold uses project docs root directly
+ok 18 init_docs_scaffold resolves git subdir to project docs root
+ok 19 init_docs_scaffold creates concise root agent routers
+ok 20 init_docs_scaffold creates shadow graph scaffold files
+ok 21 init_docs_scaffold creates shadow policy scaffold files
+ok 22 init_docs_scaffold fallback policy templates validate in strict mode
+ok 23 check_english_docs passes for curated codeguide markdown
+ok 24 check_english_docs rejects fenced code blocks in structural indexes
+ok 25 check_english_docs requires explicit md pointers in index entries
+ok 26 check_english_docs detects indented star index entries without md pointers
+ok 27 check_english_docs fails on Korean text outside research exclusions
+ok 28 check_english_docs ignores mold research docs and temp traces
+ok 29 init_docs_scaffold is idempotent
+ok 30 init_docs_scaffold fails on non-existent target
+ok 31 init_docs_scaffold fails when docs path is a file
+ok 32 init_docs_scaffold shows help with --help
+ok 33 init_docs_scaffold creates DOC-GOVERNANCE with new sections
+ok 34 init_docs_scaffold creates issue tracker scaffold
+ok 35 check_env --help prints usage and exits 0
+ok 36 check_env passes with a complete stub toolchain
+ok 37 check_env fails with remediation when bats is missing
+ok 38 check_env fails when pytest is not importable and passes with --skip-pytest
+ok 39 check_env rejects unknown options
+ok 40 check_all --help prints the gate description and exits 0
+ok 41 check_all rejects unknown options
+ok 42 source root: ordinary project repo resolves to its own toplevel
+ok 43 source root: skills layout with non-git docs root resolves to the nested skill repo
+ok 44 source root: docs-only local repo resolves to the nested skill repo via the marker file
+ok 45 source root: docs-only local repo without a marker resolves to itself with a hint
+ok 46 source root: ordinary repo is never hijacked by a vendored skill-package child repo
+ok 47 source root: invoked from inside the skill repo resolves to that repo
+ok 48 source root: no reachable repo fails with empty output
+ok 49 source root: CODEGUIDE_SOURCE_ROOT override wins over detection
+ok 50 source root: a subdirectory override normalizes to its git toplevel
+ok 51 source root: an unreadable override fails with a distinct diagnostic
+ok 52 source root: multiple skill-package repos are ambiguous and fail loudly
+ok 53 source root (python): parity for ordinary repo, marker layout, vendored child, ambiguity, and no-repo
+ok 54 source root: marker pointing at a non-repository target fails closed
+ok 55 source root: absolute and subdirectory marker targets normalize to the source toplevel
+ok 56 source root: non-repository override fails closed in both languages
+ok 57 a failing assert_contains aborts an errexit shell (the property the suite relies on)
+ok 58 a failing bare [[ ]] does NOT abort — the reason the helpers exist
+ok 59 a passing assert_contains does not abort
+ok 60 refute_contains aborts when the needle IS present and passes when it is absent
+ok 61 assert_equal aborts on a difference and passes on an exact match
+ok 62 helpers print both the expected needle and the actual haystack on failure
+ok 63 assert_contains rejects an empty needle instead of passing vacuously
+ok 64 assert_contains treats glob-special and multiline needles literally
+ok 65 coverage tool inventories the real repo without crashing and reports a summary
+ok 66 coverage tool real-repo run discloses the adapter main-flow aggregate row with sites
+ok 67 coverage tool real-repo run inventories known adapter and module functions
+ok 68 coverage tool fixture classifies TESTED/UNTESTED/NO-EMIT rules correctly
+ok 69 coverage tool never marks a rule TESTED on an ambiguous shared-prefix literal
+ok 70 coverage tool discloses fixture main-flow sites as one aggregate row with matched tests
+ok 71 coverage tool is heredoc-aware: a column-0 brace inside a python heredoc does not truncate the function
+ok 72 coverage tool --format json parses and matches the text-mode summary counts
+ok 73 coverage tool --exit-code is nonzero when an UNTESTED rule exists
+ok 74 coverage tool --exit-code is zero without --exit-code even when UNTESTED rules exist
+ok 75 coverage tool --exit-code is zero when no rule is UNTESTED (main-flow row never triggers it)
+ok 76 coverage tool does not crash on a project root with no validate_docs.d directory
+ok 77 shadow reader audit passes on the shipped skill with nothing unclassified
+ok 78 shadow reader audit reports an exclusion that is already compliant
+ok 79 shadow reader audit records every exclusion with a reason
+ok 80 shadow reader audit fails closed when a new unclassified reader appears
+ok 81 shadow reader audit reports an exclusion that is no longer a reader
+ok 82 shadow reader audit classifies transitive delegation, not just direct imports
+ok 83 shadow reader audit shell source regex accepts every real source form
+ok 84 shadow reader audit does not certify a shell reader on a COMMENT mention
+bats-exit=0

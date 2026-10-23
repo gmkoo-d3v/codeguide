@@ -1,0 +1,108 @@
+1..72
+ok 1 validate_docs advisory warns when dependent external review is requested
+ok 2 validate_docs advisory rejects bare accept responses that lack request and provenance evidence
+ok 3 validate_docs advisory rejects a free-text waiver ref that names no decision file at all
+ok 4 validate_docs advisory warns when dependent task misses external_review_status
+ok 5 validate_docs advisory warns when ingested result_ref directory is absent
+ok 6 validate_docs advisory passes when ingested review has complete wrapper-generated evidence for every route
+ok 7 validate_docs advisory still evaluates the gate when the task status carries a parenthetical note
+ok 8 validate_docs advisory keeps the historical verdict-level reading and warning text for a done task
+ok 9 external-review gate is not applicable to a task whose ORCH does not require implementation review
+ok 10 external-review gate without --task-id covers every in_progress task and fails on any unsatisfied one
+ok 11 external-review gate requires the adversarial fields when the wrapper ran the review adversarially
+ok 12 external-review gate rejects bad usage
+ok 13 validate_docs advisory does not warn when an orchestration capsule is properly registered
+ok 14 validate_docs advisory does not warn about archive directories when none exist
+ok 15 validate_docs and the tmp-scan awk agree that a form feed is not a line ending
+ok 16 validate_docs does not read a carriage return as the start of a new field line
+ok 17 validate_docs closes a tmp-scan fence only on a same-character marker
+ok 18 validate_docs strict mode fails on empty required fields
+ok 19 validate_docs strict audits review_queue metadata
+ok 20 validate_docs strict completes and cleanly fails when the rule registry rules block is present but has zero rule id mappings
+ok 21 validate_docs strict fails when promotion gate token appears only outside scoped block
+ok 22 validate_docs strict fails when policy roots leave fenced yaml blocks
+ok 23 validate_docs strict ignores validator ids declared outside validators block
+ok 24 validate_docs advisory warns when an ingested ORCH capsule lacks required_review_routes or external_review_result_ref
+ok 25 validate_docs strict fails when delegated orchestration preflight is blocked
+ok 26 validate_docs strict fails on an entirely empty shadow graph when a source repo is reachable
+ok 27 validate_docs shadow empty-graph gate does not fire once any shadow doc declares source_of_truth_paths
+ok 28 validate_docs strict fails on invalid evaluator label in report file
+ok 29 validate_docs strict passes legacy evaluator report without review_style
+ok 30 validate_docs strict rejects evaluator report task identity mismatch
+ok 31 validate_docs strict passes when high-risk task has adversarial review
+ok 32 validate_docs advisory warns on invalid decision enum values
+ok 33 validate_docs secret scan allows provider variable names without values
+ok 34 validate_docs strict passes with a valid root-level redirect shim
+ok 35 validate_docs strict fails when a task-index row sits under the wrong status section
+ok 36 validate_docs does not read a longer task-index ref as the row for a shorter one
+ok 37 validate_docs does not accept an issue index row that differs from the id only where an unescaped dot would match
+ok 38 validate_docs advisory continues past a missing orchestration field instead of aborting
+ok 39 validate_docs advisory warns when an in_progress task has no claim directory
+ok 40 validate_docs advisory warns when an in_progress task has no resume capsule fields at all
+ok 41 validate_docs strict fails when resume_last_verified is present but empty
+ok 42 validate_docs does not warn about resume_state_revision when it is a valid integer
+ok 43 validate_docs advisory passes navigation links when every referenced doc exists
+ok 44 validate_docs advisory catches a dangling reference in a nested-list next_docs block
+ok 45 validate_docs advisory warns on source-of-truth digest drift when source content changes
+ok 46 doc_garden does not write or alter source_of_truth_digest (freshness must stay content-bound)
+ok 47 validate_docs advisory warns when a declared source-of-truth path escapes the project root
+ok 48 validate_docs advisory is silent when digest-less source_of_truth paths all exist
+ok 49 validate_docs does not abort the whole run on a malformed (NUL-byte) source path
+ok 50 validate_docs advisory warns when a concern leaf is missing concern_id
+ok 51 validate_docs advisory still reports the doc_role drift when the same example is NOT fenced
+ok 52 validate_docs reads a fenced resume-capsule template as no capsule at all
+ok 53 validate_docs trims trailing whitespace off a field value before any rule compares it
+ok 54 the corpus pre-strip terminates a fully fenced document with a newline, so zero bytes still means corrupt
+ok 55 validate_docs advisory passes a well-formed concern leaf
+ok 56 validate_docs advisory warns on dangling _archive path references
+ok 57 validate_docs advisory warns when a solo ORCH names delegated agents
+ok 58 validate_docs flags task-index section mismatch for terminal statuses
+not ok 59 validate_docs strict passes done task whose evaluator report covers an earlier plan version
+# (in test file <scratch>/e-on-main/tests/validate_docs_shard1.bats, line 1952)
+#   `[ "$status" -eq 0 ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.evrLb783JN/repo/docs
+# Repository root: <tmp>/tmp.evrLb783JN/repo
+# Created directories:
+#   - <tmp>/tmp.evrLb783JN/repo/docs/task
+#   - <tmp>/tmp.evrLb783JN/repo/docs/shadow
+#   - <tmp>/tmp.evrLb783JN/repo/docs/decisions
+#   - <tmp>/tmp.evrLb783JN/repo/docs/plan
+#   - <tmp>/tmp.evrLb783JN/repo/docs/report
+#   - <tmp>/tmp.evrLb783JN/repo/docs/orchestration
+#   - <tmp>/tmp.evrLb783JN/repo/docs/issues
+# Template files are created only when missing.
+# [WARN] closing TASK-lineage-done-01 as done but objective is empty; the terminal close-record gate requires objective + acceptance_criteria + outcome (references/task-state-contract.md)
+# [WARN] closing TASK-lineage-done-01 as done but acceptance_criteria is empty; the terminal close-record gate requires objective + acceptance_criteria + outcome (references/task-state-contract.md)
+# [WARN] closing TASK-lineage-done-01 as done but outcome is empty; the terminal close-record gate requires objective + acceptance_criteria + outcome (references/task-state-contract.md)
+# [OK] Doc-gardening sync complete.
+#   - Project: <tmp>/tmp.evrLb783JN/repo
+#   - Docs root: <tmp>/tmp.evrLb783JN/repo/docs
+#   - Task: TASK-lineage-done-01
+#   - shadow_refresh_mode: same_session
+ok 60 validate_docs strict requires residual_risk even on adversarial accept verdict
+ok 61 validate_docs default output equals --format text byte-for-byte (passing scaffold)
+not ok 62 validate_docs --format json captures the emitting check-function name as issue id
+# (in test file <scratch>/e-on-main/tests/validate_docs_shard1.bats, line 2051)
+#   `[ "$(json_issue_field "$output" "$needle" "id")" = "check_field_non_empty" ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.oyRlXL05ye/repo/docs
+# Repository root: <tmp>/tmp.oyRlXL05ye/repo
+# Created directories:
+#   - <tmp>/tmp.oyRlXL05ye/repo/docs/task
+#   - <tmp>/tmp.oyRlXL05ye/repo/docs/shadow
+#   - <tmp>/tmp.oyRlXL05ye/repo/docs/decisions
+#   - <tmp>/tmp.oyRlXL05ye/repo/docs/plan
+#   - <tmp>/tmp.oyRlXL05ye/repo/docs/report
+#   - <tmp>/tmp.oyRlXL05ye/repo/docs/orchestration
+#   - <tmp>/tmp.oyRlXL05ye/repo/docs/issues
+# Template files are created only when missing.
+ok 63 validate_docs --format json survives hostile message content (quotes, backslash, tab, non-ASCII)
+ok 64 validate_docs advisory warns when linked_decisions points at a superseded decision
+ok 65 validate_docs advisory warns when linked_decisions names the decision index
+ok 66 validate_docs advisory stays silent on an empty or fenced-only linked_decisions
+ok 67 validate_docs advisory accepts a resolving router updated_by_task and ignores an empty one
+ok 68 validate_docs advisory accepts a selection_summary that prefixes the unit_summary
+ok 69 validate_docs advisory flags an over-cap selection_summary
+ok 70 validate_docs advisory flags a unit row with no overview_doc
+ok 71 validate_docs advisory flags a selection_summary that is a substring but not a prefix
+ok 72 validate_docs advisory still sees references OUTSIDE fences (fence handling is not a blanket mute)
+bats-exit=1

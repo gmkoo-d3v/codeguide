@@ -1,0 +1,439 @@
+1..32
+ok 1 validate_docs advisory warns when dependent external review is requested
+ok 2 validate_docs advisory warns when dependent external review is not requested
+ok 3 validate_docs advisory warns when dependent external review is blocked
+ok 4 validate_docs advisory rejects bare accept responses that lack request and provenance evidence
+ok 5 validate_docs advisory rejects a waiver ref that points at no existing decision record
+ok 6 validate_docs advisory rejects a free-text waiver ref that names no decision file at all
+ok 7 validate_docs advisory rejects waiver decisions that are not accepted, not user-chosen, or linked to another task
+ok 8 validate_docs advisory rejects a waiver ref that escapes the decisions directory
+not ok 9 validate_docs advisory passes when ingested review has complete wrapper-generated evidence for every route
+# (from function `refute_contains' in file <scratch>/e-frozen/tests/codeguide_helper.bash, line 229,
+#  in test file <scratch>/e-frozen/tests/validate_docs.bats, line 485)
+#   `refute_contains "$output" "[WARN] external review await gate"' failed
+# Initialized project docs scaffold under: <tmp>/tmp.lHj08ex8uR/repo/docs
+# Repository root: <tmp>/tmp.lHj08ex8uR/repo
+# Created directories:
+#   - <tmp>/tmp.lHj08ex8uR/repo/docs/task
+#   - <tmp>/tmp.lHj08ex8uR/repo/docs/shadow
+#   - <tmp>/tmp.lHj08ex8uR/repo/docs/decisions
+#   - <tmp>/tmp.lHj08ex8uR/repo/docs/plan
+#   - <tmp>/tmp.lHj08ex8uR/repo/docs/report
+#   - <tmp>/tmp.lHj08ex8uR/repo/docs/orchestration
+#   - <tmp>/tmp.lHj08ex8uR/repo/docs/issues
+# Template files are created only when missing.
+# refute_contains failed
+#   expected NOT to find: [WARN] external review await gate
+#   in: [PASS] docs directory exists
+# [PASS] task directory exists
+# [PASS] shadow directory exists
+# [PASS] decisions directory exists
+# [PASS] plan directory exists
+# [PASS] report directory exists
+# [PASS] orchestration directory exists
+# [PASS] policy directory exists
+# [PASS] project dictionary exists
+# [PASS] task index exists
+# [PASS] shadow router exists
+# [PASS] shadow global exists
+# [PASS] shadow bucket index (apps) exists
+# [PASS] shadow bucket index (services) exists
+# [PASS] shadow bucket index (packages) exists
+# [PASS] shadow bucket index (infra) exists
+# [PASS] shadow bucket index (data) exists
+# [PASS] decision index exists
+# [PASS] plan template exists
+# [PASS] report template exists
+# [PASS] orchestration template exists
+# [PASS] orchestration prompt template exists
+# [PASS] shadow validator catalog exists
+# [PASS] shadow regex pattern registry exists
+# [PASS] shadow rule registry exists
+# [PASS] shadow validator catalog size OK (103/220): <tmp>/tmp.lHj08ex8uR/repo/docs/policy/shadow-validator-catalog.md
+# [PASS] shadow regex pattern registry size OK (84/220): <tmp>/tmp.lHj08ex8uR/repo/docs/policy/shadow-regex-patterns.md
+# [PASS] shadow rule registry size OK (111/220): <tmp>/tmp.lHj08ex8uR/repo/docs/policy/shadow-rule-registry.md
+# [PASS] shadow validator catalog includes any versioned validators
+# [PASS] shadow validator catalog includes java versioned validators
+# [PASS] shadow validator catalog includes js versioned validators
+# [PASS] shadow validator catalog includes ts versioned validators
+# [PASS] shadow validator catalog includes py versioned validators
+# [PASS] shadow validator catalog includes spring_boot versioned validators
+# [PASS] shadow validator catalog includes express versioned validators
+# [PASS] shadow validator catalog includes react versioned validators
+# [PASS] shadow validator catalog includes fastapi versioned validators
+# [PASS] shadow validator catalog includes jpa versioned validators
+# [PASS] shadow validator catalog includes sql versioned validators
+# [PASS] shadow validator catalog declares implemented_primary_v1
+# [PASS] shadow validator catalog declares parser_backed_now
+# [PASS] shadow validator catalog declares source_probe_only
+# [PASS] shadow validator catalog probe coverage sets are internally consistent
+# [PASS] shadow policy loader strict contract passes
+# [PASS] shadow regex registry uses versioned regex ids
+# [PASS] shadow regex registry declares allowed_paths
+# [PASS] shadow regex registry declares excluded_paths
+# [PASS] shadow regex registry declares validates
+# [PASS] shadow regex registry declares cannot_validate
+# [PASS] shadow regex registry declares max_promotion_risk
+# [PASS] max_promotion_risk values are low|medium in shadow regex pattern registry
+# [PASS] shadow rule registry declares rules block
+# [PASS] shadow rule registry contains rule id mappings (5)
+# [PASS] shadow rule registry contains primary validator mappings (11)
+# [PASS] shadow rule registry declares allowed_effect_types for every rule (5)
+# [PASS] shadow rule registry allowed_effect_types values are structurally valid
+# [PASS] rule registry primary/fallback references are versioned
+# [PASS] shadow rule registry promotion gates are scoped and complete
+# [PASS] shadow rule registry mapping contracts are structurally valid
+# [PASS] rule registry primary references resolve against validator catalog id
+# [PASS] rule registry fallback references resolve against regex pattern id
+# [PASS] shadow document size OK (9/300): <tmp>/tmp.lHj08ex8uR/repo/docs/shadow/_global.md
+# [PASS] shadow document size OK (14/300): <tmp>/tmp.lHj08ex8uR/repo/docs/shadow/apps/_index.md
+# [PASS] shadow document size OK (14/300): <tmp>/tmp.lHj08ex8uR/repo/docs/shadow/data/_index.md
+# [PASS] shadow document size OK (14/300): <tmp>/tmp.lHj08ex8uR/repo/docs/shadow/infra/_index.md
+# [PASS] shadow document size OK (14/300): <tmp>/tmp.lHj08ex8uR/repo/docs/shadow/packages/_index.md
+# [PASS] shadow document size OK (11/300): <tmp>/tmp.lHj08ex8uR/repo/docs/shadow/project-shadow.md
+# [PASS] shadow document size OK (14/300): <tmp>/tmp.lHj08ex8uR/repo/docs/shadow/services/_index.md
+# [PASS] shadow router age-based freshness check disabled: <tmp>/tmp.lHj08ex8uR/repo/docs/shadow/project-shadow.md
+# [PASS] shadow global age-based freshness check disabled: <tmp>/tmp.lHj08ex8uR/repo/docs/shadow/_global.md
+# [PASS] shadow bucket index (apps) age-based freshness check disabled: <tmp>/tmp.lHj08ex8uR/repo/docs/shadow/apps/_index.md
+# [PASS] shadow bucket index (services) age-based freshness check disabled: <tmp>/tmp.lHj08ex8uR/repo/docs/shadow/services/_index.md
+# [PASS] shadow bucket index (packages) age-based freshness check disabled: <tmp>/tmp.lHj08ex8uR/repo/docs/shadow/packages/_index.md
+# [PASS] shadow bucket index (infra) age-based freshness check disabled: <tmp>/tmp.lHj08ex8uR/repo/docs/shadow/infra/_index.md
+# [PASS] shadow bucket index (data) age-based freshness check disabled: <tmp>/tmp.lHj08ex8uR/repo/docs/shadow/data/_index.md
+# [PASS] shadow navigation references resolve to real files
+# [PASS] shadow bucket rows carry a selection_summary that prefixes their unit overview
+# [PASS] task document size OK (19/220): <tmp>/tmp.lHj08ex8uR/repo/docs/task/TASK-await-gate-genuine-01.md
+# [PASS] in-progress task freshness OK by mtime (0 days): <tmp>/tmp.lHj08ex8uR/repo/docs/task/TASK-await-gate-genuine-01.md
+# [WARN] claimed_at is recommended for in_progress task TASK-await-gate-genuine-01: record when the task was atomically claimed
+# [WARN] claim directory is recommended for in_progress task TASK-await-gate-genuine-01: mkdir <tmp>/tmp.lHj08ex8uR/repo/docs/task/.claims/await-gate-genuine-01/ atomically before setting status: in_progress so two concurrent sessions cannot claim the same task
+# [WARN] resume capsule missing for in_progress task TASK-await-gate-genuine-01: adopt it with doc_garden.sh --task-id await-gate-genuine-01 --resume-checkpoint (see references/session-resume-contract.md)
+# [PASS] plan exists for active task TASK-await-gate-genuine-01
+# [PASS] orchestration file exists for active task TASK-await-gate-genuine-01
+# [PASS] orchestration document size OK (28/180): <tmp>/tmp.lHj08ex8uR/repo/docs/orchestration/await-gate-genuine-01/ORCH.md
+# [WARN] external review await gate missing accepted route artifact for agy:current under docs/orchestration/await-gate-genuine-01/external-cli/v1.0/r01: provenance plan_sha256 does not match PLAN-await-gate-genuine-01-v1.0.md (the plan changed after this review;  run a new review round)
+# [PASS] evaluator reports optional for solo execution on TASK-await-gate-genuine-01
+# [WARN] task-index section mismatch for TASK-await-gate-genuine-01: task file status is in_progress but row is listed under Done
+# [PASS] plan document size OK (12/220): <tmp>/tmp.lHj08ex8uR/repo/docs/plan/PLAN-await-gate-genuine-01-v1.0.md
+# [PASS] evaluator report size OK (27/180): <tmp>/tmp.lHj08ex8uR/repo/docs/report/PLAN-await-gate-genuine-01-v1.0-review-agy-current-r01.md
+# [PASS] evaluator report size OK (27/180): <tmp>/tmp.lHj08ex8uR/repo/docs/report/PLAN-await-gate-genuine-01-v1.0-review-claude-current-r01.md
+# [PASS] no known key-format secret patterns found
+# [PASS] no quoted secret assignment patterns found
+# [PASS] no yaml/env-style secret assignment patterns found
+# [RESULT] Docs validation advisory completed with 5 warning(s).
+not ok 10 validate_docs advisory accepts the retry-response evidence set the wrapper writes after a failed first attempt
+# (from function `refute_contains' in file <scratch>/e-frozen/tests/codeguide_helper.bash, line 229,
+#  in test file <scratch>/e-frozen/tests/validate_docs.bats, line 547)
+#   `refute_contains "$output" "[WARN] external review await gate"' failed
+# Initialized project docs scaffold under: <tmp>/tmp.rv41xtHP5V/repo/docs
+# Repository root: <tmp>/tmp.rv41xtHP5V/repo
+# Created directories:
+#   - <tmp>/tmp.rv41xtHP5V/repo/docs/task
+#   - <tmp>/tmp.rv41xtHP5V/repo/docs/shadow
+#   - <tmp>/tmp.rv41xtHP5V/repo/docs/decisions
+#   - <tmp>/tmp.rv41xtHP5V/repo/docs/plan
+#   - <tmp>/tmp.rv41xtHP5V/repo/docs/report
+#   - <tmp>/tmp.rv41xtHP5V/repo/docs/orchestration
+#   - <tmp>/tmp.rv41xtHP5V/repo/docs/issues
+# Template files are created only when missing.
+# refute_contains failed
+#   expected NOT to find: [WARN] external review await gate
+#   in: [PASS] docs directory exists
+# [PASS] task directory exists
+# [PASS] shadow directory exists
+# [PASS] decisions directory exists
+# [PASS] plan directory exists
+# [PASS] report directory exists
+# [PASS] orchestration directory exists
+# [PASS] policy directory exists
+# [PASS] project dictionary exists
+# [PASS] task index exists
+# [PASS] shadow router exists
+# [PASS] shadow global exists
+# [PASS] shadow bucket index (apps) exists
+# [PASS] shadow bucket index (services) exists
+# [PASS] shadow bucket index (packages) exists
+# [PASS] shadow bucket index (infra) exists
+# [PASS] shadow bucket index (data) exists
+# [PASS] decision index exists
+# [PASS] plan template exists
+# [PASS] report template exists
+# [PASS] orchestration template exists
+# [PASS] orchestration prompt template exists
+# [PASS] shadow validator catalog exists
+# [PASS] shadow regex pattern registry exists
+# [PASS] shadow rule registry exists
+# [PASS] shadow validator catalog size OK (103/220): <tmp>/tmp.rv41xtHP5V/repo/docs/policy/shadow-validator-catalog.md
+# [PASS] shadow regex pattern registry size OK (84/220): <tmp>/tmp.rv41xtHP5V/repo/docs/policy/shadow-regex-patterns.md
+# [PASS] shadow rule registry size OK (111/220): <tmp>/tmp.rv41xtHP5V/repo/docs/policy/shadow-rule-registry.md
+# [PASS] shadow validator catalog includes any versioned validators
+# [PASS] shadow validator catalog includes java versioned validators
+# [PASS] shadow validator catalog includes js versioned validators
+# [PASS] shadow validator catalog includes ts versioned validators
+# [PASS] shadow validator catalog includes py versioned validators
+# [PASS] shadow validator catalog includes spring_boot versioned validators
+# [PASS] shadow validator catalog includes express versioned validators
+# [PASS] shadow validator catalog includes react versioned validators
+# [PASS] shadow validator catalog includes fastapi versioned validators
+# [PASS] shadow validator catalog includes jpa versioned validators
+# [PASS] shadow validator catalog includes sql versioned validators
+# [PASS] shadow validator catalog declares implemented_primary_v1
+# [PASS] shadow validator catalog declares parser_backed_now
+# [PASS] shadow validator catalog declares source_probe_only
+# [PASS] shadow validator catalog probe coverage sets are internally consistent
+# [PASS] shadow policy loader strict contract passes
+# [PASS] shadow regex registry uses versioned regex ids
+# [PASS] shadow regex registry declares allowed_paths
+# [PASS] shadow regex registry declares excluded_paths
+# [PASS] shadow regex registry declares validates
+# [PASS] shadow regex registry declares cannot_validate
+# [PASS] shadow regex registry declares max_promotion_risk
+# [PASS] max_promotion_risk values are low|medium in shadow regex pattern registry
+# [PASS] shadow rule registry declares rules block
+# [PASS] shadow rule registry contains rule id mappings (5)
+# [PASS] shadow rule registry contains primary validator mappings (11)
+# [PASS] shadow rule registry declares allowed_effect_types for every rule (5)
+# [PASS] shadow rule registry allowed_effect_types values are structurally valid
+# [PASS] rule registry primary/fallback references are versioned
+# [PASS] shadow rule registry promotion gates are scoped and complete
+# [PASS] shadow rule registry mapping contracts are structurally valid
+# [PASS] rule registry primary references resolve against validator catalog id
+# [PASS] rule registry fallback references resolve against regex pattern id
+# [PASS] shadow document size OK (9/300): <tmp>/tmp.rv41xtHP5V/repo/docs/shadow/_global.md
+# [PASS] shadow document size OK (14/300): <tmp>/tmp.rv41xtHP5V/repo/docs/shadow/apps/_index.md
+# [PASS] shadow document size OK (14/300): <tmp>/tmp.rv41xtHP5V/repo/docs/shadow/data/_index.md
+# [PASS] shadow document size OK (14/300): <tmp>/tmp.rv41xtHP5V/repo/docs/shadow/infra/_index.md
+# [PASS] shadow document size OK (14/300): <tmp>/tmp.rv41xtHP5V/repo/docs/shadow/packages/_index.md
+# [PASS] shadow document size OK (11/300): <tmp>/tmp.rv41xtHP5V/repo/docs/shadow/project-shadow.md
+# [PASS] shadow document size OK (14/300): <tmp>/tmp.rv41xtHP5V/repo/docs/shadow/services/_index.md
+# [PASS] shadow router age-based freshness check disabled: <tmp>/tmp.rv41xtHP5V/repo/docs/shadow/project-shadow.md
+# [PASS] shadow global age-based freshness check disabled: <tmp>/tmp.rv41xtHP5V/repo/docs/shadow/_global.md
+# [PASS] shadow bucket index (apps) age-based freshness check disabled: <tmp>/tmp.rv41xtHP5V/repo/docs/shadow/apps/_index.md
+# [PASS] shadow bucket index (services) age-based freshness check disabled: <tmp>/tmp.rv41xtHP5V/repo/docs/shadow/services/_index.md
+# [PASS] shadow bucket index (packages) age-based freshness check disabled: <tmp>/tmp.rv41xtHP5V/repo/docs/shadow/packages/_index.md
+# [PASS] shadow bucket index (infra) age-based freshness check disabled: <tmp>/tmp.rv41xtHP5V/repo/docs/shadow/infra/_index.md
+# [PASS] shadow bucket index (data) age-based freshness check disabled: <tmp>/tmp.rv41xtHP5V/repo/docs/shadow/data/_index.md
+# [PASS] shadow navigation references resolve to real files
+# [PASS] shadow bucket rows carry a selection_summary that prefixes their unit overview
+# [PASS] task document size OK (19/220): <tmp>/tmp.rv41xtHP5V/repo/docs/task/TASK-await-gate-retry-01.md
+# [PASS] in-progress task freshness OK by mtime (0 days): <tmp>/tmp.rv41xtHP5V/repo/docs/task/TASK-await-gate-retry-01.md
+# [WARN] claimed_at is recommended for in_progress task TASK-await-gate-retry-01: record when the task was atomically claimed
+# [WARN] claim directory is recommended for in_progress task TASK-await-gate-retry-01: mkdir <tmp>/tmp.rv41xtHP5V/repo/docs/task/.claims/await-gate-retry-01/ atomically before setting status: in_progress so two concurrent sessions cannot claim the same task
+# [WARN] resume capsule missing for in_progress task TASK-await-gate-retry-01: adopt it with doc_garden.sh --task-id await-gate-retry-01 --resume-checkpoint (see references/session-resume-contract.md)
+# [PASS] plan exists for active task TASK-await-gate-retry-01
+# [PASS] orchestration file exists for active task TASK-await-gate-retry-01
+# [PASS] orchestration document size OK (28/180): <tmp>/tmp.rv41xtHP5V/repo/docs/orchestration/await-gate-retry-01/ORCH.md
+# [WARN] external review await gate missing accepted route artifact for agy:current under docs/orchestration/await-gate-retry-01/external-cli/v1.0/r01: [response] response verdict is 'missing', expected accept; [response] provenance manifest is missing: agy-current.response.provenance.md; [response] response is missing required review field summary; [response] response is missing required review field strengths; [response] response is missing required review field risks; [response] response is missing required review field requested_changes; [retry-response] provenance plan_sha256 does not match PLAN-await-gate-retry-01-v1.0.md (the plan changed after this review;  run a new review round)
+# [PASS] evaluator reports optional for solo execution on TASK-await-gate-retry-01
+# [WARN] task-index section mismatch for TASK-await-gate-retry-01: task file status is in_progress but row is listed under Done
+# [PASS] plan document size OK (12/220): <tmp>/tmp.rv41xtHP5V/repo/docs/plan/PLAN-await-gate-retry-01-v1.0.md
+# [PASS] evaluator report size OK (27/180): <tmp>/tmp.rv41xtHP5V/repo/docs/report/PLAN-await-gate-retry-01-v1.0-review-agy-current-r01.md
+# [PASS] no known key-format secret patterns found
+# [PASS] no quoted secret assignment patterns found
+# [PASS] no yaml/env-style secret assignment patterns found
+# [RESULT] Docs validation advisory completed with 5 warning(s).
+ok 11 validate_docs strict fails an in_progress task whose required external review is only requested
+not ok 12 validate_docs strict passes the await gate for an in_progress task with complete wrapper evidence
+# (from function `refute_contains' in file <scratch>/e-frozen/tests/codeguide_helper.bash, line 229,
+#  in test file <scratch>/e-frozen/tests/validate_docs.bats, line 577)
+#   `refute_contains "$output" "[FAIL] external review await gate"' failed
+# Initialized project docs scaffold under: <tmp>/tmp.ZmhDVRphnA/repo/docs
+# Repository root: <tmp>/tmp.ZmhDVRphnA/repo
+# Created directories:
+#   - <tmp>/tmp.ZmhDVRphnA/repo/docs/task
+#   - <tmp>/tmp.ZmhDVRphnA/repo/docs/shadow
+#   - <tmp>/tmp.ZmhDVRphnA/repo/docs/decisions
+#   - <tmp>/tmp.ZmhDVRphnA/repo/docs/plan
+#   - <tmp>/tmp.ZmhDVRphnA/repo/docs/report
+#   - <tmp>/tmp.ZmhDVRphnA/repo/docs/orchestration
+#   - <tmp>/tmp.ZmhDVRphnA/repo/docs/issues
+# Template files are created only when missing.
+# refute_contains failed
+#   expected NOT to find: [FAIL] external review await gate
+#   in: [PASS] docs directory exists
+# [PASS] task directory exists
+# [PASS] shadow directory exists
+# [PASS] decisions directory exists
+# [PASS] plan directory exists
+# [PASS] report directory exists
+# [PASS] orchestration directory exists
+# [PASS] policy directory exists
+# [PASS] project dictionary exists
+# [PASS] task index exists
+# [PASS] shadow router exists
+# [PASS] shadow global exists
+# [PASS] shadow bucket index (apps) exists
+# [PASS] shadow bucket index (services) exists
+# [PASS] shadow bucket index (packages) exists
+# [PASS] shadow bucket index (infra) exists
+# [PASS] shadow bucket index (data) exists
+# [PASS] decision index exists
+# [PASS] plan template exists
+# [PASS] report template exists
+# [PASS] orchestration template exists
+# [PASS] orchestration prompt template exists
+# [PASS] shadow validator catalog exists
+# [PASS] shadow regex pattern registry exists
+# [PASS] shadow rule registry exists
+# [PASS] shadow validator catalog size OK (103/220): <tmp>/tmp.ZmhDVRphnA/repo/docs/policy/shadow-validator-catalog.md
+# [PASS] shadow regex pattern registry size OK (84/220): <tmp>/tmp.ZmhDVRphnA/repo/docs/policy/shadow-regex-patterns.md
+# [PASS] shadow rule registry size OK (111/220): <tmp>/tmp.ZmhDVRphnA/repo/docs/policy/shadow-rule-registry.md
+# [PASS] shadow validator catalog includes any versioned validators
+# [PASS] shadow validator catalog includes java versioned validators
+# [PASS] shadow validator catalog includes js versioned validators
+# [PASS] shadow validator catalog includes ts versioned validators
+# [PASS] shadow validator catalog includes py versioned validators
+# [PASS] shadow validator catalog includes spring_boot versioned validators
+# [PASS] shadow validator catalog includes express versioned validators
+# [PASS] shadow validator catalog includes react versioned validators
+# [PASS] shadow validator catalog includes fastapi versioned validators
+# [PASS] shadow validator catalog includes jpa versioned validators
+# [PASS] shadow validator catalog includes sql versioned validators
+# [PASS] shadow validator catalog declares implemented_primary_v1
+# [PASS] shadow validator catalog declares parser_backed_now
+# [PASS] shadow validator catalog declares source_probe_only
+# [PASS] shadow validator catalog probe coverage sets are internally consistent
+# [PASS] shadow policy loader strict contract passes
+# [PASS] shadow regex registry uses versioned regex ids
+# [PASS] shadow regex registry declares allowed_paths
+# [PASS] shadow regex registry declares excluded_paths
+# [PASS] shadow regex registry declares validates
+# [PASS] shadow regex registry declares cannot_validate
+# [PASS] shadow regex registry declares max_promotion_risk
+# [PASS] max_promotion_risk values are low|medium in shadow regex pattern registry
+# [PASS] shadow rule registry declares rules block
+# [PASS] shadow rule registry contains rule id mappings (5)
+# [PASS] shadow rule registry contains primary validator mappings (11)
+# [PASS] shadow rule registry declares allowed_effect_types for every rule (5)
+# [PASS] shadow rule registry allowed_effect_types values are structurally valid
+# [PASS] rule registry primary/fallback references are versioned
+# [PASS] shadow rule registry promotion gates are scoped and complete
+# [PASS] shadow rule registry mapping contracts are structurally valid
+# [PASS] rule registry primary references resolve against validator catalog id
+# [PASS] rule registry fallback references resolve against regex pattern id
+# [PASS] shadow document size OK (9/300): <tmp>/tmp.ZmhDVRphnA/repo/docs/shadow/_global.md
+# [PASS] shadow document size OK (14/300): <tmp>/tmp.ZmhDVRphnA/repo/docs/shadow/apps/_index.md
+# [PASS] shadow document size OK (14/300): <tmp>/tmp.ZmhDVRphnA/repo/docs/shadow/data/_index.md
+# [PASS] shadow document size OK (14/300): <tmp>/tmp.ZmhDVRphnA/repo/docs/shadow/infra/_index.md
+# [PASS] shadow document size OK (14/300): <tmp>/tmp.ZmhDVRphnA/repo/docs/shadow/packages/_index.md
+# [PASS] shadow document size OK (11/300): <tmp>/tmp.ZmhDVRphnA/repo/docs/shadow/project-shadow.md
+# [PASS] shadow document size OK (14/300): <tmp>/tmp.ZmhDVRphnA/repo/docs/shadow/services/_index.md
+# [PASS] shadow router age-based freshness check disabled: <tmp>/tmp.ZmhDVRphnA/repo/docs/shadow/project-shadow.md
+# [PASS] shadow global age-based freshness check disabled: <tmp>/tmp.ZmhDVRphnA/repo/docs/shadow/_global.md
+# [PASS] shadow bucket index (apps) age-based freshness check disabled: <tmp>/tmp.ZmhDVRphnA/repo/docs/shadow/apps/_index.md
+# [PASS] shadow bucket index (services) age-based freshness check disabled: <tmp>/tmp.ZmhDVRphnA/repo/docs/shadow/services/_index.md
+# [PASS] shadow bucket index (packages) age-based freshness check disabled: <tmp>/tmp.ZmhDVRphnA/repo/docs/shadow/packages/_index.md
+# [PASS] shadow bucket index (infra) age-based freshness check disabled: <tmp>/tmp.ZmhDVRphnA/repo/docs/shadow/infra/_index.md
+# [PASS] shadow bucket index (data) age-based freshness check disabled: <tmp>/tmp.ZmhDVRphnA/repo/docs/shadow/data/_index.md
+# [PASS] task document size OK (19/220): <tmp>/tmp.ZmhDVRphnA/repo/docs/task/TASK-await-gate-strict-ok-01.md
+# [PASS] in-progress task freshness OK by mtime (0 days): <tmp>/tmp.ZmhDVRphnA/repo/docs/task/TASK-await-gate-strict-ok-01.md
+# [PASS] plan exists for active task TASK-await-gate-strict-ok-01
+# [PASS] orchestration file exists for active task TASK-await-gate-strict-ok-01
+# [PASS] orchestration document size OK (28/180): <tmp>/tmp.ZmhDVRphnA/repo/docs/orchestration/await-gate-strict-ok-01/ORCH.md
+# [FAIL] supervisor_agent is present but empty in orchestration: <tmp>/tmp.ZmhDVRphnA/repo/docs/orchestration/await-gate-strict-ok-01/ORCH.md
+# [FAIL] external review await gate missing accepted route artifact for agy:current under docs/orchestration/await-gate-strict-ok-01/external-cli/v1.0/r01: provenance plan_sha256 does not match PLAN-await-gate-strict-ok-01-v1.0.md (the plan changed after this review;  run a new review round)
+# [PASS] evaluator reports optional for solo execution on TASK-await-gate-strict-ok-01
+# [FAIL] task-index section mismatch for TASK-await-gate-strict-ok-01: task file status is in_progress but row is listed under Done
+# [PASS] plan document size OK (12/220): <tmp>/tmp.ZmhDVRphnA/repo/docs/plan/PLAN-await-gate-strict-ok-01-v1.0.md
+# [PASS] evaluator report size OK (27/180): <tmp>/tmp.ZmhDVRphnA/repo/docs/report/PLAN-await-gate-strict-ok-01-v1.0-review-agy-current-r01.md
+# [PASS] no known key-format secret patterns found
+# [PASS] no quoted secret assignment patterns found
+# [PASS] no yaml/env-style secret assignment patterns found
+# [RESULT] Docs validation failed with 3 issue(s).
+ok 13 validate_docs strict does not re-measure a done task against the await gate (terminal artifacts are immutable evidence)
+ok 14 external-review gate exits non-zero for every non-terminal review status
+not ok 15 external-review gate exits zero with complete wrapper evidence and prints a pass result
+# (in test file <scratch>/e-frozen/tests/validate_docs.bats, line 634)
+#   `[ "$status" -eq 0 ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.vh6NK66AcV/repo/docs
+# Repository root: <tmp>/tmp.vh6NK66AcV/repo
+# Created directories:
+#   - <tmp>/tmp.vh6NK66AcV/repo/docs/task
+#   - <tmp>/tmp.vh6NK66AcV/repo/docs/shadow
+#   - <tmp>/tmp.vh6NK66AcV/repo/docs/decisions
+#   - <tmp>/tmp.vh6NK66AcV/repo/docs/plan
+#   - <tmp>/tmp.vh6NK66AcV/repo/docs/report
+#   - <tmp>/tmp.vh6NK66AcV/repo/docs/orchestration
+#   - <tmp>/tmp.vh6NK66AcV/repo/docs/issues
+# Template files are created only when missing.
+ok 16 external-review gate applies to a planned task when asked about it by id (the implementation-start transition)
+ok 17 external-review gate is not applicable to a task whose ORCH does not require implementation review
+ok 18 external-review gate is not applicable to a task that has no orchestration capsule yet
+ok 19 external-review gate fails closed when ORCH requires review but the task file is missing
+ok 20 external-review gate ignores unrelated advisory noise elsewhere in the docs
+not ok 21 external-review gate without --task-id covers every in_progress task and fails on any unsatisfied one
+# (in test file <scratch>/e-frozen/tests/validate_docs.bats, line 695)
+#   `[ "$status" -eq 0 ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.JUx4HwMz65/repo/docs
+# Repository root: <tmp>/tmp.JUx4HwMz65/repo
+# Created directories:
+#   - <tmp>/tmp.JUx4HwMz65/repo/docs/task
+#   - <tmp>/tmp.JUx4HwMz65/repo/docs/shadow
+#   - <tmp>/tmp.JUx4HwMz65/repo/docs/decisions
+#   - <tmp>/tmp.JUx4HwMz65/repo/docs/plan
+#   - <tmp>/tmp.JUx4HwMz65/repo/docs/report
+#   - <tmp>/tmp.JUx4HwMz65/repo/docs/orchestration
+#   - <tmp>/tmp.JUx4HwMz65/repo/docs/issues
+# Template files are created only when missing.
+not ok 22 external-review gate rejects tampered, missing, mismatched or hand-written evidence
+# (in test file <scratch>/e-frozen/tests/validate_docs.bats, line 714)
+#   `[ "$status" -eq 0 ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.A8eLKtv7jT/repo/docs
+# Repository root: <tmp>/tmp.A8eLKtv7jT/repo
+# Created directories:
+#   - <tmp>/tmp.A8eLKtv7jT/repo/docs/task
+#   - <tmp>/tmp.A8eLKtv7jT/repo/docs/shadow
+#   - <tmp>/tmp.A8eLKtv7jT/repo/docs/decisions
+#   - <tmp>/tmp.A8eLKtv7jT/repo/docs/plan
+#   - <tmp>/tmp.A8eLKtv7jT/repo/docs/report
+#   - <tmp>/tmp.A8eLKtv7jT/repo/docs/orchestration
+#   - <tmp>/tmp.A8eLKtv7jT/repo/docs/issues
+# Template files are created only when missing.
+not ok 23 external-review gate fails closed when the evidence cannot be read at all
+# (in test file <scratch>/e-frozen/tests/validate_docs.bats, line 796)
+#   `[ "$status" -eq 0 ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.Xuui2BJo8X/repo/docs
+# Repository root: <tmp>/tmp.Xuui2BJo8X/repo
+# Created directories:
+#   - <tmp>/tmp.Xuui2BJo8X/repo/docs/task
+#   - <tmp>/tmp.Xuui2BJo8X/repo/docs/shadow
+#   - <tmp>/tmp.Xuui2BJo8X/repo/docs/decisions
+#   - <tmp>/tmp.Xuui2BJo8X/repo/docs/plan
+#   - <tmp>/tmp.Xuui2BJo8X/repo/docs/report
+#   - <tmp>/tmp.Xuui2BJo8X/repo/docs/orchestration
+#   - <tmp>/tmp.Xuui2BJo8X/repo/docs/issues
+# Template files are created only when missing.
+not ok 24 external-review gate accepts wrapper evidence after the project directory moves (absolute paths in provenance)
+# (in test file <scratch>/e-frozen/tests/validate_docs.bats, line 818)
+#   `[ "$status" -eq 0 ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.E3FhuRQuD6/repo/docs
+# Repository root: <tmp>/tmp.E3FhuRQuD6/repo
+# Created directories:
+#   - <tmp>/tmp.E3FhuRQuD6/repo/docs/task
+#   - <tmp>/tmp.E3FhuRQuD6/repo/docs/shadow
+#   - <tmp>/tmp.E3FhuRQuD6/repo/docs/decisions
+#   - <tmp>/tmp.E3FhuRQuD6/repo/docs/plan
+#   - <tmp>/tmp.E3FhuRQuD6/repo/docs/report
+#   - <tmp>/tmp.E3FhuRQuD6/repo/docs/orchestration
+#   - <tmp>/tmp.E3FhuRQuD6/repo/docs/issues
+# Template files are created only when missing.
+not ok 25 external-review gate requires the adversarial fields when the wrapper ran the review adversarially
+# (in test file <scratch>/e-frozen/tests/validate_docs.bats, line 841)
+#   `[ "$status" -eq 0 ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.ulfJ8Rx4qa/repo/docs
+# Repository root: <tmp>/tmp.ulfJ8Rx4qa/repo
+# Created directories:
+#   - <tmp>/tmp.ulfJ8Rx4qa/repo/docs/task
+#   - <tmp>/tmp.ulfJ8Rx4qa/repo/docs/shadow
+#   - <tmp>/tmp.ulfJ8Rx4qa/repo/docs/decisions
+#   - <tmp>/tmp.ulfJ8Rx4qa/repo/docs/plan
+#   - <tmp>/tmp.ulfJ8Rx4qa/repo/docs/report
+#   - <tmp>/tmp.ulfJ8Rx4qa/repo/docs/orchestration
+#   - <tmp>/tmp.ulfJ8Rx4qa/repo/docs/issues
+# Template files are created only when missing.
+ok 26 external-review gate waiver requires a verified user decision and exits non-zero otherwise
+ok 27 external-review gate supports json output with the same exit code
+ok 28 external-review gate leaves an already closed task alone but gates reopening it
+ok 29 external-review gate rejects bad usage
+ok 30 validate_docs strict accepts canonical probe coverage for valid effect_map evidence
+ok 31 validate_docs strict fails when validator evidence type mismatches rule evidence branch
+ok 32 validate_docs strict fails when fallback regex evidence type mismatches rule evidence branch
+bats-exit=1

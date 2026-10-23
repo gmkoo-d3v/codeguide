@@ -1,0 +1,74 @@
+1..72
+ok 1 validate_docs advisory warns when dependent external review is blocked
+ok 2 validate_docs advisory passes when waived review cites an existing accepted user decision for the task
+ok 3 validate_docs advisory rejects a waiver ref that escapes the decisions directory
+ok 4 validate_docs advisory warns when external_review_status is outside allowlist enum
+ok 5 validate_docs advisory warns when ingested review routes are empty or unparseable
+ok 6 validate_docs advisory rejects an accept verdict the wrapper itself refused (incomplete review, no provenance)
+ok 7 validate_docs strict passes the await gate for an in_progress task with complete wrapper evidence
+ok 8 external-review gate exits zero with complete wrapper evidence and prints a pass result
+ok 9 external-review gate fails closed when ORCH requires review but the task file is missing
+ok 10 external-review gate fails closed when the evidence cannot be read at all
+ok 11 external-review gate supports json output with the same exit code
+ok 12 validate_docs strict fails on an orphaned orchestration capsule with no matching task file
+ok 13 validate_docs advisory warns when docs/task/_archive exists
+ok 14 validate_docs strict mode does not flag gitignored tmp/ path references
+ok 15 validate_docs reads a field value to the end of the physical line
+ok 16 validate_docs closes a shared-reader fence only on a marker at least as long as the opener
+ok 17 validate_docs advisory reports tmp and _archive references from the same corpus scan
+ok 18 validate_docs strict audits deterministic_runtime envelope metadata
+ok 19 validate_docs strict fails when policy rule registry has no mappings
+ok 20 validate_docs strict fails on invalid policy fallback risk enum
+ok 21 validate_docs strict fails when validator evidence type mismatches rule evidence branch
+ok 22 validate_docs strict fails when catalog coverage id is undeclared
+ok 23 validate_docs strict fails when fallback regex evidence type mismatches rule evidence branch
+ok 24 validate_docs strict mode does not apply ORCH semantic-contradiction checks
+ok 25 validate_docs strict fails when supervisor_subagents task has no evaluator report
+ok 26 validate_docs shadow empty-graph gate never fires without a reachable source repo
+ok 27 validate_docs strict fails when tracked shadow last_updated is blank or future
+ok 28 validate_docs advisory warns on invalid decision risk_level enum
+ok 29 validate_docs strict requires evaluator report for latest plan version
+ok 30 validate_docs strict fails when linked high-risk decision has only standard review
+ok 31 validate_docs fails clearly when numeric option is invalid
+ok 32 validate_docs secret scan catches hyphenated OpenAI key formats
+ok 33 validate_docs strict allows missing shadow archive directories
+ok 34 validate_docs reads a decision-index row quoted inside a fence as no row at all
+ok 35 validate_docs reads a task-index row quoted inside a fence as no row at all
+ok 36 validate_docs strict fails when a current issue is marked resolved
+ok 37 validate_docs strict fails on an orphaned resolution doc with no paired issue file
+ok 38 validate_docs advisory warns when an in_progress task is missing owner
+ok 39 validate_docs strict fails on a stale claim directory whose task already left in_progress
+ok 40 validate_docs strict does not fail an in_progress task with no resume_* fields at all
+ok 41 validate_docs strict does not fail when resume_state_revision is present but non-numeric
+ok 42 validate_docs advisory warns when a redirect shim canonical_path does not resolve
+ok 43 validate_docs advisory resolves Markdown-link next_docs syntax without a false positive
+ok 44 validate_docs advisory de-duplicates a repeated dangling navigation reference
+ok 45 validate_docs advisory is silent about source digest when a doc does not opt in
+ok 46 shadow source digest detects drift in the mixed inline+nested source_of_truth_paths form
+ok 47 validate_docs advisory warns on a dead source_of_truth path in a digest-less doc
+ok 48 validate_docs advisory is not silenced by an EMPTY source_of_truth_digest field
+ok 49 validate_docs advisory warns when a unit overview is missing home_bucket
+ok 50 validate_docs advisory does not treat a fenced doc_role example as a carrier doc
+ok 51 validate_docs answers in-progress freshness with the status VALUE, not a second read of the document
+ok 52 validate_docs answers key presence with the same column-0 anchor the value read uses
+ok 53 a zero-byte cache entry is refused and rebuilt instead of blanking every field
+ok 54 a failed strip degrades to the original document rather than to an empty one
+ok 55 validate_docs advisory warns when a done task's capsule still says delegation_status active
+ok 56 empty-graph gate is not silenced by a garbage unit line
+ok 57 validate_docs strict fails superseded task without disposition
+ok 58 validate_docs strict still enforces plan size cap and scope for active tasks
+ok 59 validate_docs strict allows empty adversarial debate fields on accept verdict
+ok 60 validate_docs strict keeps active-task gates on a status with a parenthetical note
+ok 61 validate_docs --format json emits a single parseable JSON object (passing scaffold)
+ok 62 validate_docs --format json tags top-level phase-flow issues with id main
+ok 63 validate_docs advisory accepts linked_decisions pointing at an accepted capsule
+ok 64 validate_docs advisory warns when a linked_decisions target has no readable status
+ok 65 validate_docs advisory warns when linked_decisions sits on a non-carrier doc_role
+ok 66 validate_docs strict mode skips the linked_decisions check entirely
+ok 67 validate_docs advisory resolves a concrete policy linked_decision value
+ok 68 validate_docs advisory flags selection_summary drift from the overview side
+ok 69 validate_docs advisory flags the removed secondary_tags field if it comes back
+ok 70 validate_docs advisory flags a degenerate one-character selection_summary
+ok 71 validate_docs advisory treats a tilde-fenced example as an example in every shadow rule
+ok 72 validate_docs secret scan ignores hyphenated field names (sk- substring false positive)
+bats-exit=0

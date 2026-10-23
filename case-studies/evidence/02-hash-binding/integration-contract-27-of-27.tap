@@ -1,0 +1,29 @@
+1..27
+ok 1 GUARD-01 no real agy/claude/codex/gemini/antigravity is reachable from the test PATH
+ok 2 GUARD-02 the tripwire records and refuses any CLI name that is not a mock
+ok 3 TC-01 adversarial accept with present-but-empty debate fields: one attempt, full artifact set, evidence verified, strict gate passes
+ok 4 TC-02 adversarial accept with every debate field filled is still approved end to end
+ok 5 TC-03 standard accept: the standard field rule is unchanged and the result passes the gate
+ok 6 TC-04 adversarial accept with a MISSING debate key is rejected, unlike the same response with the key present but empty
+ok 7 TC-05 adversarial accept with residual_risk missing or empty is rejected
+ok 8 TC-06 revise and blocked: filled responses are format-valid but never approve; an empty debate value is rejected by the parser
+ok 9 TC-07 an accepted response without its Request file is not approved
+ok 10 TC-08 an accepted response without its Provenance manifest is not approved
+ok 11 TC-09 a Response edited after review fails the SHA-256 binding and the gate
+ok 12 TC-10 any identifier mismatch (task, plan version, round, route, request/response linkage) is rejected
+ok 13 TC-11 run_codeguide refuses the in_progress transition without an approved review: non-zero, no runtime, no state or metadata change
+ok 14 TC-12 after an approved empty-debate adversarial accept, run_codeguide enters in_progress and runs only the allowed mock runtime command
+ok 15 TC-13 with two required routes, implementation is blocked until BOTH are genuine accepts
+ok 16 TC-14 a status carrying a note (in_progress (resumed)) cannot bypass an unapproved review
+ok 17 TC-15 a default-option run_codeguide leaves an existing external_cli ORCH approval and review metadata intact
+ok 18 TC-16 a waiver is honoured only for an existing accepted user decision linked to the task
+ok 19 PARITY-01 for every response variant the wrapper parser and the evidence verifier agree
+ok 20 TC-17 a PLAN edited after its review is refused by the verifier and the gate (plan_sha256)
+ok 21 TC-18 an altered Request payload is refused by the verifier and the gate (request_sha256)
+ok 22 TC-19 a manifest recorded before plan and request hashing is refused: the reason asks for a new review round
+ok 23 TC-20 a request whose recorded plan hash disagrees with the manifest is refused
+ok 24 TC-21 a missing plan file cannot be verified, so the review is refused rather than assumed current
+ok 25 KNOWN-LIMITATION KL-3 work that skips the harness is not gated: a planning-only run on an unapproved review exits 0
+ok 26 KNOWN-LIMITATION KL-4 an agent that leaves external_review_required_for empty makes the task look review-free
+ok 27 KNOWN-LIMITATION KL-5 a done task's approval history is not re-checked (strict ignores it, the gate skips it)
+bats-exit=0

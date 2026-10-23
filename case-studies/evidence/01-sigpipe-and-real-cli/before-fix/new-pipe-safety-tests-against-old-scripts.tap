@@ -1,0 +1,209 @@
+1..7
+ok 1 control: printf into grep -q fails under pipefail on a list larger than the pipe buffer although the line is present
+not ok 2 list_has_line finds present lines and rejects absent ones in a list far larger than the pipe buffer
+# (in test file <scratch>/d-mut/tests/pipe_safety.bats, line 42)
+#   `[ "$status" -eq 0 ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.ABAPJxMhQZ/repo/docs
+# Repository root: <tmp>/tmp.ABAPJxMhQZ/repo
+# Created directories:
+#   - <tmp>/tmp.ABAPJxMhQZ/repo/docs/task
+#   - <tmp>/tmp.ABAPJxMhQZ/repo/docs/shadow
+#   - <tmp>/tmp.ABAPJxMhQZ/repo/docs/decisions
+#   - <tmp>/tmp.ABAPJxMhQZ/repo/docs/plan
+#   - <tmp>/tmp.ABAPJxMhQZ/repo/docs/report
+#   - <tmp>/tmp.ABAPJxMhQZ/repo/docs/orchestration
+#   - <tmp>/tmp.ABAPJxMhQZ/repo/docs/issues
+# Template files are created only when missing.
+not ok 3 list_has_line answers exactly like grep -Fx
+# (from function `agrees_with_grep' in file <scratch>/d-mut/tests/pipe_safety.bats, line 22,
+#  in test file <scratch>/d-mut/tests/pipe_safety.bats, line 48)
+#   `agrees_with_grep $'a\nb\nc' "a"' failed
+# Initialized project docs scaffold under: <tmp>/tmp.jpF3lFs48j/repo/docs
+# Repository root: <tmp>/tmp.jpF3lFs48j/repo
+# Created directories:
+#   - <tmp>/tmp.jpF3lFs48j/repo/docs/task
+#   - <tmp>/tmp.jpF3lFs48j/repo/docs/shadow
+#   - <tmp>/tmp.jpF3lFs48j/repo/docs/decisions
+#   - <tmp>/tmp.jpF3lFs48j/repo/docs/plan
+#   - <tmp>/tmp.jpF3lFs48j/repo/docs/report
+#   - <tmp>/tmp.jpF3lFs48j/repo/docs/orchestration
+#   - <tmp>/tmp.jpF3lFs48j/repo/docs/issues
+# Template files are created only when missing.
+# <scratch>/d-mut/tests/pipe_safety.bats: line 18: list_has_line: command not found
+# list_has_line disagrees with grep -Fx: list=[a
+# b
+# c] needle=[a] grep=yes helper=no
+not ok 4 is_shadow_bucket matches whole bucket names only
+# (in test file <scratch>/d-mut/tests/pipe_safety.bats, line 77)
+#   `is_shadow_bucket "alpha"' failed with status 127
+# Initialized project docs scaffold under: <tmp>/tmp.w9Ho6w0d7x/repo/docs
+# Repository root: <tmp>/tmp.w9Ho6w0d7x/repo
+# Created directories:
+#   - <tmp>/tmp.w9Ho6w0d7x/repo/docs/task
+#   - <tmp>/tmp.w9Ho6w0d7x/repo/docs/shadow
+#   - <tmp>/tmp.w9Ho6w0d7x/repo/docs/decisions
+#   - <tmp>/tmp.w9Ho6w0d7x/repo/docs/plan
+#   - <tmp>/tmp.w9Ho6w0d7x/repo/docs/report
+#   - <tmp>/tmp.w9Ho6w0d7x/repo/docs/orchestration
+#   - <tmp>/tmp.w9Ho6w0d7x/repo/docs/issues
+# Template files are created only when missing.
+# <scratch>/d-mut/tests/pipe_safety.bats: line 77: is_shadow_bucket: command not found
+not ok 5 check_catalog_probe_coverage reports no mismatch when its id lists are far larger than the pipe buffer
+# (from function `assert_contains' in file <scratch>/d-mut/tests/codeguide_helper.bash, line 220,
+#  in test file <scratch>/d-mut/tests/pipe_safety.bats, line 109)
+#   `assert_contains "$output" "mismatches=0"' failed
+# Initialized project docs scaffold under: <tmp>/tmp.WRHnvXpuCd/repo/docs
+# Repository root: <tmp>/tmp.WRHnvXpuCd/repo
+# Created directories:
+#   - <tmp>/tmp.WRHnvXpuCd/repo/docs/task
+#   - <tmp>/tmp.WRHnvXpuCd/repo/docs/shadow
+#   - <tmp>/tmp.WRHnvXpuCd/repo/docs/decisions
+#   - <tmp>/tmp.WRHnvXpuCd/repo/docs/plan
+#   - <tmp>/tmp.WRHnvXpuCd/repo/docs/report
+#   - <tmp>/tmp.WRHnvXpuCd/repo/docs/orchestration
+#   - <tmp>/tmp.WRHnvXpuCd/repo/docs/issues
+# Template files are created only when missing.
+# assert_contains failed
+#   expected to find: mismatches=0
+#   in: FAIL implemented_primary_v1 id must be declared in validators block: validator.id.1@v1 (catalog.md)
+# FAIL implemented_primary_v1 id must be declared in validators block: validator.id.4000@v1 (catalog.md)
+# FAIL parser_backed_now id must be declared in validators block: validator.id.1@v1 (catalog.md)
+# FAIL source_probe_only id must be declared in validators block: validator.id.4000@v1 (catalog.md)
+# mismatches=4
+not ok 6 strict validation reports an empty shadow graph however long the tracked-file listing is
+# (from function `assert_contains' in file <scratch>/d-mut/tests/codeguide_helper.bash, line 220,
+#  in test file <scratch>/d-mut/tests/pipe_safety.bats, line 133)
+#   `assert_contains "$output" "shadow graph is empty"' failed
+# Initialized project docs scaffold under: <tmp>/tmp.4ePZQppCgI/repo/docs
+# Repository root: <tmp>/tmp.4ePZQppCgI/repo
+# Created directories:
+#   - <tmp>/tmp.4ePZQppCgI/repo/docs/task
+#   - <tmp>/tmp.4ePZQppCgI/repo/docs/shadow
+#   - <tmp>/tmp.4ePZQppCgI/repo/docs/decisions
+#   - <tmp>/tmp.4ePZQppCgI/repo/docs/plan
+#   - <tmp>/tmp.4ePZQppCgI/repo/docs/report
+#   - <tmp>/tmp.4ePZQppCgI/repo/docs/orchestration
+#   - <tmp>/tmp.4ePZQppCgI/repo/docs/issues
+# Template files are created only when missing.
+# assert_contains failed
+#   expected to find: shadow graph is empty
+#   in: [PASS] docs directory exists
+# [PASS] task directory exists
+# [PASS] shadow directory exists
+# [PASS] decisions directory exists
+# [PASS] plan directory exists
+# [PASS] report directory exists
+# [PASS] orchestration directory exists
+# [PASS] policy directory exists
+# [PASS] project dictionary exists
+# [PASS] task index exists
+# [PASS] shadow router exists
+# [PASS] shadow global exists
+# [PASS] shadow bucket index (apps) exists
+# [PASS] shadow bucket index (services) exists
+# [PASS] shadow bucket index (packages) exists
+# [PASS] shadow bucket index (infra) exists
+# [PASS] shadow bucket index (data) exists
+# [PASS] decision index exists
+# [PASS] plan template exists
+# [PASS] report template exists
+# [PASS] orchestration template exists
+# [PASS] orchestration prompt template exists
+# [PASS] shadow validator catalog exists
+# [PASS] shadow regex pattern registry exists
+# [PASS] shadow rule registry exists
+# [PASS] shadow validator catalog size OK (103/220): /private<tmp>/tmp.4ePZQppCgI/big-listing/docs/policy/shadow-validator-catalog.md
+# [PASS] shadow regex pattern registry size OK (84/220): /private<tmp>/tmp.4ePZQppCgI/big-listing/docs/policy/shadow-regex-patterns.md
+# [PASS] shadow rule registry size OK (111/220): /private<tmp>/tmp.4ePZQppCgI/big-listing/docs/policy/shadow-rule-registry.md
+# [PASS] shadow validator catalog includes any versioned validators
+# [PASS] shadow validator catalog includes java versioned validators
+# [PASS] shadow validator catalog includes js versioned validators
+# [PASS] shadow validator catalog includes ts versioned validators
+# [PASS] shadow validator catalog includes py versioned validators
+# [PASS] shadow validator catalog includes spring_boot versioned validators
+# [PASS] shadow validator catalog includes express versioned validators
+# [PASS] shadow validator catalog includes react versioned validators
+# [PASS] shadow validator catalog includes fastapi versioned validators
+# [PASS] shadow validator catalog includes jpa versioned validators
+# [PASS] shadow validator catalog includes sql versioned validators
+# [PASS] shadow validator catalog declares implemented_primary_v1
+# [PASS] shadow validator catalog declares parser_backed_now
+# [PASS] shadow validator catalog declares source_probe_only
+# [PASS] shadow validator catalog probe coverage sets are internally consistent
+# [PASS] shadow policy loader strict contract passes
+# [PASS] shadow regex registry uses versioned regex ids
+# [PASS] shadow regex registry declares allowed_paths
+# [PASS] shadow regex registry declares excluded_paths
+# [PASS] shadow regex registry declares validates
+# [PASS] shadow regex registry declares cannot_validate
+# [PASS] shadow regex registry declares max_promotion_risk
+# [PASS] max_promotion_risk values are low|medium in shadow regex pattern registry
+# [PASS] shadow rule registry declares rules block
+# [PASS] shadow rule registry contains rule id mappings (5)
+# [PASS] shadow rule registry contains primary validator mappings (11)
+# [PASS] shadow rule registry declares allowed_effect_types for every rule (5)
+# [PASS] shadow rule registry allowed_effect_types values are structurally valid
+# [PASS] rule registry primary/fallback references are versioned
+# [PASS] shadow rule registry promotion gates are scoped and complete
+# [PASS] shadow rule registry mapping contracts are structurally valid
+# [PASS] rule registry primary references resolve against validator catalog id
+# [PASS] rule registry fallback references resolve against regex pattern id
+# [PASS] shadow document size OK (9/300): /private<tmp>/tmp.4ePZQppCgI/big-listing/docs/shadow/_global.md
+# [PASS] shadow document size OK (14/300): /private<tmp>/tmp.4ePZQppCgI/big-listing/docs/shadow/apps/_index.md
+# [PASS] shadow document size OK (14/300): /private<tmp>/tmp.4ePZQppCgI/big-listing/docs/shadow/data/_index.md
+# [PASS] shadow document size OK (14/300): /private<tmp>/tmp.4ePZQppCgI/big-listing/docs/shadow/infra/_index.md
+# [PASS] shadow document size OK (14/300): /private<tmp>/tmp.4ePZQppCgI/big-listing/docs/shadow/packages/_index.md
+# [PASS] shadow document size OK (11/300): /private<tmp>/tmp.4ePZQppCgI/big-listing/docs/shadow/project-shadow.md
+# [PASS] shadow document size OK (14/300): /private<tmp>/tmp.4ePZQppCgI/big-listing/docs/shadow/services/_index.md
+# [PASS] shadow router age-based freshness check disabled: /private<tmp>/tmp.4ePZQppCgI/big-listing/docs/shadow/project-shadow.md
+# [PASS] shadow global age-based freshness check disabled: /private<tmp>/tmp.4ePZQppCgI/big-listing/docs/shadow/_global.md
+# [PASS] shadow bucket index (apps) age-based freshness check disabled: /private<tmp>/tmp.4ePZQppCgI/big-listing/docs/shadow/apps/_index.md
+# [PASS] shadow bucket index (services) age-based freshness check disabled: /private<tmp>/tmp.4ePZQppCgI/big-listing/docs/shadow/services/_index.md
+# [PASS] shadow bucket index (packages) age-based freshness check disabled: /private<tmp>/tmp.4ePZQppCgI/big-listing/docs/shadow/packages/_index.md
+# [PASS] shadow bucket index (infra) age-based freshness check disabled: /private<tmp>/tmp.4ePZQppCgI/big-listing/docs/shadow/infra/_index.md
+# [PASS] shadow bucket index (data) age-based freshness check disabled: /private<tmp>/tmp.4ePZQppCgI/big-listing/docs/shadow/data/_index.md
+# [PASS] no known key-format secret patterns found
+# [PASS] no quoted secret assignment patterns found
+# [PASS] no yaml/env-style secret assignment patterns found
+# [RESULT] Docs validation passed.
+not ok 7 scripts contain no early-exit pipe consumer fed by printf or echo, and no grep -q or grep -m consumer at all
+# (in test file <scratch>/d-mut/tests/pipe_safety.bats, line 144)
+#   `return 1' failed
+# Initialized project docs scaffold under: <tmp>/tmp.61i0bxwEGd/repo/docs
+# Repository root: <tmp>/tmp.61i0bxwEGd/repo
+# Created directories:
+#   - <tmp>/tmp.61i0bxwEGd/repo/docs/task
+#   - <tmp>/tmp.61i0bxwEGd/repo/docs/shadow
+#   - <tmp>/tmp.61i0bxwEGd/repo/docs/decisions
+#   - <tmp>/tmp.61i0bxwEGd/repo/docs/plan
+#   - <tmp>/tmp.61i0bxwEGd/repo/docs/report
+#   - <tmp>/tmp.61i0bxwEGd/repo/docs/orchestration
+#   - <tmp>/tmp.61i0bxwEGd/repo/docs/issues
+# Template files are created only when missing.
+# early-exit pipe consumers (SIGPIPE under pipefail); use list_has_line, a draining sed -n, or read the whole producer first:
+# <scratch>/d-mut/scripts/validate_docs.d/20-rules-shadow.sh:89:    | grep -qvE '^(docs/|AGENTS\.md$|CLAUDE\.md$|README\.md$|\.gitignore$|\.codeguide-source-root$)'; then
+# <scratch>/d-mut/scripts/validate_docs.d/20-rules-shadow.sh:158:    has_paths="$(printf "%s\n" "$result" | grep -m1 "^has_paths: " | sed 's/^has_paths: //')"
+# <scratch>/d-mut/scripts/validate_docs.d/20-rules-shadow.sh:374:        elif ! printf '%s\n' "${SHADOW_BUCKETS[@]}" | grep -qxF -- "$bucket_value"; then
+# <scratch>/d-mut/scripts/validate_docs.d/20-rules-shadow.sh:796:    if ! printf "%s\n" "$declared_ids" | grep -Fxq "$id"; then
+# <scratch>/d-mut/scripts/validate_docs.d/20-rules-shadow.sh:800:    if [[ -n "$probe_ids" ]] && ! printf "%s\n" "$probe_ids" | grep -Fxq "$id"; then
+# <scratch>/d-mut/scripts/validate_docs.d/20-rules-shadow.sh:808:    if ! printf "%s\n" "$implemented_ids" | grep -Fxq "$id"; then
+# <scratch>/d-mut/scripts/validate_docs.d/20-rules-shadow.sh:816:    if ! printf "%s\n" "$declared_ids" | grep -Fxq "$id"; then
+# <scratch>/d-mut/scripts/validate_docs.d/20-rules-shadow.sh:820:    if ! printf "%s\n" "$implemented_ids" | grep -Fxq "$id"; then
+# <scratch>/d-mut/scripts/validate_docs.d/20-rules-shadow.sh:828:    if ! printf "%s\n" "$declared_ids" | grep -Fxq "$id"; then
+# <scratch>/d-mut/scripts/validate_docs.d/20-rules-shadow.sh:832:    if ! printf "%s\n" "$implemented_ids" | grep -Fxq "$id"; then
+# <scratch>/d-mut/scripts/validate_docs.d/20-rules-shadow.sh:836:    if printf "%s\n" "$parser_ids" | grep -Fxq "$id"; then
+# <scratch>/d-mut/scripts/validate_docs.d/20-rules-shadow.sh:1118:    if ! printf "%s\n" "$known_ids" | grep -Fxq "$ref"; then
+# <scratch>/d-mut/scripts/doc_garden.sh:1005:      capped_list="$(printf "%s\n" "$changed_list" | head -n 10 | paste -sd ',' -)"
+
+The following warnings were encountered during tests:
+BW01: `run`'s command `bash -c set -euo pipefail
+    source "$1/validate_docs.d/20-rules-shadow.sh"
+    list="$(seq -f "validator.id.%g@v1" 1 8000)"
+    list_has_line "$list" "validator.id.1@v1"
+    list_has_line "$list" "validator.id.4000@v1"
+    list_has_line "$list" "validator.id.8000@v1"
+    if list_has_line "$list" "validator.id.9999@v1"; then exit 3; fi
+    if list_has_line "$list" "validator.id.1"; then exit 4; fi _ <scratch>/d-mut/scripts` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.14.0/lib/bats-core/test_functions.bash, line 442,
+       in test file <scratch>/d-mut/tests/pipe_safety.bats, line 34)
+bats-exit=1

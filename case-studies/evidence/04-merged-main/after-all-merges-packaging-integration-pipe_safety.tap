@@ -1,0 +1,48 @@
+1..46
+ok 1 packaging smoke classifies SHIP, DEV-ARTIFACT, and UNKNOWN on a scratch fixture
+ok 2 packaging smoke text format reports DEV-ARTIFACT summary buckets and the full UNKNOWN list
+ok 3 packaging smoke exits 0 by default when nothing is UNKNOWN
+ok 4 packaging smoke --no-exit-code stays 0 even though UNKNOWN paths are reported
+ok 5 packaging smoke classifies a symlink by its own path and never follows it into another tree
+ok 6 packaging smoke never lets a sibling directory name substring-match an allowlisted root
+ok 7 packaging smoke handles paths containing spaces without shell-splitting them
+ok 8 packaging smoke exits 2 with an error when --skill-root is not a directory
+ok 9 packaging smoke rejects an unknown --format value with exit 2 (argparse contract)
+ok 10 packaging smoke runs against the real skill root without crashing and reports well-formed sections
+ok 11 packaging smoke --format json on the real skill root parses and matches the text-mode counts
+ok 12 packaging smoke --manifest adds the full SHIP path list on the real skill root
+ok 13 GUARD-01 no real agy/claude/codex/gemini/antigravity is reachable from the test PATH
+ok 14 GUARD-02 the tripwire records and refuses any CLI name that is not a mock
+ok 15 TC-01 adversarial accept with present-but-empty debate fields: one attempt, full artifact set, evidence verified, strict gate passes
+ok 16 TC-02 adversarial accept with every debate field filled is still approved end to end
+ok 17 TC-03 standard accept: the standard field rule is unchanged and the result passes the gate
+ok 18 TC-04 adversarial accept with a MISSING debate key is rejected, unlike the same response with the key present but empty
+ok 19 TC-05 adversarial accept with residual_risk missing or empty is rejected
+ok 20 TC-06 revise and blocked: filled responses are format-valid but never approve; an empty debate value is rejected by the parser
+ok 21 TC-07 an accepted response without its Request file is not approved
+ok 22 TC-08 an accepted response without its Provenance manifest is not approved
+ok 23 TC-09 a Response edited after review fails the SHA-256 binding and the gate
+ok 24 TC-10 any identifier mismatch (task, plan version, round, route, request/response linkage) is rejected
+ok 25 TC-11 run_codeguide refuses the in_progress transition without an approved review: non-zero, no runtime, no state or metadata change
+ok 26 TC-12 after an approved empty-debate adversarial accept, run_codeguide enters in_progress and runs only the allowed mock runtime command
+ok 27 TC-13 with two required routes, implementation is blocked until BOTH are genuine accepts
+ok 28 TC-14 a status carrying a note (in_progress (resumed)) cannot bypass an unapproved review
+ok 29 TC-15 a default-option run_codeguide leaves an existing external_cli ORCH approval and review metadata intact
+ok 30 TC-16 a waiver is honoured only for an existing accepted user decision linked to the task
+ok 31 PARITY-01 for every response variant the wrapper parser and the evidence verifier agree
+ok 32 TC-17 a PLAN edited after its review is refused by the verifier and the gate (plan_sha256)
+ok 33 TC-18 an altered Request payload is refused by the verifier and the gate (request_sha256)
+ok 34 TC-19 a manifest recorded before plan and request hashing is refused: the reason asks for a new review round
+ok 35 TC-20 a request whose recorded plan hash disagrees with the manifest is refused
+ok 36 TC-21 a missing plan file cannot be verified, so the review is refused rather than assumed current
+ok 37 KNOWN-LIMITATION KL-3 work that skips the harness is not gated: a planning-only run on an unapproved review exits 0
+ok 38 KNOWN-LIMITATION KL-4 an agent that leaves external_review_required_for empty makes the task look review-free
+ok 39 KNOWN-LIMITATION KL-5 a done task's approval history is not re-checked (strict ignores it, the gate skips it)
+ok 40 control: printf into grep -q fails under pipefail on a list larger than the pipe buffer although the line is present
+ok 41 list_has_line finds present lines and rejects absent ones in a list far larger than the pipe buffer
+ok 42 list_has_line answers exactly like grep -Fx
+ok 43 is_shadow_bucket matches whole bucket names only
+ok 44 check_catalog_probe_coverage reports no mismatch when its id lists are far larger than the pipe buffer
+ok 45 strict validation reports an empty shadow graph however long the tracked-file listing is
+ok 46 scripts contain no early-exit pipe consumer fed by printf or echo, and no grep -q or grep -m consumer at all
+bats-exit=0

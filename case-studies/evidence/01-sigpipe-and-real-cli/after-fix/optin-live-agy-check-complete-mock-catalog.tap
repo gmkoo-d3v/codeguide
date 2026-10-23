@@ -1,0 +1,3 @@
+1..1
+ok 1 bundled agy routes are listed by the live agy model catalog (opt-in: CODEGUIDE_LIVE_AGY_CATALOG=1)
+bats-exit=0

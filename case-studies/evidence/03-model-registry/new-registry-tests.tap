@@ -1,0 +1,7 @@
+1..5
+ok 1 bundled registry exposes the requested OpenAI and Anthropic lineups
+ok 2 bundled registry registers the Gemini 3.8, Claude 5.5 and GPT-6 lineups with their own cli models
+ok 3 bundled registry aliases: model ids resolve, version-less aliases follow the newest generation, versioned ones stay
+ok 4 bundled registry defaults one reviewer per vendor, with GPT-6.1 Sol at medium effort for OpenAI
+ok 5 bundled agy routes use catalog cli_model values
+bats-exit=0

@@ -1,0 +1,17 @@
+1..5
+not ok 1 TC-17 a PLAN edited after its review is refused by the verifier and the gate (plan_sha256)
+# (in test file <scratch>/e-mut/tests/review_contract_integration.bats, line 535)
+#   `[ "$status" -ne 0 ]' failed
+not ok 2 TC-18 an altered Request payload is refused by the verifier and the gate (request_sha256)
+# (in test file <scratch>/e-mut/tests/review_contract_integration.bats, line 546)
+#   `[ "$status" -ne 0 ]' failed
+not ok 3 TC-19 a manifest recorded before plan and request hashing is refused: the reason asks for a new review round
+# (in test file <scratch>/e-mut/tests/review_contract_integration.bats, line 560)
+#   `[ "$status" -ne 0 ]' failed
+not ok 4 TC-20 a request whose recorded plan hash disagrees with the manifest is refused
+# (in test file <scratch>/e-mut/tests/review_contract_integration.bats, line 579)
+#   `[ "$status" -ne 0 ]' failed
+not ok 5 TC-21 a missing plan file cannot be verified, so the review is refused rather than assumed current
+# (in test file <scratch>/e-mut/tests/review_contract_integration.bats, line 587)
+#   `[ "$status" -ne 0 ]' failed
+bats-exit=1

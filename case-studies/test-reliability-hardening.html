@@ -96,11 +96,11 @@ details > :not(summary) { margin-top: 10px; }
       <tbody>
         <tr><td>모델 레지스트리 갱신</td><td><span class="pill ok">main 병합</span><br><code>3e8d5be</code></td><td>새 경로 17개, 기본 리뷰어 GPT-6.1 Sol(medium). 신규·확장 테스트 3개가 옛 레지스트리에서 실패함</td></tr>
         <tr><td>SIGPIPE·실제 CLI 호출 수정</td><td><span class="pill ok">main 병합</span><br><code>bab734f</code></td><td>결정적 재현 3종, 신규 테스트 7개 중 6개가 옛 스크립트에서 실패(나머지 1개는 대조 실험), 전체 857/859</td></tr>
-        <tr><td>계획서·요청서 해시 결합</td><td><span class="pill warn">브랜치, 미병합</span></td><td>통합 스위트 27/27, 신규 TC-17~21이 옛 검증기에서 5/5 실패, 래퍼 계열 스위트 233/233</td></tr>
-        <tr><td>README·case-studies</td><td><span class="pill warn">브랜치, 미병합</span></td><td>이 보고서 포함. packaging 테스트 12/12, 옛 분류기는 새 폴더를 UNKNOWN으로 판정해 게이트가 깨짐</td></tr>
+        <tr><td>계획서·요청서 해시 결합</td><td><span class="pill ok">main 병합</span><br><code>1b8b860</code></td><td>통합 스위트 27/27, 신규 TC-17~21이 옛 검증기에서 5/5 실패, 래퍼 계열 스위트 233/233</td></tr>
+        <tr><td>README·case-studies</td><td><span class="pill ok">main 병합</span><br><code>a800c38</code>, <code>f5bb978</code></td><td>이 보고서 포함. packaging 테스트 12/12, 옛 분류기는 새 폴더를 UNKNOWN으로 판정해 게이트가 깨짐</td></tr>
       </tbody>
     </table></div>
-    <p class="muted" style="margin:10px 0 0">B와 D는 skill 저장소에 병합 커밋 <code>ff0ca32</code>로, docs 저장소에는 fast-forward <code>7eff652</code>로 들어갔습니다. 푸시는 하지 않았습니다.</p>
+    <p class="muted" style="margin:10px 0 0">네 작업 모두 skill 저장소 main에 반영했습니다(최종 <code>f5bb978</code>). 이 보고서가 인용하는 원본 테스트 로그는 <code>case-studies/evidence/</code>에 있고, 같은 내용의 영어 Markdown 판은 <code>test-reliability-hardening.md</code>입니다.</p>
   </section>
 
   <section>
@@ -185,6 +185,8 @@ details > :not(summary) { margin-top: 10px; }
         <tr><td>병합된 main: external_review + pipe_safety</td><td><span class="pill ok">84 / 84 ok</span></td><td>그중 1건은 의도한 skip(실제 agy 카탈로그 선택 실행)</td></tr>
         <tr><td>병합된 main: 게이트·evidence 테스트</td><td><span class="pill ok">31 / 31</span></td><td></td></tr>
         <tr><td>병합된 main: run_codeguide, doc_garden, 통합, shadow_v2, packaging 등 (190개)</td><td><span class="pill ok">190 / 190</span></td><td>실패 0건, 실제 agy 호출 없음</td></tr>
+        <tr><td>해시 결합을 합친 main: 전체 스위트 (865개)</td><td><span class="pill ok">863 ok</span></td><td>그중 1건은 의도한 skip. 실패 2건은 같은 기준선 실패</td></tr>
+        <tr><td>모든 병합 뒤: packaging, 통합, front_cli 등 (130개)</td><td><span class="pill ok">130 / 130</span></td><td>실패 0건</td></tr>
       </tbody>
     </table></div>
     <p class="muted" style="margin:10px 0 0">모든 실행에서 트립와이어 로그는 이전 통합 작업의 <code>agy models</code> 한 줄뿐입니다.</p>
@@ -193,8 +195,7 @@ details > :not(summary) { margin-top: 10px; }
   <section>
     <h2>7. 남은 것과 한계</h2>
     <ul>
-      <li>해시 결합 브랜치는 병합 이전의 main에서 갈라졌습니다. 레지스트리·SIGPIPE 수정이 들어간 main 위에서 다시 돌려 본 뒤 병합해야 합니다.</li>
-      <li>README의 "계획서·요청서 수정은 검출되지 않는다"는 한계 문장은 해시 결합이 병합되면 지워야 합니다.</li>
+      <li>무작위 SIGPIPE 경쟁 자체는 재현하지 못했습니다(2절). 대용량 단위 테스트와 정적 검사로 막았을 뿐입니다.</li>
       <li>기준선 실패 2건(done 작업의 이전 계획 버전 평가 보고서, JSON 이슈 id)은 원인을 조사하지 않았습니다.</li>
       <li>Shadow v2 close 게이트는 새 해시를 검사하지 않고, 증거는 여전히 위조 가능한 일관성 증거입니다.</li>
       <li>하네스를 거치지 않는 작업, 에이전트가 쓰는 리뷰 요구 필드, 완료된 작업의 승인 이력은 이전과 같이 게이트 밖에 있습니다(KL-3~5).</li>

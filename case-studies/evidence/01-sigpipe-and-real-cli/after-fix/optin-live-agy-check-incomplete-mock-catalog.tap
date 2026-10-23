@@ -1,0 +1,29 @@
+1..1
+not ok 1 bundled agy routes are listed by the live agy model catalog (opt-in: CODEGUIDE_LIVE_AGY_CATALOG=1)
+# (from function `assert_contains' in file <scratch>/d-frozen/tests/codeguide_helper.bash, line 220,
+#  in test file <scratch>/d-frozen/tests/external_review.bats, line 1862)
+#   `assert_contains "$catalog" "$cli_model"' failed
+# Initialized project docs scaffold under: <tmp>/tmp.pwOKTvN35G/repo/docs
+# Repository root: <tmp>/tmp.pwOKTvN35G/repo
+# Created directories:
+#   - <tmp>/tmp.pwOKTvN35G/repo/docs/task
+#   - <tmp>/tmp.pwOKTvN35G/repo/docs/shadow
+#   - <tmp>/tmp.pwOKTvN35G/repo/docs/decisions
+#   - <tmp>/tmp.pwOKTvN35G/repo/docs/plan
+#   - <tmp>/tmp.pwOKTvN35G/repo/docs/report
+#   - <tmp>/tmp.pwOKTvN35G/repo/docs/orchestration
+#   - <tmp>/tmp.pwOKTvN35G/repo/docs/issues
+# Template files are created only when missing.
+# assert_contains failed
+#   expected to find: gemini-3.7-flash-low
+#   in: gemini-3.6-flash-low
+# gemini-3.6-flash-medium
+# gemini-3.6-flash-high
+# gemini-3.7-flash-medium
+# gemini-3.7-flash-high
+# gemini-3.1-pro-low
+# gemini-3.1-pro-high
+# claude-sonnet-4-6
+# claude-opus-4-6-thinking
+# gpt-oss-120b-medium
+bats-exit=1

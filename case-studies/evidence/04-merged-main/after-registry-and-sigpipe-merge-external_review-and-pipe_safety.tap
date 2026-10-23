@@ -1,0 +1,86 @@
+1..84
+ok 1 runtime-cmd blocked by allow-list
+ok 2 runtime-cmd blocks chained shell syntax in allow-list mode
+ok 3 runtime-cmd blocks ampersand shell syntax in allow-list mode
+ok 4 runtime-cmd passes with allow-list match
+ok 5 runtime-cmd allow-list supports executable+subcommand matching
+ok 6 runtime-cmd blocks when executable+subcommand is not allow-listed
+ok 7 runtime-cmd allow-list supports prefix patterns
+ok 8 runtime-cmd requires allow-list in code-or-runtime mode
+ok 9 runtime-cmd uses bash -c instead of eval
+ok 10 run_external_plan_reviews requires passing preflight before invoking reviewers
+ok 11 run_external_plan_reviews retries malformed output and writes reports without mutating the plan
+ok 12 run_external_plan_reviews external CLI timeout kills a hung runner and records failure
+ok 13 run_external_plan_reviews writes ORCH.md fields outside a quoted template example
+ok 14 run_external_plan_reviews can target a selected reviewer only
+ok 15 run_external_plan_reviews supports last-resort manual handoff and response ingest without invoking CLIs
+ok 16 run_external_plan_reviews supports adversarial reviewer with best-effort success
+ok 17 run_external_plan_reviews auto-selects adversarial reviewer for high-risk task and supports primary claude success path
+ok 18 run_external_plan_reviews exits non-zero when all evaluators fail
+ok 19 run_external_plan_reviews exits non-zero when required adversarial reviewer fails even if another reviewer succeeds
+ok 20 run_external_plan_reviews treats empty codex final message as failure
+ok 21 run_external_plan_reviews stops on agy quota exhaustion and asks for user model switch in planning phase
+ok 22 run_external_plan_reviews stops on agy quota exhaustion and asks for user model switch in code phase
+ok 23 run_external_plan_reviews direct Claude quota exhaustion fails closed without explicit fallback
+ok 24 run_external_plan_reviews sends Claude request on stdin and passes explicit registry model
+ok 25 run_external_plan_reviews non-stdin routes do not inherit caller stdin
+ok 26 run_external_plan_reviews does not misdiagnose a CLI's own exit 124 as a timeout
+ok 27 run_with_deadline resets the timeout marker per call so a later CLI-124 is not misdiagnosed
+ok 28 run_external_plan_reviews passes explicit Codex registry model
+ok 29 run_external_plan_reviews stops on Claude model unavailable before parser retry
+ok 30 run_external_plan_reviews reports Claude 401 auth unavailable with sandbox guidance
+ok 31 bundled registry exposes the requested OpenAI and Anthropic lineups
+ok 32 bundled registry registers the Gemini 3.8, Claude 5.5 and GPT-6 lineups with their own cli models
+ok 33 bundled registry aliases: model ids resolve, version-less aliases follow the newest generation, versioned ones stay
+ok 34 bundled registry defaults one reviewer per vendor, with GPT-6.1 Sol at medium effort for OpenAI
+ok 35 bundled agy routes use catalog cli_model values
+ok 36 bundled agy routes are listed by the live agy model catalog (opt-in: CODEGUIDE_LIVE_AGY_CATALOG=1) # skip live agy catalog check is opt-in: set CODEGUIDE_LIVE_AGY_CATALOG=1
+ok 37 run_external_plan_reviews loads runner routes from registry override and still stops on quota
+ok 38 run_external_plan_reviews --help does not require a readable model registry
+ok 39 run_external_plan_reviews rejects invalid task phase before fallback routing
+ok 40 run_external_plan_reviews unregistered reviewer route fails closed before invocation
+ok 41 run_external_plan_reviews rejects registry fallback targets outside known routes
+ok 42 run_external_plan_reviews stops after first exhausted route without fallback invocation
+ok 43 run_external_plan_reviews resolves adversarial evaluator runner aliases
+ok 44 external_review_runner enqueues current-task debate and dry-runs runner participants
+ok 45 external_review_runner treats any coordinator's own current route as manual/current-thread, not only codex
+ok 46 external_review_runner executes agy with current CLI flags and registry model selection
+ok 47 external_review_runner run-once warns and skips a participant whose response already exists without --force
+ok 48 external_review_runner run-once --force suppresses the skip warning and actually reruns the participant
+ok 49 external_review_runner executes codex with preconfigured model selection
+ok 50 external_review_runner passes explicit Codex registry model
+ok 51 external_review_runner preserves auth-unavailable stdout in stderr artifact
+ok 52 external_review_runner classifies Claude 401 auth failure as auth unavailable
+ok 53 run_external_plan_reviews --adversarial-all runs same-vendor peer and cross-vendor reviewers adversarially
+ok 54 run_external_plan_reviews repeatable adversarial evaluators fail closed even with allow-partial-review
+ok 55 run_external_plan_reviews --adversarial-cross-check auto-selects registry vendor peer and cross-vendor reviewers
+ok 56 run_external_plan_reviews --adversarial-cross-check rejects combination with --reviewer
+ok 57 run_external_plan_reviews passes codex reasoning effort for cli_effort routes
+ok 58 external_review_runner dry-run includes codex reasoning effort for cli_effort routes
+ok 59 run_external_plan_reviews blocks sandboxed claude invocation with non-sandboxed remediation
+ok 60 external_review_runner blocks sandboxed claude invocation before running the binary
+ok 61 sandbox guard ignores explicitly falsy codex markers
+ok 62 sandbox guard blocks on a truthy network-disabled marker alone
+ok 63 model registry rejects control characters in registry fields
+ok 64 model registry rejects cli_effort on non-codex runners
+ok 65 sandbox guard trims whitespace before truthiness (parity with python)
+ok 66 sandbox guard fires for any claude_code-kind runner id, not only 'claude'
+ok 67 external_review_runner blocks a second claude_code runner id under a sandbox (regression pin)
+ok 68 run_external_plan_reviews refuses to run when the shared fence reader is unavailable
+ok 69 run_external_plan_reviews refuses rather than silently waiving adversarial review
+ok 70 the risk gate walks every linked decision and falls through cleanly
+ok 71 adversarial accept with present-but-empty debate fields and residual_risk is accepted
+ok 72 adversarial accept rejects a debate field whose key is missing
+ok 73 adversarial accept rejects an empty or missing residual_risk
+ok 74 adversarial revise and blocked reject any empty debate field or residual_risk
+ok 75 adversarial accept, revise, and blocked with every field filled are accepted
+ok 76 standard review field rule is unchanged by the adversarial accept rule
+ok 77 adversarial accept with empty debate fields passes on the first CLI attempt with existing report and provenance format
+ok 78 control: printf into grep -q fails under pipefail on a list larger than the pipe buffer although the line is present
+ok 79 list_has_line finds present lines and rejects absent ones in a list far larger than the pipe buffer
+ok 80 list_has_line answers exactly like grep -Fx
+ok 81 is_shadow_bucket matches whole bucket names only
+ok 82 check_catalog_probe_coverage reports no mismatch when its id lists are far larger than the pipe buffer
+ok 83 strict validation reports an empty shadow graph however long the tracked-file listing is
+ok 84 scripts contain no early-exit pipe consumer fed by printf or echo, and no grep -q or grep -m consumer at all
+bats-exit=0

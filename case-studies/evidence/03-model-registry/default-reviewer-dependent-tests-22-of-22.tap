@@ -1,0 +1,24 @@
+1..22
+ok 1 run_external_plan_reviews supports adversarial reviewer with best-effort success
+ok 2 run_external_plan_reviews auto-selects adversarial reviewer for high-risk task and supports primary claude success path
+ok 3 run_external_plan_reviews exits non-zero when all evaluators fail
+ok 4 run_external_plan_reviews exits non-zero when required adversarial reviewer fails even if another reviewer succeeds
+ok 5 run_external_plan_reviews treats empty codex final message as failure
+ok 6 bundled registry exposes the requested OpenAI and Anthropic lineups
+ok 7 bundled registry registers the Gemini 3.8, Claude 5.5 and GPT-6 lineups with their own cli models
+ok 8 bundled registry aliases: model ids resolve, version-less aliases follow the newest generation, versioned ones stay
+ok 9 bundled registry defaults one reviewer per vendor, with GPT-6.1 Sol at medium effort for OpenAI
+ok 10 run_external_plan_reviews resolves adversarial evaluator runner aliases
+ok 11 run_external_plan_reviews --adversarial-all runs same-vendor peer and cross-vendor reviewers adversarially
+ok 12 run_external_plan_reviews repeatable adversarial evaluators fail closed even with allow-partial-review
+ok 13 run_external_plan_reviews --adversarial-cross-check auto-selects registry vendor peer and cross-vendor reviewers
+ok 14 run_external_plan_reviews --adversarial-cross-check rejects combination with --reviewer
+ok 15 run_external_plan_reviews refuses rather than silently waiving adversarial review
+ok 16 adversarial accept with present-but-empty debate fields and residual_risk is accepted
+ok 17 adversarial accept rejects a debate field whose key is missing
+ok 18 adversarial accept rejects an empty or missing residual_risk
+ok 19 adversarial revise and blocked reject any empty debate field or residual_risk
+ok 20 adversarial accept, revise, and blocked with every field filled are accepted
+ok 21 standard review field rule is unchanged by the adversarial accept rule
+ok 22 adversarial accept with empty debate fields passes on the first CLI attempt with existing report and provenance format
+bats-exit=0

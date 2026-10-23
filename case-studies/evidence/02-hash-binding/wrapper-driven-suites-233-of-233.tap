@@ -1,0 +1,235 @@
+1..233
+ok 1 runtime-cmd blocked by allow-list
+ok 2 runtime-cmd blocks chained shell syntax in allow-list mode
+ok 3 runtime-cmd blocks ampersand shell syntax in allow-list mode
+ok 4 runtime-cmd passes with allow-list match
+ok 5 runtime-cmd allow-list supports executable+subcommand matching
+ok 6 runtime-cmd blocks when executable+subcommand is not allow-listed
+ok 7 runtime-cmd allow-list supports prefix patterns
+ok 8 runtime-cmd requires allow-list in code-or-runtime mode
+ok 9 runtime-cmd uses bash -c instead of eval
+ok 10 run_external_plan_reviews requires passing preflight before invoking reviewers
+ok 11 run_external_plan_reviews retries malformed output and writes reports without mutating the plan
+ok 12 run_external_plan_reviews external CLI timeout kills a hung runner and records failure
+ok 13 run_external_plan_reviews writes ORCH.md fields outside a quoted template example
+ok 14 run_external_plan_reviews can target a selected reviewer only
+ok 15 run_external_plan_reviews supports last-resort manual handoff and response ingest without invoking CLIs
+ok 16 run_external_plan_reviews supports adversarial reviewer with best-effort success
+ok 17 run_external_plan_reviews auto-selects adversarial reviewer for high-risk task and supports primary claude success path
+ok 18 run_external_plan_reviews exits non-zero when all evaluators fail
+ok 19 run_external_plan_reviews exits non-zero when required adversarial reviewer fails even if another reviewer succeeds
+ok 20 run_external_plan_reviews treats empty codex final message as failure
+ok 21 run_external_plan_reviews stops on agy quota exhaustion and asks for user model switch in planning phase
+ok 22 run_external_plan_reviews stops on agy quota exhaustion and asks for user model switch in code phase
+ok 23 run_external_plan_reviews direct Claude quota exhaustion fails closed without explicit fallback
+ok 24 run_external_plan_reviews sends Claude request on stdin and passes explicit registry model
+ok 25 run_external_plan_reviews non-stdin routes do not inherit caller stdin
+ok 26 run_external_plan_reviews does not misdiagnose a CLI's own exit 124 as a timeout
+ok 27 run_with_deadline resets the timeout marker per call so a later CLI-124 is not misdiagnosed
+ok 28 run_external_plan_reviews passes explicit Codex registry model
+ok 29 run_external_plan_reviews stops on Claude model unavailable before parser retry
+ok 30 run_external_plan_reviews reports Claude 401 auth unavailable with sandbox guidance
+ok 31 bundled registry exposes the requested OpenAI and Anthropic lineups
+ok 32 bundled agy routes use catalog cli_model values
+ok 33 run_external_plan_reviews loads runner routes from registry override and still stops on quota
+ok 34 run_external_plan_reviews --help does not require a readable model registry
+ok 35 run_external_plan_reviews rejects invalid task phase before fallback routing
+ok 36 run_external_plan_reviews unregistered reviewer route fails closed before invocation
+ok 37 run_external_plan_reviews rejects registry fallback targets outside known routes
+ok 38 run_external_plan_reviews stops after first exhausted route without fallback invocation
+ok 39 run_external_plan_reviews resolves adversarial evaluator runner aliases
+ok 40 external_review_runner enqueues current-task debate and dry-runs runner participants
+ok 41 external_review_runner treats any coordinator's own current route as manual/current-thread, not only codex
+ok 42 external_review_runner executes agy with current CLI flags and registry model selection
+ok 43 external_review_runner run-once warns and skips a participant whose response already exists without --force
+ok 44 external_review_runner run-once --force suppresses the skip warning and actually reruns the participant
+ok 45 external_review_runner executes codex with preconfigured model selection
+ok 46 external_review_runner passes explicit Codex registry model
+ok 47 external_review_runner preserves auth-unavailable stdout in stderr artifact
+ok 48 external_review_runner classifies Claude 401 auth failure as auth unavailable
+ok 49 run_external_plan_reviews --adversarial-all runs same-vendor peer and cross-vendor reviewers adversarially
+ok 50 run_external_plan_reviews repeatable adversarial evaluators fail closed even with allow-partial-review
+ok 51 run_external_plan_reviews --adversarial-cross-check auto-selects registry vendor peer and cross-vendor reviewers
+ok 52 run_external_plan_reviews --adversarial-cross-check rejects combination with --reviewer
+ok 53 run_external_plan_reviews passes codex reasoning effort for cli_effort routes
+ok 54 external_review_runner dry-run includes codex reasoning effort for cli_effort routes
+ok 55 run_external_plan_reviews blocks sandboxed claude invocation with non-sandboxed remediation
+ok 56 external_review_runner blocks sandboxed claude invocation before running the binary
+ok 57 sandbox guard ignores explicitly falsy codex markers
+ok 58 sandbox guard blocks on a truthy network-disabled marker alone
+ok 59 model registry rejects control characters in registry fields
+ok 60 model registry rejects cli_effort on non-codex runners
+ok 61 sandbox guard trims whitespace before truthiness (parity with python)
+ok 62 sandbox guard fires for any claude_code-kind runner id, not only 'claude'
+ok 63 external_review_runner blocks a second claude_code runner id under a sandbox (regression pin)
+ok 64 run_external_plan_reviews refuses to run when the shared fence reader is unavailable
+ok 65 run_external_plan_reviews refuses rather than silently waiving adversarial review
+ok 66 the risk gate walks every linked decision and falls through cleanly
+ok 67 adversarial accept with present-but-empty debate fields and residual_risk is accepted
+ok 68 adversarial accept rejects a debate field whose key is missing
+ok 69 adversarial accept rejects an empty or missing residual_risk
+ok 70 adversarial revise and blocked reject any empty debate field or residual_risk
+ok 71 adversarial accept, revise, and blocked with every field filled are accepted
+ok 72 standard review field rule is unchanged by the adversarial accept rule
+ok 73 adversarial accept with empty debate fields passes on the first CLI attempt with existing report and provenance format
+ok 74 upsert_field skips empty values on existing non-empty fields
+ok 75 upsert_field allows empty overwrite with --allow-empty-overwrite
+ok 76 axis fields are not overwritten when empty
+ok 77 infer_task_id: explicit --task-id has highest priority
+ok 78 infer_task_id: branch pattern takes priority over latest task file
+ok 79 run_codeguide strips one TASK- prefix without creating TASK-TASK-* artifacts
+ok 80 skills package root can resolve to parent project docs root
+ok 81 ordinary nested git repo does not borrow parent project docs root
+ok 82 run_codeguide bootstraps orchestration doc for active task
+ok 83 approved preflight rejects placeholder approval metadata before recording or external review
+ok 84 run_codeguide and validate_docs reject evaluator identity recorders consistently
+ok 85 task-index places row under correct status section
+ok 86 task-index prevents duplicate rows
+ok 87 run_codeguide reports docs-only scope by default
+ok 88 run_codeguide forwards risk_level into generated docs
+ok 89 run_codeguide fails clearly when option value is missing
+ok 90 run_codeguide requires risk preflight before delegated orchestration
+ok 91 run_codeguide records blocked delegation when preflight requires approval
+ok 92 run_codeguide reports code-or-runtime when runtime cmd provided
+ok 93 run_codeguide passes shadow note through to project shadow
+ok 94 SKILL.md documents pre-orchestration risk approval gate
+ok 95 run_codeguide bootstraps initial plan doc for active task
+ok 96 decision-index places row under correct status section
+ok 97 decision-index prevents duplicate rows
+ok 98 decision-index migrates legacy table format
+ok 99 run_codeguide works in non-git directory with info message
+ok 100 run_codeguide in non-git falls back to latest task file when no explicit id
+ok 101 run_codeguide in non-git requires --task-id when multiple active tasks exist
+ok 102 run_codeguide in non-git with no tasks uses timestamp fallback
+ok 103 branch inference resolves through the source repo in the skills layout
+ok 104 run_codeguide on a main trunk branch writes a per-task decision file
+ok 105 run_codeguide stops before docs mutation and runtime validation when the required external review gate is unsatisfied
+ok 106 run_codeguide also blocks closing a gated task as done while the review gate is unsatisfied
+ok 107 run_codeguide still proceeds to runtime validation past ordinary advisory warnings
+ok 108 run_codeguide re-syncs a closed gated task but blocks reopening it without the review
+ok 109 run_codeguide does not apply the review gate to a planning-only run
+ok 110 run_codeguide proceeds past the review gate with complete wrapper evidence and keeps the ORCH approval metadata
+ok 111 run_codeguide default options do not overwrite an existing external-review ORCH capsule
+ok 112 doc_garden default options do not overwrite an existing external-review ORCH capsule
+ok 113 an explicit option still overwrites the matching ORCH field (only implicit defaults are held back)
+ok 114 a preflight recorded for one execution mode is never carried across an explicit mode change
+ok 115 default options keep a blocked delegation blocked while the preflight still needs approval
+ok 116 default options keep an existing solo delegation_note instead of the generic default
+ok 117 doc_garden preserves backslashes in field values
+ok 118 doc_garden writes shared risk_level to task and decision docs
+ok 119 doc_garden concurrent task updates keep both index rows
+ok 120 doc_garden records blocked delegation when preflight still needs approval
+ok 121 doc_garden rejects external_cli review with pass preflight
+ok 122 doc_garden accepts canonical codex current-task debate orchestration fields
+ok 123 doc_garden accepts canonical claude native subagent orchestration fields
+ok 124 orchestration enum contract stays aligned across references and producers
+ok 125 doc_garden scaffold orchestration validates without enum template warnings
+ok 126 doc_garden rejects external-runner as risk preflight recorder
+ok 127 doc_garden refreshes shadow graph and keeps change note router-only
+ok 128 doc_garden router no-op refresh (same task, same note) leaves the file byte-identical
+ok 129 doc_garden router bumps last_updated only when task or note actually differs
+ok 130 doc_garden never bumps bucket or global shadow metadata docs across refreshes
+ok 131 doc_garden rejects git_diff shadow refresh without explicit range
+ok 132 doc_garden fails clearly when option value is missing
+ok 133 doc_garden requires risk preflight before delegated orchestration is recorded
+ok 134 doc_garden rejects invalid task id characters
+ok 135 doc_garden rejects invalid decision id characters
+ok 136 doc_garden rejects invalid task status enum
+ok 137 doc_garden rejects invalid scope type enum
+ok 138 doc_garden rejects invalid decision status enum
+ok 139 doc_garden resume-checkpoint writes all four script-maintained fields
+ok 140 doc_garden resume-checkpoint split-root fixture resolves the source repo via the marker file
+ok 141 doc_garden resume-checkpoint is deterministic apart from checkpointed_at and revision
+ok 142 doc_garden resume-checkpoint increments resume_state_revision across runs and resets from a non-numeric value
+ok 143 doc_garden resume-checkpoint caps resume_changed_files at 10 entries with a (+N more) suffix
+ok 144 doc_garden resume-checkpoint writes no-source-repo when no source repo is reachable
+ok 145 doc_garden resume-checkpoint pass-through options land the three agent-maintained fields
+ok 146 doc_garden resume-checkpoint does not touch the shadow graph or any other doc mutation
+ok 147 doc_garden rejects --resume-checkpoint without --task-id
+ok 148 doc_garden rejects resume pass-through options without --resume-checkpoint
+ok 149 doc_garden rejects --resume-checkpoint for a task file that does not exist yet
+ok 150 resume checkpoint records an unborn source-repo HEAD instead of dying
+ok 151 resume checkpoint preserves special characters verbatim in agent fields
+ok 152 concurrent resume checkpoints serialize and never lose revision increments
+ok 153 doc_garden does not rewrite a fenced example line as if it were the real field
+ok 154 doc_garden edits the line sed addresses when a capsule carries a carriage return
+ok 155 doc_garden does not rewrite a fenced example when a carriage return shifts the line count
+ok 156 doc_garden targets a column-0 field line, not any line that contains the key
+ok 157 doc_garden writes a task-index row outside a quoted row-format example
+ok 158 doc_garden writes a decision-index row outside a quoted row-format example
+ok 159 doc_garden refuses to append a field to a capsule that ends inside an unterminated fence
+ok 160 doc_garden refuses to edit a capsule when the shared fence reader is unavailable
+ok 161 doc_garden refuses to append an index ROW into an unterminated fence
+ok 162 doc_garden refuses to append a task-index ROW into an unterminated fence
+ok 163 ensure_decision_index_sections creates the REAL heading when a fence quotes one
+ok 164 doc_garden inserts an index row under the FIRST unfenced section heading
+ok 165 doc_garden deletes EVERY stale index row, not just the first
+ok 166 doc_garden refuses to overwrite a decision linked to a different task
+ok 167 doc_garden refuses a task-less --decision-id reuse that would clobber a task-owned decision
+ok 168 doc_garden trims a trailing-space linked task before the ownership comparison
+ok 169 doc_garden updates a decision linked to the same task without error
+ok 170 GUARD-01 no real agy/claude/codex/gemini/antigravity is reachable from the test PATH
+ok 171 GUARD-02 the tripwire records and refuses any CLI name that is not a mock
+ok 172 TC-01 adversarial accept with present-but-empty debate fields: one attempt, full artifact set, evidence verified, strict gate passes
+ok 173 TC-02 adversarial accept with every debate field filled is still approved end to end
+ok 174 TC-03 standard accept: the standard field rule is unchanged and the result passes the gate
+ok 175 TC-04 adversarial accept with a MISSING debate key is rejected, unlike the same response with the key present but empty
+ok 176 TC-05 adversarial accept with residual_risk missing or empty is rejected
+ok 177 TC-06 revise and blocked: filled responses are format-valid but never approve; an empty debate value is rejected by the parser
+ok 178 TC-07 an accepted response without its Request file is not approved
+ok 179 TC-08 an accepted response without its Provenance manifest is not approved
+ok 180 TC-09 a Response edited after review fails the SHA-256 binding and the gate
+ok 181 TC-10 any identifier mismatch (task, plan version, round, route, request/response linkage) is rejected
+ok 182 TC-11 run_codeguide refuses the in_progress transition without an approved review: non-zero, no runtime, no state or metadata change
+ok 183 TC-12 after an approved empty-debate adversarial accept, run_codeguide enters in_progress and runs only the allowed mock runtime command
+ok 184 TC-13 with two required routes, implementation is blocked until BOTH are genuine accepts
+ok 185 TC-14 a status carrying a note (in_progress (resumed)) cannot bypass an unapproved review
+ok 186 TC-15 a default-option run_codeguide leaves an existing external_cli ORCH approval and review metadata intact
+ok 187 TC-16 a waiver is honoured only for an existing accepted user decision linked to the task
+ok 188 PARITY-01 for every response variant the wrapper parser and the evidence verifier agree
+ok 189 TC-17 a PLAN edited after its review is refused by the verifier and the gate (plan_sha256)
+ok 190 TC-18 an altered Request payload is refused by the verifier and the gate (request_sha256)
+ok 191 TC-19 a manifest recorded before plan and request hashing is refused: the reason asks for a new review round
+ok 192 TC-20 a request whose recorded plan hash disagrees with the manifest is refused
+ok 193 TC-21 a missing plan file cannot be verified, so the review is refused rather than assumed current
+ok 194 KNOWN-LIMITATION KL-3 work that skips the harness is not gated: a planning-only run on an unapproved review exits 0
+ok 195 KNOWN-LIMITATION KL-4 an agent that leaves external_review_required_for empty makes the task look review-free
+ok 196 KNOWN-LIMITATION KL-5 a done task's approval history is not re-checked (strict ignores it, the gate skips it)
+ok 197 shadow_v2_gate_skeleton prints a no-write Phase 0 contract
+ok 198 shadow_v2_gate_skeleton activates hints only after project scope is verified
+ok 199 shadow_v2_gate_skeleton blocks external review by default and disables batch apply
+ok 200 shadow_v2_gate_skeleton blocks combined close when required external review is blocked
+ok 201 shadow_v2_gate_skeleton requires durable accepted internal review artifact before close completion
+ok 202 shadow_v2_gate_skeleton requires durable accepted external review artifact before close completion
+ok 203 shadow_v2_gate_skeleton ignores optional blocked external close route
+ok 204 shadow_v2_gate_skeleton rejects hint evidence for confirmed facts
+ok 205 shadow_v2_gate_skeleton rejects generic user decisions and final apply as fact evidence
+ok 206 shadow_v2_user_decision_assistant turns source probes into bounded user questions
+ok 207 shadow_v2_user_decision_assistant groups bounded questions without answering them
+ok 208 shadow_v2_user_decision_assistant enforces project-scope hint activation
+ok 209 shadow_v2_user_decision_assistant does not hang when stdin is an open pipe with no data
+ok 210 shadow_v2_user_decision_assistant surfaces writer user-decision command hints
+ok 211 shadow_v2_user_decision_assistant blocks forged writer command hints
+ok 212 shadow_v2_user_decision_assistant blocks external reviewer command hint tools
+ok 213 shadow_v2_user_decision_assistant renders command text only from validated argv
+ok 214 shadow_v2_user_decision_assistant rejects python command smuggling
+ok 215 shadow_v2_user_decision_assistant rejects duplicate decision flags
+ok 216 shadow_v2_user_decision_assistant rejects spoofed wrapper paths
+ok 217 shadow_v2_user_decision_assistant refuses outputs under docs shadow
+ok 218 shadow_v2_review_packet_generator emits bounded internal review packets
+ok 219 shadow_v2_review_packet_generator carries plural source_refs into the packet
+ok 220 shadow_v2_review_packet_generator combines singular and plural refs within the limit
+ok 221 shadow_v2_review_packet_generator bounds plural refs with deduped input order
+ok 222 shadow_v2_review_packet_generator refuses artifact inputs outside project root
+ok 223 shadow_v2_review_packet_generator blocks external route unless requested
+ok 224 shadow_v2_review_packet_generator refuses outputs under docs shadow
+ok 225 shadow_v2_pipeline_wrapper emits incomplete dry-run plans without executing commands
+ok 226 shadow_v2_pipeline_wrapper writer command is dry-run only
+ok 227 shadow_v2_pipeline_wrapper blocks external review route without approval
+ok 228 shadow_v2_pipeline_wrapper blocks combined close when required external review is blocked
+ok 229 shadow_v2_pipeline_wrapper requires external close artifact provenance
+ok 230 shadow_v2_pipeline_wrapper refuses outputs under docs shadow
+ok 231 shadow_v2_gate_skeleton blocks a declared non-antigravity evaluator despite an agy filename
+ok 232 shadow_v2 close gate accepts an adversarial accept with empty debate fields in any field order
+ok 233 shadow_v2 close gate blocks an adversarial accept missing a debate key or with empty residual_risk
+bats-exit=0

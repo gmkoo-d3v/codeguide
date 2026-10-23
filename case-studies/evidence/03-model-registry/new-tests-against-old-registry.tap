@@ -1,0 +1,271 @@
+1..4
+ok 1 bundled registry exposes the requested OpenAI and Anthropic lineups
+not ok 2 bundled registry registers the Gemini 3.8, Claude 5.5 and GPT-6 lineups with their own cli models
+# (from function `assert_contains' in file <scratch>/reg-mut/tests/codeguide_helper.bash, line 220,
+#  from function `registry_has_line' in file <scratch>/reg-mut/tests/external_review.bats, line 1802,
+#  in test file <scratch>/reg-mut/tests/external_review.bats, line 1813)
+#   `registry_has_line "$rows" $'model\tagy:gemini-3.8-flash-high\tagy\tgemini-3.8-flash-high\tagy-gemini-shared\tGemini 3.8 Flash (High)\tgoogle\t\t'' failed
+# Initialized project docs scaffold under: <tmp>/tmp.ujQQAU4bbv/repo/docs
+# Repository root: <tmp>/tmp.ujQQAU4bbv/repo
+# Created directories:
+#   - <tmp>/tmp.ujQQAU4bbv/repo/docs/task
+#   - <tmp>/tmp.ujQQAU4bbv/repo/docs/shadow
+#   - <tmp>/tmp.ujQQAU4bbv/repo/docs/decisions
+#   - <tmp>/tmp.ujQQAU4bbv/repo/docs/plan
+#   - <tmp>/tmp.ujQQAU4bbv/repo/docs/report
+#   - <tmp>/tmp.ujQQAU4bbv/repo/docs/orchestration
+#   - <tmp>/tmp.ujQQAU4bbv/repo/docs/issues
+# Template files are created only when missing.
+# assert_contains failed
+#   expected to find:
+# model	agy:gemini-3.8-flash-high	agy	gemini-3.8-flash-high	agy-gemini-shared	Gemini 3.8 Flash (High)	google
+#
+#   in:
+# default_model	agy:current
+# default_task_phase	planning
+# alias	agy-current	agy:current
+# alias	agy	agy:current
+# alias	antigravity-current	agy:current
+# alias	antigravity	agy:current
+# alias	agy-gemini-3.6-flash-medium	agy:gemini-3.6-flash-medium
+# alias	agy-gemini-3.6-flash-high	agy:gemini-3.6-flash-high
+# alias	agy-gemini-3.6-flash-low	agy:gemini-3.6-flash-low
+# alias	agy-gemini-3.7-flash-high	agy:gemini-3.7-flash-high
+# alias	agy-gemini-3.7-flash-medium	agy:gemini-3.7-flash-medium
+# alias	agy-gemini-3.7-flash-low	agy:gemini-3.7-flash-low
+# alias	agy-gemini-3.1-pro-low	agy:gemini-3.1-pro-low
+# alias	agy-gemini-3.1-pro-high	agy:gemini-3.1-pro-high
+# alias	agy-claude-sonnet-4.6-thinking	agy:claude-sonnet-4.6-thinking
+# alias	agy-sonnet-thinking	agy:claude-sonnet-4.6-thinking
+# alias	agy-claude-opus-4.6-thinking	agy:claude-opus-4.6-thinking
+# alias	agy-opus-thinking	agy:claude-opus-4.6-thinking
+# alias	agy-gpt-oss-120b-medium	agy:gpt-oss-120b-medium
+# alias	agy-gpt-oss-120b	agy:gpt-oss-120b-medium
+# alias	claude-current	claude:current
+# alias	claude	claude:current
+# alias	claude-sonnet-5	claude:sonnet-5
+# alias	claude-sonnet-latest	claude:sonnet-5
+# alias	claude-sonnet-xhigh	claude:sonnet-xhigh
+# alias	claude-fable-5	claude:fable-5
+# alias	claude-fable-direct	claude:fable-5
+# alias	claude-fable-latest	claude:fable-5
+# alias	claude-opus-4.8	claude:opus-4.8
+# alias	claude-opus-direct	claude:opus-4.8
+# alias	claude-opus-4.7	claude:opus-4.7-legacy
+# alias	claude-opus-4.7-legacy	claude:opus-4.7-legacy
+# alias	claude-sonnet-4.6	claude:sonnet-4.6
+# alias	claude-sonnet-direct	claude:sonnet-5
+# alias	claude-haiku-4.5	claude:haiku-4.5
+# alias	claude-haiku-direct	claude:haiku-4.5
+# alias	claude-opus-4.6-legacy	claude:opus-4.6-legacy
+# alias	claude-opus-legacy	claude:opus-4.7-legacy
+# alias	codex-current	codex:current
+# alias	codex	codex:current
+# alias	codex-gpt-5.6-sol	codex:gpt-5.6-sol-medium
+# alias	codex-5.6-sol	codex:gpt-5.6-sol-medium
+# alias	codex-gpt-5.6-terra	codex:gpt-5.6-terra
+# alias	codex-5.6-terra	codex:gpt-5.6-terra
+# alias	codex-gpt-5.6-luna	codex:gpt-5.6-luna
+# alias	codex-5.6-luna	codex:gpt-5.6-luna
+# alias	codex-gpt-5.3-codex-spark	codex:gpt-5.3-codex-spark
+# alias	codex-5.3-spark	codex:gpt-5.3-codex-spark
+# alias	codex-gpt-5.6-sol-high	codex:gpt-5.6-sol-high
+# alias	codex-5.6-sol-high	codex:gpt-5.6-sol-high
+# alias	codex-gpt-5.6-sol-medium	codex:gpt-5.6-sol-medium
+# alias	codex-5.6-sol-medium	codex:gpt-5.6-sol-medium
+# alias	codex-gpt-5.6-sol-xhigh	codex:gpt-5.6-sol-xhigh
+# alias	codex-5.6-sol-xhigh	codex:gpt-5.6-sol-xhigh
+# alias	codex-gpt-5.6-terra-medium	codex:gpt-5.6-terra-medium
+# alias	codex-5.6-terra-medium	codex:gpt-5.6-terra-medium
+# alias	codex-gpt-5.6-terra-high	codex:gpt-5.6-terra-high
+# alias	codex-5.6-terra-high	codex:gpt-5.6-terra-high
+# runner	agy	agy	CODEGUIDE_ANTIGRAVITY_BIN	agy
+# runner	claude	claude	CODEGUIDE_CLAUDE_BIN	claude_code
+# runner	codex	codex	CODEGUIDE_CODEX_BIN	codex_cli
+# model	agy:current	agy	preconfigured-runtime	agy-preconfigured-runtime	Antigravity preconfigured runtime	google
+# model	agy:gemini-3.6-flash-medium	agy	gemini-3.6-flash-medium	agy-gemini-shared	Gemini 3.6 Flash (Medium)	google
+# model	agy:gemini-3.6-flash-high	agy	gemini-3.6-flash-high	agy-gemini-shared	Gemini 3.6 Flash (High)	google
+# model	agy:gemini-3.6-flash-low	agy	gemini-3.6-flash-low	agy-gemini-shared	Gemini 3.6 Flash (Low)	google
+# model	agy:gemini-3.7-flash-high	agy	gemini-3.7-flash-high	agy-gemini-shared	Gemini 3.7 Flash (High)	google
+# model	agy:gemini-3.7-flash-medium	agy	gemini-3.7-flash-medium	agy-gemini-shared	Gemini 3.7 Flash (Medium)	google
+# model	agy:gemini-3.7-flash-low	agy	gemini-3.7-flash-low	agy-gemini-shared	Gemini 3.7 Flash (Low)	google
+# model	agy:gemini-3.1-pro-low	agy	gemini-3.1-pro-low	agy-gemini-shared	Gemini 3.1 Pro (Low)	google
+# model	agy:gemini-3.1-pro-high	agy	gemini-3.1-pro-high	agy-gemini-shared	Gemini 3.1 Pro (High)	google
+# model	agy:claude-sonnet-4.6-thinking	agy	claude-sonnet-4-6	agy-third-party-shared	Claude Sonnet 4.6 (Thinking)	anthropic
+# model	agy:claude-opus-4.6-thinking	agy	claude-opus-4-6-thinking	agy-third-party-shared	Claude Opus 4.6 (Thinking)	anthropic
+# model	agy:gpt-oss-120b-medium	agy	gpt-oss-120b-medium	agy-third-party-shared	GPT-OSS 120B (Medium)	openai
+# model	claude:current	claude	preconfigured-runtime	claude-preconfigured-runtime	Claude preconfigured runtime	anthropic
+# model	claude:sonnet-5	claude	claude-sonnet-5	claude-direct-subscription	Claude Sonnet 5	anthropic	claude:fable-5
+# model	claude:sonnet-xhigh	claude	claude-sonnet-5	claude-direct-subscription	Claude Sonnet 5 (xhigh effort)	anthropic
+# model	claude:fable-5	claude	claude-fable-5	claude-direct-subscription	Claude Fable 5	anthropic	claude:sonnet-5
+# model	claude:opus-4.8	claude	opus-4.8	claude-direct-subscription	Opus 4.8	anthropic
+# model	claude:sonnet-4.6	claude	sonnet-4.6	claude-direct-subscription	Sonnet 4.6	anthropic
+# model	claude:haiku-4.5	claude	haiku-4.5	claude-direct-subscription	Haiku 4.5	anthropic
+# model	claude:opus-4.7-legacy	claude	opus-4.7	claude-direct-subscription	Opus 4.7 Legacy	anthropic
+# model	claude:opus-4.6-legacy	claude	opus-4.6	claude-direct-subscription	Opus 4.6 Legacy	anthropic
+# model	codex:current	codex	preconfigured-runtime	codex-preconfigured-runtime	Codex preconfigured runtime	openai
+# model	codex:gpt-5.6-sol	codex	gpt-5.6-sol	codex-direct-subscription	GPT-5.6 Sol	openai
+# model	codex:gpt-5.6-sol-high	codex	gpt-5.6-sol	codex-direct-subscription	GPT-5.6 Sol (High)	openai		high
+# model	codex:gpt-5.6-sol-medium	codex	gpt-5.6-sol	codex-direct-subscription	GPT-5.6 Sol (Medium)	openai		medium
+# model	codex:gpt-5.6-sol-xhigh	codex	gpt-5.6-sol	codex-direct-subscription	GPT-5.6 Sol (xhigh)	openai		xhigh
+# model	codex:gpt-5.6-terra	codex	gpt-5.6-terra	codex-direct-subscription	GPT-5.6 Terra	openai
+# model	codex:gpt-5.6-terra-medium	codex	gpt-5.6-terra	codex-direct-subscription	GPT-5.6 Terra (Medium)	openai		medium
+# model	codex:gpt-5.6-terra-high	codex	gpt-5.6-terra	codex-direct-subscription	GPT-5.6 Terra (High)	openai		high
+# model	codex:gpt-5.6-luna	codex	gpt-5.6-luna	codex-direct-subscription	GPT-5.6 Luna	openai
+# model	codex:gpt-5.3-codex-spark	codex	gpt-5.3-codex-spark	codex-preconfigured-runtime	GPT-5.3 Codex Spark	openai
+# default_reviewer	agy:current
+# default_reviewer	claude:current
+# default_reviewer	codex:gpt-5.6-terra-medium
+# vendor_default_reviewer	google	agy:current
+# vendor_default_reviewer	anthropic	claude:current
+# vendor_default_reviewer	openai	codex:gpt-5.6-terra-medium
+# quota_pattern	quota
+# quota_pattern	limit exceeded
+# quota_pattern	exhausted
+# quota_pattern	rate limit
+# quota_pattern	429
+# quota_pattern	resource_exhausted
+# quota_pattern	RESOURCE_EXHAUSTED
+#
+not ok 3 bundled registry aliases: model ids resolve, version-less aliases follow the newest generation, versioned ones stay
+# (from function `assert_contains' in file <scratch>/reg-mut/tests/codeguide_helper.bash, line 220,
+#  from function `registry_has_line' in file <scratch>/reg-mut/tests/external_review.bats, line 1802,
+#  in test file <scratch>/reg-mut/tests/external_review.bats, line 1842)
+#   `registry_has_line "$rows" $'alias\tclaude-opus-5-5\tclaude:opus-5.5'' failed
+# Initialized project docs scaffold under: <tmp>/tmp.xD27HADoBU/repo/docs
+# Repository root: <tmp>/tmp.xD27HADoBU/repo
+# Created directories:
+#   - <tmp>/tmp.xD27HADoBU/repo/docs/task
+#   - <tmp>/tmp.xD27HADoBU/repo/docs/shadow
+#   - <tmp>/tmp.xD27HADoBU/repo/docs/decisions
+#   - <tmp>/tmp.xD27HADoBU/repo/docs/plan
+#   - <tmp>/tmp.xD27HADoBU/repo/docs/report
+#   - <tmp>/tmp.xD27HADoBU/repo/docs/orchestration
+#   - <tmp>/tmp.xD27HADoBU/repo/docs/issues
+# Template files are created only when missing.
+# assert_contains failed
+#   expected to find:
+# alias	claude-opus-5-5	claude:opus-5.5
+#
+#   in:
+# default_model	agy:current
+# default_task_phase	planning
+# alias	agy-current	agy:current
+# alias	agy	agy:current
+# alias	antigravity-current	agy:current
+# alias	antigravity	agy:current
+# alias	agy-gemini-3.6-flash-medium	agy:gemini-3.6-flash-medium
+# alias	agy-gemini-3.6-flash-high	agy:gemini-3.6-flash-high
+# alias	agy-gemini-3.6-flash-low	agy:gemini-3.6-flash-low
+# alias	agy-gemini-3.7-flash-high	agy:gemini-3.7-flash-high
+# alias	agy-gemini-3.7-flash-medium	agy:gemini-3.7-flash-medium
+# alias	agy-gemini-3.7-flash-low	agy:gemini-3.7-flash-low
+# alias	agy-gemini-3.1-pro-low	agy:gemini-3.1-pro-low
+# alias	agy-gemini-3.1-pro-high	agy:gemini-3.1-pro-high
+# alias	agy-claude-sonnet-4.6-thinking	agy:claude-sonnet-4.6-thinking
+# alias	agy-sonnet-thinking	agy:claude-sonnet-4.6-thinking
+# alias	agy-claude-opus-4.6-thinking	agy:claude-opus-4.6-thinking
+# alias	agy-opus-thinking	agy:claude-opus-4.6-thinking
+# alias	agy-gpt-oss-120b-medium	agy:gpt-oss-120b-medium
+# alias	agy-gpt-oss-120b	agy:gpt-oss-120b-medium
+# alias	claude-current	claude:current
+# alias	claude	claude:current
+# alias	claude-sonnet-5	claude:sonnet-5
+# alias	claude-sonnet-latest	claude:sonnet-5
+# alias	claude-sonnet-xhigh	claude:sonnet-xhigh
+# alias	claude-fable-5	claude:fable-5
+# alias	claude-fable-direct	claude:fable-5
+# alias	claude-fable-latest	claude:fable-5
+# alias	claude-opus-4.8	claude:opus-4.8
+# alias	claude-opus-direct	claude:opus-4.8
+# alias	claude-opus-4.7	claude:opus-4.7-legacy
+# alias	claude-opus-4.7-legacy	claude:opus-4.7-legacy
+# alias	claude-sonnet-4.6	claude:sonnet-4.6
+# alias	claude-sonnet-direct	claude:sonnet-5
+# alias	claude-haiku-4.5	claude:haiku-4.5
+# alias	claude-haiku-direct	claude:haiku-4.5
+# alias	claude-opus-4.6-legacy	claude:opus-4.6-legacy
+# alias	claude-opus-legacy	claude:opus-4.7-legacy
+# alias	codex-current	codex:current
+# alias	codex	codex:current
+# alias	codex-gpt-5.6-sol	codex:gpt-5.6-sol-medium
+# alias	codex-5.6-sol	codex:gpt-5.6-sol-medium
+# alias	codex-gpt-5.6-terra	codex:gpt-5.6-terra
+# alias	codex-5.6-terra	codex:gpt-5.6-terra
+# alias	codex-gpt-5.6-luna	codex:gpt-5.6-luna
+# alias	codex-5.6-luna	codex:gpt-5.6-luna
+# alias	codex-gpt-5.3-codex-spark	codex:gpt-5.3-codex-spark
+# alias	codex-5.3-spark	codex:gpt-5.3-codex-spark
+# alias	codex-gpt-5.6-sol-high	codex:gpt-5.6-sol-high
+# alias	codex-5.6-sol-high	codex:gpt-5.6-sol-high
+# alias	codex-gpt-5.6-sol-medium	codex:gpt-5.6-sol-medium
+# alias	codex-5.6-sol-medium	codex:gpt-5.6-sol-medium
+# alias	codex-gpt-5.6-sol-xhigh	codex:gpt-5.6-sol-xhigh
+# alias	codex-5.6-sol-xhigh	codex:gpt-5.6-sol-xhigh
+# alias	codex-gpt-5.6-terra-medium	codex:gpt-5.6-terra-medium
+# alias	codex-5.6-terra-medium	codex:gpt-5.6-terra-medium
+# alias	codex-gpt-5.6-terra-high	codex:gpt-5.6-terra-high
+# alias	codex-5.6-terra-high	codex:gpt-5.6-terra-high
+# runner	agy	agy	CODEGUIDE_ANTIGRAVITY_BIN	agy
+# runner	claude	claude	CODEGUIDE_CLAUDE_BIN	claude_code
+# runner	codex	codex	CODEGUIDE_CODEX_BIN	codex_cli
+# model	agy:current	agy	preconfigured-runtime	agy-preconfigured-runtime	Antigravity preconfigured runtime	google
+# model	agy:gemini-3.6-flash-medium	agy	gemini-3.6-flash-medium	agy-gemini-shared	Gemini 3.6 Flash (Medium)	google
+# model	agy:gemini-3.6-flash-high	agy	gemini-3.6-flash-high	agy-gemini-shared	Gemini 3.6 Flash (High)	google
+# model	agy:gemini-3.6-flash-low	agy	gemini-3.6-flash-low	agy-gemini-shared	Gemini 3.6 Flash (Low)	google
+# model	agy:gemini-3.7-flash-high	agy	gemini-3.7-flash-high	agy-gemini-shared	Gemini 3.7 Flash (High)	google
+# model	agy:gemini-3.7-flash-medium	agy	gemini-3.7-flash-medium	agy-gemini-shared	Gemini 3.7 Flash (Medium)	google
+# model	agy:gemini-3.7-flash-low	agy	gemini-3.7-flash-low	agy-gemini-shared	Gemini 3.7 Flash (Low)	google
+# model	agy:gemini-3.1-pro-low	agy	gemini-3.1-pro-low	agy-gemini-shared	Gemini 3.1 Pro (Low)	google
+# model	agy:gemini-3.1-pro-high	agy	gemini-3.1-pro-high	agy-gemini-shared	Gemini 3.1 Pro (High)	google
+# model	agy:claude-sonnet-4.6-thinking	agy	claude-sonnet-4-6	agy-third-party-shared	Claude Sonnet 4.6 (Thinking)	anthropic
+# model	agy:claude-opus-4.6-thinking	agy	claude-opus-4-6-thinking	agy-third-party-shared	Claude Opus 4.6 (Thinking)	anthropic
+# model	agy:gpt-oss-120b-medium	agy	gpt-oss-120b-medium	agy-third-party-shared	GPT-OSS 120B (Medium)	openai
+# model	claude:current	claude	preconfigured-runtime	claude-preconfigured-runtime	Claude preconfigured runtime	anthropic
+# model	claude:sonnet-5	claude	claude-sonnet-5	claude-direct-subscription	Claude Sonnet 5	anthropic	claude:fable-5
+# model	claude:sonnet-xhigh	claude	claude-sonnet-5	claude-direct-subscription	Claude Sonnet 5 (xhigh effort)	anthropic
+# model	claude:fable-5	claude	claude-fable-5	claude-direct-subscription	Claude Fable 5	anthropic	claude:sonnet-5
+# model	claude:opus-4.8	claude	opus-4.8	claude-direct-subscription	Opus 4.8	anthropic
+# model	claude:sonnet-4.6	claude	sonnet-4.6	claude-direct-subscription	Sonnet 4.6	anthropic
+# model	claude:haiku-4.5	claude	haiku-4.5	claude-direct-subscription	Haiku 4.5	anthropic
+# model	claude:opus-4.7-legacy	claude	opus-4.7	claude-direct-subscription	Opus 4.7 Legacy	anthropic
+# model	claude:opus-4.6-legacy	claude	opus-4.6	claude-direct-subscription	Opus 4.6 Legacy	anthropic
+# model	codex:current	codex	preconfigured-runtime	codex-preconfigured-runtime	Codex preconfigured runtime	openai
+# model	codex:gpt-5.6-sol	codex	gpt-5.6-sol	codex-direct-subscription	GPT-5.6 Sol	openai
+# model	codex:gpt-5.6-sol-high	codex	gpt-5.6-sol	codex-direct-subscription	GPT-5.6 Sol (High)	openai		high
+# model	codex:gpt-5.6-sol-medium	codex	gpt-5.6-sol	codex-direct-subscription	GPT-5.6 Sol (Medium)	openai		medium
+# model	codex:gpt-5.6-sol-xhigh	codex	gpt-5.6-sol	codex-direct-subscription	GPT-5.6 Sol (xhigh)	openai		xhigh
+# model	codex:gpt-5.6-terra	codex	gpt-5.6-terra	codex-direct-subscription	GPT-5.6 Terra	openai
+# model	codex:gpt-5.6-terra-medium	codex	gpt-5.6-terra	codex-direct-subscription	GPT-5.6 Terra (Medium)	openai		medium
+# model	codex:gpt-5.6-terra-high	codex	gpt-5.6-terra	codex-direct-subscription	GPT-5.6 Terra (High)	openai		high
+# model	codex:gpt-5.6-luna	codex	gpt-5.6-luna	codex-direct-subscription	GPT-5.6 Luna	openai
+# model	codex:gpt-5.3-codex-spark	codex	gpt-5.3-codex-spark	codex-preconfigured-runtime	GPT-5.3 Codex Spark	openai
+# default_reviewer	agy:current
+# default_reviewer	claude:current
+# default_reviewer	codex:gpt-5.6-terra-medium
+# vendor_default_reviewer	google	agy:current
+# vendor_default_reviewer	anthropic	claude:current
+# vendor_default_reviewer	openai	codex:gpt-5.6-terra-medium
+# quota_pattern	quota
+# quota_pattern	limit exceeded
+# quota_pattern	exhausted
+# quota_pattern	rate limit
+# quota_pattern	429
+# quota_pattern	resource_exhausted
+# quota_pattern	RESOURCE_EXHAUSTED
+#
+not ok 4 bundled agy routes use catalog cli_model values
+# (in test file <scratch>/reg-mut/tests/external_review.bats, line 1916)
+#   `[ "$status" -eq 0 ]' failed
+# Initialized project docs scaffold under: <tmp>/tmp.c4DMkTDEPY/repo/docs
+# Repository root: <tmp>/tmp.c4DMkTDEPY/repo
+# Created directories:
+#   - <tmp>/tmp.c4DMkTDEPY/repo/docs/task
+#   - <tmp>/tmp.c4DMkTDEPY/repo/docs/shadow
+#   - <tmp>/tmp.c4DMkTDEPY/repo/docs/decisions
+#   - <tmp>/tmp.c4DMkTDEPY/repo/docs/plan
+#   - <tmp>/tmp.c4DMkTDEPY/repo/docs/report
+#   - <tmp>/tmp.c4DMkTDEPY/repo/docs/orchestration
+#   - <tmp>/tmp.c4DMkTDEPY/repo/docs/issues
+# Template files are created only when missing.
+bats-exit=1
