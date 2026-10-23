@@ -41,6 +41,8 @@ build/
 .serena/
 .gemini/
 .claude/
+# Retired material lives outside this repository (see the project layout), never inside it
+archive/
 .cache/
 tmp/
 
