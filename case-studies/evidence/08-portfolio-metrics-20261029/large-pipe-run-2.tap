@@ -1,0 +1,4 @@
+1..3
+ok 1 list_has_line finds present lines and rejects absent ones in a list far larger than the pipe buffer
+ok 2 check_catalog_probe_coverage reports no mismatch when its id lists are far larger than the pipe buffer
+ok 3 strict validation reports an empty shadow graph however long the tracked-file listing is

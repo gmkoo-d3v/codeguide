@@ -1,0 +1,837 @@
+
+=== [STAGE] environment contract (check_env.sh --skip-pytest) ===
+[OK] bash 3.2.57(1)-release (>= 3.2)
+[OK] python3 3.9.6 (>= 3.9)
+[OK] bats 1.14.0 (>= 1.5)
+[OK] git 2.54.0
+[OK] pytest check skipped (--skip-pytest)
+[RESULT] Environment check passed.
+
+=== [STAGE] bats suite (--suite fast: 4 file(s)) ===
+1..50
+ok 1 check_env --help prints usage and exits 0
+ok 2 check_env passes with a complete stub toolchain
+ok 3 check_env fails with remediation when bats is missing
+ok 4 check_env fails when pytest is not importable and passes with --skip-pytest
+ok 5 check_env rejects unknown options
+ok 6 check_all --help prints the gate description and exits 0
+ok 7 check_all rejects unknown options
+ok 8 source root: ordinary project repo resolves to its own toplevel
+ok 9 source root: skills layout with non-git docs root resolves to the nested skill repo
+ok 10 source root: docs-only local repo resolves to the nested skill repo via the marker file
+ok 11 source root: docs-only local repo without a marker resolves to itself with a hint
+ok 12 source root: ordinary repo is never hijacked by a vendored skill-package child repo
+ok 13 source root: invoked from inside the skill repo resolves to that repo
+ok 14 source root: no reachable repo fails with empty output
+ok 15 source root: CODEGUIDE_SOURCE_ROOT override wins over detection
+ok 16 source root: a subdirectory override normalizes to its git toplevel
+ok 17 source root: an unreadable override fails with a distinct diagnostic
+ok 18 source root: multiple skill-package repos are ambiguous and fail loudly
+ok 19 source root (python): parity for ordinary repo, marker layout, vendored child, ambiguity, and no-repo
+ok 20 source root: marker pointing at a non-repository target fails closed
+ok 21 source root: absolute and subdirectory marker targets normalize to the source toplevel
+ok 22 source root: non-repository override fails closed in both languages
+ok 23 init_docs_scaffold uses project docs root directly
+ok 24 init_docs_scaffold resolves git subdir to project docs root
+ok 25 init_docs_scaffold creates concise root agent routers
+ok 26 init_docs_scaffold creates shadow graph scaffold files
+ok 27 init_docs_scaffold creates shadow policy scaffold files
+ok 28 init_docs_scaffold fallback policy templates validate in strict mode
+ok 29 check_english_docs passes for curated codeguide markdown
+ok 30 check_english_docs allows Korean in the root README while validating README.en.md
+ok 31 check_english_docs rejects Korean in README.en.md
+ok 32 check_english_docs rejects fenced code blocks in structural indexes
+ok 33 check_english_docs requires explicit md pointers in index entries
+ok 34 check_english_docs detects indented star index entries without md pointers
+ok 35 check_english_docs fails on Korean text outside research exclusions
+ok 36 check_english_docs ignores mold research docs and temp traces
+ok 37 init_docs_scaffold is idempotent
+ok 38 init_docs_scaffold fails on non-existent target
+ok 39 init_docs_scaffold fails when docs path is a file
+ok 40 init_docs_scaffold shows help with --help
+ok 41 init_docs_scaffold creates DOC-GOVERNANCE with new sections
+ok 42 init_docs_scaffold creates issue tracker scaffold
+ok 43 a failing assert_contains aborts an errexit shell (the property the suite relies on)
+ok 44 a failing bare [[ ]] does NOT abort — the reason the helpers exist
+ok 45 a passing assert_contains does not abort
+ok 46 refute_contains aborts when the needle IS present and passes when it is absent
+ok 47 assert_equal aborts on a difference and passes on an exact match
+ok 48 helpers print both the expected needle and the actual haystack on failure
+ok 49 assert_contains rejects an empty needle instead of passing vacuously
+ok 50 assert_contains treats glob-special and multiline needles literally
+
+=== [STAGE] pytest suite (tests/) -- skipped (suite=fast (pytest runs in the full suite only)) ===
+
+=== [STAGE] strict docs validation (validate_docs.sh) ===
+[PASS] docs directory exists
+[PASS] task directory exists
+[PASS] shadow directory exists
+[PASS] decisions directory exists
+[PASS] plan directory exists
+[PASS] report directory exists
+[PASS] orchestration directory exists
+[PASS] policy directory exists
+[PASS] project dictionary exists
+[PASS] task index exists
+[PASS] shadow router exists
+[PASS] shadow global exists
+[PASS] shadow bucket index (apps) exists
+[PASS] shadow bucket index (services) exists
+[PASS] shadow bucket index (packages) exists
+[PASS] shadow bucket index (infra) exists
+[PASS] shadow bucket index (data) exists
+[PASS] decision index exists
+[PASS] plan template exists
+[PASS] report template exists
+[PASS] orchestration template exists
+[PASS] orchestration prompt template exists
+[PASS] shadow validator catalog exists
+[PASS] shadow regex pattern registry exists
+[PASS] shadow rule registry exists
+[PASS] shadow validator catalog size OK (102/220): <project>/docs/policy/shadow-validator-catalog.md
+[PASS] shadow regex pattern registry size OK (83/220): <project>/docs/policy/shadow-regex-patterns.md
+[PASS] shadow rule registry size OK (110/220): <project>/docs/policy/shadow-rule-registry.md
+[PASS] shadow validator catalog includes any versioned validators
+[PASS] shadow validator catalog includes java versioned validators
+[PASS] shadow validator catalog includes js versioned validators
+[PASS] shadow validator catalog includes ts versioned validators
+[PASS] shadow validator catalog includes py versioned validators
+[PASS] shadow validator catalog includes spring_boot versioned validators
+[PASS] shadow validator catalog includes express versioned validators
+[PASS] shadow validator catalog includes react versioned validators
+[PASS] shadow validator catalog includes fastapi versioned validators
+[PASS] shadow validator catalog includes jpa versioned validators
+[PASS] shadow validator catalog includes sql versioned validators
+[PASS] shadow validator catalog declares implemented_primary_v1
+[PASS] shadow validator catalog declares parser_backed_now
+[PASS] shadow validator catalog declares source_probe_only
+[PASS] shadow validator catalog probe coverage sets are internally consistent
+[PASS] shadow policy loader strict contract passes
+[PASS] shadow regex registry uses versioned regex ids
+[PASS] shadow regex registry declares allowed_paths
+[PASS] shadow regex registry declares excluded_paths
+[PASS] shadow regex registry declares validates
+[PASS] shadow regex registry declares cannot_validate
+[PASS] shadow regex registry declares max_promotion_risk
+[PASS] max_promotion_risk values are low|medium in shadow regex pattern registry
+[PASS] shadow rule registry declares rules block
+[PASS] shadow rule registry contains rule id mappings (5)
+[PASS] shadow rule registry contains primary validator mappings (11)
+[PASS] shadow rule registry declares allowed_effect_types for every rule (5)
+[PASS] shadow rule registry allowed_effect_types values are structurally valid
+[PASS] rule registry primary/fallback references are versioned
+[PASS] shadow rule registry promotion gates are scoped and complete
+[PASS] shadow rule registry mapping contracts are structurally valid
+[PASS] rule registry primary references resolve against validator catalog id
+[PASS] rule registry fallback references resolve against regex pattern id
+[PASS] shadow document size OK (9/300): <project>/docs/shadow/_global.md
+[PASS] shadow document size OK (9/300): <project>/docs/shadow/apps/_index.md
+[PASS] shadow document size OK (9/300): <project>/docs/shadow/data/_index.md
+[PASS] shadow document size OK (9/300): <project>/docs/shadow/infra/_index.md
+[PASS] shadow document size OK (17/300): <project>/docs/shadow/packages/_index.md
+[PASS] shadow document size OK (12/300): <project>/docs/shadow/packages/codeguide-references/overview.md
+[PASS] shadow document size OK (13/300): <project>/docs/shadow/packages/codeguide-scripts/overview.md
+[PASS] shadow document size OK (12/300): <project>/docs/shadow/packages/codeguide-tests/overview.md
+[PASS] shadow document size OK (11/300): <project>/docs/shadow/project-shadow.md
+[PASS] shadow document size OK (9/300): <project>/docs/shadow/services/_index.md
+[PASS] shadow router age-based freshness check disabled: <project>/docs/shadow/project-shadow.md
+[PASS] shadow global age-based freshness check disabled: <project>/docs/shadow/_global.md
+[PASS] shadow bucket index (apps) age-based freshness check disabled: <project>/docs/shadow/apps/_index.md
+[PASS] shadow bucket index (services) age-based freshness check disabled: <project>/docs/shadow/services/_index.md
+[PASS] shadow bucket index (packages) age-based freshness check disabled: <project>/docs/shadow/packages/_index.md
+[PASS] shadow bucket index (infra) age-based freshness check disabled: <project>/docs/shadow/infra/_index.md
+[PASS] shadow bucket index (data) age-based freshness check disabled: <project>/docs/shadow/data/_index.md
+[PASS] shadow graph is not empty: at least one bucket declares a unit
+[PASS] task document size OK (30/220): <project>/docs/task/TASK-codeguide-adversarial-gate-integration-01.md
+[PASS] plan exists for active task TASK-codeguide-adversarial-gate-integration-01
+[PASS] orchestration file exists for active task TASK-codeguide-adversarial-gate-integration-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-adversarial-gate-integration-01/ORCH.md
+[PASS] evaluator reports optional for solo execution on TASK-codeguide-adversarial-gate-integration-01
+[PASS] task document size OK (31/220): <project>/docs/task/TASK-codeguide-assertion-enforcement-01.md
+[PASS] plan exists for active task TASK-codeguide-assertion-enforcement-01
+[PASS] orchestration file exists for active task TASK-codeguide-assertion-enforcement-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-assertion-enforcement-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-assertion-enforcement-01 (2)
+[PASS] task document size OK (123/220): <project>/docs/task/TASK-codeguide-bridge-script-automation-01.md
+[PASS] plan exists for active task TASK-codeguide-bridge-script-automation-01
+[PASS] orchestration file exists for active task TASK-codeguide-bridge-script-automation-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-bridge-script-automation-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-bridge-script-automation-01 (6)
+[PASS] task document size OK (39/220): <project>/docs/task/TASK-codeguide-bridge-suite-reverify-01.md
+[PASS] plan exists for active task TASK-codeguide-bridge-suite-reverify-01
+[PASS] orchestration file exists for active task TASK-codeguide-bridge-suite-reverify-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-bridge-suite-reverify-01/ORCH.md
+[PASS] evaluator reports optional for solo execution on TASK-codeguide-bridge-suite-reverify-01
+[PASS] task document size OK (36/220): <project>/docs/task/TASK-codeguide-bridge-usage-contract-01.md
+[PASS] plan exists for active task TASK-codeguide-bridge-usage-contract-01
+[PASS] orchestration file exists for active task TASK-codeguide-bridge-usage-contract-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-bridge-usage-contract-01/ORCH.md
+[PASS] evaluator reports optional for solo execution on TASK-codeguide-bridge-usage-contract-01
+[PASS] task document size OK (21/220): <project>/docs/task/TASK-codeguide-context-compaction-handoff-01.md
+[PASS] plan exists for active task TASK-codeguide-context-compaction-handoff-01
+[PASS] orchestration file exists for active task TASK-codeguide-context-compaction-handoff-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-context-compaction-handoff-01/ORCH.md
+[PASS] evaluator reports optional for solo execution on TASK-codeguide-context-compaction-handoff-01
+[PASS] task document size OK (29/220): <project>/docs/task/TASK-codeguide-docgarden-unborn-checkpoint-01.md
+[PASS] plan exists for active task TASK-codeguide-docgarden-unborn-checkpoint-01
+[PASS] orchestration file exists for active task TASK-codeguide-docgarden-unborn-checkpoint-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-docgarden-unborn-checkpoint-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-docgarden-unborn-checkpoint-01 (1)
+[PASS] task document size OK (32/220): <project>/docs/task/TASK-codeguide-docs-diet-01.md
+[PASS] plan exists for active task TASK-codeguide-docs-diet-01
+[PASS] orchestration file exists for active task TASK-codeguide-docs-diet-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-docs-diet-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-docs-diet-01 (2)
+[PASS] task document size OK (33/220): <project>/docs/task/TASK-codeguide-effort-routes-01.md
+[PASS] plan exists for active task TASK-codeguide-effort-routes-01
+[PASS] orchestration file exists for active task TASK-codeguide-effort-routes-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-effort-routes-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-effort-routes-01 (1)
+[PASS] task document size OK (29/220): <project>/docs/task/TASK-codeguide-english-policy-contract-01.md
+[PASS] plan exists for active task TASK-codeguide-english-policy-contract-01
+[PASS] orchestration file exists for active task TASK-codeguide-english-policy-contract-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-english-policy-contract-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-english-policy-contract-01 (1)
+[PASS] task document size OK (30/220): <project>/docs/task/TASK-codeguide-external-review-gate-hardening-01.md
+[PASS] plan exists for active task TASK-codeguide-external-review-gate-hardening-01
+[PASS] orchestration file exists for active task TASK-codeguide-external-review-gate-hardening-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-external-review-gate-hardening-01/ORCH.md
+[PASS] evaluator reports optional for solo execution on TASK-codeguide-external-review-gate-hardening-01
+[PASS] task document size OK (33/220): <project>/docs/task/TASK-codeguide-front-cli-01.md
+[PASS] plan exists for active task TASK-codeguide-front-cli-01
+[PASS] orchestration file exists for active task TASK-codeguide-front-cli-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-front-cli-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-front-cli-01 (1)
+[PASS] task document size OK (30/220): <project>/docs/task/TASK-codeguide-harness-roadmap-01.md
+[PASS] task document size OK (29/220): <project>/docs/task/TASK-codeguide-ledger-cleanup-01.md
+[PASS] plan exists for active task TASK-codeguide-ledger-cleanup-01
+[PASS] orchestration file exists for active task TASK-codeguide-ledger-cleanup-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-ledger-cleanup-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-ledger-cleanup-01 (2)
+[PASS] task document size OK (33/220): <project>/docs/task/TASK-codeguide-legacy-reference-safety-01.md
+[PASS] plan exists for active task TASK-codeguide-legacy-reference-safety-01
+[PASS] orchestration file exists for active task TASK-codeguide-legacy-reference-safety-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-legacy-reference-safety-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-legacy-reference-safety-01 (2)
+[PASS] task document size OK (29/220): <project>/docs/task/TASK-codeguide-legacy-strict-hygiene-01.md
+[PASS] plan exists for active task TASK-codeguide-legacy-strict-hygiene-01
+[PASS] orchestration file exists for active task TASK-codeguide-legacy-strict-hygiene-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-legacy-strict-hygiene-01/ORCH.md
+[PASS] evaluator reports optional for solo execution on TASK-codeguide-legacy-strict-hygiene-01
+[PASS] task document size OK (33/220): <project>/docs/task/TASK-codeguide-ops-telemetry-01.md
+[PASS] plan exists for active task TASK-codeguide-ops-telemetry-01
+[PASS] orchestration file exists for active task TASK-codeguide-ops-telemetry-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-ops-telemetry-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-ops-telemetry-01 (1)
+[PASS] task document size OK (21/220): <project>/docs/task/TASK-codeguide-orchestration-capsule-review-01.md
+[PASS] task document size OK (33/220): <project>/docs/task/TASK-codeguide-pipefail-guard-01.md
+[PASS] plan exists for active task TASK-codeguide-pipefail-guard-01
+[PASS] orchestration file exists for active task TASK-codeguide-pipefail-guard-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-pipefail-guard-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-pipefail-guard-01 (1)
+[PASS] task document size OK (33/220): <project>/docs/task/TASK-codeguide-quality-baseline-01.md
+[PASS] plan exists for active task TASK-codeguide-quality-baseline-01
+[PASS] orchestration file exists for active task TASK-codeguide-quality-baseline-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-quality-baseline-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-quality-baseline-01 (2)
+[PASS] task document size OK (32/220): <project>/docs/task/TASK-codeguide-resume-capsule-01.md
+[PASS] plan exists for active task TASK-codeguide-resume-capsule-01
+[PASS] orchestration file exists for active task TASK-codeguide-resume-capsule-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-resume-capsule-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-resume-capsule-01 (2)
+[PASS] task document size OK (30/220): <project>/docs/task/TASK-codeguide-review-evidence-hash-binding-01.md
+[PASS] plan exists for active task TASK-codeguide-review-evidence-hash-binding-01
+[PASS] orchestration file exists for active task TASK-codeguide-review-evidence-hash-binding-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-review-evidence-hash-binding-01/ORCH.md
+[PASS] evaluator reports optional for solo execution on TASK-codeguide-review-evidence-hash-binding-01
+[PASS] task document size OK (30/220): <project>/docs/task/TASK-codeguide-review-packet-refs-01.md
+[PASS] plan exists for active task TASK-codeguide-review-packet-refs-01
+[PASS] orchestration file exists for active task TASK-codeguide-review-packet-refs-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-review-packet-refs-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-review-packet-refs-01 (1)
+[PASS] task document size OK (33/220): <project>/docs/task/TASK-codeguide-root-separation-01.md
+[PASS] plan exists for active task TASK-codeguide-root-separation-01
+[PASS] orchestration file exists for active task TASK-codeguide-root-separation-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-root-separation-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-root-separation-01 (4)
+[PASS] task document size OK (33/220): <project>/docs/task/TASK-codeguide-rule-coverage-01.md
+[PASS] plan exists for active task TASK-codeguide-rule-coverage-01
+[PASS] orchestration file exists for active task TASK-codeguide-rule-coverage-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-rule-coverage-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-rule-coverage-01 (1)
+[PASS] task document size OK (30/220): <project>/docs/task/TASK-codeguide-scaffold-drift-01.md
+[PASS] plan exists for active task TASK-codeguide-scaffold-drift-01
+[PASS] orchestration file exists for active task TASK-codeguide-scaffold-drift-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-scaffold-drift-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-scaffold-drift-01 (1)
+[PASS] task document size OK (36/220): <project>/docs/task/TASK-codeguide-serena-unify-01.md
+[PASS] plan exists for active task TASK-codeguide-serena-unify-01
+[PASS] orchestration file exists for active task TASK-codeguide-serena-unify-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-serena-unify-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-serena-unify-01 (2)
+[PASS] task document size OK (33/220): <project>/docs/task/TASK-codeguide-shadow-freshness-01.md
+[PASS] plan exists for active task TASK-codeguide-shadow-freshness-01
+[PASS] orchestration file exists for active task TASK-codeguide-shadow-freshness-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-shadow-freshness-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-shadow-freshness-01 (2)
+[PASS] task document size OK (21/220): <project>/docs/task/TASK-codeguide-skill-lean-plan-01.md
+[PASS] task document size OK (36/220): <project>/docs/task/TASK-codeguide-subagent-packet-contract-01.md
+[PASS] task document size OK (33/220): <project>/docs/task/TASK-codeguide-subagent-role-routing-01.md
+[PASS] plan exists for active task TASK-codeguide-subagent-role-routing-01
+[PASS] orchestration file exists for active task TASK-codeguide-subagent-role-routing-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-subagent-role-routing-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-subagent-role-routing-01 (2)
+[PASS] task document size OK (24/220): <project>/docs/task/TASK-codeguide-superpowers-bridge-01.md
+[PASS] plan exists for active task TASK-codeguide-superpowers-bridge-01
+[PASS] orchestration file exists for active task TASK-codeguide-superpowers-bridge-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-superpowers-bridge-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-superpowers-bridge-01 (1)
+[PASS] task document size OK (36/220): <project>/docs/task/TASK-codeguide-task-exit-gate-01.md
+[PASS] plan exists for active task TASK-codeguide-task-exit-gate-01
+[PASS] orchestration file exists for active task TASK-codeguide-task-exit-gate-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-task-exit-gate-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-task-exit-gate-01 (1)
+[PASS] task document size OK (30/220): <project>/docs/task/TASK-codeguide-test-hygiene-sigpipe-real-cli-01.md
+[PASS] plan exists for active task TASK-codeguide-test-hygiene-sigpipe-real-cli-01
+[PASS] orchestration file exists for active task TASK-codeguide-test-hygiene-sigpipe-real-cli-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-test-hygiene-sigpipe-real-cli-01/ORCH.md
+[PASS] evaluator reports optional for solo execution on TASK-codeguide-test-hygiene-sigpipe-real-cli-01
+[PASS] task document size OK (34/220): <project>/docs/task/TASK-codeguide-tier-presets-01.md
+[PASS] plan exists for active task TASK-codeguide-tier-presets-01
+[PASS] orchestration file exists for active task TASK-codeguide-tier-presets-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-tier-presets-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-tier-presets-01 (2)
+[PASS] task document size OK (36/220): <project>/docs/task/TASK-codeguide-validator-extraction-01.md
+[PASS] plan exists for active task TASK-codeguide-validator-extraction-01
+[PASS] orchestration file exists for active task TASK-codeguide-validator-extraction-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-validator-extraction-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-validator-extraction-01 (1)
+[PASS] task document size OK (33/220): <project>/docs/task/TASK-codeguide-validator-json-01.md
+[PASS] plan exists for active task TASK-codeguide-validator-json-01
+[PASS] orchestration file exists for active task TASK-codeguide-validator-json-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-validator-json-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-validator-json-01 (2)
+[PASS] task document size OK (34/220): <project>/docs/task/TASK-codeguide-validator-split-01.md
+[PASS] plan exists for active task TASK-codeguide-validator-split-01
+[PASS] orchestration file exists for active task TASK-codeguide-validator-split-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-validator-split-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-validator-split-01 (3)
+[PASS] task document size OK (29/220): <project>/docs/task/TASK-codeguide-vendor-sandbox-policy-01.md
+[PASS] plan exists for active task TASK-codeguide-vendor-sandbox-policy-01
+[PASS] orchestration file exists for active task TASK-codeguide-vendor-sandbox-policy-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-vendor-sandbox-policy-01/ORCH.md
+[PASS] evaluator reports optional for solo execution on TASK-codeguide-vendor-sandbox-policy-01
+[PASS] task document size OK (30/220): <project>/docs/task/TASK-codeguide-writer-runtime-hint-01.md
+[PASS] plan exists for active task TASK-codeguide-writer-runtime-hint-01
+[PASS] orchestration file exists for active task TASK-codeguide-writer-runtime-hint-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/codeguide-writer-runtime-hint-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-codeguide-writer-runtime-hint-01 (1)
+[PASS] task document size OK (10/220): <project>/docs/task/TASK-doc-gap-bridge-01.md
+[PASS] task document size OK (22/220): <project>/docs/task/TASK-external-model-lineup-01.md
+[PASS] plan exists for active task TASK-external-model-lineup-01
+[PASS] orchestration file exists for active task TASK-external-model-lineup-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/external-model-lineup-01/ORCH.md
+[PASS] evaluator reports optional for solo execution on TASK-external-model-lineup-01
+[PASS] task document size OK (21/220): <project>/docs/task/TASK-model-registry-config-01.md
+[PASS] plan exists for active task TASK-model-registry-config-01
+[PASS] orchestration file exists for active task TASK-model-registry-config-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/model-registry-config-01/ORCH.md
+[PASS] evaluator reports optional for solo execution on TASK-model-registry-config-01
+[PASS] task document size OK (26/220): <project>/docs/task/TASK-shadow-coverage-report-01.md
+[PASS] plan exists for active task TASK-shadow-coverage-report-01
+[PASS] orchestration file exists for active task TASK-shadow-coverage-report-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-coverage-report-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-shadow-coverage-report-01 (1)
+[PASS] task document size OK (22/220): <project>/docs/task/TASK-shadow-effectmap-integration-01.md
+[PASS] plan exists for active task TASK-shadow-effectmap-integration-01
+[PASS] orchestration file exists for active task TASK-shadow-effectmap-integration-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-effectmap-integration-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-shadow-effectmap-integration-01 (1)
+[PASS] task document size OK (39/220): <project>/docs/task/TASK-shadow-field-reader-unify-01.md
+[PASS] plan exists for active task TASK-shadow-field-reader-unify-01
+[PASS] orchestration file exists for active task TASK-shadow-field-reader-unify-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-field-reader-unify-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-shadow-field-reader-unify-01 (3)
+[PASS] task document size OK (26/220): <project>/docs/task/TASK-shadow-impact-report-01.md
+[PASS] plan exists for active task TASK-shadow-impact-report-01
+[PASS] orchestration file exists for active task TASK-shadow-impact-report-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-impact-report-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-shadow-impact-report-01 (1)
+[PASS] task document size OK (26/220): <project>/docs/task/TASK-shadow-link-integrity-01.md
+[PASS] plan exists for active task TASK-shadow-link-integrity-01
+[PASS] orchestration file exists for active task TASK-shadow-link-integrity-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-link-integrity-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-shadow-link-integrity-01 (1)
+[PASS] task document size OK (26/220): <project>/docs/task/TASK-shadow-metrics-report-01.md
+[PASS] plan exists for active task TASK-shadow-metrics-report-01
+[PASS] orchestration file exists for active task TASK-shadow-metrics-report-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-metrics-report-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-shadow-metrics-report-01 (1)
+[PASS] task document size OK (21/220): <project>/docs/task/TASK-shadow-minimal-router-adversarial-review-01.md
+[PASS] plan exists for active task TASK-shadow-minimal-router-adversarial-review-01
+[PASS] orchestration file exists for active task TASK-shadow-minimal-router-adversarial-review-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-minimal-router-adversarial-review-01/ORCH.md
+[PASS] evaluator reports optional for solo execution on TASK-shadow-minimal-router-adversarial-review-01
+[PASS] task document size OK (26/220): <project>/docs/task/TASK-shadow-nav-graph-01.md
+[PASS] plan exists for active task TASK-shadow-nav-graph-01
+[PASS] orchestration file exists for active task TASK-shadow-nav-graph-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-nav-graph-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-shadow-nav-graph-01 (1)
+[PASS] task document size OK (33/220): <project>/docs/task/TASK-shadow-parser-unify-01.md
+[PASS] plan exists for active task TASK-shadow-parser-unify-01
+[PASS] orchestration file exists for active task TASK-shadow-parser-unify-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-parser-unify-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-shadow-parser-unify-01 (2)
+[PASS] task document size OK (43/220): <project>/docs/task/TASK-shadow-parser-unify-02.md
+[PASS] plan exists for active task TASK-shadow-parser-unify-02
+[PASS] orchestration file exists for active task TASK-shadow-parser-unify-02
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-parser-unify-02/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-shadow-parser-unify-02 (3)
+[PASS] task document size OK (35/220): <project>/docs/task/TASK-shadow-rationale-links-01.md
+[PASS] plan exists for active task TASK-shadow-rationale-links-01
+[PASS] orchestration file exists for active task TASK-shadow-rationale-links-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-rationale-links-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-shadow-rationale-links-01 (4)
+[PASS] task document size OK (40/220): <project>/docs/task/TASK-shadow-reader-residuals-01.md
+[PASS] plan exists for active task TASK-shadow-reader-residuals-01
+[PASS] orchestration file exists for active task TASK-shadow-reader-residuals-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-reader-residuals-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-shadow-reader-residuals-01 (5)
+[PASS] task document size OK (31/220): <project>/docs/task/TASK-shadow-selection-summary-01.md
+[PASS] plan exists for active task TASK-shadow-selection-summary-01
+[PASS] orchestration file exists for active task TASK-shadow-selection-summary-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-selection-summary-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-shadow-selection-summary-01 (3)
+[PASS] task document size OK (26/220): <project>/docs/task/TASK-shadow-source-digest-01.md
+[PASS] plan exists for active task TASK-shadow-source-digest-01
+[PASS] orchestration file exists for active task TASK-shadow-source-digest-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-source-digest-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-shadow-source-digest-01 (1)
+[PASS] task document size OK (26/220): <project>/docs/task/TASK-shadow-source-exists-01.md
+[PASS] plan exists for active task TASK-shadow-source-exists-01
+[PASS] orchestration file exists for active task TASK-shadow-source-exists-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-source-exists-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-shadow-source-exists-01 (1)
+[PASS] task document size OK (26/220): <project>/docs/task/TASK-shadow-unit-schema-01.md
+[PASS] plan exists for active task TASK-shadow-unit-schema-01
+[PASS] orchestration file exists for active task TASK-shadow-unit-schema-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-unit-schema-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-shadow-unit-schema-01 (1)
+[PASS] task document size OK (21/220): <project>/docs/task/TASK-shadow-v2-js-ts-parser-01.md
+[PASS] plan exists for active task TASK-shadow-v2-js-ts-parser-01
+[PASS] orchestration file exists for active task TASK-shadow-v2-js-ts-parser-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-v2-js-ts-parser-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-shadow-v2-js-ts-parser-01 (1)
+[PASS] task document size OK (21/220): <project>/docs/task/TASK-shadow-v2-next-automation-02.md
+[PASS] plan exists for active task TASK-shadow-v2-next-automation-02
+[PASS] orchestration file exists for active task TASK-shadow-v2-next-automation-02
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-v2-next-automation-02/ORCH.md
+[PASS] evaluator reports optional for solo execution on TASK-shadow-v2-next-automation-02
+[PASS] task document size OK (21/220): <project>/docs/task/TASK-shadow-v2-skill-close-01.md
+[PASS] plan exists for active task TASK-shadow-v2-skill-close-01
+[PASS] orchestration file exists for active task TASK-shadow-v2-skill-close-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-v2-skill-close-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-shadow-v2-skill-close-01 (1)
+[PASS] task document size OK (21/220): <project>/docs/task/TASK-shadow-v2-validator-consensus-01.md
+[PASS] plan exists for active task TASK-shadow-v2-validator-consensus-01
+[PASS] orchestration file exists for active task TASK-shadow-v2-validator-consensus-01
+[PASS] orchestration size cap skipped for terminal task artifact (status=done): <project>/docs/orchestration/shadow-v2-validator-consensus-01/ORCH.md
+[PASS] evaluator report exists in plan lineage for done task TASK-shadow-v2-validator-consensus-01 (34)
+[PASS] decision document size OK (26/180): <project>/docs/decisions/decision-external-review-gate-hardening-01.md
+[PASS] decision document size OK (24/180): <project>/docs/decisions/decision-human-report-concise-html-01.md
+[PASS] decision document size OK (26/180): <project>/docs/decisions/decision-model-lineup-route-policy-01.md
+[PASS] decision document size OK (26/180): <project>/docs/decisions/decision-shadow-coverage-report-01.md
+[PASS] decision document size OK (26/180): <project>/docs/decisions/decision-shadow-effectmap-integration-01.md
+[PASS] decision document size OK (26/180): <project>/docs/decisions/decision-shadow-impact-report-01.md
+[PASS] decision document size OK (26/180): <project>/docs/decisions/decision-shadow-link-integrity-01.md
+[PASS] decision document size OK (26/180): <project>/docs/decisions/decision-shadow-metrics-report-01.md
+[PASS] decision document size OK (26/180): <project>/docs/decisions/decision-shadow-nav-graph-01.md
+[PASS] decision document size OK (83/180): <project>/docs/decisions/decision-shadow-parser-unify-01.md
+[PASS] decision document size OK (26/180): <project>/docs/decisions/decision-shadow-rationale-links-01.md
+[PASS] decision document size OK (26/180): <project>/docs/decisions/decision-shadow-selection-summary-01.md
+[PASS] decision document size OK (26/180): <project>/docs/decisions/decision-shadow-source-digest-01.md
+[PASS] decision document size OK (26/180): <project>/docs/decisions/decision-shadow-source-exists-01.md
+[PASS] decision document size OK (26/180): <project>/docs/decisions/decision-shadow-unit-schema-01.md
+[PASS] decision document size OK (26/180): <project>/docs/decisions/decision-shadow-v2-js-ts-parser-01.md
+[PASS] decision document size OK (26/180): <project>/docs/decisions/decision-shadow-v2-skill-close-01.md
+[PASS] decision document size OK (26/180): <project>/docs/decisions/decision-subagent-role-routing-01.md
+[PASS] decision document size OK (25/180): <project>/docs/decisions/decision-superpowers-codeguide-bridge-01.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-adversarial-gate-integration-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-adversarial-gate-integration-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-assertion-enforcement-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-assertion-enforcement-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-bridge-script-automation-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-bridge-script-automation-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-bridge-suite-reverify-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-bridge-suite-reverify-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-bridge-usage-contract-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-bridge-usage-contract-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-context-compaction-handoff-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-context-compaction-handoff-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-docgarden-unborn-checkpoint-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-docgarden-unborn-checkpoint-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-docs-diet-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-docs-diet-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-effort-routes-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-effort-routes-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-english-policy-contract-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-english-policy-contract-01-v1.0.md
+[PASS] plan document size OK (67/220): <project>/docs/plan/PLAN-codeguide-external-review-await-gate-01-v1.0.md
+[PASS] plan document size OK (75/220): <project>/docs/plan/PLAN-codeguide-external-review-await-gate-01-v1.1.md
+[PASS] plan document size OK (77/220): <project>/docs/plan/PLAN-codeguide-external-review-await-gate-01-v1.2.md
+[PASS] plan document size OK (99/220): <project>/docs/plan/PLAN-codeguide-external-review-await-gate-01-v1.3.md
+[PASS] plan document size OK (108/220): <project>/docs/plan/PLAN-codeguide-external-review-await-gate-01-v1.4.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-external-review-gate-hardening-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-external-review-gate-hardening-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-front-cli-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-front-cli-01-v1.0.md
+[PASS] plan document size OK (67/220): <project>/docs/plan/PLAN-codeguide-harness-roadmap-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-ledger-cleanup-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-ledger-cleanup-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-legacy-reference-safety-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-legacy-reference-safety-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-legacy-strict-hygiene-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-legacy-strict-hygiene-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-ops-telemetry-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-ops-telemetry-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=cancelled): <project>/docs/plan/PLAN-codeguide-orchestration-capsule-review-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=cancelled): <project>/docs/plan/PLAN-codeguide-orchestration-capsule-review-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-pipefail-guard-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-pipefail-guard-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-quality-baseline-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-quality-baseline-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-resume-capsule-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-resume-capsule-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-review-evidence-hash-binding-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-review-evidence-hash-binding-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-review-packet-refs-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-review-packet-refs-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-root-separation-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-root-separation-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-root-separation-01-v1.1.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-root-separation-01-v1.1.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-rule-coverage-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-rule-coverage-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-scaffold-drift-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-scaffold-drift-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-serena-unify-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-serena-unify-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-shadow-freshness-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-shadow-freshness-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=superseded): <project>/docs/plan/PLAN-codeguide-skill-lean-plan-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=superseded): <project>/docs/plan/PLAN-codeguide-skill-lean-plan-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=superseded): <project>/docs/plan/PLAN-codeguide-skill-lean-plan-01-v1.1.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=superseded): <project>/docs/plan/PLAN-codeguide-skill-lean-plan-01-v1.1.md
+[PASS] plan size cap skipped for terminal task artifact (status=superseded): <project>/docs/plan/PLAN-codeguide-skill-lean-plan-01-v1.2.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=superseded): <project>/docs/plan/PLAN-codeguide-skill-lean-plan-01-v1.2.md
+[PASS] plan size cap skipped for terminal task artifact (status=superseded): <project>/docs/plan/PLAN-codeguide-skill-lean-plan-01-v1.3.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=superseded): <project>/docs/plan/PLAN-codeguide-skill-lean-plan-01-v1.3.md
+[PASS] plan size cap skipped for terminal task artifact (status=cancelled): <project>/docs/plan/PLAN-codeguide-subagent-packet-contract-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=cancelled): <project>/docs/plan/PLAN-codeguide-subagent-packet-contract-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=cancelled): <project>/docs/plan/PLAN-codeguide-subagent-packet-contract-01-v1.1.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=cancelled): <project>/docs/plan/PLAN-codeguide-subagent-packet-contract-01-v1.1.md
+[PASS] plan size cap skipped for terminal task artifact (status=cancelled): <project>/docs/plan/PLAN-codeguide-subagent-packet-contract-01-v1.2.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=cancelled): <project>/docs/plan/PLAN-codeguide-subagent-packet-contract-01-v1.2.md
+[PASS] plan size cap skipped for terminal task artifact (status=cancelled): <project>/docs/plan/PLAN-codeguide-subagent-packet-contract-01-v1.3.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=cancelled): <project>/docs/plan/PLAN-codeguide-subagent-packet-contract-01-v1.3.md
+[PASS] plan size cap skipped for terminal task artifact (status=cancelled): <project>/docs/plan/PLAN-codeguide-subagent-packet-contract-01-v2.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=cancelled): <project>/docs/plan/PLAN-codeguide-subagent-packet-contract-01-v2.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-subagent-role-routing-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-subagent-role-routing-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-superpowers-bridge-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-superpowers-bridge-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-task-exit-gate-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-task-exit-gate-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-task-exit-gate-01-v1.1.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-task-exit-gate-01-v1.1.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-task-exit-gate-01-v1.2.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-task-exit-gate-01-v1.2.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-task-exit-gate-01-v1.3.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-task-exit-gate-01-v1.3.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-task-exit-gate-01-v1.4.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-task-exit-gate-01-v1.4.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-task-exit-gate-01-v1.5.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-task-exit-gate-01-v1.5.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-task-exit-gate-01-v1.6.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-task-exit-gate-01-v1.6.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-task-exit-gate-01-v1.7.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-task-exit-gate-01-v1.7.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-test-hygiene-sigpipe-real-cli-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-test-hygiene-sigpipe-real-cli-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-tier-presets-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-tier-presets-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-validator-extraction-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-validator-extraction-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-validator-json-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-validator-json-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-validator-split-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-validator-split-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-vendor-sandbox-policy-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-vendor-sandbox-policy-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-writer-runtime-hint-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-codeguide-writer-runtime-hint-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-external-model-lineup-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-external-model-lineup-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-model-registry-config-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-model-registry-config-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-coverage-report-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-coverage-report-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-coverage-report-01-v1.1.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-coverage-report-01-v1.1.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-effectmap-integration-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-effectmap-integration-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-field-reader-unify-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-field-reader-unify-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-impact-report-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-impact-report-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-impact-report-01-v1.1.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-impact-report-01-v1.1.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-link-integrity-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-link-integrity-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-link-integrity-01-v1.1.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-link-integrity-01-v1.1.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-metrics-report-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-metrics-report-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-metrics-report-01-v1.1.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-metrics-report-01-v1.1.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-minimal-router-adversarial-review-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-minimal-router-adversarial-review-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-nav-graph-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-nav-graph-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-nav-graph-01-v1.1.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-nav-graph-01-v1.1.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-parser-unify-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-parser-unify-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-parser-unify-02-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-parser-unify-02-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-rationale-links-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-rationale-links-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-rationale-links-01-v1.1.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-rationale-links-01-v1.1.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-rationale-links-01-v1.2.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-rationale-links-01-v1.2.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-reader-residuals-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-reader-residuals-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-reader-residuals-01-v1.1.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-reader-residuals-01-v1.1.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-selection-summary-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-selection-summary-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-source-digest-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-source-digest-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-source-digest-01-v1.1.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-source-digest-01-v1.1.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-source-exists-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-source-exists-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-source-exists-01-v1.1.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-source-exists-01-v1.1.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-unit-schema-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-unit-schema-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-unit-schema-01-v1.1.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-unit-schema-01-v1.1.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-js-ts-parser-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-js-ts-parser-01-v1.0.md
+[PASS] plan document size OK (132/220): <project>/docs/plan/PLAN-shadow-v2-next-automation-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-next-automation-02-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-next-automation-02-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-skill-close-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-skill-close-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.1.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.1.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.2.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.2.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.3.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.3.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.4.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.4.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.5.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.5.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.6.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.6.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.7.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.7.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.8.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.8.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.9.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v1.9.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v2.0.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v2.0.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v2.1.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v2.1.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v2.2.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v2.2.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v2.3.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v2.3.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v2.4.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v2.4.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v2.5.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v2.5.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v2.6.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v2.6.md
+[PASS] plan size cap skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v2.7.md
+[PASS] plan completeness fields skipped for terminal task artifact (status=done): <project>/docs/plan/PLAN-shadow-v2-validator-consensus-01-v2.7.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-assertion-enforcement-01-v1.0-review-claude-opus-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-assertion-enforcement-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (14/180): <project>/docs/report/PLAN-codeguide-bridge-script-automation-01-v1.0-review-codex-gpt-5.6-terra-high-r02.md
+[PASS] evaluator report size OK (14/180): <project>/docs/report/PLAN-codeguide-bridge-script-automation-01-v1.0-review-codex-gpt-5.6-terra-high-r03.md
+[PASS] evaluator report size OK (14/180): <project>/docs/report/PLAN-codeguide-bridge-script-automation-01-v1.0-review-codex-gpt-5.6-terra-high-r04.md
+[PASS] evaluator report size OK (14/180): <project>/docs/report/PLAN-codeguide-bridge-script-automation-01-v1.0-review-codex-gpt-5.6-terra-high-r05.md
+[PASS] evaluator report size OK (14/180): <project>/docs/report/PLAN-codeguide-bridge-script-automation-01-v1.0-review-codex-gpt-5.6-terra-high-r06.md
+[PASS] evaluator report size OK (13/180): <project>/docs/report/PLAN-codeguide-bridge-script-automation-01-v1.0-review-codex-gpt-5.6-terra-high-r07.md
+[PASS] evaluator report size OK (28/180): <project>/docs/report/PLAN-codeguide-bridge-suite-reverify-01-v1.0-review-claude-haiku-4-5-r01.md
+[PASS] evaluator report size OK (25/180): <project>/docs/report/PLAN-codeguide-bridge-usage-contract-01-v1.0-review-claude-haiku-4-5-r01.md
+[PASS] evaluator report size OK (20/180): <project>/docs/report/PLAN-codeguide-docgarden-unborn-checkpoint-01-v1.0-review-claude-fable5-medium-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-docs-diet-01-v1.0-review-claude-fable-medium-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-docs-diet-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-effort-routes-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (20/180): <project>/docs/report/PLAN-codeguide-english-policy-contract-01-v1.0-review-claude-fable5-medium-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-front-cli-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (27/180): <project>/docs/report/PLAN-codeguide-ledger-cleanup-01-v1.0-review-claude-fable-medium-r01.md
+[PASS] evaluator report size OK (33/180): <project>/docs/report/PLAN-codeguide-ledger-cleanup-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (24/180): <project>/docs/report/PLAN-codeguide-legacy-reference-safety-01-v1.0-review-claude-opus-4.8-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-legacy-reference-safety-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-ops-telemetry-01-v1.0-review-claude-opus-4.8-r01.md
+[PASS] evaluator report size OK (18/180): <project>/docs/report/PLAN-codeguide-orchestration-capsule-review-01-v1.0-review-claude-r03.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-codeguide-orchestration-capsule-review-01-v1.0-review-codex-r01.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-codeguide-orchestration-capsule-review-01-v1.0-review-codex-r02.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-codeguide-orchestration-capsule-review-01-v1.0-review-gemini-r02.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-pipefail-guard-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-quality-baseline-01-v1.0-review-claude-fable-medium-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-quality-baseline-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (27/180): <project>/docs/report/PLAN-codeguide-resume-capsule-01-v1.0-review-claude-fable-medium-r01.md
+[PASS] evaluator report size OK (33/180): <project>/docs/report/PLAN-codeguide-resume-capsule-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-review-packet-refs-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-root-separation-01-v1.0-review-claude-fable-medium-r01.md
+[PASS] evaluator report size OK (27/180): <project>/docs/report/PLAN-codeguide-root-separation-01-v1.1-review-claude-fable-medium-r02.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-root-separation-01-v1.1-review-claude-sonnet-5-r03.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-root-separation-01-v1.1-review-claude-sonnet-5-r04.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-codeguide-rule-coverage-01-v1.0-review-claude-opus-4.8-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-scaffold-drift-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-serena-unify-01-v1.0-review-claude-fable-medium-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-serena-unify-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (34/180): <project>/docs/report/PLAN-codeguide-shadow-freshness-01-v1.0-review-claude-fable-medium-r01.md
+[PASS] evaluator report size OK (46/180): <project>/docs/report/PLAN-codeguide-shadow-freshness-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-subagent-packet-contract-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-subagent-packet-contract-01-v1.2-review-claude-sonnet-5-r02.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-subagent-packet-contract-01-v1.3-review-claude-sonnet-5-r03.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-subagent-packet-contract-01-v2.0-review-claude-sonnet-5-r04.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-subagent-role-routing-01-v1.0-review-claude-fable-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-subagent-role-routing-01-v1.0-review-claude-fable-5-r02.md
+[PASS] evaluator report size OK (35/180): <project>/docs/report/PLAN-codeguide-superpowers-bridge-01-v1.0-review-claude-deepseek-v4-r01.md
+[PASS] evaluator report size OK (16/180): <project>/docs/report/PLAN-codeguide-task-exit-gate-01-v1.7-review-claude-r09.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-tier-presets-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-tier-presets-01-v1.0-review-claude-sonnet-5-r02.md
+[PASS] evaluator report size OK (20/180): <project>/docs/report/PLAN-codeguide-validator-extraction-01-v1.0-review-claude-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-validator-json-01-v1.0-review-claude-opus-4.8-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-validator-json-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-validator-split-01-v1.0-review-claude-opus-4.8-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-validator-split-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-validator-split-01-v1.0-review-claude-sonnet-5-r02.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-vendor-sandbox-policy-01-v1.0-review-claude-fable-medium-r01.md
+[PASS] evaluator report size OK (27/180): <project>/docs/report/PLAN-codeguide-vendor-sandbox-policy-01-v1.0-review-claude-fable-medium-r02.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-vendor-sandbox-policy-01-v1.0-review-claude-sonnet-5-r03.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-vendor-sandbox-policy-01-v1.0-review-claude-sonnet-5-r04.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-codeguide-writer-runtime-hint-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (27/180): <project>/docs/report/PLAN-shadow-coverage-report-01-v1.0-review-codex-current-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-shadow-effectmap-integration-01-v1.0-review-claude-fable-medium-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-shadow-field-reader-unify-01-v1.0-review-claude-opus-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-shadow-field-reader-unify-01-v1.0-review-claude-opus-5-r02.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-shadow-field-reader-unify-01-v1.0-review-claude-opus-5-r03.md
+[PASS] evaluator report size OK (27/180): <project>/docs/report/PLAN-shadow-impact-report-01-v1.0-review-codex-current-r01.md
+[PASS] evaluator report size OK (27/180): <project>/docs/report/PLAN-shadow-link-integrity-01-v1.0-review-codex-current-r01.md
+[PASS] evaluator report size OK (27/180): <project>/docs/report/PLAN-shadow-metrics-report-01-v1.0-review-codex-current-r01.md
+[PASS] evaluator report size OK (27/180): <project>/docs/report/PLAN-shadow-nav-graph-01-v1.0-review-codex-current-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-shadow-parser-unify-01-v1.0-review-claude-opus-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-shadow-parser-unify-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-shadow-parser-unify-02-v1.0-review-claude-opus-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-shadow-parser-unify-02-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (27/180): <project>/docs/report/PLAN-shadow-parser-unify-02-v1.0-review-codex-gpt-5.6-sol-high-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-shadow-rationale-links-01-v1.0-review-claude-fable-medium-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-shadow-rationale-links-01-v1.0-review-codex-gpt-5.6-sol-high-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-shadow-rationale-links-01-v1.1-review-claude-fable-medium-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-shadow-rationale-links-01-v1.1-review-codex-gpt-5.6-sol-high-r01.md
+[PASS] evaluator report size OK (27/180): <project>/docs/report/PLAN-shadow-reader-residuals-01-v1.0-review-agy-gemini-3.6-flash-high-r03.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-shadow-reader-residuals-01-v1.0-review-claude-opus-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-shadow-reader-residuals-01-v1.0-review-claude-opus-5-r02.md
+[PASS] evaluator report size OK (27/180): <project>/docs/report/PLAN-shadow-reader-residuals-01-v1.1-review-agy-claude-sonnet-4.6-thinking-r04.md
+[PASS] evaluator report size OK (27/180): <project>/docs/report/PLAN-shadow-reader-residuals-01-v1.1-review-agy-gemini-3.6-flash-high-r04.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-shadow-selection-summary-01-v1.0-review-claude-opus-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-shadow-selection-summary-01-v1.0-review-claude-sonnet-5-r01.md
+[PASS] evaluator report size OK (19/180): <project>/docs/report/PLAN-shadow-selection-summary-01-v1.0-review-codex-gpt-5.6-sol-high-r01.md
+[PASS] evaluator report size OK (27/180): <project>/docs/report/PLAN-shadow-source-digest-01-v1.0-review-codex-current-r01.md
+[PASS] evaluator report size OK (27/180): <project>/docs/report/PLAN-shadow-source-exists-01-v1.0-review-codex-current-r01.md
+[PASS] evaluator report size OK (27/180): <project>/docs/report/PLAN-shadow-unit-schema-01-v1.0-review-codex-current-r01.md
+[PASS] evaluator report size OK (14/180): <project>/docs/report/PLAN-shadow-v2-js-ts-parser-01-v1.0-review-codex-r01.md
+[PASS] evaluator report size OK (18/180): <project>/docs/report/PLAN-shadow-v2-skill-close-01-v1.0-review-codex-r01.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.0-review-claude-r01.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.0-review-gemini-r01.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.1-review-claude-r02.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.1-review-gemini-r02.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.2-review-claude-r03.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.2-review-gemini-r03.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.3-review-claude-r04.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.3-review-gemini-r04.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.4-review-claude-r05.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.4-review-gemini-r05.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.5-review-claude-r06.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.5-review-gemini-r06.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.6-review-claude-r07.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.6-review-gemini-r07.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.7-review-claude-r08.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.7-review-gemini-r08.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.8-review-claude-r09.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.8-review-gemini-r09.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.9-review-claude-r10.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v1.9-review-gemini-r10.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v2.0-review-claude-r11.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v2.0-review-gemini-r11.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v2.1-review-claude-r12.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v2.1-review-gemini-r12.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v2.2-review-claude-r13.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v2.2-review-gemini-r13.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v2.3-review-claude-r14.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v2.3-review-gemini-r14.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v2.4-review-claude-r15.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v2.4-review-gemini-r15.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v2.5-review-claude-r16.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v2.5-review-gemini-r16.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v2.6-review-claude-r17.md
+[PASS] evaluator report size OK (17/180): <project>/docs/report/PLAN-shadow-v2-validator-consensus-01-v2.6-review-gemini-r17.md
+[PASS] no known key-format secret patterns found
+[PASS] no quoted secret assignment patterns found
+[PASS] no yaml/env-style secret assignment patterns found
+[RESULT] Docs validation passed.
+
+=== [STAGE] English docs policy (check_english_docs.sh) ===
+[OK] Curated markdown documents are English-only and structural indexes are valid.
+
+=== [STAGE] packaging smoke (packaging_smoke.py) ===
+# Packaging Smoke Report (<project>/codeguide)
+
+- ship_count: 207
+- dev_artifact_count: 1611
+- unknown_count: 0
+
+## DEV-ARTIFACT summary
+  .git/**: 1441
+  .gitignore: 3
+  .serena/**: 9
+  .pytest_cache/**: 4
+  .gemini/**: 1
+  .DS_Store: 7
+  tmp/**: 110
+  __pycache__/**: 36
+  *.pyc: 0
+
+## UNKNOWN (0)
+  (none)
+
+=== [SUMMARY] ===
+[PASS] environment contract (check_env.sh --skip-pytest)
+[PASS] bats suite (--suite fast: 4 file(s))
+[SKIP] pytest suite (tests/)
+[PASS] strict docs validation (validate_docs.sh)
+[PASS] English docs policy (check_english_docs.sh)
+[PASS] packaging smoke (packaging_smoke.py)
+[RESULT] All quality gates passed.

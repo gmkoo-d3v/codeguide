@@ -2,7 +2,7 @@
 
 Raw bats TAP output for the test runs behind the three reports in the parent folder. There are two kinds of log:
 
-- **Original run outputs**: folders `00` to `04`, folder `07` and [`tripwire-log.txt`](./tripwire-log.txt). They back the newest report, [`test-reliability-hardening.md`](../test-reliability-hardening.md), and, for the integration contract, one run of the second report. Folder `07` backs the later fix of the two baseline test failures.
+- **Original run outputs**: folders `00` to `04`, folders `07` and `08`, and [`tripwire-log.txt`](./tripwire-log.txt). Folders `00` to `04` back [`test-reliability-hardening.md`](../test-reliability-hardening.md) and one integration-contract run from the second report. Folder `07` backs the later fix of the two baseline test failures. Folder `08` backs the 2026-10-29 [`portfolio metrics report`](../portfolio-metrics-2026-10-29.md).
 - **Regenerated logs**: folders `05` and `06` and [`tripwire-log-regenerated.txt`](./tripwire-log-regenerated.txt). They back the two earlier reports. The original runs of those reports were not saved, so their key runs were re-run later from the old commits. Each regenerated file says so on its second line.
 
 [Coverage of the three reports](#coverage-of-the-three-reports) lists which claim is backed by which log and which claims have no log. Only machine-specific paths (working directory, per-test temporary directories, home directory) were replaced with `<scratch>`, `<tmp>` and `<home>`. Test names, order, counts and exit codes are unchanged.
@@ -129,6 +129,15 @@ Why some claims were not regenerated: `validate_docs.bats` takes hours, and the 
 | `first-run-lineage-fix-incomplete-1-failure.tap` | **The first attempt at the fix, kept on purpose**: the JSON id test passes, the lineage test still fails. Filling `objective`, `acceptance_criteria` and `outcome` was not enough, because the task-index row summary projects from the stored outcome and no longer matched; the test now rebuilds the index |
 | `after-fix/two-tests-fixed-2-of-2.tap` | The same two tests after the fix: both pass |
 | `after-fix/validate_docs-full-shard-1-of-4.tap` to `-4-of-4.tap` | The whole `validate_docs.bats` of the fixed tree, 287 tests in four parallel shards (72, 72, 72, 71): all pass. Four shards at once is the load that used to trigger the SIGPIPE race, and no random failure appeared |
+
+### `08-portfolio-metrics-20261029/` (original runs on 2026-10-29 KST)
+
+| File | What it shows |
+|---|---|
+| `fast-run-1.log` to `fast-run-5.log`, `fast-metrics.jsonl` | Five runs of the 50-test fast quality gate: 250/250 test executions passed, zero observed flakes, median 79 seconds and maximum 80 seconds |
+| `tamper-20.tap`, `waiver.tap` | The enclosing gate tests that exercise 20 tampered-evidence variants and 8 invalid-waiver variants pass, meaning all 28 are rejected |
+| `large-pipe-run-*.tap`, `large-garden-run-*.tap` | Five repeated runs of four large-input tests: 20/20 pass with 8,000 IDs, 1,500 tracked files and 1,500 changed paths |
+| [`README.md`](./08-portfolio-metrics-20261029/README.md) | Exact command shapes, file mapping, sanitization statement and limits |
 
 ### Other
 

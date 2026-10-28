@@ -177,6 +177,49 @@ load codeguide_helper
   assert_contains "$output" "English-only"
 }
 
+@test "check_english_docs allows Korean in the root README while validating README.en.md" {
+  local workspace
+  workspace="$(mktemp -d)"
+
+  cat > "$workspace/README.md" <<'EOF'
+# 예제
+
+이 문서는 한국어 기본 README입니다.
+EOF
+
+  cat > "$workspace/README.en.md" <<'EOF'
+# Example
+
+This is the English README.
+EOF
+
+  run "$CHECK_ENGLISH_DOCS" "$workspace"
+  [ "$status" -eq 0 ]
+
+  rm -rf "$workspace"
+}
+
+@test "check_english_docs rejects Korean in README.en.md" {
+  local workspace
+  workspace="$(mktemp -d)"
+
+  cat > "$workspace/README.md" <<'EOF'
+# 예제
+EOF
+
+  cat > "$workspace/README.en.md" <<'EOF'
+# Example
+
+이 문장은 영문 README에 있으면 실패해야 합니다.
+EOF
+
+  run "$CHECK_ENGLISH_DOCS" "$workspace"
+  [ "$status" -ne 0 ]
+  assert_contains "$output" "README.en.md"
+
+  rm -rf "$workspace"
+}
+
 @test "check_english_docs rejects fenced code blocks in structural indexes" {
   local workspace
   workspace="$(mktemp -d)"

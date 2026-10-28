@@ -1,0 +1,6 @@
+1..5
+ok 1 validate_docs advisory rejects a waiver ref that points at no existing decision record
+ok 2 validate_docs advisory rejects a free-text waiver ref that names no decision file at all
+ok 3 validate_docs advisory rejects waiver decisions that are not accepted, not user-chosen, or linked to another task
+ok 4 validate_docs advisory rejects a waiver ref that escapes the decisions directory
+ok 5 external-review gate waiver requires a verified user decision and exits non-zero otherwise

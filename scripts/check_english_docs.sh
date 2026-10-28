@@ -63,6 +63,8 @@ md_pointer = re.compile(re.escape(tick) + r"[^" + re.escape(tick) + r"]+\.md" + 
 index_bullet = re.compile(r"^\s*[-*+]\s+")
 def should_skip(path: pathlib.Path) -> bool:
     parts = path.parts
+    if path.as_posix() == "README.md":
+        return True
     if "mold" in parts or "mold" in path.name:
         return True
     if "temp" in parts or "tmp" in parts or ".serena" in parts:

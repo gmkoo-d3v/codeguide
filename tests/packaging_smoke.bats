@@ -27,6 +27,7 @@ _seed_packaging_fixture() {
   # SHIP: exact top-level files.
   printf '# skill\n' > "$root/SKILL.md"
   printf '# readme\n' > "$root/README.md"
+  printf '# English readme\n' > "$root/README.en.md"
   printf 'pytest\n' > "$root/requirements-dev.txt"
 
   # SHIP: allowlisted directories, including a name-with-spaces file and an
@@ -87,7 +88,7 @@ ship = set(payload["ship_manifest"])
 unknown = set(payload["unknown"])
 
 for expected in (
-    "SKILL.md", "README.md", "requirements-dev.txt",
+    "SKILL.md", "README.md", "README.en.md", "requirements-dev.txt",
     "agents/default-prompt.yaml", "case-studies/report.html", "config/ai_model_registry.json",
     "references/notes.md", "scripts/my script.py", "tests/test_x.py",
     "scripts/empty-ship-subdir",
@@ -295,5 +296,6 @@ assert "ship_manifest" in payload
 assert len(payload["ship_manifest"]) == payload["ship_count"]
 assert "SKILL.md" in payload["ship_manifest"]
 assert "README.md" in payload["ship_manifest"]
+assert "README.en.md" in payload["ship_manifest"]
 PY
 }
