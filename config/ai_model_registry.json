@@ -26,6 +26,27 @@
       "quota_group": "agy-preconfigured-runtime",
       "vendor": "google"
     },
+    "agy:gemini-4-argon-high": {
+      "runner": "agy",
+      "cli_model": "gemini-4-argon-high",
+      "display_name": "Gemini 4 Argon (High)",
+      "quota_group": "agy-gemini-shared",
+      "vendor": "google"
+    },
+    "agy:gemini-4-carbon-high": {
+      "runner": "agy",
+      "cli_model": "gemini-4-carbon-high",
+      "display_name": "Gemini 4 Carbon (High)",
+      "quota_group": "agy-gemini-shared",
+      "vendor": "google"
+    },
+    "agy:gemini-4-hydrogen-high": {
+      "runner": "agy",
+      "cli_model": "gemini-4-hydrogen-high",
+      "display_name": "Gemini 4 Hydrogen (High)",
+      "quota_group": "agy-gemini-shared",
+      "vendor": "google"
+    },
     "agy:gemini-3.6-flash-medium": {
       "runner": "agy",
       "cli_model": "gemini-3.6-flash-medium",
@@ -138,7 +159,7 @@
       "quota_group": "claude-direct-subscription",
       "effort": "max",
       "vendor": "anthropic",
-      "adversarial_peer": "claude:fable-5.1"
+      "adversarial_peer": "claude:fable-5.2"
     },
     "claude:sonnet-5.5-xhigh": {
       "runner": "claude",
@@ -147,6 +168,14 @@
       "quota_group": "claude-direct-subscription",
       "effort": "xhigh",
       "vendor": "anthropic"
+    },
+    "claude:fable-5.2": {
+      "runner": "claude",
+      "cli_model": "claude-fable-5-2",
+      "display_name": "Claude Fable 5.2",
+      "quota_group": "claude-direct-subscription",
+      "vendor": "anthropic",
+      "adversarial_peer": "claude:sonnet-5.5"
     },
     "claude:fable-5.1": {
       "runner": "claude",
@@ -238,6 +267,68 @@
       "cli_model": "preconfigured-runtime",
       "display_name": "Codex preconfigured runtime",
       "quota_group": "codex-preconfigured-runtime",
+      "vendor": "openai"
+    },
+    "codex:gpt-6.2-astra": {
+      "runner": "codex",
+      "cli_model": "gpt-6.2-astra",
+      "display_name": "GPT-6.2 Astra",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-6.2-astra-medium": {
+      "runner": "codex",
+      "cli_model": "gpt-6.2-astra",
+      "cli_effort": "medium",
+      "display_name": "GPT-6.2 Astra (Medium)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-6.2-astra-high": {
+      "runner": "codex",
+      "cli_model": "gpt-6.2-astra",
+      "cli_effort": "high",
+      "display_name": "GPT-6.2 Astra (High)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-6.2-astra-xhigh": {
+      "runner": "codex",
+      "cli_model": "gpt-6.2-astra",
+      "cli_effort": "xhigh",
+      "display_name": "GPT-6.2 Astra (xhigh)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-6.2-sol": {
+      "runner": "codex",
+      "cli_model": "gpt-6.2-sol",
+      "display_name": "GPT-6.2 Sol",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-6.2-sol-medium": {
+      "runner": "codex",
+      "cli_model": "gpt-6.2-sol",
+      "cli_effort": "medium",
+      "display_name": "GPT-6.2 Sol (Medium)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-6.2-sol-high": {
+      "runner": "codex",
+      "cli_model": "gpt-6.2-sol",
+      "cli_effort": "high",
+      "display_name": "GPT-6.2 Sol (High)",
+      "quota_group": "codex-direct-subscription",
+      "vendor": "openai"
+    },
+    "codex:gpt-6.2-sol-xhigh": {
+      "runner": "codex",
+      "cli_model": "gpt-6.2-sol",
+      "cli_effort": "xhigh",
+      "display_name": "GPT-6.2 Sol (xhigh)",
+      "quota_group": "codex-direct-subscription",
       "vendor": "openai"
     },
     "codex:gpt-6.1-sol": {
@@ -383,6 +474,15 @@
     "agy": "agy:current",
     "antigravity-current": "agy:current",
     "antigravity": "agy:current",
+    "gemini-4-argon": "agy:gemini-4-argon-high",
+    "agy-gemini-4-argon": "agy:gemini-4-argon-high",
+    "agy-gemini-4-argon-high": "agy:gemini-4-argon-high",
+    "gemini-4-carbon": "agy:gemini-4-carbon-high",
+    "agy-gemini-4-carbon": "agy:gemini-4-carbon-high",
+    "agy-gemini-4-carbon-high": "agy:gemini-4-carbon-high",
+    "gemini-4-hydrogen": "agy:gemini-4-hydrogen-high",
+    "agy-gemini-4-hydrogen": "agy:gemini-4-hydrogen-high",
+    "agy-gemini-4-hydrogen-high": "agy:gemini-4-hydrogen-high",
     "agy-gemini-3.6-flash-medium": "agy:gemini-3.6-flash-medium",
     "agy-gemini-3.6-flash-high": "agy:gemini-3.6-flash-high",
     "agy-gemini-3.6-flash-low": "agy:gemini-3.6-flash-low",
@@ -408,11 +508,13 @@
     "claude-sonnet-latest": "claude:sonnet-5.5",
     "claude-sonnet-5.5-xhigh": "claude:sonnet-5.5-xhigh",
     "claude-sonnet-xhigh": "claude:sonnet-5.5-xhigh",
+    "claude-fable-5.2": "claude:fable-5.2",
+    "claude-fable-5-2": "claude:fable-5.2",
     "claude-fable-5.1": "claude:fable-5.1",
     "claude-fable-5-1": "claude:fable-5.1",
     "claude-fable-5": "claude:fable-5",
-    "claude-fable-direct": "claude:fable-5.1",
-    "claude-fable-latest": "claude:fable-5.1",
+    "claude-fable-direct": "claude:fable-5.2",
+    "claude-fable-latest": "claude:fable-5.2",
     "claude-opus-5.5": "claude:opus-5.5",
     "claude-opus-5-5": "claude:opus-5.5",
     "claude-opus-4.8": "claude:opus-4.8",
@@ -429,6 +531,24 @@
     "claude-opus-legacy": "claude:opus-4.7-legacy",
     "codex-current": "codex:current",
     "codex": "codex:current",
+    "gpt-6.2-astra": "codex:gpt-6.2-astra-medium",
+    "codex-gpt-6.2-astra": "codex:gpt-6.2-astra-medium",
+    "codex-6.2-astra": "codex:gpt-6.2-astra-medium",
+    "codex-gpt-6.2-astra-medium": "codex:gpt-6.2-astra-medium",
+    "codex-6.2-astra-medium": "codex:gpt-6.2-astra-medium",
+    "codex-gpt-6.2-astra-high": "codex:gpt-6.2-astra-high",
+    "codex-6.2-astra-high": "codex:gpt-6.2-astra-high",
+    "codex-gpt-6.2-astra-xhigh": "codex:gpt-6.2-astra-xhigh",
+    "codex-6.2-astra-xhigh": "codex:gpt-6.2-astra-xhigh",
+    "gpt-6.2-sol": "codex:gpt-6.2-sol-medium",
+    "codex-gpt-6.2-sol": "codex:gpt-6.2-sol-medium",
+    "codex-6.2-sol": "codex:gpt-6.2-sol-medium",
+    "codex-gpt-6.2-sol-medium": "codex:gpt-6.2-sol-medium",
+    "codex-6.2-sol-medium": "codex:gpt-6.2-sol-medium",
+    "codex-gpt-6.2-sol-high": "codex:gpt-6.2-sol-high",
+    "codex-6.2-sol-high": "codex:gpt-6.2-sol-high",
+    "codex-gpt-6.2-sol-xhigh": "codex:gpt-6.2-sol-xhigh",
+    "codex-6.2-sol-xhigh": "codex:gpt-6.2-sol-xhigh",
     "codex-gpt-6.1-sol": "codex:gpt-6.1-sol-medium",
     "codex-6.1-sol": "codex:gpt-6.1-sol-medium",
     "codex-gpt-6.1-sol-high": "codex:gpt-6.1-sol-high",
@@ -445,6 +565,7 @@
     "codex-6-astra-high": "codex:gpt-6-astra-high",
     "codex-gpt-6-astra-xhigh": "codex:gpt-6-astra-xhigh",
     "codex-6-astra-xhigh": "codex:gpt-6-astra-xhigh",
+    "gpt-6-luna": "codex:gpt-6-luna",
     "codex-gpt-6-luna": "codex:gpt-6-luna",
     "codex-6-luna": "codex:gpt-6-luna",
     "codex-gpt-5.6-sol": "codex:gpt-5.6-sol-medium",
@@ -469,12 +590,12 @@
   "default_reviewer_aliases": [
     "agy-current",
     "claude-current",
-    "codex-gpt-6.1-sol-medium"
+    "codex-gpt-6.2-sol-medium"
   ],
   "vendor_default_reviewers": {
     "google": "agy-current",
     "anthropic": "claude-current",
-    "openai": "codex-gpt-6.1-sol-medium"
+    "openai": "codex-gpt-6.2-sol-medium"
   },
   "fallback_policy": {
     "on_quota_exhausted": [],
